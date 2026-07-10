@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireProfile, requireRole } from "@/lib/auth";
 import { uploadDataUrl } from "@/lib/storage";
 import { checkpointOrderError, CREATOR_DIRECTIONS, getStep } from "@/lib/workflow";
+import { generateQrToken } from "@/lib/qr-token";
 import { DIRECTION_TRUCK_SEAL_COLOR } from "@/lib/constants";
 import type {
   DeliveryLocation,
@@ -192,15 +193,18 @@ export async function createTransaction(
 
   const supabase = await createClient();
 
+  const txId = crypto.randomUUID();
   const { data: tx, error: txError } = await supabase
     .from("transactions")
     .insert({
+      id: txId,
       direction,
       vehicle_number: vehicleNumber.toUpperCase(),
       driver_name: driverName,
       driver_id: driverId,
       seal_number: null,
       created_by: profile.id,
+      qr_token: generateQrToken(txId),
     })
     .select()
     .single();

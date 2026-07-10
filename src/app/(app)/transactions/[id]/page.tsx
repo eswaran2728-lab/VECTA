@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { signedUrl } from "@/lib/storage";
+import { generateQrToken } from "@/lib/qr-token";
 import { QrDisplay } from "@/components/qr-display";
 import { StatusBadge } from "@/components/status-badge";
 import { DirectionBadge } from "@/components/direction-badge";
@@ -224,7 +225,7 @@ export default async function TransactionDetailPage({
           </CardHeader>
           <CardContent>
             <QrDisplay
-              transactionId={transaction.id}
+              token={generateQrToken(transaction.id)}
               transactionNumber={transaction.transaction_number}
             />
           </CardContent>

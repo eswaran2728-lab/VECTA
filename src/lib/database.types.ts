@@ -69,6 +69,8 @@ export type Transaction = {
   driver_id: string;
   /** @deprecated superseded by the seals table; kept for legacy rows */
   seal_number: string | null;
+  /** Signed QR token issued at creation (stateless; regenerated for display). */
+  qr_token: string | null;
   status: TransactionStatus;
   created_by: string;
   created_at: string;
@@ -158,11 +160,18 @@ export type Database = {
         Row: Transaction;
         Insert: Omit<
           Transaction,
-          "id" | "transaction_number" | "status" | "created_at" | "updated_at" | "completed_at"
+          | "id"
+          | "transaction_number"
+          | "status"
+          | "created_at"
+          | "updated_at"
+          | "completed_at"
+          | "qr_token"
         > & {
           id?: string;
           transaction_number?: string;
           status?: TransactionStatus;
+          qr_token?: string | null;
         };
         Update: Partial<Transaction>;
         Relationships: [];

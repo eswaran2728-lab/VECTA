@@ -6,7 +6,7 @@ import { Html5Qrcode } from "html5-qrcode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { parseQrPayload } from "@/lib/utils";
+import { parseQrPayload } from "@/lib/utils"; // used for manual entry fallback
 
 const REGION_ID = "cscs-qr-reader";
 
@@ -27,20 +27,46 @@ export function QrScanner() {
     const scanner = new Html5Qrcode(REGION_ID);
     scannerRef.current = scanner;
 
+    const handleDecoded = async (decodedText: string) => {
+      if (handledRef.current) return;
+
+      let token: string | null = null;
+      try {
+        const parsed = JSON.parse(decodedText);
+        if (typeof parsed?.t === "string") token = parsed.t;
+      } catch {
+        // not JSON
+      }
+      if (!token) {
+        setError(
+          "Not a valid CSCS QR pass (old or unsigned passes are rejected — use manual entry)."
+        );
+        return;
+      }
+
+      handledRef.current = true;
+      try {
+        const res = await fetch(`/api/qr/validate?token=${encodeURIComponent(token)}`);
+        const body = await res.json();
+        if (!res.ok) {
+          setError(body.error ?? "QR pass could not be validated.");
+          handledRef.current = false;
+          return;
+        }
+        scanner.stop().catch(() => undefined);
+        router.push(`/transactions/${body.transactionId}`);
+      } catch {
+        setError("Validation failed — check your connection and try again.");
+        handledRef.current = false;
+      }
+    };
+
     scanner
       .start(
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText) => {
-          if (handledRef.current) return;
-          const id = parseQrPayload(decodedText);
-          if (id) {
-            handledRef.current = true;
-            scanner.stop().catch(() => undefined);
-            router.push(`/transactions/${id}`);
-          } else {
-            setError("QR code is not a CSCS transaction pass.");
-          }
+          void handleDecoded(decodedText);
         },
         () => undefined // per-frame decode misses are expected
       )

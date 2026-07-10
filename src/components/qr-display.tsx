@@ -4,27 +4,29 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 
 interface QrDisplayProps {
-  transactionId: string;
+  /** Signed HMAC token generated server-side; expires after 8 hours. */
+  token: string;
   transactionNumber: string;
   size?: number;
 }
 
 /**
- * Renders the transaction QR code. Payload matches the spec:
- * {"transactionId":"<uuid>"} — the same code is scanned at every checkpoint.
+ * Renders the transaction QR pass. Payload: {"t":"<signed token>"} — the same
+ * code is scanned at every checkpoint and validated server-side (signature,
+ * expiry, and workflow order) before any checkpoint page is shown.
  */
-export function QrDisplay({ transactionId, transactionNumber, size = 240 }: QrDisplayProps) {
+export function QrDisplay({ token, transactionNumber, size = 240 }: QrDisplayProps) {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    QRCode.toDataURL(JSON.stringify({ transactionId }), {
+    QRCode.toDataURL(JSON.stringify({ t: token }), {
       width: size,
       margin: 2,
       errorCorrectionLevel: "M",
     })
       .then(setDataUrl)
       .catch(() => setDataUrl(null));
-  }, [transactionId, size]);
+  }, [token, size]);
 
   return (
     <div className="flex flex-col items-center gap-2 rounded-lg border bg-white p-4">
