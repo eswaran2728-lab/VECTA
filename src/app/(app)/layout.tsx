@@ -26,7 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       href: "/transactions/new",
       label: "New Transaction",
       icon: PlusCircle,
-      show: profile.role === "warehouse_pic",
+      show: profile.role === "warehouse_pic" || profile.role === "sra_warehouse_pic",
     },
     {
       href: "/scan",

@@ -25,8 +25,8 @@ export default async function DashboardPage() {
 
   const [
     totalToday,
-    pendingPost2,
-    pendingPost6,
+    pendingInflightPost,
+    pendingAirportPost,
     pendingPartD,
     completedToday,
     escalated,
@@ -37,18 +37,26 @@ export default async function DashboardPage() {
       .from("transactions")
       .select("id", { count: "exact", head: true })
       .gte("created_at", today),
+    // In-flight Post is the 1st checkpoint outbound, the final checkpoint inbound.
     supabase
       .from("transactions")
       .select("id", { count: "exact", head: true })
-      .eq("status", "CREATED"),
+      .or(
+        "and(direction.eq.OUTBOUND,status.eq.CREATED),and(direction.eq.INBOUND,status.eq.AIRPORT_POST_APPROVED)"
+      ),
+    // Airport Post is the 2nd checkpoint outbound, the 1st checkpoint inbound.
     supabase
       .from("transactions")
       .select("id", { count: "exact", head: true })
-      .eq("status", "POST2_APPROVED"),
+      .or(
+        "and(direction.eq.OUTBOUND,status.eq.INFLIGHT_POST_APPROVED),and(direction.eq.INBOUND,status.eq.CREATED)"
+      ),
+    // Part D exists on outbound only.
     supabase
       .from("transactions")
       .select("id", { count: "exact", head: true })
-      .eq("status", "POST6_APPROVED"),
+      .eq("direction", "OUTBOUND")
+      .eq("status", "AIRPORT_POST_APPROVED"),
     supabase
       .from("transactions")
       .select("id", { count: "exact", head: true })
@@ -73,9 +81,9 @@ export default async function DashboardPage() {
 
   const cards = [
     { label: "Total Today", value: totalToday.count ?? 0, href: "/transactions" },
-    { label: "Pending Post 2", value: pendingPost2.count ?? 0, href: "/transactions?status=CREATED" },
-    { label: "Pending Post 6", value: pendingPost6.count ?? 0, href: "/transactions?status=POST2_APPROVED" },
-    { label: "Pending Part D", value: pendingPartD.count ?? 0, href: "/transactions?status=POST6_APPROVED" },
+    { label: "Pending In-flight Post", value: pendingInflightPost.count ?? 0, href: "/transactions" },
+    { label: "Pending Airport Post", value: pendingAirportPost.count ?? 0, href: "/transactions" },
+    { label: "Pending Part D (outbound)", value: pendingPartD.count ?? 0, href: "/transactions?status=AIRPORT_POST_APPROVED" },
     { label: "Completed Today", value: completedToday.count ?? 0, href: "/transactions?status=COMPLETED" },
     { label: "Escalated Cases", value: escalated.count ?? 0, href: "/transactions?status=ESCALATED", alert: true },
   ];

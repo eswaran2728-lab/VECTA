@@ -1,5 +1,6 @@
 ﻿export type Role =
   | "warehouse_pic"
+  | "sra_warehouse_pic"
   | "post2_avsec"
   | "post6_avsec"
   | "receiver"
@@ -7,12 +8,12 @@
 
 export type TransactionStatus =
   | "CREATED"
-  | "POST2_APPROVED"
-  | "POST6_APPROVED"
+  | "INFLIGHT_POST_APPROVED"
+  | "AIRPORT_POST_APPROVED"
   | "COMPLETED"
   | "ESCALATED";
 
-export type Direction = "WAREHOUSE_TO_AIRCRAFT" | "AIRCRAFT_TO_WAREHOUSE";
+export type Direction = "OUTBOUND" | "INBOUND";
 
 export type DeliveryLocation = "SRA_WAREHOUSE" | "AIRCRAFT";
 

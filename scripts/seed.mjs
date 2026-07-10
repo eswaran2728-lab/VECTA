@@ -1,8 +1,11 @@
 /**
- * CSCS seed script.
+ * CSCS seed script (Phase 1: direction-aware).
  *
- * Creates the five demo accounts (one per role) plus a handful of sample
- * transactions in every workflow state so the dashboard has data.
+ * Creates the demo accounts (one per role, including SRA Warehouse PIC)
+ * plus sample transactions in every workflow state for both directions.
+ *
+ * OUTBOUND: A -> B (In-flight Post) -> C (Airport Post) -> D
+ * INBOUND:  A -> C (Airport Post)  -> B (In-flight Post, final)
  *
  * Usage:
  *   NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/seed.mjs
@@ -37,6 +40,7 @@ const admin = createClient(url, serviceKey, {
 
 const USERS = [
   { email: "pic@cscs.local", name: "Ahmad Warehouse", staff_id: "WH-1001", role: "warehouse_pic" },
+  { email: "sra@cscs.local", name: "Nurul SRA Warehouse", staff_id: "SW-4001", role: "sra_warehouse_pic" },
   { email: "post2@cscs.local", name: "Siti Post Two", staff_id: "AV-2001", role: "post2_avsec" },
   { email: "post6@cscs.local", name: "Kumar Post Six", staff_id: "AV-6001", role: "post6_avsec" },
   { email: "receiver@cscs.local", name: "Lee Receiver", staff_id: "SR-3001", role: "receiver" },
@@ -54,7 +58,6 @@ async function ensureUser(u) {
 
   let authId = created?.user?.id;
   if (error) {
-    // Already exists -> look it up.
     const { data: list, error: listErr } = await admin.auth.admin.listUsers({
       page: 1,
       perPage: 200,
@@ -87,7 +90,7 @@ const PIXEL = Buffer.from(
 );
 
 async function uploadSignature(name) {
-  const path = `seed/${name}-${Date.now()}.png`;
+  const path = `seed/${name}-${Date.now()}-${Math.floor(Math.random() * 1e6)}.png`;
   const { error } = await admin.storage
     .from("signatures")
     .upload(path, PIXEL, { contentType: "image/png" });
@@ -95,35 +98,9 @@ async function uploadSignature(name) {
   return path;
 }
 
-async function createTransaction(ids, stage, overrides = {}) {
-  const { data: tx, error } = await admin
-    .from("transactions")
-    .insert({
-      direction: overrides.direction ?? "WAREHOUSE_TO_AIRCRAFT",
-      vehicle_number: overrides.vehicle_number ?? "WKD 4521",
-      driver_name: overrides.driver_name ?? "Rahman bin Ali",
-      driver_id: overrides.driver_id ?? "DRV-0091",
-      seal_number: overrides.seal_number ?? `SEAL-${Math.floor(Math.random() * 90000) + 10000}`,
-      created_by: ids.warehouse_pic,
-    })
-    .select()
-    .single();
-  if (error) throw error;
-
-  await admin.from("part_a").insert({
-    transaction_id: tx.id,
-    pic_name: "Ahmad Warehouse",
-    pic_staff_id: "WH-1001",
-    vehicle_search_completed: true,
-    signature_url: await uploadSignature("part-a"),
-    remarks: "Seed data",
-    completed_by: ids.warehouse_pic,
-  });
-
-  if (stage === "CREATED") return tx;
-
-  const { error: bErr } = await admin.from("part_b").insert({
-    transaction_id: tx.id,
+async function insertPartB(txId, ids) {
+  const { error } = await admin.from("part_b").insert({
+    transaction_id: txId,
     avsec_name: "Siti Post Two",
     avsec_staff_id: "AV-2001",
     vehicle_verified: true,
@@ -132,11 +109,12 @@ async function createTransaction(ids, stage, overrides = {}) {
     signature_url: await uploadSignature("part-b"),
     completed_by: ids.post2_avsec,
   });
-  if (bErr) throw bErr;
-  if (stage === "POST2_APPROVED") return tx;
+  if (error) throw error;
+}
 
-  const { error: cErr } = await admin.from("part_c").insert({
-    transaction_id: tx.id,
+async function insertPartC(txId, ids) {
+  const { error } = await admin.from("part_c").insert({
+    transaction_id: txId,
     avsec_name: "Kumar Post Six",
     avsec_staff_id: "AV-6001",
     vehicle_verified: true,
@@ -145,23 +123,71 @@ async function createTransaction(ids, stage, overrides = {}) {
     signature_url: await uploadSignature("part-c"),
     completed_by: ids.post6_avsec,
   });
-  if (cErr) throw cErr;
-  if (stage === "POST6_APPROVED") return tx;
+  if (error) throw error;
+}
 
-  if (stage === "ESCALATED") {
+/**
+ * stage = number of checkpoint steps already completed after Part A,
+ * or "ESCALATED" to raise an incident at the current point.
+ */
+async function createTransaction(ids, direction, steps, overrides = {}) {
+  const creator = direction === "OUTBOUND" ? ids.warehouse_pic : ids.sra_warehouse_pic;
+  const picName = direction === "OUTBOUND" ? "Ahmad Warehouse" : "Nurul SRA Warehouse";
+  const picStaffId = direction === "OUTBOUND" ? "WH-1001" : "SW-4001";
+
+  const { data: tx, error } = await admin
+    .from("transactions")
+    .insert({
+      direction,
+      vehicle_number: overrides.vehicle_number ?? "WKD 4521",
+      driver_name: overrides.driver_name ?? "Rahman bin Ali",
+      driver_id: overrides.driver_id ?? "DRV-0091",
+      seal_number: overrides.seal_number ?? `SEAL-${Math.floor(Math.random() * 90000) + 10000}`,
+      created_by: creator,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+
+  const { error: aErr } = await admin.from("part_a").insert({
+    transaction_id: tx.id,
+    pic_name: picName,
+    pic_staff_id: picStaffId,
+    vehicle_search_completed: true,
+    signature_url: await uploadSignature("part-a"),
+    remarks: "Seed data",
+    completed_by: creator,
+  });
+  if (aErr) throw aErr;
+
+  // Direction-aware checkpoint order.
+  const order =
+    direction === "OUTBOUND"
+      ? [() => insertPartB(tx.id, ids), () => insertPartC(tx.id, ids), () => insertPartD(tx.id, ids)]
+      : [() => insertPartC(tx.id, ids), () => insertPartB(tx.id, ids)];
+
+  const numSteps = steps === "ESCALATED" ? 0 : steps;
+  for (let i = 0; i < numSteps && i < order.length; i++) {
+    await order[i]();
+  }
+
+  if (steps === "ESCALATED") {
     const { error: iErr } = await admin.from("incidents").insert({
       transaction_id: tx.id,
       incident_type: "SEAL_MISMATCH",
       description: "Seed incident: seal number does not match Part A record.",
-      reported_by: "Kumar Post Six",
+      reported_by: "Kumar Post Six (AV-6001)",
       reported_by_id: ids.post6_avsec,
     });
     if (iErr) throw iErr;
-    return tx;
   }
 
-  const { error: dErr } = await admin.from("part_d").insert({
-    transaction_id: tx.id,
+  return tx;
+}
+
+async function insertPartD(txId, ids) {
+  const { error } = await admin.from("part_d").insert({
+    transaction_id: txId,
     delivery_location: "AIRCRAFT",
     receiver_name: "Lee Receiver",
     receiver_staff_id: "SR-3001",
@@ -169,8 +195,7 @@ async function createTransaction(ids, stage, overrides = {}) {
     signature_url: await uploadSignature("part-d"),
     completed_by: ids.receiver,
   });
-  if (dErr) throw dErr;
-  return tx;
+  if (error) throw error;
 }
 
 async function main() {
@@ -179,22 +204,24 @@ async function main() {
     ids[u.role] = await ensureUser(u);
   }
 
-  const stages = [
-    ["CREATED", { vehicle_number: "WKD 4521" }],
-    ["POST2_APPROVED", { vehicle_number: "WMA 7733" }],
-    ["POST6_APPROVED", { vehicle_number: "WTF 1289" }],
-    ["COMPLETED", { vehicle_number: "WXY 5566" }],
-    ["COMPLETED", { vehicle_number: "WQA 9014", direction: "AIRCRAFT_TO_WAREHOUSE" }],
-    ["ESCALATED", { vehicle_number: "WBB 3020" }],
+  const samples = [
+    ["OUTBOUND", 0, { vehicle_number: "WKD 4521" }],
+    ["OUTBOUND", 1, { vehicle_number: "WMA 7733" }],
+    ["OUTBOUND", 2, { vehicle_number: "WTF 1289" }],
+    ["OUTBOUND", 3, { vehicle_number: "WXY 5566" }],
+    ["OUTBOUND", "ESCALATED", { vehicle_number: "WBB 3020" }],
+    ["INBOUND", 0, { vehicle_number: "WQA 9014" }],
+    ["INBOUND", 1, { vehicle_number: "WPP 6612" }],
+    ["INBOUND", 2, { vehicle_number: "WRR 8874" }],
   ];
 
-  for (const [stage, overrides] of stages) {
-    const tx = await createTransaction(ids, stage, overrides);
-    console.log(`transaction ${tx.transaction_number} -> ${stage}`);
+  for (const [direction, steps, overrides] of samples) {
+    const tx = await createTransaction(ids, direction, steps, overrides);
+    console.log(`transaction ${tx.transaction_number} (${direction}, steps=${steps})`);
   }
 
   console.log("\nSeed complete. Demo accounts (password: " + PASSWORD + "):");
-  for (const u of USERS) console.log(`  ${u.role.padEnd(14)} ${u.email}`);
+  for (const u of USERS) console.log(`  ${u.role.padEnd(18)} ${u.email}`);
 }
 
 main().catch((e) => {

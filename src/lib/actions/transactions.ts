@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile, requireRole } from "@/lib/auth";
 import { uploadDataUrl } from "@/lib/storage";
-import type { DeliveryLocation, Direction } from "@/lib/database.types";
+import { checkpointOrderError, CREATOR_DIRECTIONS, getStep } from "@/lib/workflow";
+import type { DeliveryLocation, Direction, Transaction } from "@/lib/database.types";
 
 export interface ActionState {
   error: string | null;
@@ -20,14 +21,16 @@ function bool(formData: FormData, key: string): boolean {
 }
 
 /**
- * Part A: Warehouse PIC creates the transaction + Part A record together.
+ * Part A: a PIC creates the transaction + Part A record together.
+ * Direction is bound to the creator's role: warehouse_pic -> OUTBOUND,
+ * sra_warehouse_pic -> INBOUND (enforced here AND by RLS).
  * DB trigger assigns the CSCS-YYYY-NNNNNN number; audit triggers log both writes.
  */
 export async function createTransaction(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const profile = await requireRole(["warehouse_pic"]);
+  const profile = await requireRole(["warehouse_pic", "sra_warehouse_pic"]);
 
   const direction = str(formData, "direction") as Direction;
   const vehicleNumber = str(formData, "vehicle_number");
@@ -38,8 +41,13 @@ export async function createTransaction(
   const vehicleSearchCompleted = bool(formData, "vehicle_search_completed");
   const signature = str(formData, "signature");
 
-  if (!["WAREHOUSE_TO_AIRCRAFT", "AIRCRAFT_TO_WAREHOUSE"].includes(direction)) {
-    return { error: "Select a valid direction." };
+  const allowedDirection = CREATOR_DIRECTIONS[profile.role];
+  if (direction !== allowedDirection) {
+    return {
+      error:
+        `Your role (${profile.role}) may only create ${allowedDirection} transactions. ` +
+        `/ Peranan anda hanya boleh mencipta transaksi ${allowedDirection === "OUTBOUND" ? "keluar" : "masuk"}.`,
+    };
   }
   if (!vehicleNumber || !driverName || !driverId || !sealNumber) {
     return { error: "Vehicle, driver, driver ID and seal number are all required." };
@@ -96,7 +104,9 @@ export async function createTransaction(
   redirect(`/transactions/${tx.id}?created=1`);
 }
 
-/** Part B (Post 2) and Part C (Post 6) share the same shape. */
+/** Part B (In-flight Post) and Part C (Airport Post) share the same shape.
+ * Sequence is direction-aware: see src/lib/workflow.ts. On INBOUND, Part B
+ * is the final step and the DB trigger completes the transaction. */
 async function completeChecklistPart(
   part: "part_b" | "part_c",
   formData: FormData
@@ -118,6 +128,21 @@ async function completeChecklistPart(
     };
   }
   if (!signature) return { error: "Signature is required." };
+
+  const supabaseForCheck = await createClient();
+  const { data: txRow } = await supabaseForCheck
+    .from("transactions")
+    .select("direction, status")
+    .eq("id", transactionId)
+    .single();
+
+  if (!txRow) return { error: "Transaction not found. / Transaksi tidak dijumpai." };
+  const tx = txRow as Pick<Transaction, "direction" | "status">;
+
+  const orderError = checkpointOrderError(tx.direction, part, tx.status);
+  if (orderError) return { error: orderError };
+
+  const finalizes = getStep(tx.direction, part)?.finalizes ?? false;
 
   let signaturePath: string;
   try {
@@ -146,7 +171,7 @@ async function completeChecklistPart(
   revalidatePath(`/transactions/${transactionId}`);
   revalidatePath("/transactions");
   revalidatePath("/dashboard");
-  redirect(`/transactions/${transactionId}?approved=1`);
+  redirect(`/transactions/${transactionId}?${finalizes ? "completed" : "approved"}=1`);
 }
 
 export async function completePartB(_prev: ActionState, formData: FormData) {
@@ -157,7 +182,7 @@ export async function completePartC(_prev: ActionState, formData: FormData) {
   return completeChecklistPart("part_c", formData);
 }
 
-/** Part D: final delivery confirmation; DB trigger sets COMPLETED. */
+/** Part D: OUTBOUND-only final delivery confirmation; DB trigger sets COMPLETED. */
 export async function completePartD(
   _prev: ActionState,
   formData: FormData
@@ -171,6 +196,19 @@ export async function completePartD(
   const signature = str(formData, "signature");
 
   if (!transactionId) return { error: "Missing transaction reference." };
+
+  const supabaseForCheck = await createClient();
+  const { data: txRow } = await supabaseForCheck
+    .from("transactions")
+    .select("direction, status")
+    .eq("id", transactionId)
+    .single();
+
+  if (!txRow) return { error: "Transaction not found. / Transaksi tidak dijumpai." };
+  const tx = txRow as Pick<Transaction, "direction" | "status">;
+
+  const orderError = checkpointOrderError(tx.direction, "part_d", tx.status);
+  if (orderError) return { error: orderError };
   if (!["SRA_WAREHOUSE", "AIRCRAFT"].includes(deliveryLocation)) {
     return { error: "Select the delivery location." };
   }

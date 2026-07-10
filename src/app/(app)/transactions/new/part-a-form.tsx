@@ -7,32 +7,31 @@ import { Card, CardContent } from "@/components/ui/card";
 import { BigCheckbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { SignatureField } from "@/components/signature-pad";
-import { DIRECTION_LABELS } from "@/lib/constants";
+import type { Direction } from "@/lib/database.types";
 
 const initialState: ActionState = { error: null };
 
-export function PartAForm({ picName, picStaffId }: { picName: string; picStaffId: string }) {
+interface PartAFormProps {
+  picName: string;
+  picStaffId: string;
+  /** Fixed by the creator's role: warehouse_pic = OUTBOUND, sra_warehouse_pic = INBOUND. */
+  direction: Direction;
+}
+
+export function PartAForm({ picName, picStaffId, direction }: PartAFormProps) {
   const [state, formAction, pending] = useActionState(createTransaction, initialState);
   const [searchDone, setSearchDone] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
+
+  const sealColor = direction === "OUTBOUND" ? "blue" : "green";
 
   return (
     <Card>
       <CardContent className="pt-6">
         <form action={formAction} className="space-y-5">
-          <div className="space-y-2">
-            <Label htmlFor="direction">Direction</Label>
-            <Select id="direction" name="direction" required defaultValue="WAREHOUSE_TO_AIRCRAFT">
-              {Object.entries(DIRECTION_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </Select>
-          </div>
+          <input type="hidden" name="direction" value={direction} />
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
@@ -46,7 +45,7 @@ export function PartAForm({ picName, picStaffId }: { picName: string; picStaffId
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="seal_number">Seal Number</Label>
+              <Label htmlFor="seal_number">Seal Number ({sealColor} truck seal)</Label>
               <Input id="seal_number" name="seal_number" placeholder="e.g. SEAL-48213" required />
             </div>
             <div className="space-y-2">

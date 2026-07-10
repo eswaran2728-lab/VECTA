@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { StatusBadge } from "@/components/status-badge";
+import { DirectionBadge } from "@/components/direction-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,7 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DIRECTION_LABELS, STATUS_LABELS } from "@/lib/constants";
+import { STATUS_LABELS } from "@/lib/constants";
 import { formatDateTime } from "@/lib/utils";
 import type { Transaction, TransactionStatus } from "@/lib/database.types";
 
@@ -72,12 +73,12 @@ export default async function TransactionsPage({
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Transactions</h1>
           <p className="text-sm text-muted-foreground">
-            {profile.role === "warehouse_pic"
+            {profile.role === "warehouse_pic" || profile.role === "sra_warehouse_pic"
               ? "Your created transactions."
               : "All catering security movements."}
           </p>
         </div>
-        {profile.role === "warehouse_pic" ? (
+        {profile.role === "warehouse_pic" || profile.role === "sra_warehouse_pic" ? (
           <Link href="/transactions/new">
             <Button size="lg">+ New Transaction</Button>
           </Link>
@@ -158,8 +159,8 @@ export default async function TransactionsPage({
                       {t.transaction_number}
                     </Link>
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-xs">
-                    {DIRECTION_LABELS[t.direction]}
+                  <TableCell className="whitespace-nowrap">
+                    <DirectionBadge direction={t.direction} />
                   </TableCell>
                   <TableCell className="font-mono">{t.vehicle_number}</TableCell>
                   <TableCell>

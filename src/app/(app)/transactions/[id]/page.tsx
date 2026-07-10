@@ -7,12 +7,13 @@ import { createClient } from "@/lib/supabase/server";
 import { signedUrl } from "@/lib/storage";
 import { QrDisplay } from "@/components/qr-display";
 import { StatusBadge } from "@/components/status-badge";
+import { DirectionBadge } from "@/components/direction-badge";
+import { WorkflowStepper } from "@/components/workflow-stepper";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { nextStepFor } from "@/lib/workflow";
 import {
-  CHECKPOINTS,
   DELIVERY_LOCATION_LABELS,
-  DIRECTION_LABELS,
   INCIDENT_TYPE_LABELS,
 } from "@/lib/constants";
 import { formatDateTime } from "@/lib/utils";
@@ -102,15 +103,15 @@ export default async function TransactionDetailPage({
     incidents.map((i) => signedUrl("incident-photos", i.photo_url))
   );
 
-  // Which checkpoint can this user action right now?
+  // Which checkpoint can this user action right now? (direction-aware)
+  const nextStep = nextStepFor(transaction.direction, transaction.status);
   const nextAction =
-    profile.role === CHECKPOINTS.part_b.role && transaction.status === "CREATED"
-      ? { href: `/transactions/${id}/part-b`, label: "Complete Part B (Post 2)" }
-      : profile.role === CHECKPOINTS.part_c.role && transaction.status === "POST2_APPROVED"
-        ? { href: `/transactions/${id}/part-c`, label: "Complete Part C (Post 6)" }
-        : profile.role === CHECKPOINTS.part_d.role && transaction.status === "POST6_APPROVED"
-          ? { href: `/transactions/${id}/part-d`, label: "Complete Part D (Delivery)" }
-          : null;
+    nextStep && profile.role === nextStep.role
+      ? {
+          href: `/transactions/${id}/${nextStep.slug}`,
+          label: `Complete ${nextStep.shortLabel}`,
+        }
+      : null;
 
   const banner = flags.created
     ? "Transaction created. Print or show the QR pass at Post 2."
@@ -141,11 +142,9 @@ export default async function TransactionDetailPage({
           <h1 className="font-mono text-2xl font-bold tracking-tight">
             {transaction.transaction_number}
           </h1>
-          <div className="mt-1 flex items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-2">
             <StatusBadge status={transaction.status} />
-            <span className="text-xs text-muted-foreground">
-              {DIRECTION_LABELS[transaction.direction]}
-            </span>
+            <DirectionBadge direction={transaction.direction} />
           </div>
         </div>
         <div className="flex gap-2">
@@ -195,28 +194,12 @@ export default async function TransactionDetailPage({
           <CardHeader>
             <CardTitle className="text-base">Workflow Progress</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            {[
-              { label: "Part A — Warehouse", done: !!partA },
-              { label: "Part B — AVSEC Post 2", done: !!partB },
-              { label: "Part C — AVSEC Post 6", done: !!partC },
-              { label: "Part D — Delivery", done: !!partD },
-            ].map((step) => (
-              <div key={step.label} className="flex items-center gap-2">
-                <CheckCircle2
-                  className={`h-5 w-5 ${step.done ? "text-emerald-600" : "text-muted-foreground/30"}`}
-                />
-                <span className={step.done ? "font-medium" : "text-muted-foreground"}>
-                  {step.label}
-                </span>
-              </div>
-            ))}
-            {transaction.status === "ESCALATED" ? (
-              <div className="mt-2 flex items-center gap-2 rounded-md bg-red-100 p-2 text-red-800 dark:bg-red-900/40 dark:text-red-200">
-                <AlertTriangle className="h-5 w-5" />
-                Escalated — supervisor review required.
-              </div>
-            ) : null}
+          <CardContent>
+            <WorkflowStepper
+              direction={transaction.direction}
+              status={transaction.status}
+              parts={{ part_b: !!partB, part_c: !!partC, part_d: !!partD }}
+            />
           </CardContent>
         </Card>
       </div>

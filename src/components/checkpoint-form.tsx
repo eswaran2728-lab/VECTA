@@ -22,6 +22,8 @@ interface CheckpointFormProps {
   transaction: Transaction;
   officerName: string;
   officerStaffId: string;
+  /** True when this checkpoint is the final step (inbound Part B). */
+  finalizes?: boolean;
 }
 
 /**
@@ -33,6 +35,7 @@ export function CheckpointForm({
   transaction,
   officerName,
   officerStaffId,
+  finalizes = false,
 }: CheckpointFormProps) {
   const action = part === "part_b" ? completePartB : completePartC;
   const [state, formAction, pending] = useActionState(action, initialState);
@@ -125,7 +128,7 @@ export function CheckpointForm({
               className="w-full"
               disabled={pending || !allChecked || !signature}
             >
-              {pending ? "Saving…" : "Approve & Release"}
+              {pending ? "Saving…" : finalizes ? "Approve & Complete Transaction" : "Approve & Release"}
             </Button>
             <Link href={`/transactions/${transaction.id}/incident`} className="w-full">
               <Button type="button" variant="destructive" size="lg" className="w-full">
