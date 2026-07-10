@@ -3,6 +3,8 @@ import type {
   Direction,
   IncidentType,
   Role,
+  SealColor,
+  SealType,
   TransactionStatus,
 } from "./database.types";
 
@@ -52,7 +54,34 @@ export const INCIDENT_TYPE_LABELS: Record<IncidentType, string> = {
   SEAL_MISMATCH: "Seal Mismatch",
   UNAUTHORIZED_DRIVER: "Unauthorized Driver",
   UNAUTHORIZED_VEHICLE: "Unauthorized Vehicle",
+  EXPIRED_PASS: "Expired Airport Pass",
+  WRONG_SEAL_COLOR: "Wrong Seal Color",
+  TIMEOUT: "Transaction Timeout",
   OTHER: "Other",
+};
+
+export const SEAL_TYPE_LABELS: Record<SealType, string> = {
+  TRUCK_SEAL: "Truck Seal",
+  TROLLEY: "Trolley Seal",
+  OTHER: "Other",
+};
+
+export const SEAL_COLOR_LABELS: Record<SealColor, string> = {
+  BLUE: "Blue",
+  GREEN: "Green",
+  OTHER: "Other",
+};
+
+export const SEAL_COLOR_BADGES: Record<SealColor, string> = {
+  BLUE: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200",
+  GREEN: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
+  OTHER: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
+};
+
+/** Truck seal color required per direction (physical AirAsia process). */
+export const DIRECTION_TRUCK_SEAL_COLOR: Record<Direction, SealColor> = {
+  OUTBOUND: "BLUE",
+  INBOUND: "GREEN",
 };
 
 export const ALL_ROLES: Role[] = [

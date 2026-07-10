@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SignatureField } from "@/components/signature-pad";
+import { SealEditor, type SealDraft } from "@/components/seal-editor";
+import { DIRECTION_TRUCK_SEAL_COLOR } from "@/lib/constants";
 import type { Direction } from "@/lib/database.types";
 
 const initialState: ActionState = { error: null };
@@ -24,8 +26,11 @@ export function PartAForm({ picName, picStaffId, direction }: PartAFormProps) {
   const [state, formAction, pending] = useActionState(createTransaction, initialState);
   const [searchDone, setSearchDone] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
+  const [seals, setSeals] = useState<SealDraft[]>([
+    { seal_number: "", seal_type: "TRUCK_SEAL", seal_color: DIRECTION_TRUCK_SEAL_COLOR[direction] },
+  ]);
 
-  const sealColor = direction === "OUTBOUND" ? "blue" : "green";
+  const sealsReady = seals.length > 0 && seals.every((s) => s.seal_number.trim() !== "");
 
   return (
     <Card>
@@ -45,10 +50,6 @@ export function PartAForm({ picName, picStaffId, direction }: PartAFormProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="seal_number">Seal Number ({sealColor} truck seal)</Label>
-              <Input id="seal_number" name="seal_number" placeholder="e.g. SEAL-48213" required />
-            </div>
-            <div className="space-y-2">
               <Label htmlFor="driver_name">Driver Name</Label>
               <Input id="driver_name" name="driver_name" required />
             </div>
@@ -57,6 +58,9 @@ export function PartAForm({ picName, picStaffId, direction }: PartAFormProps) {
               <Input id="driver_id" name="driver_id" required />
             </div>
           </div>
+
+          <SealEditor direction={direction} seals={seals} onChange={setSeals} />
+          <input type="hidden" name="seals" value={JSON.stringify(seals)} />
 
           <BigCheckbox
             id="vehicle_search_completed"
@@ -94,7 +98,7 @@ export function PartAForm({ picName, picStaffId, direction }: PartAFormProps) {
             type="submit"
             size="xl"
             className="w-full"
-            disabled={pending || !searchDone || !signature}
+            disabled={pending || !searchDone || !signature || !sealsReady}
           >
             {pending ? "Creating…" : "Create Transaction & Generate QR"}
           </Button>

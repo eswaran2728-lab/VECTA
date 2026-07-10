@@ -10,23 +10,29 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { SignatureField } from "@/components/signature-pad";
+import { SealVerifyFields } from "@/components/seal-verify-fields";
 import { DELIVERY_LOCATION_LABELS } from "@/lib/constants";
-import type { Transaction } from "@/lib/database.types";
+import type { Seal, Transaction } from "@/lib/database.types";
 
 const initialState: ActionState = { error: null };
 
 export function PartDForm({
   transaction,
+  seals,
   receiverName,
   receiverStaffId,
 }: {
   transaction: Transaction;
+  seals: Pick<Seal, "id" | "seal_type" | "seal_color">[];
   receiverName: string;
   receiverStaffId: string;
 }) {
   const [state, formAction, pending] = useActionState(completePartD, initialState);
   const [sealIntact, setSealIntact] = useState(false);
+  const [entries, setEntries] = useState<Record<string, string>>({});
   const [signature, setSignature] = useState<string | null>(null);
+
+  const allSealsEntered = seals.every((s) => (entries[s.id] ?? "").trim() !== "");
 
   return (
     <Card>
@@ -37,13 +43,14 @@ export function PartDForm({
             <p className="font-mono text-lg font-bold">{transaction.vehicle_number}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Seal</p>
-            <p className="font-mono text-lg font-bold">{transaction.seal_number}</p>
+            <p className="text-xs text-muted-foreground">Driver</p>
+            <p className="text-lg font-bold">{transaction.driver_name}</p>
           </div>
         </div>
 
         <form action={formAction} className="space-y-4">
           <input type="hidden" name="transaction_id" value={transaction.id} />
+          <input type="hidden" name="seal_entries" value={JSON.stringify(entries)} />
 
           <div className="space-y-2">
             <Label htmlFor="delivery_location">Delivery Location</Label>
@@ -59,11 +66,13 @@ export function PartDForm({
             </Select>
           </div>
 
+          <SealVerifyFields seals={seals} entries={entries} onChange={setEntries} />
+
           <BigCheckbox
             id="seal_intact"
             name="seal_intact"
-            label="Seal intact on arrival"
-            description="Seal number matches and shows no tampering."
+            label="Seals intact on arrival"
+            description="No cuts, tampering or re-sealing visible on any seal."
             checked={sealIntact}
             onCheckedChange={setSealIntact}
           />
@@ -95,7 +104,7 @@ export function PartDForm({
               type="submit"
               size="xl"
               className="w-full"
-              disabled={pending || !sealIntact || !signature}
+              disabled={pending || !sealIntact || !allSealsEntered || !signature}
             >
               {pending ? "Saving…" : "Confirm Delivery — Complete"}
             </Button>

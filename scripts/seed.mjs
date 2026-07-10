@@ -149,6 +149,14 @@ async function createTransaction(ids, direction, steps, overrides = {}) {
     .single();
   if (error) throw error;
 
+  const { error: sealErr } = await admin.from("seals").insert({
+    transaction_id: tx.id,
+    seal_number: tx.seal_number,
+    seal_type: "TRUCK_SEAL",
+    seal_color: direction === "OUTBOUND" ? "BLUE" : "GREEN",
+  });
+  if (sealErr) throw sealErr;
+
   const { error: aErr } = await admin.from("part_a").insert({
     transaction_id: tx.id,
     pic_name: picName,

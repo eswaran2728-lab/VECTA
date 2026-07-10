@@ -17,11 +17,19 @@ import {
   INCIDENT_TYPE_LABELS,
 } from "@/lib/constants";
 import { formatDateTime } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import {
+  SEAL_COLOR_BADGES,
+  SEAL_COLOR_LABELS,
+  SEAL_TYPE_LABELS,
+} from "@/lib/constants";
 import type {
   Incident,
   PartA,
   PartBC,
   PartD,
+  Seal,
+  SealVerification,
   Transaction,
 } from "@/lib/database.types";
 
@@ -79,12 +87,17 @@ export default async function TransactionDetailPage({
   if (!tx) notFound();
   const transaction = tx as Transaction;
 
-  const [a, b, c, d, inc] = await Promise.all([
+  const [a, b, c, d, inc, sealRes] = await Promise.all([
     supabase.from("part_a").select("*").eq("transaction_id", id).maybeSingle(),
     supabase.from("part_b").select("*").eq("transaction_id", id).maybeSingle(),
     supabase.from("part_c").select("*").eq("transaction_id", id).maybeSingle(),
     supabase.from("part_d").select("*").eq("transaction_id", id).maybeSingle(),
     supabase.from("incidents").select("*").eq("transaction_id", id).order("created_at"),
+    supabase
+      .from("seals")
+      .select("*, seal_verifications(*)")
+      .eq("transaction_id", id)
+      .order("applied_at"),
   ]);
 
   const partA = a.data as PartA | null;
@@ -92,6 +105,9 @@ export default async function TransactionDetailPage({
   const partC = c.data as PartBC | null;
   const partD = d.data as PartD | null;
   const incidents = (inc.data ?? []) as Incident[];
+  const seals = (sealRes.data ?? []) as unknown as (Seal & {
+    seal_verifications: SealVerification[];
+  })[];
 
   const [sigA, sigB, sigC, sigD] = await Promise.all([
     signedUrl("signatures", partA?.signature_url ?? null),
@@ -172,9 +188,33 @@ export default async function TransactionDetailPage({
             <Row label="Vehicle" value={<span className="font-mono">{transaction.vehicle_number}</span>} />
             <Row label="Driver" value={transaction.driver_name} />
             <Row label="Driver ID" value={<span className="font-mono">{transaction.driver_id}</span>} />
-            <Row label="Seal Number" value={<span className="font-mono">{transaction.seal_number}</span>} />
             <Row label="Created" value={formatDateTime(transaction.created_at)} />
             <Row label="Completed" value={formatDateTime(transaction.completed_at)} />
+            <div className="space-y-2 pt-2">
+              <p className="text-sm text-muted-foreground">Seals ({seals.length})</p>
+              {seals.map((seal) => (
+                <div key={seal.id} className="flex flex-wrap items-center gap-2 text-sm">
+                  <Badge className={SEAL_COLOR_BADGES[seal.seal_color]}>
+                    {SEAL_COLOR_LABELS[seal.seal_color]} {SEAL_TYPE_LABELS[seal.seal_type]}
+                  </Badge>
+                  <span className="font-mono font-medium">{seal.seal_number}</span>
+                  {seal.seal_verifications.length > 0 ? (
+                    <span
+                      className={`text-xs ${
+                        seal.seal_verifications.every((v) => v.matched)
+                          ? "text-emerald-600"
+                          : "font-semibold text-red-600"
+                      }`}
+                    >
+                      {seal.seal_verifications.filter((v) => v.matched).length}/
+                      {seal.seal_verifications.length} checks matched
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">not yet verified</span>
+                  )}
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
 

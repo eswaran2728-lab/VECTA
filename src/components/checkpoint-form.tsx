@@ -13,13 +13,15 @@ import { BigCheckbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SignatureField } from "@/components/signature-pad";
-import type { Transaction } from "@/lib/database.types";
+import { SealVerifyFields } from "@/components/seal-verify-fields";
+import type { Seal, Transaction } from "@/lib/database.types";
 
 const initialState: ActionState = { error: null };
 
 interface CheckpointFormProps {
   part: "part_b" | "part_c";
   transaction: Transaction;
+  seals: Pick<Seal, "id" | "seal_type" | "seal_color">[];
   officerName: string;
   officerStaffId: string;
   /** True when this checkpoint is the final step (inbound Part B). */
@@ -27,12 +29,13 @@ interface CheckpointFormProps {
 }
 
 /**
- * Shared Part B / Part C verification form. Fast path: three taps on the
- * checklist + signature + one submit tap.
+ * Shared Part B / Part C verification form. Officers must physically read and
+ * enter every seal number — the numbers on record are not shown.
  */
 export function CheckpointForm({
   part,
   transaction,
+  seals,
   officerName,
   officerStaffId,
   finalizes = false,
@@ -41,16 +44,17 @@ export function CheckpointForm({
   const [state, formAction, pending] = useActionState(action, initialState);
   const [vehicle, setVehicle] = useState(false);
   const [driver, setDriver] = useState(false);
-  const [seal, setSeal] = useState(false);
+  const [entries, setEntries] = useState<Record<string, string>>({});
   const [signature, setSignature] = useState<string | null>(null);
 
-  const allChecked = vehicle && driver && seal;
+  const allSealsEntered = seals.every((s) => (entries[s.id] ?? "").trim() !== "");
+  const ready = vehicle && driver && allSealsEntered && !!signature;
 
   return (
     <Card>
       <CardContent className="space-y-5 pt-6">
         {/* What the officer must verify against the physical vehicle */}
-        <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted p-4 text-sm sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted p-4 text-sm sm:grid-cols-3">
           <div>
             <p className="text-xs text-muted-foreground">Vehicle</p>
             <p className="font-mono text-lg font-bold">{transaction.vehicle_number}</p>
@@ -63,14 +67,11 @@ export function CheckpointForm({
             <p className="text-xs text-muted-foreground">Driver ID</p>
             <p className="font-mono text-lg font-bold">{transaction.driver_id}</p>
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Seal</p>
-            <p className="font-mono text-lg font-bold">{transaction.seal_number}</p>
-          </div>
         </div>
 
         <form action={formAction} className="space-y-4">
           <input type="hidden" name="transaction_id" value={transaction.id} />
+          <input type="hidden" name="seal_entries" value={JSON.stringify(entries)} />
 
           <div className="space-y-3">
             <BigCheckbox
@@ -89,15 +90,9 @@ export function CheckpointForm({
               checked={driver}
               onCheckedChange={setDriver}
             />
-            <BigCheckbox
-              id="seal_verified"
-              name="seal_verified"
-              label="Seal verified"
-              description="Seal intact and number matches the record."
-              checked={seal}
-              onCheckedChange={setSeal}
-            />
           </div>
+
+          <SealVerifyFields seals={seals} entries={entries} onChange={setEntries} />
 
           <div className="space-y-2">
             <Label htmlFor="remarks">Remarks (optional)</Label>
@@ -116,19 +111,18 @@ export function CheckpointForm({
           <input type="hidden" name="signature" value={signature ?? ""} />
 
           {state.error ? (
-            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
               {state.error}
             </p>
           ) : null}
 
           <div className="flex flex-col gap-2">
-            <Button
-              type="submit"
-              size="xl"
-              className="w-full"
-              disabled={pending || !allChecked || !signature}
-            >
-              {pending ? "Saving…" : finalizes ? "Approve & Complete Transaction" : "Approve & Release"}
+            <Button type="submit" size="xl" className="w-full" disabled={pending || !ready}>
+              {pending
+                ? "Saving…"
+                : finalizes
+                  ? "Approve & Complete Transaction"
+                  : "Approve & Release"}
             </Button>
             <Link href={`/transactions/${transaction.id}/incident`} className="w-full">
               <Button type="button" variant="destructive" size="lg" className="w-full">

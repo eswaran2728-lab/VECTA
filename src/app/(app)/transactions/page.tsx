@@ -42,7 +42,7 @@ export default async function TransactionsPage({
 
   let query = supabase
     .from("transactions")
-    .select("*")
+    .select("*, seals(seal_number)")
     .order("created_at", { ascending: false })
     .limit(200);
 
@@ -65,7 +65,9 @@ export default async function TransactionsPage({
   }
 
   const { data } = await query;
-  const transactions = (data ?? []) as Transaction[];
+  const transactions = (data ?? []) as unknown as (Transaction & {
+    seals: { seal_number: string }[];
+  })[];
 
   return (
     <div className="space-y-4">
@@ -167,7 +169,11 @@ export default async function TransactionsPage({
                     {t.driver_name}
                     <span className="block text-xs text-muted-foreground">{t.driver_id}</span>
                   </TableCell>
-                  <TableCell className="font-mono">{t.seal_number}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {t.seals.length > 0
+                      ? t.seals.map((s) => s.seal_number).join(", ")
+                      : (t.seal_number ?? "—")}
+                  </TableCell>
                   <TableCell>
                     <StatusBadge status={t.status} />
                   </TableCell>

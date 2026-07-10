@@ -22,7 +22,34 @@ export type IncidentType =
   | "SEAL_MISMATCH"
   | "UNAUTHORIZED_DRIVER"
   | "UNAUTHORIZED_VEHICLE"
+  | "EXPIRED_PASS"
+  | "WRONG_SEAL_COLOR"
+  | "TIMEOUT"
   | "OTHER";
+
+export type SealType = "TRUCK_SEAL" | "TROLLEY" | "OTHER";
+export type SealColor = "BLUE" | "GREEN" | "OTHER";
+export type SealCheckpoint = "INFLIGHT_POST" | "AIRPORT_POST" | "PART_D";
+
+export type Seal = {
+  id: string;
+  transaction_id: string;
+  seal_number: string;
+  seal_type: SealType;
+  seal_color: SealColor;
+  applied_at: string;
+}
+
+export type SealVerification = {
+  id: string;
+  seal_id: string;
+  checkpoint: SealCheckpoint;
+  entered_seal_number: string;
+  matched: boolean;
+  verified_by: string | null;
+  verified_at: string;
+  photo_url: string | null;
+}
 
 export type UserProfile = {
   id: string;
@@ -40,7 +67,8 @@ export type Transaction = {
   vehicle_number: string;
   driver_name: string;
   driver_id: string;
-  seal_number: string;
+  /** @deprecated superseded by the seals table; kept for legacy rows */
+  seal_number: string | null;
   status: TransactionStatus;
   created_by: string;
   created_at: string;
@@ -172,6 +200,18 @@ export type Database = {
       audit_logs: {
         Row: AuditLog;
         Insert: Omit<AuditLog, "id" | "performed_at"> & { id?: string; performed_at?: string };
+        Update: never;
+        Relationships: [];
+      };
+      seals: {
+        Row: Seal;
+        Insert: Omit<Seal, "id" | "applied_at"> & { id?: string; applied_at?: string };
+        Update: never;
+        Relationships: [];
+      };
+      seal_verifications: {
+        Row: SealVerification;
+        Insert: Omit<SealVerification, "id" | "verified_at"> & { id?: string; verified_at?: string };
         Update: never;
         Relationships: [];
       };

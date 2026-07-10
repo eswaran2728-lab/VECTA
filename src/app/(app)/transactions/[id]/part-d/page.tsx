@@ -7,7 +7,7 @@ import { PartDForm } from "@/components/part-d-form";
 import { DirectionBadge } from "@/components/direction-badge";
 import { WorkflowStepper } from "@/components/workflow-stepper";
 import { Card, CardContent } from "@/components/ui/card";
-import type { Transaction } from "@/lib/database.types";
+import type { Seal, Transaction } from "@/lib/database.types";
 
 export const metadata: Metadata = { title: "Part D — Delivery" };
 export const dynamic = "force-dynamic";
@@ -26,6 +26,13 @@ export default async function PartDPage({ params }: { params: Promise<{ id: stri
   if (!step || transaction.status !== step.requiredStatus) {
     redirect(`/transactions/${id}`);
   }
+
+  const { data: sealRows } = await supabase
+    .from("seals")
+    .select("id, seal_type, seal_color")
+    .eq("transaction_id", id)
+    .order("applied_at");
+  const seals = (sealRows ?? []) as Pick<Seal, "id" | "seal_type" | "seal_color">[];
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -51,6 +58,7 @@ export default async function PartDPage({ params }: { params: Promise<{ id: stri
 
       <PartDForm
         transaction={transaction}
+        seals={seals}
         receiverName={profile.name}
         receiverStaffId={profile.staff_id}
       />
