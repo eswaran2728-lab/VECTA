@@ -17,6 +17,7 @@ import { signOut } from "@/lib/actions/auth";
 import { ROLE_LABELS } from "@/lib/constants";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationsBell } from "@/components/notifications-bell";
+import { PwaProvider } from "@/components/pwa-provider";
 import { Button } from "@/components/ui/button";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -91,6 +92,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <p className="font-medium">{profile.name}</p>
               <p className="text-muted-foreground">{ROLE_LABELS[profile.role]}</p>
             </div>
+            <PwaProvider />
             <NotificationsBell userId={profile.id} />
             <ThemeToggle />
             <form action={signOut}>

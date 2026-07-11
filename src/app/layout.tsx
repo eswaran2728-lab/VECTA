@@ -8,6 +8,8 @@ export const metadata: Metadata = {
   },
   description:
     "Digital IFCSF workflow for airport catering security: Part A–D checkpoints, incidents, audit trail.",
+  manifest: "/manifest.json",
+  appleWebApp: { capable: true, title: "CSCS", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

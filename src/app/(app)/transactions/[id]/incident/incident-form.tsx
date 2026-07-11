@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { INCIDENT_TYPE_LABELS } from "@/lib/constants";
+import { formDataToPayload, queueSubmission } from "@/lib/offline-queue";
 import { cn } from "@/lib/utils";
 
 const initialState: ActionState = { error: null };
@@ -18,6 +19,18 @@ export function IncidentForm({ transactionId }: { transactionId: string }) {
   const [type, setType] = useState<string>("");
   const [photos, setPhotos] = useState<string[]>([]);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [queuedMsg, setQueuedMsg] = useState<string | null>(null);
+
+  const handleOffline = (e: React.FormEvent<HTMLFormElement>) => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      e.preventDefault();
+      void queueSubmission("incident", formDataToPayload(e.currentTarget)).then(() =>
+        setQueuedMsg(
+          "Offline — this incident report is saved on the device and will sync (and escalate) automatically when the connection returns."
+        )
+      );
+    }
+  };
 
   const handlePhotos = (files: FileList | null) => {
     setPhotoError(null);
@@ -46,7 +59,7 @@ export function IncidentForm({ transactionId }: { transactionId: string }) {
   return (
     <Card className="border-red-300 dark:border-red-900">
       <CardContent className="pt-6">
-        <form action={formAction} className="space-y-5">
+        <form action={formAction} onSubmit={handleOffline} className="space-y-5">
           <input type="hidden" name="transaction_id" value={transactionId} />
           <input type="hidden" name="incident_type" value={type} />
           <input type="hidden" name="photos" value={JSON.stringify(photos)} />
@@ -110,6 +123,11 @@ export function IncidentForm({ transactionId }: { transactionId: string }) {
           {state.error ? (
             <p role="alert" className="text-sm text-red-600 dark:text-red-400">
               {state.error}
+            </p>
+          ) : null}
+          {queuedMsg ? (
+            <p className="rounded-md bg-amber-100 p-3 text-sm font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+              {queuedMsg}
             </p>
           ) : null}
 

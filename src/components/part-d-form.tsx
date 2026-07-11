@@ -11,6 +11,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { SignatureField } from "@/components/signature-pad";
 import { SealVerifyFields } from "@/components/seal-verify-fields";
+import { formDataToPayload, queueSubmission } from "@/lib/offline-queue";
 import { DELIVERY_LOCATION_LABELS } from "@/lib/constants";
 import type { Seal, Transaction } from "@/lib/database.types";
 
@@ -31,8 +32,20 @@ export function PartDForm({
   const [sealIntact, setSealIntact] = useState(false);
   const [entries, setEntries] = useState<Record<string, string>>({});
   const [signature, setSignature] = useState<string | null>(null);
+  const [queuedMsg, setQueuedMsg] = useState<string | null>(null);
 
   const allSealsEntered = seals.every((s) => (entries[s.id] ?? "").trim() !== "");
+
+  const handleOffline = (e: React.FormEvent<HTMLFormElement>) => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      e.preventDefault();
+      void queueSubmission("part_d", formDataToPayload(e.currentTarget)).then(() =>
+        setQueuedMsg(
+          "Offline — this delivery confirmation is saved on the device and will sync automatically when the connection returns."
+        )
+      );
+    }
+  };
 
   return (
     <Card>
@@ -48,7 +61,7 @@ export function PartDForm({
           </div>
         </div>
 
-        <form action={formAction} className="space-y-4">
+        <form action={formAction} onSubmit={handleOffline} className="space-y-4">
           <input type="hidden" name="transaction_id" value={transaction.id} />
           <input type="hidden" name="seal_entries" value={JSON.stringify(entries)} />
 
@@ -96,6 +109,11 @@ export function PartDForm({
           {state.error ? (
             <p role="alert" className="text-sm text-red-600 dark:text-red-400">
               {state.error}
+            </p>
+          ) : null}
+          {queuedMsg ? (
+            <p className="rounded-md bg-amber-100 p-3 text-sm font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+              {queuedMsg}
             </p>
           ) : null}
 
