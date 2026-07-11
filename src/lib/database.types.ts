@@ -51,6 +51,35 @@ export type SealVerification = {
   photo_url: string | null;
 }
 
+export type CateringCompany = {
+  id: string;
+  name: string;
+  code: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export type VehicleRecord = {
+  id: string;
+  vehicle_number: string;
+  catering_company_id: string | null;
+  airport_pass_number: string | null;
+  pass_expiry_date: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export type DriverRecord = {
+  id: string;
+  name: string;
+  driver_id: string;
+  catering_company_id: string | null;
+  airport_pass_number: string | null;
+  pass_expiry_date: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
 export type UserProfile = {
   id: string;
   name: string;
@@ -71,6 +100,14 @@ export type Transaction = {
   seal_number: string | null;
   /** Signed QR token issued at creation (stateless; regenerated for display). */
   qr_token: string | null;
+  flight_number: string | null;
+  aircraft_registration: string | null;
+  catering_company_id: string | null;
+  vehicle_id: string | null;
+  driver_id_ref: string | null;
+  trolley_count: number;
+  escort_officer_name: string | null;
+  escort_officer_staff_id: string | null;
   status: TransactionStatus;
   created_by: string;
   created_at: string;
@@ -167,11 +204,27 @@ export type Database = {
           | "updated_at"
           | "completed_at"
           | "qr_token"
+          | "flight_number"
+          | "aircraft_registration"
+          | "catering_company_id"
+          | "vehicle_id"
+          | "driver_id_ref"
+          | "trolley_count"
+          | "escort_officer_name"
+          | "escort_officer_staff_id"
         > & {
           id?: string;
           transaction_number?: string;
           status?: TransactionStatus;
           qr_token?: string | null;
+          flight_number?: string | null;
+          aircraft_registration?: string | null;
+          catering_company_id?: string | null;
+          vehicle_id?: string | null;
+          driver_id_ref?: string | null;
+          trolley_count?: number;
+          escort_officer_name?: string | null;
+          escort_officer_staff_id?: string | null;
         };
         Update: Partial<Transaction>;
         Relationships: [];
@@ -210,6 +263,33 @@ export type Database = {
         Row: AuditLog;
         Insert: Omit<AuditLog, "id" | "performed_at"> & { id?: string; performed_at?: string };
         Update: never;
+        Relationships: [];
+      };
+      catering_companies: {
+        Row: CateringCompany;
+        Insert: Omit<CateringCompany, "id" | "created_at" | "is_active"> & {
+          id?: string;
+          is_active?: boolean;
+        };
+        Update: Partial<CateringCompany>;
+        Relationships: [];
+      };
+      vehicles: {
+        Row: VehicleRecord;
+        Insert: Omit<VehicleRecord, "id" | "created_at" | "is_active"> & {
+          id?: string;
+          is_active?: boolean;
+        };
+        Update: Partial<VehicleRecord>;
+        Relationships: [];
+      };
+      drivers: {
+        Row: DriverRecord;
+        Insert: Omit<DriverRecord, "id" | "created_at" | "is_active"> & {
+          id?: string;
+          is_active?: boolean;
+        };
+        Update: Partial<DriverRecord>;
         Relationships: [];
       };
       seals: {

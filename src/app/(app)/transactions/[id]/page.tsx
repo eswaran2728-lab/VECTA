@@ -84,9 +84,15 @@ export default async function TransactionDetailPage({
   const profile = await requireProfile();
   const supabase = await createClient();
 
-  const { data: tx } = await supabase.from("transactions").select("*").eq("id", id).single();
+  const { data: tx } = await supabase
+    .from("transactions")
+    .select("*, catering_companies(name)")
+    .eq("id", id)
+    .single();
   if (!tx) notFound();
-  const transaction = tx as Transaction;
+  const transaction = tx as unknown as Transaction & {
+    catering_companies: { name: string } | null;
+  };
 
   const [a, b, c, d, inc, sealRes] = await Promise.all([
     supabase.from("part_a").select("*").eq("transaction_id", id).maybeSingle(),
@@ -189,6 +195,27 @@ export default async function TransactionDetailPage({
             <Row label="Vehicle" value={<span className="font-mono">{transaction.vehicle_number}</span>} />
             <Row label="Driver" value={transaction.driver_name} />
             <Row label="Driver ID" value={<span className="font-mono">{transaction.driver_id}</span>} />
+            {transaction.flight_number ? (
+              <Row label="Flight" value={<span className="font-mono">{transaction.flight_number}</span>} />
+            ) : null}
+            {transaction.aircraft_registration ? (
+              <Row
+                label="Aircraft"
+                value={<span className="font-mono">{transaction.aircraft_registration}</span>}
+              />
+            ) : null}
+            {transaction.catering_companies ? (
+              <Row label="Catering Company" value={transaction.catering_companies.name} />
+            ) : null}
+            {transaction.trolley_count > 0 ? (
+              <Row label="Trolleys" value={transaction.trolley_count} />
+            ) : null}
+            {transaction.escort_officer_name ? (
+              <Row
+                label="Escort Officer"
+                value={`${transaction.escort_officer_name}${transaction.escort_officer_staff_id ? ` (${transaction.escort_officer_staff_id})` : ""}`}
+              />
+            ) : null}
             <Row label="Created" value={formatDateTime(transaction.created_at)} />
             <Row label="Completed" value={formatDateTime(transaction.completed_at)} />
             <div className="space-y-2 pt-2">

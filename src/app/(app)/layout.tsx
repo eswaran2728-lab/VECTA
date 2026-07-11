@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   ClipboardList,
   LayoutDashboard,
+  ListChecks,
   PlusCircle,
   ScanLine,
   ShieldAlert,
@@ -46,6 +47,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       href: "/admin/users",
       label: "Users",
       icon: Users,
+      show: profile.role === "supervisor",
+    },
+    {
+      href: "/admin/whitelists",
+      label: "Whitelists",
+      icon: ListChecks,
       show: profile.role === "supervisor",
     },
     {

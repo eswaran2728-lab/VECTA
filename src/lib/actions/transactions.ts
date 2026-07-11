@@ -140,13 +140,20 @@ export async function createTransaction(
   const profile = await requireRole(["warehouse_pic", "sra_warehouse_pic"]);
 
   const direction = str(formData, "direction") as Direction;
-  const vehicleNumber = str(formData, "vehicle_number");
+  const vehicleNumber = str(formData, "vehicle_number").toUpperCase();
   const driverName = str(formData, "driver_name");
   const driverId = str(formData, "driver_id");
   const remarks = str(formData, "remarks");
   const vehicleSearchCompleted = bool(formData, "vehicle_search_completed");
   const signature = str(formData, "signature");
   const seals = parseSealDrafts(str(formData, "seals"));
+  const flightNumber = str(formData, "flight_number").toUpperCase();
+  const aircraftRegistration = str(formData, "aircraft_registration").toUpperCase();
+  const cateringCompanyId = str(formData, "catering_company_id");
+  const trolleyCount = Math.max(0, parseInt(str(formData, "trolley_count") || "0", 10) || 0);
+  const escortName = str(formData, "escort_officer_name");
+  const escortStaffId = str(formData, "escort_officer_staff_id");
+  const escalateExpired = bool(formData, "escalate_expired");
 
   const allowedDirection = CREATOR_DIRECTIONS[profile.role];
   if (direction !== allowedDirection) {
@@ -184,6 +191,56 @@ export async function createTransaction(
     return { error: "Signature is required." };
   }
 
+  const supabase = await createClient();
+
+  // Whitelist checks: matched entries link to the registry; expired passes
+  // block (or escalate on explicit confirmation); unlisted entries are
+  // allowed only with mandatory remarks and are audit-logged.
+  const today = new Date().toISOString().slice(0, 10);
+  const [vehicleRes, driverRes] = await Promise.all([
+    supabase
+      .from("vehicles")
+      .select("id, pass_expiry_date, is_active")
+      .eq("vehicle_number", vehicleNumber)
+      .eq("is_active", true)
+      .maybeSingle(),
+    supabase
+      .from("drivers")
+      .select("id, pass_expiry_date, is_active")
+      .eq("driver_id", driverId)
+      .eq("is_active", true)
+      .maybeSingle(),
+  ]);
+  const vehicleRec = vehicleRes.data;
+  const driverRec = driverRes.data;
+
+  const expiredItems: string[] = [];
+  if (vehicleRec?.pass_expiry_date && vehicleRec.pass_expiry_date < today) {
+    expiredItems.push(`vehicle ${vehicleNumber}`);
+  }
+  if (driverRec?.pass_expiry_date && driverRec.pass_expiry_date < today) {
+    expiredItems.push(`driver ${driverId}`);
+  }
+  if (expiredItems.length > 0 && !escalateExpired) {
+    return {
+      error:
+        `EXPIRED_PASS: airport pass expired for ${expiredItems.join(" and ")}. ` +
+        `The vehicle must not proceed. You may create this record as an Expired Pass incident (escalated to the supervisor) using the button below. ` +
+        `/ Pas lapangan terbang telah tamat tempoh.`,
+    };
+  }
+
+  const unlisted: string[] = [];
+  if (!vehicleRec) unlisted.push(`vehicle ${vehicleNumber}`);
+  if (!driverRec) unlisted.push(`driver ${driverId}`);
+  if (unlisted.length > 0 && !remarks) {
+    return {
+      error:
+        `${unlisted.join(" and ")} not in the whitelist. Remarks are mandatory when proceeding with unlisted entries. ` +
+        `/ Tiada dalam senarai putih — catatan wajib diisi.`,
+    };
+  }
+
   let signaturePath: string;
   try {
     signaturePath = await uploadDataUrl("signatures", signature, "part-a");
@@ -191,20 +248,26 @@ export async function createTransaction(
     return { error: e instanceof Error ? e.message : "Signature upload failed." };
   }
 
-  const supabase = await createClient();
-
   const txId = crypto.randomUUID();
   const { data: tx, error: txError } = await supabase
     .from("transactions")
     .insert({
       id: txId,
       direction,
-      vehicle_number: vehicleNumber.toUpperCase(),
+      vehicle_number: vehicleNumber,
       driver_name: driverName,
       driver_id: driverId,
       seal_number: null,
       created_by: profile.id,
       qr_token: generateQrToken(txId),
+      flight_number: flightNumber || null,
+      aircraft_registration: aircraftRegistration || null,
+      catering_company_id: cateringCompanyId || null,
+      vehicle_id: vehicleRec?.id ?? null,
+      driver_id_ref: driverRec?.id ?? null,
+      trolley_count: trolleyCount,
+      escort_officer_name: escortName || null,
+      escort_officer_staff_id: escortStaffId || null,
     })
     .select()
     .single();
@@ -232,6 +295,20 @@ export async function createTransaction(
   );
   if (sealsError) {
     return { error: `Seals could not be saved: ${sealsError.message}` };
+  }
+
+  if (expiredItems.length > 0 && escalateExpired) {
+    await supabase.from("incidents").insert({
+      transaction_id: tx.id,
+      incident_type: "EXPIRED_PASS",
+      description: `Airport pass expired for ${expiredItems.join(" and ")}. Recorded and escalated at Part A by ${profile.name} (${profile.staff_id}).`,
+      reported_by: `${profile.name} (${profile.staff_id})`,
+      reported_by_id: profile.id,
+      photo_url: null,
+    });
+    revalidatePath("/transactions");
+    revalidatePath("/dashboard");
+    redirect(`/transactions/${tx.id}?escalated=1`);
   }
 
   revalidatePath("/transactions");
