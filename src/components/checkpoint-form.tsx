@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SignatureField } from "@/components/signature-pad";
 import { SealVerifyFields } from "@/components/seal-verify-fields";
 import { formDataToPayload, queueSubmission } from "@/lib/offline-queue";
+import { t, type Lang } from "@/lib/i18n";
 import type { Seal, Transaction } from "@/lib/database.types";
 
 const initialState: ActionState = { error: null };
@@ -27,6 +28,7 @@ interface CheckpointFormProps {
   officerStaffId: string;
   /** True when this checkpoint is the final step (inbound Part B). */
   finalizes?: boolean;
+  lang?: Lang;
 }
 
 /**
@@ -40,6 +42,7 @@ export function CheckpointForm({
   officerName,
   officerStaffId,
   finalizes = false,
+  lang = "en",
 }: CheckpointFormProps) {
   const action = part === "part_b" ? completePartB : completePartC;
   const [state, formAction, pending] = useActionState(action, initialState);
@@ -69,15 +72,15 @@ export function CheckpointForm({
         {/* What the officer must verify against the physical vehicle */}
         <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted p-4 text-sm sm:grid-cols-3">
           <div>
-            <p className="text-xs text-muted-foreground">Vehicle</p>
+            <p className="text-xs text-muted-foreground">{t(lang, "vehicle")}</p>
             <p className="font-mono text-lg font-bold">{transaction.vehicle_number}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Driver</p>
+            <p className="text-xs text-muted-foreground">{t(lang, "driver")}</p>
             <p className="text-lg font-bold">{transaction.driver_name}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Driver ID</p>
+            <p className="text-xs text-muted-foreground">{t(lang, "driver_id")}</p>
             <p className="font-mono text-lg font-bold">{transaction.driver_id}</p>
           </div>
         </div>
@@ -90,31 +93,31 @@ export function CheckpointForm({
             <BigCheckbox
               id="vehicle_verified"
               name="vehicle_verified"
-              label="Vehicle verified"
-              description="Plate matches the record above."
+              label={t(lang, "vehicle_verified")}
+              description={t(lang, "vehicle_verified_desc")}
               checked={vehicle}
               onCheckedChange={setVehicle}
             />
             <BigCheckbox
               id="driver_verified"
               name="driver_verified"
-              label="Driver verified"
-              description="ID document matches name and driver ID."
+              label={t(lang, "driver_verified")}
+              description={t(lang, "driver_verified_desc")}
               checked={driver}
               onCheckedChange={setDriver}
             />
           </div>
 
-          <SealVerifyFields seals={seals} entries={entries} onChange={setEntries} />
+          <SealVerifyFields seals={seals} entries={entries} onChange={setEntries} lang={lang} />
 
           <div className="space-y-2">
-            <Label htmlFor="remarks">Remarks (optional)</Label>
+            <Label htmlFor="remarks">{t(lang, "remarks_optional")}</Label>
             <Textarea id="remarks" name="remarks" rows={2} />
           </div>
 
           <div className="rounded-md bg-muted p-3 text-sm">
             <p>
-              <span className="text-muted-foreground">Officer:</span>{" "}
+              <span className="text-muted-foreground">{t(lang, "officer")}:</span>{" "}
               <span className="font-medium">{officerName}</span>{" "}
               <span className="text-muted-foreground">({officerStaffId})</span>
             </p>
@@ -137,14 +140,14 @@ export function CheckpointForm({
           <div className="flex flex-col gap-2">
             <Button type="submit" size="xl" className="w-full" disabled={pending || !ready}>
               {pending
-                ? "Saving…"
+                ? t(lang, "saving")
                 : finalizes
-                  ? "Approve & Complete Transaction"
-                  : "Approve & Release"}
+                  ? t(lang, "approve_complete")
+                  : t(lang, "approve_release")}
             </Button>
             <Link href={`/transactions/${transaction.id}/incident`} className="w-full">
               <Button type="button" variant="destructive" size="lg" className="w-full">
-                Verification failed — Report Incident
+                {t(lang, "verification_failed")}
               </Button>
             </Link>
           </div>

@@ -86,6 +86,7 @@ export type UserProfile = {
   staff_id: string;
   email: string;
   role: Role;
+  preferred_language: "en" | "ms";
   created_at: string;
 }
 
@@ -215,7 +216,10 @@ export type Database = {
     Tables: {
       users: {
         Row: UserProfile;
-        Insert: Omit<UserProfile, "created_at"> & { created_at?: string };
+        Insert: Omit<UserProfile, "created_at" | "preferred_language"> & {
+          created_at?: string;
+          preferred_language?: "en" | "ms";
+        };
         Update: Partial<UserProfile>;
         Relationships: [];
       };

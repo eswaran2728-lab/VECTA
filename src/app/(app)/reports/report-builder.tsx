@@ -17,68 +17,86 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/status-badge";
-import { INCIDENT_TYPE_LABELS, STATUS_LABELS } from "@/lib/constants";
+import { INCIDENT_TYPE_LABELS, STATUS_LABELS, DIRECTION_LABELS } from "@/lib/constants";
 import { formatDateTime } from "@/lib/utils";
 import type { Incident, Transaction } from "@/lib/database.types";
+
+export type RangeRow = Transaction & {
+  seals: { seal_number: string }[];
+  catering_companies?: { name: string } | null;
+};
+
+interface MonthlySummary {
+  total: number;
+  completed: number;
+  escalated: number;
+  incidents: number;
+}
 
 interface ReportBuilderProps {
   date: string;
   month: string;
-  dailyTransactions: Transaction[];
-  monthlyTransactions: Pick<Transaction, "status" | "created_at">[];
+  rangeFrom: string;
+  rangeTo: string;
+  dailyTransactions: RangeRow[];
+  rangeTransactions: RangeRow[];
+  monthlySummary: MonthlySummary;
   monthlyIncidents: Pick<Incident, "incident_type" | "created_at">[];
+  companyBreakdown: { name: string; total: number; completed: number; escalated: number }[];
+  dwell: { segment: string; minutes: number | null }[];
+}
+
+function txRows(list: RangeRow[]): string[][] {
+  return list.map((t) => [
+    t.transaction_number,
+    DIRECTION_LABELS[t.direction],
+    t.vehicle_number,
+    `${t.driver_name} (${t.driver_id})`,
+    t.seals.length > 0 ? t.seals.map((s) => s.seal_number).join(", ") : (t.seal_number ?? "—"),
+    t.flight_number ?? "—",
+    STATUS_LABELS[t.status],
+    formatDateTime(t.created_at),
+  ]);
+}
+
+const TX_HEAD = ["Transaction", "Direction", "Vehicle", "Driver", "Seals", "Flight", "Status", "Created"];
+
+function exportTxPdf(title: string, list: RangeRow[], filename: string) {
+  const doc = new jsPDF({ orientation: "landscape" });
+  doc.setFontSize(14);
+  doc.text(title, 14, 16);
+  doc.setFontSize(9);
+  doc.text(`Generated ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kuala_Lumpur" })} (MYT)`, 14, 22);
+  autoTable(doc, {
+    startY: 28,
+    head: [TX_HEAD],
+    body: txRows(list),
+    styles: { fontSize: 7 },
+    headStyles: { fillColor: [30, 64, 175] },
+  });
+  doc.save(filename);
+}
+
+function exportTxExcel(list: RangeRow[], filename: string) {
+  const ws = XLSX.utils.aoa_to_sheet([TX_HEAD, ...txRows(list)]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Transactions");
+  XLSX.writeFile(wb, filename);
 }
 
 export function ReportBuilder({
   date,
   month,
+  rangeFrom,
+  rangeTo,
   dailyTransactions,
-  monthlyTransactions,
+  rangeTransactions,
+  monthlySummary,
   monthlyIncidents,
+  companyBreakdown,
+  dwell,
 }: ReportBuilderProps) {
   const router = useRouter();
-
-  const monthlySummary = {
-    total: monthlyTransactions.length,
-    completed: monthlyTransactions.filter((t) => t.status === "COMPLETED").length,
-    escalated: monthlyTransactions.filter((t) => t.status === "ESCALATED").length,
-    incidents: monthlyIncidents.length,
-  };
-
-  const dailyRows = dailyTransactions.map((t) => [
-    t.transaction_number,
-    t.vehicle_number,
-    `${t.driver_name} (${t.driver_id})`,
-    t.seal_number,
-    STATUS_LABELS[t.status],
-    formatDateTime(t.created_at),
-  ]);
-
-  const exportDailyPdf = () => {
-    const doc = new jsPDF({ orientation: "landscape" });
-    doc.setFontSize(14);
-    doc.text(`CSCS Daily Report — ${date}`, 14, 16);
-    doc.setFontSize(9);
-    doc.text(`Generated ${new Date().toLocaleString("en-GB")}`, 14, 22);
-    autoTable(doc, {
-      startY: 28,
-      head: [["Transaction", "Vehicle", "Driver", "Seal", "Status", "Created"]],
-      body: dailyRows,
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [30, 64, 175] },
-    });
-    doc.save(`cscs-daily-${date}.pdf`);
-  };
-
-  const exportDailyExcel = () => {
-    const ws = XLSX.utils.aoa_to_sheet([
-      ["Transaction", "Vehicle", "Driver", "Seal", "Status", "Created"],
-      ...dailyRows,
-    ]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Daily");
-    XLSX.writeFile(wb, `cscs-daily-${date}.xlsx`);
-  };
 
   const incidentsByType = Object.entries(
     monthlyIncidents.reduce<Record<string, number>>((acc, i) => {
@@ -95,7 +113,7 @@ export function ReportBuilder({
     doc.setFontSize(14);
     doc.text(`CSCS Monthly Report — ${month}`, 14, 16);
     doc.setFontSize(9);
-    doc.text(`Generated ${new Date().toLocaleString("en-GB")}`, 14, 22);
+    doc.text(`Generated ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kuala_Lumpur" })} (MYT)`, 14, 22);
     autoTable(doc, {
       startY: 28,
       head: [["Metric", "Value"]],
@@ -106,6 +124,21 @@ export function ReportBuilder({
         ["Total Incidents", String(monthlySummary.incidents)],
       ],
       headStyles: { fillColor: [30, 64, 175] },
+    });
+    autoTable(doc, {
+      head: [["Checkpoint Segment", "Avg Dwell (min)"]],
+      body: dwell.map((d) => [d.segment, d.minutes === null ? "—" : String(d.minutes)]),
+      headStyles: { fillColor: [5, 150, 105] },
+    });
+    autoTable(doc, {
+      head: [["Catering Company", "Total", "Completed", "Escalated"]],
+      body: companyBreakdown.map((c) => [
+        c.name,
+        String(c.total),
+        String(c.completed),
+        String(c.escalated),
+      ]),
+      headStyles: { fillColor: [124, 58, 237] },
     });
     if (incidentsByType.length > 0) {
       autoTable(doc, {
@@ -119,17 +152,39 @@ export function ReportBuilder({
 
   const exportMonthlyExcel = () => {
     const wb = XLSX.utils.book_new();
-    const summary = XLSX.utils.aoa_to_sheet([
-      ["Metric", "Value"],
-      ["Total Transactions", monthlySummary.total],
-      ["Completed Transactions", monthlySummary.completed],
-      ["Escalated Transactions", monthlySummary.escalated],
-      ["Total Incidents", monthlySummary.incidents],
-    ]);
-    XLSX.utils.book_append_sheet(wb, summary, "Summary");
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([
+        ["Metric", "Value"],
+        ["Total Transactions", monthlySummary.total],
+        ["Completed Transactions", monthlySummary.completed],
+        ["Escalated Transactions", monthlySummary.escalated],
+        ["Total Incidents", monthlySummary.incidents],
+      ]),
+      "Summary"
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([
+        ["Checkpoint Segment", "Avg Dwell (min)"],
+        ...dwell.map((d) => [d.segment, d.minutes ?? "—"]),
+      ]),
+      "Dwell Times"
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([
+        ["Catering Company", "Total", "Completed", "Escalated"],
+        ...companyBreakdown.map((c) => [c.name, c.total, c.completed, c.escalated]),
+      ]),
+      "By Company"
+    );
     if (incidentsByType.length > 0) {
-      const byType = XLSX.utils.aoa_to_sheet([["Incident Type", "Count"], ...incidentsByType]);
-      XLSX.utils.book_append_sheet(wb, byType, "Incidents");
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.aoa_to_sheet([["Incident Type", "Count"], ...incidentsByType]),
+        "Incidents"
+      );
     }
     XLSX.writeFile(wb, `cscs-monthly-${month}.xlsx`);
   };
@@ -139,7 +194,8 @@ export function ReportBuilder({
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
         <p className="text-sm text-muted-foreground">
-          Daily operations report and monthly summary — export as PDF or Excel.
+          Daily, monthly, and archive exports — all timestamps in Malaysia time (MYT). No records
+          are ever deleted.
         </p>
       </div>
 
@@ -155,17 +211,20 @@ export function ReportBuilder({
                 id="report-date"
                 type="date"
                 defaultValue={date}
-                onChange={(e) =>
-                  router.push(`/reports?date=${e.target.value}&month=${month}`)
-                }
+                onChange={(e) => router.push(`/reports?date=${e.target.value}&month=${month}`)}
               />
             </div>
-            <Button onClick={exportDailyPdf} disabled={dailyTransactions.length === 0}>
+            <Button
+              onClick={() =>
+                exportTxPdf(`CSCS Daily Report — ${date}`, dailyTransactions, `cscs-daily-${date}.pdf`)
+              }
+              disabled={dailyTransactions.length === 0}
+            >
               Export PDF
             </Button>
             <Button
               variant="secondary"
-              onClick={exportDailyExcel}
+              onClick={() => exportTxExcel(dailyTransactions, `cscs-daily-${date}.xlsx`)}
               disabled={dailyTransactions.length === 0}
             >
               Export Excel
@@ -178,7 +237,7 @@ export function ReportBuilder({
                 <TableHead>Transaction</TableHead>
                 <TableHead>Vehicle</TableHead>
                 <TableHead>Driver</TableHead>
-                <TableHead>Seal</TableHead>
+                <TableHead>Seals</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -198,7 +257,9 @@ export function ReportBuilder({
                       {t.driver_name}
                       <span className="block text-xs text-muted-foreground">{t.driver_id}</span>
                     </TableCell>
-                    <TableCell className="font-mono">{t.seal_number}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {t.seals.map((s) => s.seal_number).join(", ") || (t.seal_number ?? "—")}
+                    </TableCell>
                     <TableCell>
                       <StatusBadge status={t.status} />
                     </TableCell>
@@ -244,6 +305,101 @@ export function ReportBuilder({
               </div>
             ))}
           </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <p className="mb-1 text-sm font-semibold">Average dwell times</p>
+              <Table>
+                <TableBody>
+                  {dwell.map((d) => (
+                    <TableRow key={d.segment}>
+                      <TableCell className="py-2 text-sm">{d.segment}</TableCell>
+                      <TableCell className="py-2 text-right font-mono text-sm">
+                        {d.minutes === null ? "—" : `${d.minutes} min`}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <div>
+              <p className="mb-1 text-sm font-semibold">Per catering company</p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="h-8">Company</TableHead>
+                    <TableHead className="h-8 text-right">Total</TableHead>
+                    <TableHead className="h-8 text-right">Done</TableHead>
+                    <TableHead className="h-8 text-right">Esc.</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {companyBreakdown.map((c) => (
+                    <TableRow key={c.name}>
+                      <TableCell className="py-2 text-sm">{c.name}</TableCell>
+                      <TableCell className="py-2 text-right font-mono text-sm">{c.total}</TableCell>
+                      <TableCell className="py-2 text-right font-mono text-sm">{c.completed}</TableCell>
+                      <TableCell className="py-2 text-right font-mono text-sm">{c.escalated}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Archive Export — any date range</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="range-from">From</Label>
+              <Input
+                id="range-from"
+                type="date"
+                defaultValue={rangeFrom}
+                onChange={(e) =>
+                  router.push(`/reports?date=${date}&month=${month}&from=${e.target.value}&to=${rangeTo}`)
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="range-to">To</Label>
+              <Input
+                id="range-to"
+                type="date"
+                defaultValue={rangeTo}
+                onChange={(e) =>
+                  router.push(`/reports?date=${date}&month=${month}&from=${rangeFrom}&to=${e.target.value}`)
+                }
+              />
+            </div>
+            <Button
+              onClick={() =>
+                exportTxPdf(
+                  `CSCS Archive — ${rangeFrom} to ${rangeTo}`,
+                  rangeTransactions,
+                  `cscs-archive-${rangeFrom}-${rangeTo}.pdf`
+                )
+              }
+              disabled={rangeTransactions.length === 0}
+            >
+              Export PDF
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => exportTxExcel(rangeTransactions, `cscs-archive-${rangeFrom}-${rangeTo}.xlsx`)}
+              disabled={rangeTransactions.length === 0}
+            >
+              Export Excel
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {rangeTransactions.length} transaction(s) in range (max 5000 per export).
+          </p>
         </CardContent>
       </Card>
     </div>

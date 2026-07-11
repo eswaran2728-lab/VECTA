@@ -13,6 +13,7 @@ import { SignatureField } from "@/components/signature-pad";
 import { SealVerifyFields } from "@/components/seal-verify-fields";
 import { formDataToPayload, queueSubmission } from "@/lib/offline-queue";
 import { DELIVERY_LOCATION_LABELS } from "@/lib/constants";
+import { t, type Lang } from "@/lib/i18n";
 import type { Seal, Transaction } from "@/lib/database.types";
 
 const initialState: ActionState = { error: null };
@@ -22,11 +23,13 @@ export function PartDForm({
   seals,
   receiverName,
   receiverStaffId,
+  lang = "en",
 }: {
   transaction: Transaction;
   seals: Pick<Seal, "id" | "seal_type" | "seal_color">[];
   receiverName: string;
   receiverStaffId: string;
+  lang?: Lang;
 }) {
   const [state, formAction, pending] = useActionState(completePartD, initialState);
   const [sealIntact, setSealIntact] = useState(false);
@@ -52,11 +55,11 @@ export function PartDForm({
       <CardContent className="space-y-5 pt-6">
         <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted p-4 text-sm">
           <div>
-            <p className="text-xs text-muted-foreground">Vehicle</p>
+            <p className="text-xs text-muted-foreground">{t(lang, "vehicle")}</p>
             <p className="font-mono text-lg font-bold">{transaction.vehicle_number}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Driver</p>
+            <p className="text-xs text-muted-foreground">{t(lang, "driver")}</p>
             <p className="text-lg font-bold">{transaction.driver_name}</p>
           </div>
         </div>
@@ -66,10 +69,10 @@ export function PartDForm({
           <input type="hidden" name="seal_entries" value={JSON.stringify(entries)} />
 
           <div className="space-y-2">
-            <Label htmlFor="delivery_location">Delivery Location</Label>
+            <Label htmlFor="delivery_location">{t(lang, "delivery_location")}</Label>
             <Select id="delivery_location" name="delivery_location" required defaultValue="">
               <option value="" disabled>
-                Select location…
+                {t(lang, "select_location")}
               </option>
               {Object.entries(DELIVERY_LOCATION_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>
@@ -79,25 +82,25 @@ export function PartDForm({
             </Select>
           </div>
 
-          <SealVerifyFields seals={seals} entries={entries} onChange={setEntries} />
+          <SealVerifyFields seals={seals} entries={entries} onChange={setEntries} lang={lang} />
 
           <BigCheckbox
             id="seal_intact"
             name="seal_intact"
-            label="Seals intact on arrival"
-            description="No cuts, tampering or re-sealing visible on any seal."
+            label={t(lang, "seals_intact")}
+            description={t(lang, "seals_intact_desc")}
             checked={sealIntact}
             onCheckedChange={setSealIntact}
           />
 
           <div className="space-y-2">
-            <Label htmlFor="remarks">Remarks (optional)</Label>
+            <Label htmlFor="remarks">{t(lang, "remarks_optional")}</Label>
             <Textarea id="remarks" name="remarks" rows={2} />
           </div>
 
           <div className="rounded-md bg-muted p-3 text-sm">
             <p>
-              <span className="text-muted-foreground">Receiver:</span>{" "}
+              <span className="text-muted-foreground">{t(lang, "receiver")}:</span>{" "}
               <span className="font-medium">{receiverName}</span>{" "}
               <span className="text-muted-foreground">({receiverStaffId})</span>
             </p>
@@ -124,11 +127,11 @@ export function PartDForm({
               className="w-full"
               disabled={pending || !sealIntact || !allSealsEntered || !signature}
             >
-              {pending ? "Saving…" : "Confirm Delivery — Complete"}
+              {pending ? t(lang, "saving") : t(lang, "confirm_delivery")}
             </Button>
             <Link href={`/transactions/${transaction.id}/incident`} className="w-full">
               <Button type="button" variant="destructive" size="lg" className="w-full">
-                Seal problem — Report Incident
+                {t(lang, "seal_problem")}
               </Button>
             </Link>
           </div>

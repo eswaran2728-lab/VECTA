@@ -18,8 +18,10 @@ import {
   INCIDENT_TYPE_LABELS,
 } from "@/lib/constants";
 import { formatDateTime } from "@/lib/utils";
+import { signedUrl } from "@/lib/storage";
 import { IncidentResolve } from "./incident-resolve";
-import type { Incident, Transaction } from "@/lib/database.types";
+import { IncidentPdfButton } from "./incident-pdf-button";
+import type { Incident, IncidentPhoto, Transaction } from "@/lib/database.types";
 
 export const metadata: Metadata = { title: "Incidents" };
 export const dynamic = "force-dynamic";
@@ -37,6 +39,19 @@ export default async function IncidentsPage() {
     .limit(200);
 
   const incidents = (data ?? []) as unknown as IncidentRow[];
+
+  // Signed photo URLs for the per-incident PDF export.
+  const { data: photoRows } = await supabase
+    .from("incident_photos")
+    .select("*")
+    .in("incident_id", incidents.map((i) => i.id));
+  const photoUrlMap = new Map<string, string[]>();
+  for (const photo of (photoRows ?? []) as IncidentPhoto[]) {
+    const url = await signedUrl("incident-photos", photo.photo_url);
+    if (url) {
+      photoUrlMap.set(photo.incident_id, [...(photoUrlMap.get(photo.incident_id) ?? []), url]);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -100,6 +115,14 @@ export default async function IncidentsPage() {
                   <TableCell className="text-sm">{incident.reported_by}</TableCell>
                   <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                     {formatDateTime(incident.created_at)}
+                    <span className="block">
+                      <IncidentPdfButton
+                        incident={incident}
+                        transactionNumber={incident.transactions?.transaction_number ?? "—"}
+                        vehicleNumber={incident.transactions?.vehicle_number ?? "—"}
+                        photoUrls={photoUrlMap.get(incident.id) ?? []}
+                      />
+                    </span>
                   </TableCell>
                   {profile.role === "supervisor" ? (
                     <TableCell className="min-w-56">

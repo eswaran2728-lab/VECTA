@@ -3,8 +3,8 @@ import Link from "next/link";
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DashboardCharts } from "./dashboard-charts";
-import type { Incident, Transaction } from "@/lib/database.types";
+import { DashboardCharts, type DashTx } from "./dashboard-charts";
+import type { Incident } from "@/lib/database.types";
 
 export const metadata: Metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
@@ -24,7 +24,8 @@ export default async function DashboardPage() {
   chartWindow.setDate(chartWindow.getDate() - 30);
 
   const [
-    totalToday,
+    totalTodayOut,
+    totalTodayIn,
     pendingInflightPost,
     pendingAirportPost,
     pendingPartD,
@@ -36,6 +37,12 @@ export default async function DashboardPage() {
     supabase
       .from("transactions")
       .select("id", { count: "exact", head: true })
+      .eq("direction", "OUTBOUND")
+      .gte("created_at", today),
+    supabase
+      .from("transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("direction", "INBOUND")
       .gte("created_at", today),
     // In-flight Post is the 1st checkpoint outbound, the final checkpoint inbound.
     supabase
@@ -68,7 +75,9 @@ export default async function DashboardPage() {
       .eq("status", "ESCALATED"),
     supabase
       .from("transactions")
-      .select("created_at, completed_at, status")
+      .select(
+        "created_at, completed_at, status, direction, part_a(completed_at), part_b(completed_at), part_c(completed_at), part_d(completed_at)"
+      )
       .gte("created_at", chartWindow.toISOString())
       .order("created_at", { ascending: false })
       .limit(2000),
@@ -79,8 +88,16 @@ export default async function DashboardPage() {
       .limit(1000),
   ]);
 
+  const outCount = totalTodayOut.count ?? 0;
+  const inCount = totalTodayIn.count ?? 0;
+
   const cards = [
-    { label: "Total Today", value: totalToday.count ?? 0, href: "/transactions" },
+    {
+      label: "Total Today",
+      value: outCount + inCount,
+      sub: `${outCount} out · ${inCount} in`,
+      href: "/transactions",
+    },
     { label: "Pending In-flight Post", value: pendingInflightPost.count ?? 0, href: "/transactions" },
     { label: "Pending Airport Post", value: pendingAirportPost.count ?? 0, href: "/transactions" },
     { label: "Pending Part D (outbound)", value: pendingPartD.count ?? 0, href: "/transactions?status=AIRPORT_POST_APPROVED" },
@@ -114,6 +131,9 @@ export default async function DashboardPage() {
               </CardHeader>
               <CardContent className="p-4 pt-0">
                 <p className="text-3xl font-bold tabular-nums">{card.value}</p>
+                {"sub" in card && card.sub ? (
+                  <p className="text-xs text-muted-foreground">{card.sub}</p>
+                ) : null}
               </CardContent>
             </Card>
           </Link>
@@ -121,10 +141,7 @@ export default async function DashboardPage() {
       </div>
 
       <DashboardCharts
-        transactions={(recentTransactions.data ?? []) as Pick<
-          Transaction,
-          "created_at" | "completed_at" | "status"
-        >[]}
+        transactions={(recentTransactions.data ?? []) as unknown as DashTx[]}
         incidents={(recentIncidents.data ?? []) as Pick<Incident, "incident_type" | "created_at">[]}
       />
     </div>

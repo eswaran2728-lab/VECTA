@@ -27,6 +27,7 @@ export const dynamic = "force-dynamic";
 interface SearchParams {
   q?: string;
   status?: string;
+  direction?: string;
   from?: string;
   to?: string;
 }
@@ -48,14 +49,33 @@ export default async function TransactionsPage({
 
   const q = params.q?.trim();
   if (q) {
-    // Search across number, vehicle, driver name/id and seal.
-    const like = `%${q.replace(/[%_]/g, "")}%`;
-    query = query.or(
-      `transaction_number.ilike.${like},vehicle_number.ilike.${like},driver_name.ilike.${like},driver_id.ilike.${like},seal_number.ilike.${like}`
-    );
+    // Search across number, vehicle, driver name/id, flight, legacy seal
+    // column, and the seals table (matched via transaction ids).
+    const like = `%${q.replace(/[%_(),]/g, "")}%`;
+    const { data: sealHits } = await supabase
+      .from("seals")
+      .select("transaction_id")
+      .ilike("seal_number", like)
+      .limit(100);
+    const sealIds = [...new Set((sealHits ?? []).map((s) => s.transaction_id))];
+    const parts = [
+      `transaction_number.ilike.${like}`,
+      `vehicle_number.ilike.${like}`,
+      `driver_name.ilike.${like}`,
+      `driver_id.ilike.${like}`,
+      `flight_number.ilike.${like}`,
+      `seal_number.ilike.${like}`,
+    ];
+    if (sealIds.length > 0) {
+      parts.push(`id.in.(${sealIds.join(",")})`);
+    }
+    query = query.or(parts.join(","));
   }
   if (params.status && params.status in STATUS_LABELS) {
     query = query.eq("status", params.status as TransactionStatus);
+  }
+  if (params.direction === "OUTBOUND" || params.direction === "INBOUND") {
+    query = query.eq("direction", params.direction);
   }
   if (params.from) {
     query = query.gte("created_at", new Date(`${params.from}T00:00:00`).toISOString());
@@ -96,7 +116,7 @@ export default async function TransactionsPage({
                 id="q"
                 name="q"
                 defaultValue={params.q ?? ""}
-                placeholder="Transaction no, vehicle, driver, driver ID, seal…"
+                placeholder="Transaction no, vehicle, driver, flight, seal…"
               />
             </div>
             <div className="space-y-1">
@@ -108,6 +128,14 @@ export default async function TransactionsPage({
                     {label}
                   </option>
                 ))}
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="direction">Direction</Label>
+              <Select id="direction" name="direction" defaultValue={params.direction ?? ""}>
+                <option value="">Both directions</option>
+                <option value="OUTBOUND">Outbound</option>
+                <option value="INBOUND">Inbound</option>
               </Select>
             </div>
             <div className="space-y-1">

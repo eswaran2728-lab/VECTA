@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
+import { getLang } from "@/lib/actions/language";
 import { createClient } from "@/lib/supabase/server";
 import { getStep, partsDoneFromStatus } from "@/lib/workflow";
 import { PartDForm } from "@/components/part-d-form";
@@ -61,6 +62,7 @@ export default async function PartDPage({ params }: { params: Promise<{ id: stri
         seals={seals}
         receiverName={profile.name}
         receiverStaffId={profile.staff_id}
+        lang={await getLang()}
       />
     </div>
   );

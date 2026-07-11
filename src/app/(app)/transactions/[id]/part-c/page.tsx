@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
+import { getLang } from "@/lib/actions/language";
 import { createClient } from "@/lib/supabase/server";
 import { getStep, partsDoneFromStatus } from "@/lib/workflow";
 import { CheckpointForm } from "@/components/checkpoint-form";
@@ -62,6 +63,7 @@ export default async function PartCPage({ params }: { params: Promise<{ id: stri
         officerName={profile.name}
         officerStaffId={profile.staff_id}
         finalizes={step.finalizes}
+        lang={await getLang()}
       />
     </div>
   );

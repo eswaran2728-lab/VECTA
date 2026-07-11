@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { requireProfile } from "@/lib/auth";
 import { signOut } from "@/lib/actions/auth";
+import { getLang } from "@/lib/actions/language";
+import { LanguageToggle } from "@/components/language-toggle";
 import { ROLE_LABELS } from "@/lib/constants";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationsBell } from "@/components/notifications-bell";
@@ -22,6 +24,7 @@ import { Button } from "@/components/ui/button";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const profile = await requireProfile();
+  const lang = await getLang();
 
   const nav = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, show: true },
@@ -93,6 +96,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <p className="text-muted-foreground">{ROLE_LABELS[profile.role]}</p>
             </div>
             <PwaProvider />
+            <LanguageToggle lang={lang} />
             <NotificationsBell userId={profile.id} />
             <ThemeToggle />
             <form action={signOut}>
