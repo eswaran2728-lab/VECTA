@@ -1,17 +1,25 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
+
+export interface UploadResult {
+  path: string;
+  /** SHA-256 of the uploaded bytes — stored alongside the URL so any later
+   * tampering with the stored file is detectable. */
+  sha256: string;
+}
 
 /**
  * Uploads a base64 PNG data URL (signature pad output / incident photo)
  * to a private storage bucket using the caller's own session, so storage
- * RLS applies. Returns the storage object path.
+ * RLS applies. Returns the storage object path and content hash.
  */
 export async function uploadDataUrl(
   bucket: "signatures" | "incident-photos",
   dataUrl: string,
   prefix: string
-): Promise<string> {
+): Promise<UploadResult> {
   const match = dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/);
   if (!match) {
     throw new Error("Invalid image data");
@@ -31,7 +39,7 @@ export async function uploadDataUrl(
   if (error) {
     throw new Error(`Upload failed: ${error.message}`);
   }
-  return path;
+  return { path, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
 /** Creates a short-lived signed URL for a private storage object. */

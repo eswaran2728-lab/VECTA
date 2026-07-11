@@ -122,6 +122,7 @@ export type PartA = {
   pic_staff_id: string;
   vehicle_search_completed: boolean;
   signature_url: string;
+  signature_hash: string | null;
   remarks: string | null;
   completed_by: string;
   completed_at: string;
@@ -136,6 +137,7 @@ export type PartBC = {
   driver_verified: boolean;
   seal_verified: boolean;
   signature_url: string;
+  signature_hash: string | null;
   remarks: string | null;
   completed_by: string;
   completed_at: string;
@@ -149,6 +151,7 @@ export type PartD = {
   receiver_staff_id: string;
   seal_intact: boolean;
   signature_url: string;
+  signature_hash: string | null;
   remarks: string | null;
   completed_by: string;
   completed_at: string;

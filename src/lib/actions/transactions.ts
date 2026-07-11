@@ -241,9 +241,9 @@ export async function createTransaction(
     };
   }
 
-  let signaturePath: string;
+  let sig: { path: string; sha256: string };
   try {
-    signaturePath = await uploadDataUrl("signatures", signature, "part-a");
+    sig = await uploadDataUrl("signatures", signature, "part-a");
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Signature upload failed." };
   }
@@ -281,7 +281,8 @@ export async function createTransaction(
     pic_name: profile.name,
     pic_staff_id: profile.staff_id,
     vehicle_search_completed: vehicleSearchCompleted,
-    signature_url: signaturePath,
+    signature_url: sig.path,
+    signature_hash: sig.sha256,
     remarks: remarks || null,
     completed_by: profile.id,
   });
@@ -370,9 +371,9 @@ async function completeChecklistPart(
     return { error: sealError };
   }
 
-  let signaturePath: string;
+  let sig: { path: string; sha256: string };
   try {
-    signaturePath = await uploadDataUrl("signatures", signature, part.replace("_", "-"));
+    sig = await uploadDataUrl("signatures", signature, part.replace("_", "-"));
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Signature upload failed." };
   }
@@ -385,7 +386,8 @@ async function completeChecklistPart(
     vehicle_verified: vehicleVerified,
     driver_verified: driverVerified,
     seal_verified: true,
-    signature_url: signaturePath,
+    signature_url: sig.path,
+    signature_hash: sig.sha256,
     remarks: remarks || null,
     completed_by: profile.id,
   });
@@ -459,9 +461,9 @@ export async function completePartD(
   }
   if (!signature) return { error: "Signature is required." };
 
-  let signaturePath: string;
+  let sig: { path: string; sha256: string };
   try {
-    signaturePath = await uploadDataUrl("signatures", signature, "part-d");
+    sig = await uploadDataUrl("signatures", signature, "part-d");
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Signature upload failed." };
   }
@@ -473,7 +475,8 @@ export async function completePartD(
     receiver_name: profile.name,
     receiver_staff_id: profile.staff_id,
     seal_intact: sealIntact,
-    signature_url: signaturePath,
+    signature_url: sig.path,
+    signature_hash: sig.sha256,
     remarks: remarks || null,
     completed_by: profile.id,
   });
@@ -526,7 +529,7 @@ export async function reportIncident(
   const photoPaths: string[] = [];
   for (const dataUrl of photoDataUrls.slice(0, 5)) {
     try {
-      photoPaths.push(await uploadDataUrl("incident-photos", dataUrl, "incident"));
+      photoPaths.push((await uploadDataUrl("incident-photos", dataUrl, "incident")).path);
     } catch (e) {
       return { error: e instanceof Error ? e.message : "Photo upload failed." };
     }
