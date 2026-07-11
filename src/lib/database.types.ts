@@ -154,14 +154,37 @@ export type PartD = {
   completed_at: string;
 }
 
+export type IncidentStatus = "OPEN" | "UNDER_REVIEW" | "RESOLVED" | "CLOSED";
+
 export type Incident = {
   id: string;
   transaction_id: string;
   incident_type: IncidentType;
   description: string;
   reported_by: string;
-  reported_by_id: string;
+  reported_by_id: string | null;
   photo_url: string | null;
+  status: IncidentStatus;
+  resolved_by: string | null;
+  resolution_notes: string | null;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+export type IncidentPhoto = {
+  id: string;
+  incident_id: string;
+  photo_url: string;
+  uploaded_at: string;
+}
+
+export type AppNotification = {
+  id: string;
+  user_id: string;
+  incident_id: string | null;
+  title: string;
+  body: string;
+  is_read: boolean;
   created_at: string;
 }
 
@@ -255,8 +278,40 @@ export type Database = {
       };
       incidents: {
         Row: Incident;
-        Insert: Omit<Incident, "id" | "created_at"> & { id?: string; created_at?: string };
+        Insert: Omit<
+          Incident,
+          "id" | "created_at" | "status" | "resolved_by" | "resolution_notes" | "resolved_at"
+        > & {
+          id?: string;
+          created_at?: string;
+          status?: IncidentStatus;
+          resolved_by?: string | null;
+          resolution_notes?: string | null;
+          resolved_at?: string | null;
+        };
         Update: Partial<Incident>;
+        Relationships: [];
+      };
+      incident_photos: {
+        Row: IncidentPhoto;
+        Insert: Omit<IncidentPhoto, "id" | "uploaded_at"> & { id?: string; uploaded_at?: string };
+        Update: never;
+        Relationships: [];
+      };
+      notifications: {
+        Row: AppNotification;
+        Insert: Omit<AppNotification, "id" | "created_at" | "is_read"> & {
+          id?: string;
+          created_at?: string;
+          is_read?: boolean;
+        };
+        Update: Partial<AppNotification>;
+        Relationships: [];
+      };
+      cscs_settings: {
+        Row: { key: string; value: string };
+        Insert: { key: string; value: string };
+        Update: Partial<{ key: string; value: string }>;
         Relationships: [];
       };
       audit_logs: {

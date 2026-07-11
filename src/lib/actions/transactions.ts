@@ -498,39 +498,62 @@ export async function reportIncident(
   const transactionId = str(formData, "transaction_id");
   const incidentType = str(formData, "incident_type");
   const description = str(formData, "description");
-  const photo = str(formData, "photo");
 
   if (!transactionId) return { error: "Missing transaction reference." };
   if (
-    !["BROKEN_SEAL", "SEAL_MISMATCH", "UNAUTHORIZED_DRIVER", "UNAUTHORIZED_VEHICLE", "OTHER"].includes(
-      incidentType
-    )
+    ![
+      "BROKEN_SEAL",
+      "SEAL_MISMATCH",
+      "UNAUTHORIZED_DRIVER",
+      "UNAUTHORIZED_VEHICLE",
+      "EXPIRED_PASS",
+      "WRONG_SEAL_COLOR",
+      "OTHER",
+    ].includes(incidentType)
   ) {
     return { error: "Select the incident type." };
   }
   if (!description) return { error: "Describe what happened." };
 
-  let photoPath: string | null = null;
-  if (photo) {
+  let photoDataUrls: string[] = [];
+  try {
+    const parsed = JSON.parse(str(formData, "photos") || "[]");
+    if (Array.isArray(parsed)) photoDataUrls = parsed.filter((p) => typeof p === "string");
+  } catch {
+    // no photos
+  }
+
+  const photoPaths: string[] = [];
+  for (const dataUrl of photoDataUrls.slice(0, 5)) {
     try {
-      photoPath = await uploadDataUrl("incident-photos", photo, "incident");
+      photoPaths.push(await uploadDataUrl("incident-photos", dataUrl, "incident"));
     } catch (e) {
       return { error: e instanceof Error ? e.message : "Photo upload failed." };
     }
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.from("incidents").insert({
-    transaction_id: transactionId,
-    incident_type: incidentType as never,
-    description,
-    reported_by: `${profile.name} (${profile.staff_id})`,
-    reported_by_id: profile.id,
-    photo_url: photoPath,
-  });
+  const { data: incident, error } = await supabase
+    .from("incidents")
+    .insert({
+      transaction_id: transactionId,
+      incident_type: incidentType as never,
+      description,
+      reported_by: `${profile.name} (${profile.staff_id})`,
+      reported_by_id: profile.id,
+      photo_url: photoPaths[0] ?? null,
+    })
+    .select()
+    .single();
 
-  if (error) {
-    return { error: `Incident could not be saved: ${error.message}` };
+  if (error || !incident) {
+    return { error: `Incident could not be saved: ${error?.message ?? "unknown error"}` };
+  }
+
+  if (photoPaths.length > 0) {
+    await supabase
+      .from("incident_photos")
+      .insert(photoPaths.map((p) => ({ incident_id: incident.id, photo_url: p })));
   }
 
   revalidatePath(`/transactions/${transactionId}`);

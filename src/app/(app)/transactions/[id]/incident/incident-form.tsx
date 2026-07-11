@@ -16,20 +16,31 @@ const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 export function IncidentForm({ transactionId }: { transactionId: string }) {
   const [state, formAction, pending] = useActionState(reportIncident, initialState);
   const [type, setType] = useState<string>("");
-  const [photo, setPhoto] = useState<string>("");
+  const [photos, setPhotos] = useState<string[]>([]);
   const [photoError, setPhotoError] = useState<string | null>(null);
 
-  const handlePhoto = (file: File | undefined) => {
+  const handlePhotos = (files: FileList | null) => {
     setPhotoError(null);
-    setPhoto("");
-    if (!file) return;
-    if (file.size > MAX_PHOTO_BYTES) {
-      setPhotoError("Photo must be under 5MB.");
+    setPhotos([]);
+    if (!files || files.length === 0) return;
+    const list = Array.from(files).slice(0, 5);
+    if (list.some((f) => f.size > MAX_PHOTO_BYTES)) {
+      setPhotoError("Each photo must be under 5MB (max 5 photos).");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => setPhoto(String(reader.result ?? ""));
-    reader.readAsDataURL(file);
+    Promise.all(
+      list.map(
+        (file) =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result ?? ""));
+            reader.onerror = () => reject(new Error("read failed"));
+            reader.readAsDataURL(file);
+          })
+      )
+    )
+      .then(setPhotos)
+      .catch(() => setPhotoError("Could not read the selected photos."));
   };
 
   return (
@@ -38,12 +49,14 @@ export function IncidentForm({ transactionId }: { transactionId: string }) {
         <form action={formAction} className="space-y-5">
           <input type="hidden" name="transaction_id" value={transactionId} />
           <input type="hidden" name="incident_type" value={type} />
-          <input type="hidden" name="photo" value={photo} />
+          <input type="hidden" name="photos" value={JSON.stringify(photos)} />
 
           <div className="space-y-2">
             <Label>Incident Type</Label>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {Object.entries(INCIDENT_TYPE_LABELS).map(([value, label]) => (
+              {Object.entries(INCIDENT_TYPE_LABELS)
+                .filter(([value]) => value !== "TIMEOUT")
+                .map(([value, label]) => (
                 <button
                   key={value}
                   type="button"
@@ -73,19 +86,24 @@ export function IncidentForm({ transactionId }: { transactionId: string }) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="photo-input">Photo evidence (optional)</Label>
+            <Label htmlFor="photo-input">Photo evidence (optional, up to 5)</Label>
             <Input
               id="photo-input"
               type="file"
               accept="image/*"
               capture="environment"
-              onChange={(e) => handlePhoto(e.target.files?.[0])}
+              multiple
+              onChange={(e) => handlePhotos(e.target.files)}
               className="h-auto py-2"
             />
             {photoError ? <p className="text-sm text-red-600">{photoError}</p> : null}
-            {photo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={photo} alt="Selected evidence" className="max-h-48 rounded border" />
+            {photos.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {photos.map((p, i) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={i} src={p} alt={`Evidence ${i + 1}`} className="max-h-32 rounded border" />
+                ))}
+              </div>
             ) : null}
           </div>
 

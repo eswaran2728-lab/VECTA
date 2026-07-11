@@ -12,8 +12,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { INCIDENT_TYPE_LABELS } from "@/lib/constants";
+import {
+  INCIDENT_STATUS_COLORS,
+  INCIDENT_STATUS_LABELS,
+  INCIDENT_TYPE_LABELS,
+} from "@/lib/constants";
 import { formatDateTime } from "@/lib/utils";
+import { IncidentResolve } from "./incident-resolve";
 import type { Incident, Transaction } from "@/lib/database.types";
 
 export const metadata: Metadata = { title: "Incidents" };
@@ -22,7 +27,7 @@ export const dynamic = "force-dynamic";
 type IncidentRow = Incident & { transactions: Pick<Transaction, "transaction_number" | "vehicle_number"> | null };
 
 export default async function IncidentsPage() {
-  await requireProfile();
+  const profile = await requireProfile();
   const supabase = await createClient();
 
   const { data } = await supabase
@@ -48,15 +53,17 @@ export default async function IncidentsPage() {
             <TableRow>
               <TableHead>Transaction</TableHead>
               <TableHead>Type</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Reported by</TableHead>
               <TableHead>When</TableHead>
+              {profile.role === "supervisor" ? <TableHead>Resolution</TableHead> : null}
             </TableRow>
           </TableHeader>
           <TableBody>
             {incidents.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                   No incidents reported.
                 </TableCell>
               </TableRow>
@@ -79,11 +86,29 @@ export default async function IncidentsPage() {
                       {INCIDENT_TYPE_LABELS[incident.incident_type]}
                     </Badge>
                   </TableCell>
+                  <TableCell>
+                    <Badge className={INCIDENT_STATUS_COLORS[incident.status]}>
+                      {INCIDENT_STATUS_LABELS[incident.status]}
+                    </Badge>
+                    {incident.resolution_notes ? (
+                      <span className="mt-1 block max-w-48 text-xs text-muted-foreground">
+                        “{incident.resolution_notes}”
+                      </span>
+                    ) : null}
+                  </TableCell>
                   <TableCell className="max-w-md text-sm">{incident.description}</TableCell>
                   <TableCell className="text-sm">{incident.reported_by}</TableCell>
                   <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                     {formatDateTime(incident.created_at)}
                   </TableCell>
+                  {profile.role === "supervisor" ? (
+                    <TableCell className="min-w-56">
+                      <IncidentResolve
+                        incidentId={incident.id}
+                        currentStatus={incident.status}
+                      />
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               ))
             )}

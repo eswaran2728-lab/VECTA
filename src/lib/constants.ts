@@ -1,6 +1,7 @@
 import type {
   DeliveryLocation,
   Direction,
+  IncidentStatus,
   IncidentType,
   Role,
   SealColor,
@@ -58,6 +59,20 @@ export const INCIDENT_TYPE_LABELS: Record<IncidentType, string> = {
   WRONG_SEAL_COLOR: "Wrong Seal Color",
   TIMEOUT: "Transaction Timeout",
   OTHER: "Other",
+};
+
+export const INCIDENT_STATUS_LABELS: Record<IncidentStatus, string> = {
+  OPEN: "Open",
+  UNDER_REVIEW: "Under Review",
+  RESOLVED: "Resolved",
+  CLOSED: "Closed",
+};
+
+export const INCIDENT_STATUS_COLORS: Record<IncidentStatus, string> = {
+  OPEN: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200",
+  UNDER_REVIEW: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+  RESOLVED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
+  CLOSED: "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
 };
 
 export const SEAL_TYPE_LABELS: Record<SealType, string> = {
