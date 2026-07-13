@@ -26,19 +26,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const profile = await requireProfile();
   const lang = await getLang();
 
+  const isPic = profile.role === "warehouse_pic" || profile.role === "sra_warehouse_pic";
+  const isCheckpoint = ["post2_avsec", "post6_avsec", "receiver"].includes(profile.role);
+
   const nav = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, show: true },
     {
       href: "/transactions/new",
-      label: "New Transaction",
+      label: "New",
       icon: PlusCircle,
-      show: profile.role === "warehouse_pic" || profile.role === "sra_warehouse_pic",
+      show: isPic,
     },
     {
       href: "/scan",
-      label: "Scan QR",
+      label: "Scan",
       icon: ScanLine,
-      show: ["post2_avsec", "post6_avsec", "receiver"].includes(profile.role),
+      show: isCheckpoint,
     },
     { href: "/transactions", label: "Transactions", icon: ClipboardList, show: true },
     { href: "/incidents", label: "Incidents", icon: ShieldAlert, show: true },
@@ -67,6 +70,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       show: profile.role === "supervisor",
     },
   ].filter((item) => item.show);
+
+  // Bottom bar (phones/tablets): exactly the four per-role primary actions —
+  // PIC: Dashboard/New/Transactions/Incidents; checkpoint roles: Dashboard/
+  // Scan/Transactions/Incidents; supervisor: oversight only (no create/scan).
+  const bottomNav = nav.filter((item) =>
+    ["/dashboard", "/transactions/new", "/scan", "/transactions", "/incidents"].includes(item.href)
+  );
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -113,7 +123,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* Bottom navigation for phones/tablets */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-card md:hidden print:hidden">
         <div className="grid auto-cols-fr grid-flow-col">
-          {nav.slice(0, 5).map((item) => (
+          {bottomNav.map((item) => (
             <Link
               key={item.href}
               href={item.href}

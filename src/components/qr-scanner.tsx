@@ -6,14 +6,13 @@ import { Html5Qrcode } from "html5-qrcode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { parseQrPayload } from "@/lib/utils"; // used for manual entry fallback
 
 const REGION_ID = "cscs-qr-reader";
 
 /**
  * Camera QR scanner with manual fallback (transaction number lookup is
- * handled by the /scan page action). On successful scan it routes to the
- * transaction detail page, which shows the correct next checkpoint.
+ * handled by the signed validation endpoint). On success it routes directly
+ * to the checkpoint assigned to the logged-in role when the handoff is ready.
  */
 export function QrScanner() {
   const router = useRouter();
@@ -54,7 +53,7 @@ export function QrScanner() {
           return;
         }
         scanner.stop().catch(() => undefined);
-        router.push(`/transactions/${body.transactionId}`);
+        router.push(body.redirectPath ?? `/transactions/${body.transactionId}`);
       } catch {
         setError("Validation failed — check your connection and try again.");
         handledRef.current = false;
@@ -81,16 +80,21 @@ export function QrScanner() {
     };
   }, [router]);
 
-  const handleManual = (e: React.FormEvent) => {
+  const handleManual = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = manual.trim();
     if (!trimmed) return;
-    const id = parseQrPayload(trimmed);
-    if (id) {
-      router.push(`/transactions/${id}`);
-    } else {
-      // Treat as a transaction number lookup.
-      router.push(`/transactions?q=${encodeURIComponent(trimmed)}`);
+    setError(null);
+    try {
+      const res = await fetch(`/api/qr/validate?number=${encodeURIComponent(trimmed)}`);
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error ?? "Transaction could not be found.");
+        return;
+      }
+      router.push(body.redirectPath ?? `/transactions/${body.transactionId}`);
+    } catch {
+      setError("Lookup failed — check your connection and try again.");
     }
   };
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyQrToken } from "@/lib/qr-token";
 import { nextStepFor } from "@/lib/workflow";
-import type { Transaction } from "@/lib/database.types";
+import type { Role, Transaction } from "@/lib/database.types";
 
 export const dynamic = "force-dynamic";
 
@@ -46,15 +46,26 @@ export async function GET(request: NextRequest) {
   }
 
   const token = request.nextUrl.searchParams.get("token") ?? "";
-  const result = verifyQrToken(token);
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 400 });
+  const transactionNumber = request.nextUrl.searchParams.get("number")?.trim().toUpperCase() ?? "";
+  let transactionId: string | null = null;
+
+  if (token) {
+    const result = verifyQrToken(token);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+    transactionId = result.transactionId;
+  } else if (!/^CSCS-\d{4}-\d{6}$/.test(transactionNumber)) {
+    return NextResponse.json(
+      { error: "Enter a valid CSCS transaction number. / Masukkan nombor transaksi CSCS yang sah." },
+      { status: 400 }
+    );
   }
 
   const { data: tx } = await supabase
     .from("transactions")
     .select("id, status, direction, transaction_number")
-    .eq("id", result.transactionId)
+    .eq(transactionId ? "id" : "transaction_number", transactionId ?? transactionNumber)
     .maybeSingle();
 
   if (!tx) {
@@ -66,12 +77,20 @@ export async function GET(request: NextRequest) {
 
   const t = tx as Pick<Transaction, "id" | "status" | "direction" | "transaction_number">;
   const next = nextStepFor(t.direction, t.status);
+  const { data: profile } = await supabase.from("users").select("role").eq("id", user.id).single();
+  const role = profile?.role as Role | undefined;
+  const actionable = !!next && next.role === role;
+  const redirectPath = actionable
+    ? `/transactions/${t.id}/${next.slug}`
+    : `/transactions/${t.id}`;
 
   return NextResponse.json({
     transactionId: t.id,
     transactionNumber: t.transaction_number,
     status: t.status,
     direction: t.direction,
+    actionable,
+    redirectPath,
     nextStep: next ? { part: next.part, slug: next.slug, role: next.role } : null,
   });
 }

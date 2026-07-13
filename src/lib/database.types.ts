@@ -110,6 +110,9 @@ export type Transaction = {
   escort_officer_name: string | null;
   escort_officer_staff_id: string | null;
   status: TransactionStatus;
+  current_stage: "A" | "B" | "C" | "D";
+  lifecycle_status: "pending" | "completed" | "escalated";
+  escalation_reason: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -140,6 +143,13 @@ export type PartBC = {
   signature_url: string;
   signature_hash: string | null;
   remarks: string | null;
+  checkpoint_date: string;
+  checkpoint_time: string;
+  observed_vehicle_number: string | null;
+  observed_driver_name: string | null;
+  observed_driver_id: string | null;
+  result: "PASS" | "ESCALATE";
+  escalation_reason: string | null;
   completed_by: string;
   completed_at: string;
 }
@@ -154,6 +164,10 @@ export type PartD = {
   signature_url: string;
   signature_hash: string | null;
   remarks: string | null;
+  checkpoint_date: string;
+  checkpoint_time: string;
+  result: "PASS" | "ESCALATE";
+  escalation_reason: string | null;
   completed_by: string;
   completed_at: string;
 }
@@ -242,6 +256,9 @@ export type Database = {
           | "trolley_count"
           | "escort_officer_name"
           | "escort_officer_staff_id"
+          | "current_stage"
+          | "lifecycle_status"
+          | "escalation_reason"
         > & {
           id?: string;
           transaction_number?: string;
@@ -255,6 +272,9 @@ export type Database = {
           trolley_count?: number;
           escort_officer_name?: string | null;
           escort_officer_staff_id?: string | null;
+          current_stage?: "A" | "B" | "C" | "D";
+          lifecycle_status?: "pending" | "completed" | "escalated";
+          escalation_reason?: string | null;
         };
         Update: Partial<Transaction>;
         Relationships: [];
@@ -267,19 +287,50 @@ export type Database = {
       };
       part_b: {
         Row: PartBC;
-        Insert: Omit<PartBC, "id" | "completed_at"> & { id?: string; completed_at?: string };
+        Insert: Omit<
+          PartBC,
+          | "id"
+          | "completed_at"
+          | "checkpoint_date"
+          | "checkpoint_time"
+          | "observed_vehicle_number"
+          | "observed_driver_name"
+          | "observed_driver_id"
+          | "result"
+          | "escalation_reason"
+        > & {
+          id?: string;
+          completed_at?: string;
+          checkpoint_date?: string;
+          checkpoint_time?: string;
+          observed_vehicle_number?: string | null;
+          observed_driver_name?: string | null;
+          observed_driver_id?: string | null;
+          result?: "PASS" | "ESCALATE";
+          escalation_reason?: string | null;
+        };
         Update: Partial<PartBC>;
         Relationships: [];
       };
       part_c: {
         Row: PartBC;
-        Insert: Omit<PartBC, "id" | "completed_at"> & { id?: string; completed_at?: string };
+        Insert: Database["public"]["Tables"]["part_b"]["Insert"];
         Update: Partial<PartBC>;
         Relationships: [];
       };
       part_d: {
         Row: PartD;
-        Insert: Omit<PartD, "id" | "completed_at"> & { id?: string; completed_at?: string };
+        Insert: Omit<
+          PartD,
+          "id" | "completed_at" | "checkpoint_date" | "checkpoint_time" | "result" | "escalation_reason"
+        > & {
+          id?: string;
+          completed_at?: string;
+          checkpoint_date?: string;
+          checkpoint_time?: string;
+          result?: "PASS" | "ESCALATE";
+          escalation_reason?: string | null;
+        };
         Update: Partial<PartD>;
         Relationships: [];
       };

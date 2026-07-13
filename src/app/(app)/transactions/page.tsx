@@ -20,6 +20,7 @@ import {
 import { STATUS_LABELS } from "@/lib/constants";
 import { formatDateTime } from "@/lib/utils";
 import type { Transaction, TransactionStatus } from "@/lib/database.types";
+import { nextStepFor } from "@/lib/workflow";
 
 export const metadata: Metadata = { title: "Transactions" };
 export const dynamic = "force-dynamic";
@@ -85,9 +86,18 @@ export default async function TransactionsPage({
   }
 
   const { data } = await query;
-  const transactions = (data ?? []) as unknown as (Transaction & {
+  const transactions = ((data ?? []) as unknown as (Transaction & {
     seals: { seal_number: string }[];
-  })[];
+  })[]).sort((left, right) => {
+    const rank = (transaction: Transaction) => {
+      const next = nextStepFor(transaction.direction, transaction.status);
+      if (next?.role === profile.role) return 0;
+      if (transaction.status !== "COMPLETED" && transaction.status !== "ESCALATED") return 1;
+      if (transaction.status === "ESCALATED") return 2;
+      return 3;
+    };
+    return rank(left) - rank(right) || Date.parse(right.created_at) - Date.parse(left.created_at);
+  });
 
   return (
     <div className="space-y-4">
@@ -179,8 +189,10 @@ export default async function TransactionsPage({
                 </TableCell>
               </TableRow>
             ) : (
-              transactions.map((t) => (
-                <TableRow key={t.id}>
+              transactions.map((t) => {
+                const actionable = nextStepFor(t.direction, t.status)?.role === profile.role;
+                return (
+                <TableRow key={t.id} className={actionable ? "bg-primary/5 ring-1 ring-inset ring-primary/20" : undefined}>
                   <TableCell>
                     <Link
                       href={`/transactions/${t.id}`}
@@ -188,6 +200,11 @@ export default async function TransactionsPage({
                     >
                       {t.transaction_number}
                     </Link>
+                    {actionable ? (
+                      <span className="ml-2 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                        Your turn
+                      </span>
+                    ) : null}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
                     <DirectionBadge direction={t.direction} />
@@ -209,7 +226,7 @@ export default async function TransactionsPage({
                     {formatDateTime(t.created_at)}
                   </TableCell>
                 </TableRow>
-              ))
+              )})
             )}
           </TableBody>
         </Table>

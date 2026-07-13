@@ -7,8 +7,9 @@ import { getStep, partsDoneFromStatus } from "@/lib/workflow";
 import { CheckpointForm } from "@/components/checkpoint-form";
 import { DirectionBadge } from "@/components/direction-badge";
 import { WorkflowStepper } from "@/components/workflow-stepper";
+import { CheckpointContext } from "@/components/checkpoint-context";
 import { Card, CardContent } from "@/components/ui/card";
-import type { Seal, Transaction } from "@/lib/database.types";
+import type { PartA, PartBC, Seal, Transaction } from "@/lib/database.types";
 
 export const metadata: Metadata = { title: "Part B — In-flight Security Post" };
 export const dynamic = "force-dynamic";
@@ -27,12 +28,19 @@ export default async function PartBPage({ params }: { params: Promise<{ id: stri
     redirect(`/transactions/${id}`);
   }
 
-  const { data: sealRows } = await supabase
-    .from("seals")
-    .select("id, seal_type, seal_color")
-    .eq("transaction_id", id)
-    .order("applied_at");
-  const seals = (sealRows ?? []) as Pick<Seal, "id" | "seal_type" | "seal_color">[];
+  const [sealRes, partARes, partCRes] = await Promise.all([
+    supabase
+      .from("seals")
+      .select("id, seal_number, seal_type, seal_color")
+      .eq("transaction_id", id)
+      .order("applied_at"),
+    supabase.from("part_a").select("*").eq("transaction_id", id).maybeSingle(),
+    supabase.from("part_c").select("*").eq("transaction_id", id).maybeSingle(),
+  ]);
+  const seals = (sealRes.data ?? []) as Pick<
+    Seal,
+    "id" | "seal_number" | "seal_type" | "seal_color"
+  >[];
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -60,6 +68,12 @@ export default async function PartBPage({ params }: { params: Promise<{ id: stri
           />
         </CardContent>
       </Card>
+
+      <CheckpointContext
+        transaction={transaction}
+        partA={partARes.data as PartA | null}
+        partC={partCRes.data as PartBC | null}
+      />
 
       <CheckpointForm
         part="part_b"

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { BigCheckbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SignatureField } from "@/components/signature-pad";
 import { SealVerifyFields } from "@/components/seal-verify-fields";
@@ -23,7 +24,7 @@ const initialState: ActionState = { error: null };
 interface CheckpointFormProps {
   part: "part_b" | "part_c";
   transaction: Transaction;
-  seals: Pick<Seal, "id" | "seal_type" | "seal_color">[];
+  seals: Pick<Seal, "id" | "seal_number" | "seal_type" | "seal_color">[];
   officerName: string;
   officerStaffId: string;
   /** True when this checkpoint is the final step (inbound Part B). */
@@ -51,9 +52,20 @@ export function CheckpointForm({
   const [entries, setEntries] = useState<Record<string, string>>({});
   const [signature, setSignature] = useState<string | null>(null);
   const [queuedMsg, setQueuedMsg] = useState<string | null>(null);
+  const [result, setResult] = useState<"PASS" | "ESCALATE">("PASS");
+  const [escalationReason, setEscalationReason] = useState("");
+
+  const malaysiaNow = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" })
+  );
+  const defaultDate = `${malaysiaNow.getFullYear()}-${String(malaysiaNow.getMonth() + 1).padStart(2, "0")}-${String(malaysiaNow.getDate()).padStart(2, "0")}`;
+  const defaultTime = `${String(malaysiaNow.getHours()).padStart(2, "0")}:${String(malaysiaNow.getMinutes()).padStart(2, "0")}`;
 
   const allSealsEntered = seals.every((s) => (entries[s.id] ?? "").trim() !== "");
-  const ready = vehicle && driver && allSealsEntered && !!signature;
+  const ready =
+    allSealsEntered &&
+    !!signature &&
+    (result === "ESCALATE" ? escalationReason.trim().length > 0 : vehicle && driver);
 
   const handleOffline = (e: React.FormEvent<HTMLFormElement>) => {
     if (typeof navigator !== "undefined" && !navigator.onLine) {
@@ -89,6 +101,40 @@ export function CheckpointForm({
           <input type="hidden" name="transaction_id" value={transaction.id} />
           <input type="hidden" name="seal_entries" value={JSON.stringify(entries)} />
 
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="officer_name">AVSEC Officer Name</Label>
+              <Input id="officer_name" name="officer_name" defaultValue={officerName} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="officer_staff_id">AVSEC ID / Badge number</Label>
+              <Input id="officer_staff_id" name="officer_staff_id" defaultValue={officerStaffId} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="checkpoint_date">Date</Label>
+              <Input id="checkpoint_date" name="checkpoint_date" type="date" defaultValue={defaultDate} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="checkpoint_time">Time</Label>
+              <Input id="checkpoint_time" name="checkpoint_time" type="time" defaultValue={defaultTime} required />
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="observed_vehicle_number">Vehicle / Registration</Label>
+              <Input id="observed_vehicle_number" name="observed_vehicle_number" defaultValue={transaction.vehicle_number} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="observed_driver_name">Driver name</Label>
+              <Input id="observed_driver_name" name="observed_driver_name" defaultValue={transaction.driver_name} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="observed_driver_id">Driver IC / ID</Label>
+              <Input id="observed_driver_id" name="observed_driver_id" defaultValue={transaction.driver_id} required />
+            </div>
+          </div>
+
           <div className="space-y-3">
             <BigCheckbox
               id="vehicle_verified"
@@ -112,15 +158,33 @@ export function CheckpointForm({
 
           <div className="space-y-2">
             <Label htmlFor="remarks">{t(lang, "remarks_optional")}</Label>
-            <Textarea id="remarks" name="remarks" rows={2} />
+            <Textarea id="remarks" name="remarks" rows={2} placeholder="Nil" />
           </div>
 
-          <div className="rounded-md bg-muted p-3 text-sm">
-            <p>
-              <span className="text-muted-foreground">{t(lang, "officer")}:</span>{" "}
-              <span className="font-medium">{officerName}</span>{" "}
-              <span className="text-muted-foreground">({officerStaffId})</span>
-            </p>
+          <div className="space-y-3 rounded-lg border p-4">
+            <Label>Result</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 ${result === "PASS" ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30" : ""}`}>
+                <input type="radio" name="result" value="PASS" checked={result === "PASS"} onChange={() => setResult("PASS")} />
+                <span className="font-medium">Pass</span>
+              </label>
+              <label className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 ${result === "ESCALATE" ? "border-red-500 bg-red-50 dark:bg-red-950/30" : ""}`}>
+                <input type="radio" name="result" value="ESCALATE" checked={result === "ESCALATE"} onChange={() => setResult("ESCALATE")} />
+                <span className="font-medium">Escalate</span>
+              </label>
+            </div>
+            {result === "ESCALATE" ? (
+              <div className="space-y-2">
+                <Label htmlFor="escalation_reason">Escalation reason</Label>
+                <Textarea
+                  id="escalation_reason"
+                  name="escalation_reason"
+                  value={escalationReason}
+                  onChange={(event) => setEscalationReason(event.target.value)}
+                  required
+                />
+              </div>
+            ) : null}
           </div>
 
           <SignatureField onChange={setSignature} />

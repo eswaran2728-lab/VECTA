@@ -332,9 +332,30 @@ async function completeChecklistPart(
   const sealEntries = str(formData, "seal_entries");
   const remarks = str(formData, "remarks");
   const signature = str(formData, "signature");
+  const officerName = str(formData, "officer_name");
+  const officerStaffId = str(formData, "officer_staff_id");
+  const checkpointDate = str(formData, "checkpoint_date");
+  const checkpointTime = str(formData, "checkpoint_time");
+  const observedVehicleNumber = str(formData, "observed_vehicle_number").toUpperCase();
+  const observedDriverName = str(formData, "observed_driver_name");
+  const observedDriverId = str(formData, "observed_driver_id");
+  const result = str(formData, "result") as "PASS" | "ESCALATE";
+  const escalationReason = str(formData, "escalation_reason");
 
   if (!transactionId) return { error: "Missing transaction reference." };
-  if (!vehicleVerified || !driverVerified) {
+  if (!officerName || !officerStaffId || !observedVehicleNumber || !observedDriverName || !observedDriverId) {
+    return { error: "Officer, vehicle, and driver details are required." };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(checkpointDate) || !/^\d{2}:\d{2}$/.test(checkpointTime)) {
+    return { error: "Enter a valid checkpoint date and time." };
+  }
+  if (!['PASS', 'ESCALATE'].includes(result)) {
+    return { error: "Select Pass or Escalate." };
+  }
+  if (result === "ESCALATE" && !escalationReason) {
+    return { error: "An escalation reason is required." };
+  }
+  if (result === "PASS" && (!vehicleVerified || !driverVerified)) {
     return {
       error:
         "Vehicle and driver checks must pass. If a check fails, use Report Incident instead of approving.",
@@ -381,19 +402,44 @@ async function completeChecklistPart(
   const supabase = await createClient();
   const { error } = await supabase.from(part).insert({
     transaction_id: transactionId,
-    avsec_name: profile.name,
-    avsec_staff_id: profile.staff_id,
+    avsec_name: officerName,
+    avsec_staff_id: officerStaffId,
     vehicle_verified: vehicleVerified,
     driver_verified: driverVerified,
     seal_verified: true,
     signature_url: sig.path,
     signature_hash: sig.sha256,
     remarks: remarks || null,
+    checkpoint_date: checkpointDate,
+    checkpoint_time: checkpointTime,
+    observed_vehicle_number: observedVehicleNumber,
+    observed_driver_name: observedDriverName,
+    observed_driver_id: observedDriverId,
+    result,
+    escalation_reason: escalationReason || null,
     completed_by: profile.id,
   });
 
   if (error) {
     return { error: `Checkpoint could not be saved: ${error.message}` };
+  }
+
+  if (result === "ESCALATE") {
+    const { error: incidentError } = await supabase.from("incidents").insert({
+      transaction_id: transactionId,
+      incident_type: "OTHER",
+      description: `${part === "part_b" ? "Part B" : "Part C"} escalated by ${officerName} (${officerStaffId}): ${escalationReason}`,
+      reported_by: `${officerName} (${officerStaffId})`,
+      reported_by_id: profile.id,
+      photo_url: null,
+    });
+    if (incidentError) {
+      return { error: `Checkpoint was recorded but escalation failed: ${incidentError.message}` };
+    }
+    revalidatePath(`/transactions/${transactionId}`);
+    revalidatePath("/transactions");
+    revalidatePath("/dashboard");
+    redirect(`/transactions/${transactionId}?escalated=1`);
   }
 
   revalidatePath(`/transactions/${transactionId}`);
@@ -423,8 +469,22 @@ export async function completePartD(
   const sealEntries = str(formData, "seal_entries");
   const remarks = str(formData, "remarks");
   const signature = str(formData, "signature");
+  const receiverName = str(formData, "receiver_name");
+  const receiverStaffId = str(formData, "receiver_staff_id");
+  const checkpointDate = str(formData, "checkpoint_date");
+  const checkpointTime = str(formData, "checkpoint_time");
+  const result = str(formData, "result") as "PASS" | "ESCALATE";
+  const escalationReason = str(formData, "escalation_reason");
 
   if (!transactionId) return { error: "Missing transaction reference." };
+  if (!receiverName || !receiverStaffId) return { error: "Receiver name and ID are required." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(checkpointDate) || !/^\d{2}:\d{2}$/.test(checkpointTime)) {
+    return { error: "Enter a valid checkpoint date and time." };
+  }
+  if (!["PASS", "ESCALATE"].includes(result)) return { error: "Select Pass or Escalate." };
+  if (result === "ESCALATE" && !escalationReason) {
+    return { error: "An escalation reason is required." };
+  }
 
   const supabaseForCheck = await createClient();
   const { data: txRow } = await supabaseForCheck
@@ -454,7 +514,7 @@ export async function completePartD(
   if (!["SRA_WAREHOUSE", "AIRCRAFT"].includes(deliveryLocation)) {
     return { error: "Select the delivery location." };
   }
-  if (!sealIntact) {
+  if (result === "PASS" && !sealIntact) {
     return {
       error: "Seal must be intact to complete delivery. If broken, use Report Incident.",
     };
@@ -472,17 +532,39 @@ export async function completePartD(
   const { error } = await supabase.from("part_d").insert({
     transaction_id: transactionId,
     delivery_location: deliveryLocation,
-    receiver_name: profile.name,
-    receiver_staff_id: profile.staff_id,
+    receiver_name: receiverName,
+    receiver_staff_id: receiverStaffId,
     seal_intact: sealIntact,
     signature_url: sig.path,
     signature_hash: sig.sha256,
     remarks: remarks || null,
+    checkpoint_date: checkpointDate,
+    checkpoint_time: checkpointTime,
+    result,
+    escalation_reason: escalationReason || null,
     completed_by: profile.id,
   });
 
   if (error) {
     return { error: `Delivery could not be saved: ${error.message}` };
+  }
+
+  if (result === "ESCALATE") {
+    const { error: incidentError } = await supabase.from("incidents").insert({
+      transaction_id: transactionId,
+      incident_type: "OTHER",
+      description: `Part D escalated by ${receiverName} (${receiverStaffId}): ${escalationReason}`,
+      reported_by: `${receiverName} (${receiverStaffId})`,
+      reported_by_id: profile.id,
+      photo_url: null,
+    });
+    if (incidentError) {
+      return { error: `Part D was recorded but escalation failed: ${incidentError.message}` };
+    }
+    revalidatePath(`/transactions/${transactionId}`);
+    revalidatePath("/transactions");
+    revalidatePath("/dashboard");
+    redirect(`/transactions/${transactionId}?escalated=1`);
   }
 
   revalidatePath(`/transactions/${transactionId}`);

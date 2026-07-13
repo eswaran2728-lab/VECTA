@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardCharts, type DashTx } from "./dashboard-charts";
 import type { Incident } from "@/lib/database.types";
+import { QrCode } from "lucide-react";
 
 export const metadata: Metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
@@ -105,6 +106,15 @@ export default async function DashboardPage() {
     { label: "Escalated Cases", value: escalated.count ?? 0, href: "/transactions?status=ESCALATED", alert: true },
   ];
 
+  const checkpointQueue =
+    profile.role === "post2_avsec"
+      ? { label: "Pending In-flight Post", value: pendingInflightPost.count ?? 0 }
+      : profile.role === "post6_avsec"
+        ? { label: "Pending Airport Post", value: pendingAirportPost.count ?? 0 }
+        : profile.role === "receiver"
+          ? { label: "Pending Part D", value: pendingPartD.count ?? 0 }
+          : null;
+
   return (
     <div className="space-y-6">
       <div>
@@ -113,6 +123,23 @@ export default async function DashboardPage() {
           Welcome back, {profile.name}. Live view of today&apos;s catering security movements.
         </p>
       </div>
+
+      {checkpointQueue ? (
+        <Link href="/scan" className="block">
+          <Card className="border-primary bg-primary text-primary-foreground shadow-md transition-transform hover:-translate-y-0.5">
+            <CardContent className="flex items-center justify-between gap-4 p-5">
+              <div>
+                <p className="text-sm font-medium opacity-85">{checkpointQueue.label}</p>
+                <p className="text-3xl font-bold tabular-nums">{checkpointQueue.value}</p>
+                <p className="mt-1 text-sm opacity-85">Scan QR to verify the next transaction</p>
+              </div>
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/15">
+                <QrCode className="h-9 w-9" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {cards.map((card) => (

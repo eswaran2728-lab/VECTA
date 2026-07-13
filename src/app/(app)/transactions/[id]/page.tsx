@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, LockKeyhole } from "lucide-react";
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { signedUrl } from "@/lib/storage";
@@ -12,7 +12,7 @@ import { DirectionBadge } from "@/components/direction-badge";
 import { WorkflowStepper } from "@/components/workflow-stepper";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { nextStepFor } from "@/lib/workflow";
+import { getStep, nextStepFor, type CheckpointPart } from "@/lib/workflow";
 import {
   DELIVERY_LOCATION_LABELS,
   INCIDENT_TYPE_LABELS,
@@ -32,6 +32,7 @@ import type {
   Seal,
   SealVerification,
   Transaction,
+  Role,
 } from "@/lib/database.types";
 
 export const metadata: Metadata = { title: "Transaction" };
@@ -69,6 +70,60 @@ function Check({ ok, label }: { ok: boolean; label: string }) {
       {ok ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
       {label}
     </span>
+  );
+}
+
+const ROLE_LABELS: Partial<Record<Role, string>> = {
+  post2_avsec: "In-flight Security Post",
+  post6_avsec: "Airport Security Post",
+  receiver: "Receiver",
+};
+
+function PendingPartCard({
+  id,
+  title,
+  part,
+  currentPart,
+  responsibleRole,
+  viewerRole,
+}: {
+  id: string;
+  title: string;
+  part: CheckpointPart;
+  currentPart: CheckpointPart | null;
+  responsibleRole: Role;
+  viewerRole: Role;
+}) {
+  const isCurrent = currentPart === part;
+  const actionable = isCurrent && viewerRole === responsibleRole;
+  const slug = part.replace("_", "-");
+
+  return (
+    <Card className={actionable ? "border-primary bg-primary/5" : "border-dashed"}>
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {actionable ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-primary">
+              <Clock3 className="h-4 w-4" /> Your turn — ready to verify
+            </div>
+            <Link href={`/transactions/${id}/${slug}`}>
+              <Button className="w-full" size="lg">Scan / Verify</Button>
+            </Link>
+          </div>
+        ) : isCurrent ? (
+          <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
+            <Clock3 className="h-4 w-4" /> Awaiting {ROLE_LABELS[responsibleRole]}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <LockKeyhole className="h-4 w-4" /> Locked — earlier checkpoint not completed
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -135,6 +190,7 @@ export default async function TransactionDetailPage({
           label: `Complete ${nextStep.shortLabel}`,
         }
       : null;
+  const currentPart = nextStep?.part ?? null;
 
   const banner = flags.created
     ? "Transaction created. Print or show the QR pass at Post 2."
@@ -307,7 +363,16 @@ export default async function TransactionDetailPage({
               <Sig url={sigB} label="Officer signature" />
             </CardContent>
           </Card>
-        ) : null}
+        ) : (
+          <PendingPartCard
+            id={id}
+            title="Part B — AVSEC Post 2"
+            part="part_b"
+            currentPart={currentPart}
+            responsibleRole={getStep(transaction.direction, "part_b")?.role ?? "post2_avsec"}
+            viewerRole={profile.role}
+          />
+        )}
 
         {partC ? (
           <Card>
@@ -326,7 +391,16 @@ export default async function TransactionDetailPage({
               <Sig url={sigC} label="Officer signature" />
             </CardContent>
           </Card>
-        ) : null}
+        ) : (
+          <PendingPartCard
+            id={id}
+            title="Part C — AVSEC Post 6"
+            part="part_c"
+            currentPart={currentPart}
+            responsibleRole={getStep(transaction.direction, "part_c")?.role ?? "post6_avsec"}
+            viewerRole={profile.role}
+          />
+        )}
 
         {partD ? (
           <Card>
@@ -346,6 +420,20 @@ export default async function TransactionDetailPage({
               {partD.remarks ? <p className="text-sm text-muted-foreground">“{partD.remarks}”</p> : null}
               <Sig url={sigD} label="Receiver signature" />
             </CardContent>
+          </Card>
+        ) : transaction.direction === "OUTBOUND" ? (
+          <PendingPartCard
+            id={id}
+            title="Part D — Delivery"
+            part="part_d"
+            currentPart={currentPart}
+            responsibleRole="receiver"
+            viewerRole={profile.role}
+          />
+        ) : profile.role === "supervisor" ? (
+          <Card className="border-dashed">
+            <CardHeader><CardTitle className="text-base">Part D — Delivery</CardTitle></CardHeader>
+            <CardContent className="text-sm text-muted-foreground">Not applicable to inbound transactions.</CardContent>
           </Card>
         ) : null}
       </div>
