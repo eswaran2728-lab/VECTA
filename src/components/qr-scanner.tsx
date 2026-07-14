@@ -10,9 +10,11 @@ import { Label } from "@/components/ui/label";
 const REGION_ID = "cscs-qr-reader";
 
 /**
- * Camera QR scanner with manual fallback (transaction number lookup is
- * handled by the signed validation endpoint). On success it routes directly
- * to the checkpoint assigned to the logged-in role when the handoff is ready.
+ * Camera-first QR scanner. Every scan is validated server-side (signature,
+ * expiry, workflow order); when the transaction is waiting on the signed-in
+ * officer's own checkpoint, they land directly on their verification form,
+ * otherwise on the read-only transaction detail. Manual entry accepts a
+ * transaction number and goes through the same validation endpoint.
  */
 export function QrScanner() {
   const router = useRouter();
@@ -21,14 +23,35 @@ export function QrScanner() {
   const [error, setError] = useState<string | null>(null);
   const [manual, setManual] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [looking, setLooking] = useState(false);
+
+  const resolveAndGo = async (query: string): Promise<void> => {
+    setLooking(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/qr/validate?${query}`);
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error ?? "Pass could not be validated.");
+        handledRef.current = false;
+        return;
+      }
+      scannerRef.current?.stop().catch(() => undefined);
+      router.push(body.redirectPath ?? `/transactions/${body.transactionId}`);
+    } catch {
+      setError("Validation failed — check your connection and try again.");
+      handledRef.current = false;
+    } finally {
+      setLooking(false);
+    }
+  };
 
   useEffect(() => {
     const scanner = new Html5Qrcode(REGION_ID);
     scannerRef.current = scanner;
 
-    const handleDecoded = async (decodedText: string) => {
+    const handleDecoded = (decodedText: string) => {
       if (handledRef.current) return;
-
       let token: string | null = null;
       try {
         const parsed = JSON.parse(decodedText);
@@ -42,31 +65,15 @@ export function QrScanner() {
         );
         return;
       }
-
       handledRef.current = true;
-      try {
-        const res = await fetch(`/api/qr/validate?token=${encodeURIComponent(token)}`);
-        const body = await res.json();
-        if (!res.ok) {
-          setError(body.error ?? "QR pass could not be validated.");
-          handledRef.current = false;
-          return;
-        }
-        scanner.stop().catch(() => undefined);
-        router.push(body.redirectPath ?? `/transactions/${body.transactionId}`);
-      } catch {
-        setError("Validation failed — check your connection and try again.");
-        handledRef.current = false;
-      }
+      void resolveAndGo(`token=${encodeURIComponent(token)}`);
     };
 
     scanner
       .start(
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => {
-          void handleDecoded(decodedText);
-        },
+        handleDecoded,
         () => undefined // per-frame decode misses are expected
       )
       .then(() => setScanning(true))
@@ -78,24 +85,14 @@ export function QrScanner() {
       const s = scannerRef.current;
       if (s && s.isScanning) s.stop().catch(() => undefined);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
-  const handleManual = async (e: React.FormEvent) => {
+  const handleManual = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = manual.trim();
+    const trimmed = manual.trim().toUpperCase();
     if (!trimmed) return;
-    setError(null);
-    try {
-      const res = await fetch(`/api/qr/validate?number=${encodeURIComponent(trimmed)}`);
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.error ?? "Transaction could not be found.");
-        return;
-      }
-      router.push(body.redirectPath ?? `/transactions/${body.transactionId}`);
-    } catch {
-      setError("Lookup failed — check your connection and try again.");
-    }
+    void resolveAndGo(`number=${encodeURIComponent(trimmed)}`);
   };
 
   return (
@@ -106,6 +103,9 @@ export function QrScanner() {
       />
       {!scanning && !error ? (
         <p className="text-center text-sm text-muted-foreground">Starting camera…</p>
+      ) : null}
+      {looking ? (
+        <p className="text-center text-sm text-muted-foreground">Validating pass…</p>
       ) : null}
       {error ? <p className="text-center text-sm text-red-600">{error}</p> : null}
 
@@ -118,7 +118,7 @@ export function QrScanner() {
             value={manual}
             onChange={(e) => setManual(e.target.value)}
           />
-          <Button type="submit" variant="secondary">
+          <Button type="submit" variant="secondary" disabled={looking}>
             Find
           </Button>
         </div>

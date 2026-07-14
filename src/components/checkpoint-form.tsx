@@ -63,9 +63,10 @@ export function CheckpointForm({
 
   const allSealsEntered = seals.every((s) => (entries[s.id] ?? "").trim() !== "");
   const ready =
-    allSealsEntered &&
     !!signature &&
-    (result === "ESCALATE" ? escalationReason.trim().length > 0 : vehicle && driver);
+    (result === "ESCALATE"
+      ? escalationReason.trim().length > 0
+      : vehicle && driver && allSealsEntered);
 
   const handleOffline = (e: React.FormEvent<HTMLFormElement>) => {
     if (typeof navigator !== "undefined" && !navigator.onLine) {
@@ -202,12 +203,20 @@ export function CheckpointForm({
           ) : null}
 
           <div className="flex flex-col gap-2">
-            <Button type="submit" size="xl" className="w-full" disabled={pending || !ready}>
+            <Button
+              type="submit"
+              size="xl"
+              variant={result === "ESCALATE" ? "destructive" : "default"}
+              className="w-full"
+              disabled={pending || !ready}
+            >
               {pending
                 ? t(lang, "saving")
-                : finalizes
-                  ? t(lang, "approve_complete")
-                  : t(lang, "approve_release")}
+                : result === "ESCALATE"
+                  ? "Escalate & Notify Supervisor"
+                  : finalizes
+                    ? t(lang, "approve_complete")
+                    : t(lang, "approve_release")}
             </Button>
             <Link href={`/transactions/${transaction.id}/incident`} className="w-full">
               <Button type="button" variant="destructive" size="lg" className="w-full">

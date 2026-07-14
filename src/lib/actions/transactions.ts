@@ -379,17 +379,21 @@ async function completeChecklistPart(
   const finalizes = getStep(tx.direction, part)?.finalizes ?? false;
 
   // Seals must be entered/scanned by number — mismatch auto-escalates.
-  const sealError = await verifySealsAtCheckpoint(
-    supabaseForCheck,
-    profile,
-    transactionId,
-    part === "part_b" ? "INFLIGHT_POST" : "AIRPORT_POST",
-    sealEntries
-  );
-  if (sealError) {
-    revalidatePath(`/transactions/${transactionId}`);
-    revalidatePath("/dashboard");
-    return { error: sealError };
+  // Skipped when the officer chose Escalate (e.g. a seal too damaged to
+  // read); the escalation itself freezes the transaction instead.
+  if (result === "PASS") {
+    const sealError = await verifySealsAtCheckpoint(
+      supabaseForCheck,
+      profile,
+      transactionId,
+      part === "part_b" ? "INFLIGHT_POST" : "AIRPORT_POST",
+      sealEntries
+    );
+    if (sealError) {
+      revalidatePath(`/transactions/${transactionId}`);
+      revalidatePath("/dashboard");
+      return { error: sealError };
+    }
   }
 
   let sig: { path: string; sha256: string };
@@ -499,17 +503,21 @@ export async function completePartD(
   const orderError = checkpointOrderError(tx.direction, "part_d", tx.status);
   if (orderError) return { error: orderError };
 
-  const sealError = await verifySealsAtCheckpoint(
-    supabaseForCheck,
-    profile,
-    transactionId,
-    "PART_D",
-    sealEntries
-  );
-  if (sealError) {
-    revalidatePath(`/transactions/${transactionId}`);
-    revalidatePath("/dashboard");
-    return { error: sealError };
+  // Seals are verified by number on the Pass path only; an Escalate result
+  // freezes the transaction via the incident instead.
+  if (result === "PASS") {
+    const sealError = await verifySealsAtCheckpoint(
+      supabaseForCheck,
+      profile,
+      transactionId,
+      "PART_D",
+      sealEntries
+    );
+    if (sealError) {
+      revalidatePath(`/transactions/${transactionId}`);
+      revalidatePath("/dashboard");
+      return { error: sealError };
+    }
   }
   if (!["SRA_WAREHOUSE", "AIRCRAFT"].includes(deliveryLocation)) {
     return { error: "Select the delivery location." };

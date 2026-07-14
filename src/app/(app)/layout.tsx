@@ -127,9 +127,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link
               key={item.href}
               href={item.href}
-              className="flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+              className={
+                item.href === "/scan" || item.href === "/transactions/new"
+                  ? "flex flex-col items-center gap-1 py-2.5 text-[11px] font-bold text-primary"
+                  : "flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+              }
             >
-              <item.icon className="h-5 w-5" />
+              <item.icon
+                className={
+                  item.href === "/scan" || item.href === "/transactions/new" ? "h-6 w-6" : "h-5 w-5"
+                }
+              />
               {item.label.split(" ")[0]}
             </Link>
           ))}
