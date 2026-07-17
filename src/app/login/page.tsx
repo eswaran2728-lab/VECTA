@@ -37,18 +37,10 @@ export default async function LoginPage({
       </div>
 
       <div className="relative z-10 flex flex-1 flex-col p-4 sm:p-6">
-        <PartnerLogos />
-
         <div className="flex flex-1 items-center justify-center py-8">
           <div className="w-full max-w-sm space-y-6">
             <div className="flex flex-col items-center gap-3 text-center">
-              <div
-                className="animate-fade-in-up relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand to-primary shadow-lg shadow-brand/30"
-                style={{ animationDelay: "250ms" }}
-              >
-                <div className="animate-glow-pulse absolute inset-0 rounded-2xl bg-gradient-to-br from-brand to-primary opacity-50 blur-lg" />
-                <ShieldCheck className="relative h-8 w-8 text-white" />
-              </div>
+              <PartnerLogos />
               <div className="animate-fade-in-up" style={{ animationDelay: "350ms" }}>
                 <h1 className="font-heading bg-gradient-to-r from-foreground to-foreground/60 bg-clip-text text-3xl font-extrabold tracking-tight text-transparent">
                   ICMS

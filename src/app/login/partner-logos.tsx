@@ -4,9 +4,10 @@ import { useState } from "react";
 import Image from "next/image";
 
 /**
- * AVSEC crest (top-left) and AirAsia wordmark (top-right) on the login
- * screen. Reads /public/avsec-logo.png and /public/airasia-logo.png —
- * silently omits either logo if the file hasn't been supplied yet.
+ * AVSEC crest + AirAsia wordmark hero lockup — the primary brand mark on
+ * the login/register screens (replaces a generic app icon). Reads
+ * /public/avsec-logo.png and /public/airasia-logo.png — silently omits
+ * either logo if the file hasn't been supplied yet.
  */
 export function PartnerLogos() {
   const [avsecOk, setAvsecOk] = useState(true);
@@ -15,47 +16,43 @@ export function PartnerLogos() {
   if (!avsecOk && !airasiaOk) return null;
 
   return (
-    <div className="mx-auto flex w-full max-w-md items-center justify-between px-2 pt-4">
+    <div className="flex items-center justify-center gap-6 sm:gap-8">
       {avsecOk ? (
         <div className="animate-fade-in-up" style={{ animationDelay: "0ms" }}>
           <div
-            className="animate-float drop-shadow-[0_0_28px_rgba(212,175,55,0.45)]"
+            className="animate-float drop-shadow-[0_0_32px_rgba(212,175,55,0.5)]"
             style={{ animationDelay: "0ms" }}
           >
             <Image
               src="/avsec-logo.png"
               alt="AVSEC"
-              width={128}
-              height={128}
+              width={160}
+              height={160}
               priority
-              className="h-20 w-20 object-contain sm:h-24 sm:w-24"
+              className="h-28 w-28 object-contain sm:h-32 sm:w-32"
               onError={() => setAvsecOk(false)}
             />
           </div>
         </div>
-      ) : (
-        <span />
-      )}
+      ) : null}
       {airasiaOk ? (
         <div className="animate-fade-in-up" style={{ animationDelay: "150ms" }}>
           <div
-            className="animate-float drop-shadow-[0_0_28px_rgba(238,46,36,0.45)]"
+            className="animate-float drop-shadow-[0_0_32px_rgba(238,46,36,0.5)]"
             style={{ animationDelay: "600ms", animationDuration: "5.5s" }}
           >
             <Image
               src="/airasia-logo.png"
               alt="AirAsia"
-              width={192}
-              height={192}
+              width={240}
+              height={240}
               priority
-              className="h-16 w-auto object-contain sm:h-20"
+              className="h-24 w-auto object-contain sm:h-28"
               onError={() => setAirasiaOk(false)}
             />
           </div>
         </div>
-      ) : (
-        <span />
-      )}
+      ) : null}
     </div>
   );
 }
