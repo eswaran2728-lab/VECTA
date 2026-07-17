@@ -2,11 +2,19 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { DashboardCharts, type DashTx } from "./dashboard-charts";
 import { ExportResetButton } from "./export-reset-button";
 import type { Incident } from "@/lib/database.types";
-import { QrCode } from "lucide-react";
+import {
+  QrCode,
+  TrendingUp,
+  PlaneTakeoff,
+  Building2,
+  PackageCheck,
+  CheckCircle2,
+  AlertTriangle,
+} from "lucide-react";
 
 export const metadata: Metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
@@ -107,12 +115,39 @@ export default async function DashboardPage() {
       value: outCount + inCount,
       sub: `${outCount} out · ${inCount} in`,
       href: "/transactions",
+      icon: TrendingUp,
     },
-    { label: "Pending In-flight Post", value: pendingInflightPost.count ?? 0, href: "/transactions" },
-    { label: "Pending Airport Post", value: pendingAirportPost.count ?? 0, href: "/transactions" },
-    { label: "Pending Part D (outbound)", value: pendingPartD.count ?? 0, href: "/transactions?status=AIRPORT_POST_APPROVED" },
-    { label: "Completed Today", value: completedToday.count ?? 0, href: "/transactions?status=COMPLETED" },
-    { label: "Escalated Cases", value: escalated.count ?? 0, href: "/transactions?status=ESCALATED", alert: true },
+    {
+      label: "Pending In-flight Post",
+      value: pendingInflightPost.count ?? 0,
+      href: "/transactions",
+      icon: PlaneTakeoff,
+    },
+    {
+      label: "Pending Airport Post",
+      value: pendingAirportPost.count ?? 0,
+      href: "/transactions",
+      icon: Building2,
+    },
+    {
+      label: "Pending Part D (outbound)",
+      value: pendingPartD.count ?? 0,
+      href: "/transactions?status=AIRPORT_POST_APPROVED",
+      icon: PackageCheck,
+    },
+    {
+      label: "Completed Today",
+      value: completedToday.count ?? 0,
+      href: "/transactions?status=COMPLETED",
+      icon: CheckCircle2,
+    },
+    {
+      label: "Escalated Cases",
+      value: escalated.count ?? 0,
+      href: "/transactions?status=ESCALATED",
+      icon: AlertTriangle,
+      alert: true,
+    },
   ];
 
   const checkpointQueue =
@@ -128,7 +163,7 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <h1 className="font-heading text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
             Welcome back, {profile.name}. Live view of today&apos;s catering security movements.
           </p>
@@ -138,14 +173,18 @@ export default async function DashboardPage() {
 
       {checkpointQueue ? (
         <Link href="/scan" className="block">
-          <Card className="border-primary bg-primary text-primary-foreground shadow-md transition-transform hover:-translate-y-0.5">
-            <CardContent className="flex items-center justify-between gap-4 p-5">
+          <Card className="relative overflow-hidden border-none bg-gradient-to-br from-brand to-primary text-white shadow-lg shadow-brand/20 transition-transform hover:-translate-y-0.5">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl"
+            />
+            <CardContent className="relative flex items-center justify-between gap-4 p-5">
               <div>
-                <p className="text-sm font-medium opacity-85">{checkpointQueue.label}</p>
-                <p className="text-3xl font-bold tabular-nums">{checkpointQueue.value}</p>
-                <p className="mt-1 text-sm opacity-85">Scan QR to verify the next transaction</p>
+                <p className="text-sm font-medium text-white/85">{checkpointQueue.label}</p>
+                <p className="font-heading text-3xl font-bold tabular-nums">{checkpointQueue.value}</p>
+                <p className="mt-1 text-sm text-white/85">Scan QR to verify the next transaction</p>
               </div>
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/15">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
                 <QrCode className="h-9 w-9" />
               </div>
             </CardContent>
@@ -154,29 +193,39 @@ export default async function DashboardPage() {
       ) : null}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {cards.map((card) => (
-          <Link key={card.label} href={card.href}>
-            <Card
-              className={
-                card.alert && card.value > 0
-                  ? "border-orange-400 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/40"
-                  : undefined
-              }
-            >
-              <CardHeader className="p-4 pb-1">
-                <CardTitle className="text-xs font-medium text-muted-foreground">
-                  {card.label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 pt-0">
-                <p className="text-3xl font-bold tabular-nums">{card.value}</p>
-                {"sub" in card && card.sub ? (
-                  <p className="text-xs text-muted-foreground">{card.sub}</p>
-                ) : null}
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
+        {cards.map((card) => {
+          const isAlert = card.alert && card.value > 0;
+          return (
+            <Link key={card.label} href={card.href}>
+              <Card
+                className={
+                  isAlert
+                    ? "border-orange-400/40 bg-orange-500/10 transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-orange-800/60"
+                    : "transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
+                }
+              >
+                <CardContent className="space-y-2 p-4">
+                  <div
+                    className={
+                      isAlert
+                        ? "flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500/15 text-orange-500"
+                        : "flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                    }
+                  >
+                    <card.icon className="h-4 w-4" />
+                  </div>
+                  <CardTitle className="text-xs font-medium text-muted-foreground">
+                    {card.label}
+                  </CardTitle>
+                  <p className="font-heading text-3xl font-bold tabular-nums">{card.value}</p>
+                  {"sub" in card && card.sub ? (
+                    <p className="text-xs text-muted-foreground">{card.sub}</p>
+                  ) : null}
+                </CardContent>
+              </Card>
+            </Link>
+          );
+        })}
       </div>
 
       <DashboardCharts

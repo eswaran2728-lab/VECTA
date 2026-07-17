@@ -21,6 +21,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { PwaProvider } from "@/components/pwa-provider";
 import { BrandMark } from "@/components/brand-mark";
+import { AirAsiaMark } from "@/components/airasia-mark";
 import { Button } from "@/components/ui/button";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -88,10 +89,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b bg-card/95 backdrop-blur">
+        <div className="h-0.5 bg-gradient-to-r from-brand via-primary to-brand" />
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-2 px-4">
-          <Link href="/dashboard" className="flex items-center gap-2 font-bold">
+          <Link href="/dashboard" className="flex items-center gap-2 font-heading font-bold">
             <BrandMark />
-            <span className="hidden sm:inline">ICMS</span>
+            <span className="hidden bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent sm:inline">
+              ICMS
+            </span>
           </Link>
 
           <nav className="hidden items-center gap-1 md:flex">
@@ -112,6 +116,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <p className="font-medium">{profile.name}</p>
               <p className="text-muted-foreground">{ROLE_LABELS[profile.role]}</p>
             </div>
+            <AirAsiaMark />
+            <div className="hidden h-6 w-px bg-border sm:block" />
             <PwaProvider />
             <LanguageToggle lang={lang} />
             <NotificationsBell userId={profile.id} />

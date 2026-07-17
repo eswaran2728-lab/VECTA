@@ -21,16 +21,16 @@ export function RegisterForm() {
 
   if (state.success) {
     return (
-      <Card>
+      <Card className="border-white/10 bg-card/70 shadow-2xl shadow-black/40 backdrop-blur-xl">
         <CardContent className="pt-6">
-          <p className="text-sm text-emerald-600 dark:text-emerald-400">{state.success}</p>
+          <p className="text-sm text-emerald-400">{state.success}</p>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card>
+    <Card className="border-white/10 bg-card/70 shadow-2xl shadow-black/40 backdrop-blur-xl">
       <CardContent className="pt-6">
         <form action={formAction} className="space-y-4">
           <div className="space-y-2">
@@ -70,11 +70,16 @@ export function RegisterForm() {
             />
           </div>
           {state.error ? (
-            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            <p role="alert" className="text-sm text-red-400">
               {state.error}
             </p>
           ) : null}
-          <Button type="submit" className="w-full" size="lg" disabled={pending}>
+          <Button
+            type="submit"
+            size="lg"
+            disabled={pending}
+            className="w-full bg-gradient-to-r from-primary to-primary/80 font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:shadow-primary/40 hover:brightness-105 active:scale-[0.99]"
+          >
             {pending ? "Submitting…" : "Submit registration"}
           </Button>
         </form>
