@@ -15,38 +15,40 @@ export function PartnerLogos() {
   if (!avsecOk && !airasiaOk) return null;
 
   return (
-    <div className="mx-auto flex w-full max-w-sm items-center justify-between px-1 pt-2">
+    <div className="mx-auto flex w-full max-w-md items-center justify-between px-2 pt-4">
       {avsecOk ? (
-        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] py-1.5 pl-1.5 pr-3 backdrop-blur-sm">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-black/40 ring-1 ring-white/10">
+        <div className="animate-fade-in-up" style={{ animationDelay: "0ms" }}>
+          <div
+            className="animate-float drop-shadow-[0_0_28px_rgba(212,175,55,0.45)]"
+            style={{ animationDelay: "0ms" }}
+          >
             <Image
               src="/avsec-logo.png"
               alt="AVSEC"
-              width={64}
-              height={64}
-              className="h-7 w-7 object-contain"
+              width={128}
+              height={128}
+              priority
+              className="h-20 w-20 object-contain sm:h-24 sm:w-24"
               onError={() => setAvsecOk(false)}
             />
           </div>
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-white/60">
-            AVSEC
-          </span>
         </div>
       ) : (
         <span />
       )}
       {airasiaOk ? (
-        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] py-1.5 pl-3 pr-1.5 backdrop-blur-sm">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-white/60">
-            Partner
-          </span>
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-black/40 ring-1 ring-white/10">
+        <div className="animate-fade-in-up" style={{ animationDelay: "150ms" }}>
+          <div
+            className="animate-float drop-shadow-[0_0_28px_rgba(238,46,36,0.45)]"
+            style={{ animationDelay: "600ms", animationDuration: "5.5s" }}
+          >
             <Image
               src="/airasia-logo.png"
               alt="AirAsia"
-              width={96}
-              height={96}
-              className="h-7 w-7 object-contain"
+              width={192}
+              height={192}
+              priority
+              className="h-16 w-auto object-contain sm:h-20"
               onError={() => setAirasiaOk(false)}
             />
           </div>

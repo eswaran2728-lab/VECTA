@@ -66,7 +66,7 @@ export function LoginForm() {
             type="submit"
             size="lg"
             disabled={pending}
-            className="w-full bg-gradient-to-r from-primary to-primary/80 font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:shadow-primary/40 hover:brightness-105 active:scale-[0.99]"
+            className="animate-shimmer w-full bg-[linear-gradient(110deg,hsl(var(--primary))_40%,hsl(var(--primary)/0.65)_50%,hsl(var(--primary))_60%)] font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:shadow-primary/40 hover:brightness-105 active:scale-[0.99]"
           >
             {pending ? "Signing in…" : "Sign in"}
           </Button>

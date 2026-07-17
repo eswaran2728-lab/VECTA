@@ -17,9 +17,15 @@ export default async function LoginPage({
     <main className="dark relative flex min-h-screen flex-col overflow-hidden bg-background">
       {/* Ambient brand glow — purely decorative, sits behind everything. */}
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-32 -top-32 h-[26rem] w-[26rem] rounded-full bg-brand/25 blur-[120px]" />
-        <div className="absolute -bottom-40 -right-24 h-[30rem] w-[30rem] rounded-full bg-primary/20 blur-[140px]" />
-        <div className="absolute left-1/2 top-1/3 h-72 w-72 -translate-x-1/2 rounded-full bg-primary/10 blur-[110px]" />
+        <div className="animate-float-slow animate-glow-pulse absolute -left-32 -top-32 h-[26rem] w-[26rem] rounded-full bg-brand/25 blur-[120px]" />
+        <div
+          className="animate-float-slow animate-glow-pulse absolute -bottom-40 -right-24 h-[30rem] w-[30rem] rounded-full bg-primary/20 blur-[140px]"
+          style={{ animationDelay: "-3s" }}
+        />
+        <div
+          className="animate-float-slow absolute left-1/2 top-1/3 h-72 w-72 -translate-x-1/2 rounded-full bg-primary/10 blur-[110px]"
+          style={{ animationDelay: "-6s" }}
+        />
         <div
           className="absolute inset-0 opacity-[0.03]"
           style={{
@@ -36,11 +42,14 @@ export default async function LoginPage({
         <div className="flex flex-1 items-center justify-center py-8">
           <div className="w-full max-w-sm space-y-6">
             <div className="flex flex-col items-center gap-3 text-center">
-              <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand to-primary shadow-lg shadow-brand/30">
-                <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-brand to-primary opacity-50 blur-lg" />
+              <div
+                className="animate-fade-in-up relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand to-primary shadow-lg shadow-brand/30"
+                style={{ animationDelay: "250ms" }}
+              >
+                <div className="animate-glow-pulse absolute inset-0 rounded-2xl bg-gradient-to-br from-brand to-primary opacity-50 blur-lg" />
                 <ShieldCheck className="relative h-8 w-8 text-white" />
               </div>
-              <div>
+              <div className="animate-fade-in-up" style={{ animationDelay: "350ms" }}>
                 <h1 className="font-heading bg-gradient-to-r from-foreground to-foreground/60 bg-clip-text text-3xl font-extrabold tracking-tight text-transparent">
                   ICMS
                 </h1>
@@ -48,7 +57,10 @@ export default async function LoginPage({
                   Inflight Catering Management System
                 </p>
               </div>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-primary">
+              <span
+                className="animate-fade-in-up inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-primary"
+                style={{ animationDelay: "450ms" }}
+              >
                 <ShieldCheck className="h-3 w-3" />
                 Secure Access
               </span>
@@ -76,9 +88,14 @@ export default async function LoginPage({
               </div>
             ) : null}
 
-            <LoginForm />
+            <div className="animate-fade-in-up" style={{ animationDelay: "550ms" }}>
+              <LoginForm />
+            </div>
 
-            <p className="text-center text-sm text-muted-foreground">
+            <p
+              className="animate-fade-in-up text-center text-sm text-muted-foreground"
+              style={{ animationDelay: "650ms" }}
+            >
               New staff member?{" "}
               <Link href="/register" className="font-medium text-primary underline underline-offset-4">
                 Register here
