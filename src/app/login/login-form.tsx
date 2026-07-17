@@ -16,8 +16,9 @@ export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <Card className="overflow-hidden border-white/10 bg-card/70 shadow-2xl shadow-black/40 backdrop-blur-xl">
-      <CardContent className="pt-6">
+    <div className="animate-border-glow rounded-[calc(var(--radius)+2px)] p-px">
+      <Card className="overflow-hidden border-white/10 bg-card/70 shadow-2xl shadow-black/40 backdrop-blur-xl">
+        <CardContent className="pt-6">
         <form action={formAction} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
@@ -68,10 +69,11 @@ export function LoginForm() {
             disabled={pending}
             className="animate-shimmer w-full bg-[linear-gradient(110deg,hsl(var(--primary))_40%,hsl(var(--primary)/0.65)_50%,hsl(var(--primary))_60%)] font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:shadow-primary/40 hover:brightness-105 active:scale-[0.99]"
           >
-            {pending ? "Signing in…" : "Sign in"}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+              {pending ? "Signing in…" : "Sign in"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

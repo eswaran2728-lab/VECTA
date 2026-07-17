@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ShieldCheck, TriangleAlert, Clock3 } from "lucide-react";
+import { ShieldCheck, TriangleAlert, Clock3, Plane } from "lucide-react";
 import { LoginForm } from "./login-form";
 import { PartnerLogos } from "./partner-logos";
 
@@ -34,6 +34,10 @@ export default async function LoginPage({
             backgroundSize: "48px 48px",
           }}
         />
+        {/* A lone aircraft drifting across the sky, echoing the inflight theme. */}
+        <div className="animate-fly absolute left-0 top-0">
+          <Plane className="h-6 w-6 -rotate-45 text-primary/40" />
+        </div>
       </div>
 
       <div className="relative z-10 flex flex-1 flex-col p-4 sm:p-6">

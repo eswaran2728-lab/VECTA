@@ -70,7 +70,75 @@
   }
 }
 
+/* Animated conic border angle (modern browsers; static gold fallback elsewhere). */
+@property --border-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
 @layer utilities {
+  @keyframes border-rotate {
+    to {
+      --border-angle: 360deg;
+    }
+  }
+  @keyframes gradient-pan {
+    0% {
+      background-position: 0% 50%;
+    }
+    100% {
+      background-position: 200% 50%;
+    }
+  }
+  @keyframes fly-across {
+    0% {
+      transform: translate(-8vw, 24vh) rotate(12deg);
+      opacity: 0;
+    }
+    8% {
+      opacity: 0.5;
+    }
+    92% {
+      opacity: 0.5;
+    }
+    100% {
+      transform: translate(108vw, -6vh) rotate(12deg);
+      opacity: 0;
+    }
+  }
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.94);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .animate-border-glow {
+    background: conic-gradient(
+      from var(--border-angle),
+      hsl(var(--primary) / 0.6),
+      hsl(var(--brand) / 0.5),
+      transparent 30%,
+      hsl(var(--primary) / 0.6)
+    );
+    animation: border-rotate 7s linear infinite;
+  }
+  .animate-gradient-pan {
+    background-size: 200% 200%;
+    animation: gradient-pan 6s linear infinite;
+  }
+  .animate-fly {
+    animation: fly-across 26s linear infinite;
+  }
+  .animate-scale-in {
+    animation: scale-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
   @keyframes float {
     0%,
     100% {
@@ -137,7 +205,14 @@
   .animate-float-slow,
   .animate-glow-pulse,
   .animate-fade-in-up,
-  .animate-shimmer {
+  .animate-shimmer,
+  .animate-border-glow,
+  .animate-gradient-pan,
+  .animate-fly,
+  .animate-scale-in {
     animation: none !important;
+  }
+  .animate-fly {
+    display: none;
   }
 }

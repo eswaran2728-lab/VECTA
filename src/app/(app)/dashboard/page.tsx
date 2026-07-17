@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { DashboardCharts, type DashTx } from "./dashboard-charts";
 import { ExportResetButton } from "./export-reset-button";
+import { CountUp } from "@/components/count-up";
 import type { Incident } from "@/lib/database.types";
 import {
   QrCode,
@@ -172,19 +173,21 @@ export default async function DashboardPage() {
       </div>
 
       {checkpointQueue ? (
-        <Link href="/scan" className="block">
-          <Card className="relative overflow-hidden border-none bg-gradient-to-br from-brand to-primary text-white shadow-lg shadow-brand/20 transition-transform hover:-translate-y-0.5">
+        <Link href="/scan" className="animate-scale-in block">
+          <Card className="animate-gradient-pan relative overflow-hidden border-none bg-[linear-gradient(110deg,hsl(var(--brand)),hsl(var(--primary)),hsl(var(--brand)))] text-white shadow-lg shadow-brand/20 transition-transform hover:-translate-y-0.5">
             <div
               aria-hidden
-              className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl"
+              className="animate-glow-pulse pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl"
             />
             <CardContent className="relative flex items-center justify-between gap-4 p-5">
               <div>
                 <p className="text-sm font-medium text-white/85">{checkpointQueue.label}</p>
-                <p className="font-heading text-3xl font-bold tabular-nums">{checkpointQueue.value}</p>
+                <p className="font-heading text-3xl font-bold tabular-nums">
+                  <CountUp value={checkpointQueue.value} />
+                </p>
                 <p className="mt-1 text-sm text-white/85">Scan QR to verify the next transaction</p>
               </div>
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
+              <div className="animate-float flex h-16 w-16 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
                 <QrCode className="h-9 w-9" />
               </div>
             </CardContent>
@@ -193,23 +196,28 @@ export default async function DashboardPage() {
       ) : null}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {cards.map((card) => {
+        {cards.map((card, i) => {
           const isAlert = card.alert && card.value > 0;
           return (
-            <Link key={card.label} href={card.href}>
+            <Link
+              key={card.label}
+              href={card.href}
+              className="animate-fade-in-up"
+              style={{ animationDelay: `${i * 60}ms` }}
+            >
               <Card
                 className={
                   isAlert
-                    ? "border-orange-400/40 bg-orange-500/10 transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-orange-800/60"
-                    : "transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
+                    ? "h-full border-orange-400/40 bg-orange-500/10 transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-orange-800/60"
+                    : "h-full transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
                 }
               >
-                <CardContent className="space-y-2 p-4">
+                <CardContent className="group space-y-2 p-4">
                   <div
                     className={
                       isAlert
-                        ? "flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500/15 text-orange-500"
-                        : "flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                        ? "animate-glow-pulse flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500/15 text-orange-500"
+                        : "flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary transition-transform duration-200 group-hover:scale-110"
                     }
                   >
                     <card.icon className="h-4 w-4" />
@@ -217,7 +225,9 @@ export default async function DashboardPage() {
                   <CardTitle className="text-xs font-medium text-muted-foreground">
                     {card.label}
                   </CardTitle>
-                  <p className="font-heading text-3xl font-bold tabular-nums">{card.value}</p>
+                  <p className="font-heading text-3xl font-bold tabular-nums">
+                    <CountUp value={card.value} />
+                  </p>
                   {"sub" in card && card.sub ? (
                     <p className="text-xs text-muted-foreground">{card.sub}</p>
                   ) : null}
@@ -228,10 +238,12 @@ export default async function DashboardPage() {
         })}
       </div>
 
-      <DashboardCharts
-        transactions={(recentTransactions.data ?? []) as unknown as DashTx[]}
-        incidents={(recentIncidents.data ?? []) as Pick<Incident, "incident_type" | "created_at">[]}
-      />
+      <div className="animate-fade-in-up" style={{ animationDelay: "400ms" }}>
+        <DashboardCharts
+          transactions={(recentTransactions.data ?? []) as unknown as DashTx[]}
+          incidents={(recentIncidents.data ?? []) as Pick<Incident, "incident_type" | "created_at">[]}
+        />
+      </div>
     </div>
   );
 }
