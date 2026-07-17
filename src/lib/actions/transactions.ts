@@ -7,7 +7,6 @@ import { requireProfile, requireRole } from "@/lib/auth";
 import { uploadDataUrl } from "@/lib/storage";
 import { checkpointOrderError, CREATOR_DIRECTIONS, getStep } from "@/lib/workflow";
 import { generateQrToken } from "@/lib/qr-token";
-import { DIRECTION_TRUCK_SEAL_COLOR } from "@/lib/constants";
 import type {
   DeliveryLocation,
   Direction,
@@ -49,22 +48,32 @@ function parseSealDrafts(raw: string): SealDraftInput[] | null {
 const norm = (s: string) => s.trim().toUpperCase();
 
 /**
- * Verify entered seal numbers against the seals of record, write the
- * verification trail, and auto-escalate via a SEAL_MISMATCH incident when
- * anything does not match. Returns null when all seals matched.
+ * Verify entered seal numbers AND colours against the seals of record,
+ * write the verification trail, and auto-escalate when anything doesn't
+ * match: a wrong number raises SEAL_MISMATCH, a right number but wrong
+ * colour raises WRONG_SEAL_COLOR. Both are mandatory — a blank entry for
+ * either is rejected before any comparison happens. Returns null when
+ * every seal's number and colour matched.
  */
 async function verifySealsAtCheckpoint(
   supabase: Awaited<ReturnType<typeof createClient>>,
   profile: UserProfile,
   transactionId: string,
   checkpoint: SealCheckpoint,
-  rawEntries: string
+  rawEntries: string,
+  rawColors: string
 ): Promise<string | null> {
   let entries: Record<string, string>;
+  let colors: Record<string, string>;
   try {
     entries = JSON.parse(rawEntries);
   } catch {
     return "Seal entries missing. Enter every seal number. / Masukkan setiap nombor sil.";
+  }
+  try {
+    colors = JSON.parse(rawColors);
+  } catch {
+    colors = {};
   }
 
   const { data: sealRows, error } = await supabase
@@ -76,16 +85,34 @@ async function verifySealsAtCheckpoint(
   }
   const seals = sealRows as Seal[];
 
-  const mismatches: string[] = [];
+  // Seal number AND colour are both mandatory — reject before comparing,
+  // rather than letting a blank silently read as a mismatch.
+  for (const seal of seals) {
+    if (!String(entries[seal.id] ?? "").trim()) {
+      return "Seal number is mandatory for every seal. / Nombor sil wajib diisi untuk setiap sil.";
+    }
+    if (!String(colors[seal.id] ?? "").trim()) {
+      return "Seal colour is mandatory for every seal. / Warna sil wajib dipilih untuk setiap sil.";
+    }
+  }
+
+  const numberMismatches: string[] = [];
+  const colorMismatches: string[] = [];
   const verifications = seals.map((seal) => {
-    const entered = norm(String(entries[seal.id] ?? ""));
-    const matched = entered !== "" && entered === norm(seal.seal_number);
-    if (!matched) mismatches.push(entered || "(blank)");
+    const enteredNumber = norm(String(entries[seal.id] ?? ""));
+    const enteredColor = norm(String(colors[seal.id] ?? ""));
+    const numberMatches = enteredNumber === norm(seal.seal_number);
+    const colorMatches = enteredColor === norm(seal.seal_color);
+    if (!numberMatches) numberMismatches.push(enteredNumber || "(blank)");
+    else if (!colorMatches) colorMismatches.push(`${seal.seal_number} entered as ${enteredColor}`);
     return {
       seal_id: seal.id,
       checkpoint,
-      entered_seal_number: entered || "(blank)",
-      matched,
+      entered_seal_number: enteredNumber,
+      observed_seal_color: (enteredColor === "BLUE" || enteredColor === "GREEN"
+        ? enteredColor
+        : null) as "BLUE" | "GREEN" | null,
+      matched: numberMatches && colorMatches,
       verified_by: profile.id,
       photo_url: null,
     };
@@ -96,22 +123,40 @@ async function verifySealsAtCheckpoint(
     return `Seal verification could not be saved: ${verError.message}`;
   }
 
-  if (mismatches.length > 0) {
+  if (numberMismatches.length > 0) {
     await supabase.from("incidents").insert({
       transaction_id: transactionId,
       incident_type: "SEAL_MISMATCH",
       description:
-        `Automatic escalation at ${checkpoint}: entered seal number(s) ${mismatches.join(", ")} ` +
+        `Automatic escalation at ${checkpoint}: entered seal number(s) ${numberMismatches.join(", ")} ` +
         `did not match the seals applied at Part A. Verified by ${profile.name} (${profile.staff_id}).`,
       reported_by: `${profile.name} (${profile.staff_id})`,
       reported_by_id: profile.id,
       photo_url: null,
     });
     return (
-      "SEAL MISMATCH — the transaction has been escalated and the supervisor notified. " +
-      "Do not release the vehicle. / KETIDAKPADANAN SIL — transaksi telah dieskalasi dan penyelia dimaklumkan. Jangan lepaskan kenderaan."
+      "SEAL MISMATCH — the transaction has been escalated and the admin notified. " +
+      "Do not release the vehicle. / KETIDAKPADANAN SIL — transaksi telah dieskalasi dan admin dimaklumkan. Jangan lepaskan kenderaan."
     );
   }
+
+  if (colorMismatches.length > 0) {
+    await supabase.from("incidents").insert({
+      transaction_id: transactionId,
+      incident_type: "WRONG_SEAL_COLOR",
+      description:
+        `Automatic escalation at ${checkpoint}: seal colour mismatch — ${colorMismatches.join(", ")}. ` +
+        `Verified by ${profile.name} (${profile.staff_id}).`,
+      reported_by: `${profile.name} (${profile.staff_id})`,
+      reported_by_id: profile.id,
+      photo_url: null,
+    });
+    return (
+      "WRONG SEAL COLOUR — the transaction has been escalated and the admin notified. " +
+      "Do not release the vehicle. / WARNA SIL TIDAK BETUL — transaksi telah dieskalasi dan admin dimaklumkan. Jangan lepaskan kenderaan."
+    );
+  }
+
   return null;
 }
 
@@ -131,7 +176,7 @@ function bool(formData: FormData, key: string): boolean {
  * Part A: a PIC creates the transaction + Part A record together.
  * Direction is bound to the creator's role: warehouse_pic -> OUTBOUND,
  * sra_warehouse_pic -> INBOUND (enforced here AND by RLS).
- * DB trigger assigns the CSCS-YYYY-NNNNNN number; audit triggers log both writes.
+ * DB trigger assigns the ICMS-YYYY-NNNNNN number; audit triggers log both writes.
  */
 export async function createTransaction(
   _prev: ActionState,
@@ -172,18 +217,12 @@ export async function createTransaction(
   if (new Set(seals.map((s) => s.seal_number)).size !== seals.length) {
     return { error: "Duplicate seal numbers — each seal number must be unique." };
   }
-  const requiredColor = DIRECTION_TRUCK_SEAL_COLOR[direction];
   const truckSeals = seals.filter((s) => s.seal_type === "TRUCK_SEAL");
   if (truckSeals.length === 0) {
     return { error: "A truck seal is required. / Sil trak diperlukan." };
   }
-  if (truckSeals.some((s) => s.seal_color !== requiredColor)) {
-    return {
-      error:
-        `${direction} truck seals must be ${requiredColor}. ` +
-        `/ Sil trak ${direction === "OUTBOUND" ? "keluar mesti BIRU" : "masuk mesti HIJAU"}.`,
-    };
-  }
+  // Seal colour is a manual, per-seal choice (parseSealDrafts already
+  // rejects any seal without a color picked) — no direction-based rule.
   if (!vehicleSearchCompleted) {
     return { error: "Vehicle search must be completed before dispatch." };
   }
@@ -225,7 +264,7 @@ export async function createTransaction(
     return {
       error:
         `EXPIRED_PASS: airport pass expired for ${expiredItems.join(" and ")}. ` +
-        `The vehicle must not proceed. You may create this record as an Expired Pass incident (escalated to the supervisor) using the button below. ` +
+        `The vehicle must not proceed. You may create this record as an Expired Pass incident (escalated to the admin) using the button below. ` +
         `/ Pas lapangan terbang telah tamat tempoh.`,
     };
   }
@@ -330,6 +369,7 @@ async function completeChecklistPart(
   const vehicleVerified = bool(formData, "vehicle_verified");
   const driverVerified = bool(formData, "driver_verified");
   const sealEntries = str(formData, "seal_entries");
+  const sealColors = str(formData, "seal_colors");
   const remarks = str(formData, "remarks");
   const signature = str(formData, "signature");
   const officerName = str(formData, "officer_name");
@@ -387,7 +427,8 @@ async function completeChecklistPart(
       profile,
       transactionId,
       part === "part_b" ? "INFLIGHT_POST" : "AIRPORT_POST",
-      sealEntries
+      sealEntries,
+      sealColors
     );
     if (sealError) {
       revalidatePath(`/transactions/${transactionId}`);
@@ -471,6 +512,7 @@ export async function completePartD(
   const deliveryLocation = str(formData, "delivery_location") as DeliveryLocation;
   const sealIntact = bool(formData, "seal_intact");
   const sealEntries = str(formData, "seal_entries");
+  const sealColors = str(formData, "seal_colors");
   const remarks = str(formData, "remarks");
   const signature = str(formData, "signature");
   const receiverName = str(formData, "receiver_name");
@@ -511,7 +553,8 @@ export async function completePartD(
       profile,
       transactionId,
       "PART_D",
-      sealEntries
+      sealEntries,
+      sealColors
     );
     if (sealError) {
       revalidatePath(`/transactions/${transactionId}`);
@@ -573,6 +616,40 @@ export async function completePartD(
     revalidatePath("/transactions");
     revalidatePath("/dashboard");
     redirect(`/transactions/${transactionId}?escalated=1`);
+  }
+
+  revalidatePath(`/transactions/${transactionId}`);
+  revalidatePath("/transactions");
+  revalidatePath("/dashboard");
+  redirect(`/transactions/${transactionId}?completed=1`);
+}
+
+/**
+ * Part D is optional: the receiver or an admin may complete an outbound
+ * transaction straight from AIRPORT_POST_APPROVED without ever filling in
+ * Part D. Delegates to the skip_part_d() DB function, which re-validates
+ * role/status/direction itself and writes the reason + COMPLETED status
+ * in one step (audited automatically by the existing transactions trigger).
+ */
+export async function skipPartD(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const profile = await requireRole(["receiver", "supervisor"]);
+
+  const transactionId = str(formData, "transaction_id");
+  const reason = str(formData, "reason");
+
+  if (!transactionId) return { error: "Missing transaction reference." };
+  if (!reason) {
+    return { error: "A reason is required to complete without Part D." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("skip_part_d", {
+    p_transaction_id: transactionId,
+    p_reason: `${reason} (recorded by ${profile.name}, ${profile.staff_id})`,
+  });
+
+  if (error) {
+    return { error: error.message };
   }
 
   revalidatePath(`/transactions/${transactionId}`);

@@ -45,6 +45,7 @@ export default async function TransactionsPage({
   let query = supabase
     .from("transactions")
     .select("*, seals(seal_number)")
+    .eq("archived", false)
     .order("created_at", { ascending: false })
     .limit(200);
 

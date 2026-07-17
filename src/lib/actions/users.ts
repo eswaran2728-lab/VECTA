@@ -11,7 +11,7 @@ export interface UserActionState {
   success: string | null;
 }
 
-/** Supervisor creates a new staff account (auth user + CSCS profile). */
+/** Admin creates a new staff account (auth user + ICMS profile). */
 export async function createUser(
   _prev: UserActionState,
   formData: FormData
@@ -64,12 +64,12 @@ export async function createUser(
   return { error: null, success: `Account created for ${name} (${email}).` };
 }
 
-/** Supervisor changes an existing user's role. */
+/** Admin changes an existing user's role. */
 export async function updateUserRole(
   _prev: UserActionState,
   formData: FormData
 ): Promise<UserActionState> {
-  const supervisor = await requireRole(["supervisor"]);
+  const profile = await requireRole(["supervisor"]);
 
   const userId = String(formData.get("user_id") ?? "");
   const role = String(formData.get("role") ?? "") as Role;
@@ -77,7 +77,7 @@ export async function updateUserRole(
   if (!userId || !ALL_ROLES.includes(role)) {
     return { error: "Invalid role update request.", success: null };
   }
-  if (userId === supervisor.id) {
+  if (userId === profile.id) {
     return { error: "You cannot change your own role.", success: null };
   }
 

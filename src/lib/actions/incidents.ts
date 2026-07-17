@@ -13,7 +13,7 @@ export interface ResolveState {
 const ORDER: IncidentStatus[] = ["OPEN", "UNDER_REVIEW", "RESOLVED", "CLOSED"];
 
 /**
- * Supervisor moves an incident forward through its lifecycle.
+ * Admin moves an incident forward through its lifecycle.
  * Notes are mandatory from RESOLVED onward; the DB trigger enforces the
  * same rules again (forward-only, facts immutable).
  */
@@ -21,7 +21,7 @@ export async function resolveIncident(
   _prev: ResolveState,
   formData: FormData
 ): Promise<ResolveState> {
-  const supervisor = await requireRole(["supervisor"]);
+  const admin = await requireRole(["supervisor"]);
 
   const incidentId = String(formData.get("incident_id") ?? "");
   const nextStatus = String(formData.get("status") ?? "") as IncidentStatus;
@@ -54,7 +54,7 @@ export async function resolveIncident(
     .update({
       status: nextStatus,
       resolution_notes: notes || null,
-      resolved_by: ORDER.indexOf(nextStatus) >= 2 ? supervisor.id : null,
+      resolved_by: ORDER.indexOf(nextStatus) >= 2 ? admin.id : null,
       resolved_at: ORDER.indexOf(nextStatus) >= 2 ? new Date().toISOString() : null,
     })
     .eq("id", incidentId);

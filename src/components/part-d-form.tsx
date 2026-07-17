@@ -35,6 +35,7 @@ export function PartDForm({
   const [state, formAction, pending] = useActionState(completePartD, initialState);
   const [sealIntact, setSealIntact] = useState(false);
   const [entries, setEntries] = useState<Record<string, string>>({});
+  const [colors, setColors] = useState<Record<string, string>>({});
   const [signature, setSignature] = useState<string | null>(null);
   const [queuedMsg, setQueuedMsg] = useState<string | null>(null);
   const [result, setResult] = useState<"PASS" | "ESCALATE">("PASS");
@@ -46,7 +47,9 @@ export function PartDForm({
   const defaultDate = `${malaysiaNow.getFullYear()}-${String(malaysiaNow.getMonth() + 1).padStart(2, "0")}-${String(malaysiaNow.getDate()).padStart(2, "0")}`;
   const defaultTime = `${String(malaysiaNow.getHours()).padStart(2, "0")}:${String(malaysiaNow.getMinutes()).padStart(2, "0")}`;
 
-  const allSealsEntered = seals.every((s) => (entries[s.id] ?? "").trim() !== "");
+  const allSealsEntered = seals.every(
+    (s) => (entries[s.id] ?? "").trim() !== "" && (colors[s.id] ?? "").trim() !== ""
+  );
 
   const handleOffline = (e: React.FormEvent<HTMLFormElement>) => {
     if (typeof navigator !== "undefined" && !navigator.onLine) {
@@ -76,6 +79,7 @@ export function PartDForm({
         <form action={formAction} onSubmit={handleOffline} className="space-y-4">
           <input type="hidden" name="transaction_id" value={transaction.id} />
           <input type="hidden" name="seal_entries" value={JSON.stringify(entries)} />
+          <input type="hidden" name="seal_colors" value={JSON.stringify(colors)} />
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
@@ -110,7 +114,14 @@ export function PartDForm({
             </Select>
           </div>
 
-          <SealVerifyFields seals={seals} entries={entries} onChange={setEntries} lang={lang} />
+          <SealVerifyFields
+            seals={seals}
+            entries={entries}
+            onChange={setEntries}
+            colors={colors}
+            onColorsChange={setColors}
+            lang={lang}
+          />
 
           <BigCheckbox
             id="seal_intact"

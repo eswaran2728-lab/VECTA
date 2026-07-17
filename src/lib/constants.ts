@@ -15,7 +15,9 @@ export const ROLE_LABELS: Record<Role, string> = {
   post2_avsec: "AVSEC In-flight Post (Post 2)",
   post6_avsec: "AVSEC Airport Post (Post 6)",
   receiver: "SRA / Aircraft Receiver",
-  supervisor: "Supervisor",
+  // Internal DB role value stays 'supervisor' (RLS, policies, seed data all
+  // key off it) — only the user-facing label changes to "Admin".
+  supervisor: "Admin",
 };
 
 export const STATUS_LABELS: Record<TransactionStatus, string> = {
@@ -31,7 +33,9 @@ export const STATUS_COLORS: Record<TransactionStatus, string> = {
   INFLIGHT_POST_APPROVED: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
   AIRPORT_POST_APPROVED: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200",
   COMPLETED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
-  ESCALATED: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200",
+  // Amber/orange, not red, so escalated status stays visually distinct
+  // from the app's red primary brand color.
+  ESCALATED: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200",
 };
 
 export const DIRECTION_LABELS: Record<Direction, string> = {
@@ -69,7 +73,7 @@ export const INCIDENT_STATUS_LABELS: Record<IncidentStatus, string> = {
 };
 
 export const INCIDENT_STATUS_COLORS: Record<IncidentStatus, string> = {
-  OPEN: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200",
+  OPEN: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200",
   UNDER_REVIEW: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
   RESOLVED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
   CLOSED: "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
@@ -93,11 +97,13 @@ export const SEAL_COLOR_BADGES: Record<SealColor, string> = {
   OTHER: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
 };
 
-/** Truck seal color required per direction (physical AirAsia process). */
-export const DIRECTION_TRUCK_SEAL_COLOR: Record<Direction, SealColor> = {
-  OUTBOUND: "BLUE",
-  INBOUND: "GREEN",
-};
+/**
+ * Checkpoint seal-colour picker options. Seal colour is a manual choice at
+ * every checkpoint (Part A and every verification screen) — the officer
+ * picks Blue or Green every time; nothing is pre-selected or inferred from
+ * direction.
+ */
+export const CHECKPOINT_SEAL_COLORS: Extract<SealColor, "BLUE" | "GREEN">[] = ["BLUE", "GREEN"];
 
 export const ALL_ROLES: Role[] = [
   "warehouse_pic",

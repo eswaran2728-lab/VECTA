@@ -11,7 +11,7 @@ import type { IncidentStatus } from "@/lib/database.types";
 const initialState: ResolveState = { error: null, success: null };
 const ORDER: IncidentStatus[] = ["OPEN", "UNDER_REVIEW", "RESOLVED", "CLOSED"];
 
-/** Supervisor lifecycle controls: forward-only, notes mandatory to resolve/close. */
+/** Admin lifecycle controls: forward-only, notes mandatory to resolve/close. */
 export function IncidentResolve({
   incidentId,
   currentStatus,

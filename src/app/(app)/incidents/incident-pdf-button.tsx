@@ -45,7 +45,7 @@ export function IncidentPdfButton({
     try {
       const doc = new jsPDF();
       doc.setFontSize(14);
-      doc.text(`CSCS Incident Report — ${transactionNumber}`, 14, 16);
+      doc.text(`ICMS Incident Report — ${transactionNumber}`, 14, 16);
       doc.setFontSize(9);
       doc.text(
         `Generated ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kuala_Lumpur" })} (MYT)`,

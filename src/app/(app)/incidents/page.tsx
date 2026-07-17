@@ -34,7 +34,8 @@ export default async function IncidentsPage() {
 
   const { data } = await supabase
     .from("incidents")
-    .select("*, transactions(transaction_number, vehicle_number)")
+    .select("*, transactions!inner(transaction_number, vehicle_number, archived)")
+    .eq("transactions.archived", false)
     .order("created_at", { ascending: false })
     .limit(200);
 

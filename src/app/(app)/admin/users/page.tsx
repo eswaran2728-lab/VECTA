@@ -12,8 +12,9 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { ROLE_LABELS } from "@/lib/constants";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import { CreateUserForm, RoleSelect } from "./user-forms";
+import { PendingApprovals } from "./pending-approvals";
 import type { UserProfile } from "@/lib/database.types";
 
 export const metadata: Metadata = { title: "User Management" };
@@ -28,16 +29,28 @@ export default async function UsersPage() {
     .select("*")
     .order("created_at", { ascending: false });
 
-  const users = (data ?? []) as UserProfile[];
+  const allUsers = (data ?? []) as UserProfile[];
+  const pending = allUsers.filter((u) => u.status === "pending");
+  const users = allUsers.filter((u) => u.status !== "pending");
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">User Management</h1>
         <p className="text-sm text-muted-foreground">
-          Create staff accounts and assign checkpoint roles.
+          Create staff accounts, approve registrations, and assign checkpoint roles.
         </p>
       </div>
+
+      <PendingApprovals
+        pending={pending.map((u) => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          role: u.role,
+          created_at: formatDateTime(u.created_at),
+        }))}
+      />
 
       <CreateUserForm />
 
@@ -49,6 +62,7 @@ export default async function UsersPage() {
               <TableHead>Staff ID</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead>Since</TableHead>
             </TableRow>
           </TableHeader>
@@ -65,6 +79,15 @@ export default async function UsersPage() {
                     </Badge>
                   ) : (
                     <RoleSelect userId={user.id} currentRole={user.role} />
+                  )}
+                </TableCell>
+                <TableCell>
+                  {user.status === "rejected" ? (
+                    <Badge className="border bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200">
+                      Rejected
+                    </Badge>
+                  ) : (
+                    <Badge className="border bg-muted text-muted-foreground">Active</Badge>
                   )}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">

@@ -1,7 +1,7 @@
-/* CSCS service worker: app-shell caching + offline fallback.
+/* ICMS service worker: app-shell caching + offline fallback.
  * Checkpoint submissions made offline are queued in IndexedDB by the app
  * (src/lib/offline-queue.ts) and replayed via /api/sync on reconnect. */
-const CACHE = "cscs-shell-v1";
+const CACHE = "icms-shell-v1";
 const SHELL = ["/offline", "/manifest.json", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {

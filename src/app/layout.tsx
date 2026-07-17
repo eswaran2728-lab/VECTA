@@ -3,13 +3,13 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "CSCS — Catering Security Control System",
-    template: "%s | CSCS",
+    default: "ICMS — Inflight Catering Management System",
+    template: "%s | ICMS",
   },
   description:
     "Digital IFCSF workflow for airport catering security: Part A–D checkpoints, incidents, audit trail.",
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, title: "CSCS", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "ICMS", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

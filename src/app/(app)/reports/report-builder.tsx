@@ -111,7 +111,7 @@ export function ReportBuilder({
   const exportMonthlyPdf = () => {
     const doc = new jsPDF();
     doc.setFontSize(14);
-    doc.text(`CSCS Monthly Report — ${month}`, 14, 16);
+    doc.text(`ICMS Monthly Report — ${month}`, 14, 16);
     doc.setFontSize(9);
     doc.text(`Generated ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kuala_Lumpur" })} (MYT)`, 14, 22);
     autoTable(doc, {
@@ -147,7 +147,7 @@ export function ReportBuilder({
         headStyles: { fillColor: [153, 27, 27] },
       });
     }
-    doc.save(`cscs-monthly-${month}.pdf`);
+    doc.save(`icms-monthly-${month}.pdf`);
   };
 
   const exportMonthlyExcel = () => {
@@ -186,7 +186,7 @@ export function ReportBuilder({
         "Incidents"
       );
     }
-    XLSX.writeFile(wb, `cscs-monthly-${month}.xlsx`);
+    XLSX.writeFile(wb, `icms-monthly-${month}.xlsx`);
   };
 
   return (
@@ -216,7 +216,7 @@ export function ReportBuilder({
             </div>
             <Button
               onClick={() =>
-                exportTxPdf(`CSCS Daily Report — ${date}`, dailyTransactions, `cscs-daily-${date}.pdf`)
+                exportTxPdf(`ICMS Daily Report — ${date}`, dailyTransactions, `icms-daily-${date}.pdf`)
               }
               disabled={dailyTransactions.length === 0}
             >
@@ -224,7 +224,7 @@ export function ReportBuilder({
             </Button>
             <Button
               variant="secondary"
-              onClick={() => exportTxExcel(dailyTransactions, `cscs-daily-${date}.xlsx`)}
+              onClick={() => exportTxExcel(dailyTransactions, `icms-daily-${date}.xlsx`)}
               disabled={dailyTransactions.length === 0}
             >
               Export Excel
@@ -380,9 +380,9 @@ export function ReportBuilder({
             <Button
               onClick={() =>
                 exportTxPdf(
-                  `CSCS Archive — ${rangeFrom} to ${rangeTo}`,
+                  `ICMS Archive — ${rangeFrom} to ${rangeTo}`,
                   rangeTransactions,
-                  `cscs-archive-${rangeFrom}-${rangeTo}.pdf`
+                  `icms-archive-${rangeFrom}-${rangeTo}.pdf`
                 )
               }
               disabled={rangeTransactions.length === 0}
@@ -391,7 +391,7 @@ export function ReportBuilder({
             </Button>
             <Button
               variant="secondary"
-              onClick={() => exportTxExcel(rangeTransactions, `cscs-archive-${rangeFrom}-${rangeTo}.xlsx`)}
+              onClick={() => exportTxExcel(rangeTransactions, `icms-archive-${rangeFrom}-${rangeTo}.xlsx`)}
               disabled={rangeTransactions.length === 0}
             >
               Export Excel

@@ -55,9 +55,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
     transactionId = result.transactionId;
-  } else if (!/^CSCS-\d{4}-\d{6}$/.test(transactionNumber)) {
+  } else if (!/^(ICMS|CSCS)-\d{4}-\d{6}$/.test(transactionNumber)) {
+    // Accepts legacy CSCS-* numbers too, so transactions created before the
+    // ICMS rebrand remain look-up-able by their original number.
     return NextResponse.json(
-      { error: "Enter a valid CSCS transaction number. / Masukkan nombor transaksi CSCS yang sah." },
+      { error: "Enter a valid ICMS transaction number. / Masukkan nombor transaksi ICMS yang sah." },
       { status: 400 }
     );
   }

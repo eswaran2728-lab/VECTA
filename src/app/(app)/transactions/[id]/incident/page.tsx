@@ -28,7 +28,7 @@ export default async function IncidentPage({ params }: { params: Promise<{ id: s
           {transaction.seal_number}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Submitting escalates the transaction immediately and notifies the supervisor.
+          Submitting escalates the transaction immediately and notifies the admin.
         </p>
       </div>
       <IncidentForm transactionId={transaction.id} />

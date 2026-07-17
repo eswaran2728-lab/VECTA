@@ -6,10 +6,10 @@ import {
   PlusCircle,
   ScanLine,
   ShieldAlert,
-  ShieldCheck,
   FileBarChart,
   Users,
   ScrollText,
+  Archive,
   LogOut,
 } from "lucide-react";
 import { requireProfile } from "@/lib/auth";
@@ -20,6 +20,7 @@ import { ROLE_LABELS } from "@/lib/constants";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { PwaProvider } from "@/components/pwa-provider";
+import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -69,11 +70,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       icon: ScrollText,
       show: profile.role === "supervisor",
     },
+    {
+      href: "/admin/archive",
+      label: "Archive",
+      icon: Archive,
+      show: profile.role === "supervisor",
+    },
   ].filter((item) => item.show);
 
   // Bottom bar (phones/tablets): exactly the four per-role primary actions —
   // PIC: Dashboard/New/Transactions/Incidents; checkpoint roles: Dashboard/
-  // Scan/Transactions/Incidents; supervisor: oversight only (no create/scan).
+  // Scan/Transactions/Incidents; admin: oversight only (no create/scan).
   const bottomNav = nav.filter((item) =>
     ["/dashboard", "/transactions/new", "/scan", "/transactions", "/incidents"].includes(item.href)
   );
@@ -83,8 +90,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <header className="sticky top-0 z-40 border-b bg-card/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-2 px-4">
           <Link href="/dashboard" className="flex items-center gap-2 font-bold">
-            <ShieldCheck className="h-6 w-6 text-primary" />
-            <span className="hidden sm:inline">CSCS</span>
+            <BrandMark />
+            <span className="hidden sm:inline">ICMS</span>
           </Link>
 
           <nav className="hidden items-center gap-1 md:flex">

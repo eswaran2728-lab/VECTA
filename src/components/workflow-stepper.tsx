@@ -54,9 +54,9 @@ export function WorkflowStepper({ direction, status, parts, className }: Workflo
         </div>
       ))}
       {status === "ESCALATED" ? (
-        <div className="mt-2 flex items-center gap-2 rounded-md bg-red-100 p-2 text-sm text-red-800 dark:bg-red-900/40 dark:text-red-200">
+        <div className="mt-2 flex items-center gap-2 rounded-md bg-orange-100 p-2 text-sm text-orange-800 dark:bg-orange-900/40 dark:text-orange-200">
           <AlertTriangle className="h-5 w-5" />
-          Escalated — supervisor review required.
+          Escalated — admin review required.
         </div>
       ) : null}
     </div>

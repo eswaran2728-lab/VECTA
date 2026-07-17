@@ -11,7 +11,6 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { SignatureField } from "@/components/signature-pad";
 import { SealEditor, type SealDraft } from "@/components/seal-editor";
-import { DIRECTION_TRUCK_SEAL_COLOR } from "@/lib/constants";
 import type {
   CateringCompany,
   Direction,
@@ -66,10 +65,11 @@ export function PartAForm({
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [driverId, setDriverId] = useState("");
   const [seals, setSeals] = useState<SealDraft[]>([
-    { seal_number: "", seal_type: "TRUCK_SEAL", seal_color: DIRECTION_TRUCK_SEAL_COLOR[direction] },
+    { seal_number: "", seal_type: "TRUCK_SEAL", seal_color: "" },
   ]);
 
-  const sealsReady = seals.length > 0 && seals.every((s) => s.seal_number.trim() !== "");
+  const sealsReady =
+    seals.length > 0 && seals.every((s) => s.seal_number.trim() !== "" && s.seal_color !== "");
   const today = new Date().toISOString().slice(0, 10);
 
   const vehicleState: WhitelistState = useMemo(() => {
@@ -183,7 +183,7 @@ export function PartAForm({
             </div>
           </div>
 
-          <SealEditor direction={direction} seals={seals} onChange={setSeals} />
+          <SealEditor seals={seals} onChange={setSeals} />
           <input type="hidden" name="seals" value={JSON.stringify(seals)} />
 
           <BigCheckbox
@@ -233,7 +233,7 @@ export function PartAForm({
               <input type="checkbox" name="escalate_expired" className="h-5 w-5 accent-red-600" />
               <span>
                 Record anyway as an <strong>Expired Pass incident</strong> — the transaction is
-                created and immediately escalated to the supervisor; the vehicle must not proceed.
+                created and immediately escalated to the admin; the vehicle must not proceed.
               </span>
             </label>
           ) : null}

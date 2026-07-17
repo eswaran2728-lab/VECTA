@@ -45,6 +45,8 @@ export type SealVerification = {
   seal_id: string;
   checkpoint: SealCheckpoint;
   entered_seal_number: string;
+  /** Colour the officer observed at this checkpoint (manual pick, Blue/Green only). */
+  observed_seal_color: "BLUE" | "GREEN" | null;
   matched: boolean;
   verified_by: string | null;
   verified_at: string;
@@ -80,6 +82,8 @@ export type DriverRecord = {
   created_at: string;
 }
 
+export type UserStatus = "pending" | "active" | "rejected";
+
 export type UserProfile = {
   id: string;
   name: string;
@@ -87,6 +91,9 @@ export type UserProfile = {
   email: string;
   role: Role;
   preferred_language: "en" | "ms";
+  /** Self-registered accounts start 'pending' and cannot sign in until an
+   *  admin approves them. Existing/admin-created accounts default 'active'. */
+  status: UserStatus;
   created_at: string;
 }
 
@@ -113,6 +120,13 @@ export type Transaction = {
   current_stage: "A" | "B" | "C" | "D";
   lifecycle_status: "pending" | "completed" | "escalated";
   escalation_reason: string | null;
+  /** True when an outbound transaction was completed without Part D. */
+  part_d_skipped: boolean;
+  part_d_skip_reason: string | null;
+  /** Set by the admin's weekly Export & Reset — never deleted, just hidden
+   *  from day-to-day dashboards/lists once archived. */
+  archived: boolean;
+  archived_at: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -230,9 +244,10 @@ export type Database = {
     Tables: {
       users: {
         Row: UserProfile;
-        Insert: Omit<UserProfile, "created_at" | "preferred_language"> & {
+        Insert: Omit<UserProfile, "created_at" | "preferred_language" | "status"> & {
           created_at?: string;
           preferred_language?: "en" | "ms";
+          status?: UserStatus;
         };
         Update: Partial<UserProfile>;
         Relationships: [];
@@ -259,6 +274,10 @@ export type Database = {
           | "current_stage"
           | "lifecycle_status"
           | "escalation_reason"
+          | "part_d_skipped"
+          | "part_d_skip_reason"
+          | "archived"
+          | "archived_at"
         > & {
           id?: string;
           transaction_number?: string;
@@ -275,6 +294,10 @@ export type Database = {
           current_stage?: "A" | "B" | "C" | "D";
           lifecycle_status?: "pending" | "completed" | "escalated";
           escalation_reason?: string | null;
+          part_d_skipped?: boolean;
+          part_d_skip_reason?: string | null;
+          archived?: boolean;
+          archived_at?: string | null;
         };
         Update: Partial<Transaction>;
         Relationships: [];
@@ -413,7 +436,11 @@ export type Database = {
       };
       seal_verifications: {
         Row: SealVerification;
-        Insert: Omit<SealVerification, "id" | "verified_at"> & { id?: string; verified_at?: string };
+        Insert: Omit<SealVerification, "id" | "verified_at" | "observed_seal_color"> & {
+          id?: string;
+          verified_at?: string;
+          observed_seal_color?: "BLUE" | "GREEN" | null;
+        };
         Update: never;
         Relationships: [];
       };
@@ -422,6 +449,14 @@ export type Database = {
     Functions: {
       current_user_role: { Args: Record<string, never>; Returns: string };
       next_transaction_number: { Args: Record<string, never>; Returns: string };
+      skip_part_d: {
+        Args: { p_transaction_id: string; p_reason: string };
+        Returns: void;
+      };
+      archive_all_pending: {
+        Args: { p_reason?: string | null };
+        Returns: number;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

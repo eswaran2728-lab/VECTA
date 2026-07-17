@@ -4,6 +4,7 @@ import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardCharts, type DashTx } from "./dashboard-charts";
+import { ExportResetButton } from "./export-reset-button";
 import type { Incident } from "@/lib/database.types";
 import { QrCode } from "lucide-react";
 
@@ -38,17 +39,20 @@ export default async function DashboardPage() {
     supabase
       .from("transactions")
       .select("id", { count: "exact", head: true })
+      .eq("archived", false)
       .eq("direction", "OUTBOUND")
       .gte("created_at", today),
     supabase
       .from("transactions")
       .select("id", { count: "exact", head: true })
+      .eq("archived", false)
       .eq("direction", "INBOUND")
       .gte("created_at", today),
     // In-flight Post is the 1st checkpoint outbound, the final checkpoint inbound.
     supabase
       .from("transactions")
       .select("id", { count: "exact", head: true })
+      .eq("archived", false)
       .or(
         "and(direction.eq.OUTBOUND,status.eq.CREATED),and(direction.eq.INBOUND,status.eq.AIRPORT_POST_APPROVED)"
       ),
@@ -56,6 +60,7 @@ export default async function DashboardPage() {
     supabase
       .from("transactions")
       .select("id", { count: "exact", head: true })
+      .eq("archived", false)
       .or(
         "and(direction.eq.OUTBOUND,status.eq.INFLIGHT_POST_APPROVED),and(direction.eq.INBOUND,status.eq.CREATED)"
       ),
@@ -63,22 +68,26 @@ export default async function DashboardPage() {
     supabase
       .from("transactions")
       .select("id", { count: "exact", head: true })
+      .eq("archived", false)
       .eq("direction", "OUTBOUND")
       .eq("status", "AIRPORT_POST_APPROVED"),
     supabase
       .from("transactions")
       .select("id", { count: "exact", head: true })
+      .eq("archived", false)
       .eq("status", "COMPLETED")
       .gte("completed_at", today),
     supabase
       .from("transactions")
       .select("id", { count: "exact", head: true })
+      .eq("archived", false)
       .eq("status", "ESCALATED"),
     supabase
       .from("transactions")
       .select(
         "created_at, completed_at, status, direction, part_a(completed_at), part_b(completed_at), part_c(completed_at), part_d(completed_at)"
       )
+      .eq("archived", false)
       .gte("created_at", chartWindow.toISOString())
       .order("created_at", { ascending: false })
       .limit(2000),
@@ -117,11 +126,14 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          Welcome back, {profile.name}. Live view of today&apos;s catering security movements.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Welcome back, {profile.name}. Live view of today&apos;s catering security movements.
+          </p>
+        </div>
+        {profile.role === "supervisor" ? <ExportResetButton /> : null}
       </div>
 
       {checkpointQueue ? (
@@ -147,7 +159,7 @@ export default async function DashboardPage() {
             <Card
               className={
                 card.alert && card.value > 0
-                  ? "border-red-400 bg-red-50 dark:border-red-800 dark:bg-red-950/40"
+                  ? "border-orange-400 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/40"
                   : undefined
               }
             >

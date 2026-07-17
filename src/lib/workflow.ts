@@ -146,8 +146,8 @@ export function checkpointOrderError(
   }
   if (status === "ESCALATED") {
     return (
-      "This transaction is escalated; checkpoint processing is suspended pending supervisor review. " +
-      "/ Transaksi ini telah dieskalasi; pemprosesan digantung sehingga semakan penyelia."
+      "This transaction is escalated; checkpoint processing is suspended pending admin review. " +
+      "/ Transaksi ini telah dieskalasi; pemprosesan digantung sehingga semakan admin."
     );
   }
   if (status !== step.requiredStatus) {

@@ -1,5 +1,5 @@
 /**
- * CSCS seed script (Phase 1: direction-aware).
+ * ICMS seed script (Phase 1: direction-aware).
  *
  * Creates the demo accounts (one per role, including SRA Warehouse PIC)
  * plus sample transactions in every workflow state for both directions.
@@ -39,15 +39,17 @@ const admin = createClient(url, serviceKey, {
 });
 
 const USERS = [
-  { email: "pic@cscs.local", name: "Ahmad Warehouse", staff_id: "WH-1001", role: "warehouse_pic" },
-  { email: "sra@cscs.local", name: "Nurul SRA Warehouse", staff_id: "SW-4001", role: "sra_warehouse_pic" },
-  { email: "post2@cscs.local", name: "Siti Post Two", staff_id: "AV-2001", role: "post2_avsec" },
-  { email: "post6@cscs.local", name: "Kumar Post Six", staff_id: "AV-6001", role: "post6_avsec" },
-  { email: "receiver@cscs.local", name: "Lee Receiver", staff_id: "SR-3001", role: "receiver" },
-  { email: "supervisor@cscs.local", name: "Farah Supervisor", staff_id: "SV-9001", role: "supervisor" },
+  { email: "pic@icms.local", name: "Ahmad Warehouse", staff_id: "WH-1001", role: "warehouse_pic" },
+  { email: "sra@icms.local", name: "Nurul SRA Warehouse", staff_id: "SW-4001", role: "sra_warehouse_pic" },
+  { email: "post2@icms.local", name: "Siti Post Two", staff_id: "AV-2001", role: "post2_avsec" },
+  { email: "post6@icms.local", name: "Kumar Post Six", staff_id: "AV-6001", role: "post6_avsec" },
+  { email: "receiver@icms.local", name: "Lee Receiver", staff_id: "SR-3001", role: "receiver" },
+  // Internal DB role value stays 'supervisor' (see ROLE_LABELS) — only the
+  // display label and demo email/name reflect the "Admin" rename.
+  { email: "admin@icms.local", name: "Farah Admin", staff_id: "SV-9001", role: "supervisor" },
 ];
 
-const PASSWORD = "CSCS-demo-2026!";
+const PASSWORD = "ICMS-demo-2026!";
 
 async function ensureUser(u) {
   const { data: created, error } = await admin.auth.admin.createUser({

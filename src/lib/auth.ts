@@ -20,8 +20,15 @@ export async function requireProfile(): Promise<UserProfile> {
     .single();
 
   if (!profile) {
-    // Authenticated in Supabase but no CSCS profile: force sign-out path.
+    // Authenticated in Supabase but no ICMS profile: force sign-out path.
     redirect("/login?error=no-profile");
+  }
+
+  if (profile.status !== "active") {
+    // Defense in depth: signIn() already blocks pending/rejected accounts,
+    // this catches a status change during an already-open session.
+    await supabase.auth.signOut();
+    redirect(`/login?error=${profile.status}`);
   }
 
   return profile as UserProfile;

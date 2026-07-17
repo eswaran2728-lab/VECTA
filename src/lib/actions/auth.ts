@@ -17,10 +17,21 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-  if (error) {
+  if (error || !data.user) {
     return { error: "Invalid email or password." };
+  }
+
+  const { data: profile } = await supabase
+    .from("users")
+    .select("status")
+    .eq("id", data.user.id)
+    .single();
+
+  if (profile?.status === "pending" || profile?.status === "rejected") {
+    await supabase.auth.signOut();
+    redirect(`/login?error=${profile.status}`);
   }
 
   revalidatePath("/", "layout");

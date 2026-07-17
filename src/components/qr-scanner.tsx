@@ -61,7 +61,7 @@ export function QrScanner() {
       }
       if (!token) {
         setError(
-          "Not a valid CSCS QR pass (old or unsigned passes are rejected — use manual entry)."
+          "Not a valid ICMS QR pass (old or unsigned passes are rejected — use manual entry)."
         );
         return;
       }
@@ -114,7 +114,7 @@ export function QrScanner() {
         <div className="flex gap-2">
           <Input
             id="manual-entry"
-            placeholder="Transaction number e.g. CSCS-2026-000001"
+            placeholder="Transaction number e.g. ICMS-2026-000001"
             value={manual}
             onChange={(e) => setManual(e.target.value)}
           />

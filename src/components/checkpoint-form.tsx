@@ -50,6 +50,7 @@ export function CheckpointForm({
   const [vehicle, setVehicle] = useState(false);
   const [driver, setDriver] = useState(false);
   const [entries, setEntries] = useState<Record<string, string>>({});
+  const [colors, setColors] = useState<Record<string, string>>({});
   const [signature, setSignature] = useState<string | null>(null);
   const [queuedMsg, setQueuedMsg] = useState<string | null>(null);
   const [result, setResult] = useState<"PASS" | "ESCALATE">("PASS");
@@ -61,7 +62,9 @@ export function CheckpointForm({
   const defaultDate = `${malaysiaNow.getFullYear()}-${String(malaysiaNow.getMonth() + 1).padStart(2, "0")}-${String(malaysiaNow.getDate()).padStart(2, "0")}`;
   const defaultTime = `${String(malaysiaNow.getHours()).padStart(2, "0")}:${String(malaysiaNow.getMinutes()).padStart(2, "0")}`;
 
-  const allSealsEntered = seals.every((s) => (entries[s.id] ?? "").trim() !== "");
+  const allSealsEntered = seals.every(
+    (s) => (entries[s.id] ?? "").trim() !== "" && (colors[s.id] ?? "").trim() !== ""
+  );
   const ready =
     !!signature &&
     (result === "ESCALATE"
@@ -101,6 +104,7 @@ export function CheckpointForm({
         <form action={formAction} onSubmit={handleOffline} className="space-y-4">
           <input type="hidden" name="transaction_id" value={transaction.id} />
           <input type="hidden" name="seal_entries" value={JSON.stringify(entries)} />
+          <input type="hidden" name="seal_colors" value={JSON.stringify(colors)} />
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
@@ -155,7 +159,14 @@ export function CheckpointForm({
             />
           </div>
 
-          <SealVerifyFields seals={seals} entries={entries} onChange={setEntries} lang={lang} />
+          <SealVerifyFields
+            seals={seals}
+            entries={entries}
+            onChange={setEntries}
+            colors={colors}
+            onColorsChange={setColors}
+            lang={lang}
+          />
 
           <div className="space-y-2">
             <Label htmlFor="remarks">{t(lang, "remarks_optional")}</Label>
@@ -213,7 +224,7 @@ export function CheckpointForm({
               {pending
                 ? t(lang, "saving")
                 : result === "ESCALATE"
-                  ? "Escalate & Notify Supervisor"
+                  ? "Escalate & Notify Admin"
                   : finalizes
                     ? t(lang, "approve_complete")
                     : t(lang, "approve_release")}

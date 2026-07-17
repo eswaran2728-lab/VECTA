@@ -192,14 +192,24 @@ export default async function TransactionDetailPage({
       : null;
   const currentPart = nextStep?.part ?? null;
 
+  // Part D is optional: the receiver or an admin can close the transaction
+  // out from AIRPORT_POST_APPROVED without ever completing Part D.
+  const canSkipPartD =
+    transaction.direction === "OUTBOUND" &&
+    transaction.status === "AIRPORT_POST_APPROVED" &&
+    !partD &&
+    (profile.role === "receiver" || profile.role === "supervisor");
+
   const banner = flags.created
     ? "Transaction created. Print or show the QR pass at Post 2."
     : flags.approved
       ? "Checkpoint recorded."
       : flags.completed
-        ? "Delivery confirmed — transaction completed."
+        ? transaction.part_d_skipped
+          ? "Transaction completed without Part D."
+          : "Delivery confirmed — transaction completed."
         : flags.escalated
-          ? "Incident reported. Transaction escalated and supervisor notified."
+          ? "Incident reported. Transaction escalated and admin notified."
           : null;
 
   return (
@@ -208,7 +218,7 @@ export default async function TransactionDetailPage({
         <p
           className={`rounded-md p-3 text-sm font-medium ${
             flags.escalated
-              ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200"
+              ? "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200"
               : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
           }`}
         >
@@ -226,10 +236,17 @@ export default async function TransactionDetailPage({
             <DirectionBadge direction={transaction.direction} />
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {nextAction ? (
             <Link href={nextAction.href}>
               <Button size="lg">{nextAction.label}</Button>
+            </Link>
+          ) : null}
+          {canSkipPartD ? (
+            <Link href={`/transactions/${id}/skip-part-d`}>
+              <Button size="lg" variant="secondary">
+                Complete without Part D
+              </Button>
             </Link>
           ) : null}
           {transaction.status !== "COMPLETED" || profile.role === "supervisor" ? (
@@ -322,7 +339,7 @@ export default async function TransactionDetailPage({
             <WorkflowStepper
               direction={transaction.direction}
               status={transaction.status}
-              parts={{ part_b: !!partB, part_c: !!partC, part_d: !!partD }}
+              parts={{ part_b: !!partB, part_c: !!partC, part_d: !!partD || transaction.part_d_skipped }}
             />
           </CardContent>
         </Card>
@@ -419,6 +436,20 @@ export default async function TransactionDetailPage({
               </div>
               {partD.remarks ? <p className="text-sm text-muted-foreground">“{partD.remarks}”</p> : null}
               <Sig url={sigD} label="Receiver signature" />
+            </CardContent>
+          </Card>
+        ) : transaction.part_d_skipped ? (
+          <Card className="border-dashed">
+            <CardHeader>
+              <CardTitle className="text-base">Part D — Delivery</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <p className="font-medium text-muted-foreground">
+                Skipped — transaction completed without Part D.
+              </p>
+              {transaction.part_d_skip_reason ? (
+                <p className="text-muted-foreground">“{transaction.part_d_skip_reason}”</p>
+              ) : null}
             </CardContent>
           </Card>
         ) : transaction.direction === "OUTBOUND" ? (
