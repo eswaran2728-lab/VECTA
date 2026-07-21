@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile, requireRole } from "@/lib/auth";
 import { uploadDataUrl } from "@/lib/storage";
-import { checkpointOrderError, CREATOR_DIRECTIONS, getStep } from "@/lib/workflow";
+import { checkpointOrderError, getStep } from "@/lib/workflow";
 import { generateQrToken } from "@/lib/qr-token";
 import type {
   DeliveryLocation,
@@ -200,12 +200,11 @@ export async function createTransaction(
   const escortStaffId = str(formData, "escort_officer_staff_id");
   const escalateExpired = bool(formData, "escalate_expired");
 
-  const allowedDirection = CREATOR_DIRECTIONS[profile.role];
-  if (direction !== allowedDirection) {
+  // The warehouse PIC chooses the direction at creation (Outbound dispatch
+  // or Inbound return). Downstream checkpoint order is direction-aware.
+  if (direction !== "OUTBOUND" && direction !== "INBOUND") {
     return {
-      error:
-        `Your role (${profile.role}) may only create ${allowedDirection} transactions. ` +
-        `/ Peranan anda hanya boleh mencipta transaksi ${allowedDirection === "OUTBOUND" ? "keluar" : "masuk"}.`,
+      error: "Select a direction (Outbound or Inbound). / Pilih arah (Keluar atau Masuk).",
     };
   }
   if (!vehicleNumber || !driverName || !driverId) {

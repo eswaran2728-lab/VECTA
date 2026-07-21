@@ -1,7 +1,9 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
+import { PlaneTakeoff, PlaneLanding } from "lucide-react";
 import { createTransaction, type ActionState } from "@/lib/actions/transactions";
+import { WORKFLOWS } from "@/lib/workflow";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { BigCheckbox } from "@/components/ui/checkbox";
@@ -44,22 +46,40 @@ function whitelistHint(state: WhitelistState): { text: string; className: string
 interface PartAFormProps {
   picName: string;
   picStaffId: string;
-  /** Fixed by the creator's role: warehouse_pic = OUTBOUND, sra_warehouse_pic = INBOUND. */
-  direction: Direction;
   companies: CateringCompany[];
   vehicles: Pick<VehicleRecord, "vehicle_number" | "pass_expiry_date">[];
   drivers: Pick<DriverRecord, "name" | "driver_id" | "pass_expiry_date">[];
 }
 
+const DIRECTION_OPTIONS: {
+  value: Direction;
+  title: string;
+  subtitle: string;
+  icon: typeof PlaneTakeoff;
+}[] = [
+  {
+    value: "OUTBOUND",
+    title: "Outbound",
+    subtitle: "Catering warehouse → aircraft",
+    icon: PlaneTakeoff,
+  },
+  {
+    value: "INBOUND",
+    title: "Inbound",
+    subtitle: "Aircraft → SRA warehouse",
+    icon: PlaneLanding,
+  },
+];
+
 export function PartAForm({
   picName,
   picStaffId,
-  direction,
   companies,
   vehicles,
   drivers,
 }: PartAFormProps) {
   const [state, formAction, pending] = useActionState(createTransaction, initialState);
+  const [direction, setDirection] = useState<Direction | null>(null);
   const [searchDone, setSearchDone] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [vehicleNumber, setVehicleNumber] = useState("");
@@ -92,13 +112,72 @@ export function PartAForm({
   const driverHint = whitelistHint(driverState);
   const expiredBlocked = state.error?.startsWith("EXPIRED_PASS:") ?? false;
 
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <form action={formAction} className="space-y-5">
-          <input type="hidden" name="direction" value={direction} />
+  const flow = direction
+    ? ["A · Warehouse", ...WORKFLOWS[direction].map((s) => s.shortLabel)].join("  →  ")
+    : null;
 
-          <div className="grid gap-4 sm:grid-cols-2">
+  return (
+    <div className="space-y-4">
+      {/* Step 1 — pick the direction before anything else is shown. */}
+      <Card>
+        <CardContent className="pt-6">
+          <p className="mb-3 text-sm font-semibold">
+            Step 1 — Direction
+            <span className="ml-2 font-normal text-muted-foreground">
+              What kind of movement is this?
+            </span>
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {DIRECTION_OPTIONS.map((opt) => {
+              const active = direction === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setDirection(opt.value)}
+                  aria-pressed={active}
+                  className={
+                    active
+                      ? "flex items-center gap-3 rounded-xl border-2 border-primary bg-primary/10 p-4 text-left transition-all"
+                      : "flex items-center gap-3 rounded-xl border-2 border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:bg-accent"
+                  }
+                >
+                  <div
+                    className={
+                      active
+                        ? "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+                        : "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+                    }
+                  >
+                    <opt.icon className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-heading font-bold">{opt.title}</p>
+                    <p className="text-xs text-muted-foreground">{opt.subtitle}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {flow ? (
+            <p className="mt-3 rounded-md bg-muted p-2 font-mono text-xs text-muted-foreground">
+              {flow}
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {direction === null ? (
+        <p className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+          Select Outbound or Inbound above to continue.
+        </p>
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <form action={formAction} className="space-y-5">
+              <input type="hidden" name="direction" value={direction} />
+
+              <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="flight_number">Flight Number (optional)</Label>
               <Input id="flight_number" name="flight_number" placeholder="e.g. AK 703" />
@@ -238,16 +317,18 @@ export function PartAForm({
             </label>
           ) : null}
 
-          <Button
-            type="submit"
-            size="xl"
-            className="w-full"
-            disabled={pending || !searchDone || !signature || !sealsReady}
-          >
-            {pending ? "Creating…" : "Create Transaction & Generate QR"}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+              <Button
+                type="submit"
+                size="xl"
+                className="w-full"
+                disabled={pending || !searchDone || !signature || !sealsReady}
+              >
+                {pending ? "Creating…" : "Create Transaction & Generate QR"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }

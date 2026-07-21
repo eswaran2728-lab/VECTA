@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 
 interface QrDisplayProps {
-  /** Signed HMAC token generated server-side; expires after 8 hours. */
+  /** Signed HMAC token generated server-side; expires after 24 hours. */
   token: string;
   transactionNumber: string;
   size?: number;

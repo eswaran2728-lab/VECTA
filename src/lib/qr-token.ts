@@ -6,10 +6,10 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * Signed QR pass tokens. Format: <transactionId>.<expiryUnixSeconds>.<hmac>
  * The signature is HMAC-SHA256 over "<transactionId>.<expiry>" with a
  * server-side secret, so a QR pass cannot be forged or altered, and it
- * expires 8 hours after issue.
+ * expires 24 hours after issue.
  */
 
-const TOKEN_TTL_SECONDS = 8 * 60 * 60;
+const TOKEN_TTL_SECONDS = 24 * 60 * 60;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function secret(): string {
@@ -61,7 +61,7 @@ export function verifyQrToken(token: string): QrTokenResult {
     return {
       ok: false,
       error:
-        "QR pass has expired (8 hour limit). Ask the warehouse to reprint it from the transaction page. / Pas QR telah tamat tempoh (had 8 jam).",
+        "QR pass has expired (24 hour limit). Ask the warehouse to reprint it from the transaction page. / Pas QR telah tamat tempoh (had 24 jam).",
     };
   }
 
