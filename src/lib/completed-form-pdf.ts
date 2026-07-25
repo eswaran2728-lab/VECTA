@@ -297,7 +297,18 @@ export async function generateCompletedFormPdf(transactionId: string): Promise<v
     // transactions (writes go through triggers/RPCs) — use the service
     // role, same pattern as user management elsewhere in this codebase.
     const admin = createAdminClient();
-    await admin.from("transactions").update({ completed_form_url: path }).eq("id", transactionId);
+    const { error: linkError } = await admin
+      .from("transactions")
+      .update({ completed_form_url: path })
+      .eq("id", transactionId);
+    if (linkError) {
+      console.error(
+        "[completed-form-pdf] PDF uploaded to",
+        path,
+        "but linking it to the transaction failed:",
+        linkError.message
+      );
+    }
   } catch (e) {
     console.error("[completed-form-pdf] generation failed for", transactionId, e);
   }
