@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getStep, nextStepFor, type CheckpointPart } from "@/lib/workflow";
 import {
+  CARGO_TYPE_LABELS,
   DELIVERY_LOCATION_LABELS,
   INCIDENT_TYPE_LABELS,
 } from "@/lib/constants";
@@ -192,6 +193,14 @@ export default async function TransactionDetailPage({
       : null;
   const currentPart = nextStep?.part ?? null;
 
+  const suppliesSum =
+    (transaction.supplies_total ?? 0) +
+    (transaction.supplies_carts ?? 0) +
+    (transaction.supplies_smu ?? 0) +
+    (transaction.supplies_pallets ?? 0) +
+    (transaction.supplies_boxes ?? 0) +
+    (transaction.supplies_oven_racks ?? 0);
+
   // Part D is optional: the receiver or an admin can close the transaction
   // out from AIRPORT_POST_APPROVED without ever completing Part D.
   const canSkipPartD =
@@ -265,6 +274,9 @@ export default async function TransactionDetailPage({
             <CardTitle className="text-base">Consignment</CardTitle>
           </CardHeader>
           <CardContent className="divide-y">
+            {transaction.station ? (
+              <Row label="Station" value={<span className="font-mono">{transaction.station}</span>} />
+            ) : null}
             <Row label="Vehicle" value={<span className="font-mono">{transaction.vehicle_number}</span>} />
             <Row label="Driver" value={transaction.driver_name} />
             <Row label="Driver ID" value={<span className="font-mono">{transaction.driver_id}</span>} />
@@ -282,6 +294,42 @@ export default async function TransactionDetailPage({
             ) : null}
             {transaction.trolley_count > 0 ? (
               <Row label="Trolleys" value={transaction.trolley_count} />
+            ) : null}
+            {transaction.cargo_types.length > 0 ? (
+              <Row
+                label="Cargo Type"
+                value={
+                  <span className="flex flex-wrap justify-end gap-1">
+                    {transaction.cargo_types.map((c) => (
+                      <Badge key={c} className="border bg-muted text-muted-foreground">
+                        {CARGO_TYPE_LABELS[c]}
+                      </Badge>
+                    ))}
+                  </span>
+                }
+              />
+            ) : null}
+            {suppliesSum > 0 ? (
+              <Row
+                label="In-flight Supplies"
+                value={
+                  <span className="font-mono">
+                    {transaction.supplies_total ?? suppliesSum} total
+                    {" — "}
+                    {[
+                      transaction.supplies_carts ? `${transaction.supplies_carts} carts` : null,
+                      transaction.supplies_smu ? `${transaction.supplies_smu} SMU` : null,
+                      transaction.supplies_pallets ? `${transaction.supplies_pallets} pallets` : null,
+                      transaction.supplies_boxes ? `${transaction.supplies_boxes} boxes` : null,
+                      transaction.supplies_oven_racks
+                        ? `${transaction.supplies_oven_racks} oven rack`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(", ") || "—"}
+                  </span>
+                }
+              />
             ) : null}
             {transaction.escort_officer_name ? (
               <Row

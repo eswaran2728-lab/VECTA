@@ -4,6 +4,7 @@ import { useActionState, useMemo, useState } from "react";
 import { PlaneTakeoff, PlaneLanding } from "lucide-react";
 import { createTransaction, type ActionState } from "@/lib/actions/transactions";
 import { WORKFLOWS } from "@/lib/workflow";
+import { CARGO_TYPE_LABELS, CARGO_TYPES } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { BigCheckbox } from "@/components/ui/checkbox";
@@ -14,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SignatureField } from "@/components/signature-pad";
 import { SealEditor, type SealDraft } from "@/components/seal-editor";
 import type {
+  CargoType,
   CateringCompany,
   Direction,
   DriverRecord,
@@ -87,6 +89,13 @@ export function PartAForm({
   const [seals, setSeals] = useState<SealDraft[]>([
     { seal_number: "", seal_type: "TRUCK_SEAL", seal_color: "" },
   ]);
+  const [cargoTypes, setCargoTypes] = useState<CargoType[]>([]);
+
+  const toggleCargoType = (type: CargoType) => {
+    setCargoTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
+    );
+  };
 
   const sealsReady =
     seals.length > 0 && seals.every((s) => s.seal_number.trim() !== "" && s.seal_color !== "");
@@ -198,13 +207,13 @@ export function PartAForm({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="trolley_count">Trolley Count</Label>
+              <Label htmlFor="station">Station</Label>
               <Input
-                id="trolley_count"
-                name="trolley_count"
-                type="number"
-                min={0}
-                defaultValue={0}
+                id="station"
+                name="station"
+                placeholder="e.g. KUL"
+                autoCapitalize="characters"
+                required
               />
             </div>
             <div className="space-y-2">
@@ -258,6 +267,75 @@ export function PartAForm({
               <div className="flex gap-2">
                 <Input id="escort_officer_name" name="escort_officer_name" placeholder="Name" />
                 <Input name="escort_officer_staff_id" placeholder="Staff ID" className="w-32" />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-lg border p-4">
+            <p className="text-sm font-semibold">
+              In-flight Supplies
+              <span className="ml-2 font-normal text-muted-foreground">
+                (IFCSF Part A — AA/SEC/F/010)
+              </span>
+            </p>
+
+            <div className="space-y-2">
+              <Label>Cargo Type</Label>
+              <div className="flex flex-wrap gap-2">
+                {CARGO_TYPES.map((type) => {
+                  const checked = cargoTypes.includes(type);
+                  return (
+                    <label
+                      key={type}
+                      className={
+                        checked
+                          ? "flex cursor-pointer items-center gap-2 rounded-lg border-2 border-primary bg-primary/10 px-3 py-2 text-sm font-medium"
+                          : "flex cursor-pointer items-center gap-2 rounded-lg border-2 border-border px-3 py-2 text-sm font-medium hover:border-primary/40"
+                      }
+                    >
+                      <input
+                        type="checkbox"
+                        name="cargo_types"
+                        value={type}
+                        checked={checked}
+                        onChange={() => toggleCargoType(type)}
+                        className="h-4 w-4 accent-primary"
+                      />
+                      {CARGO_TYPE_LABELS[type]}
+                    </label>
+                  );
+                })}
+              </div>
+              {cargoTypes.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Select at least one.</p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="supplies_total">Total Number In-flight Supplies</Label>
+              <Input id="supplies_total" name="supplies_total" type="number" min={0} className="max-w-xs" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+              <div className="space-y-1">
+                <Label htmlFor="supplies_carts" className="text-xs">Carts</Label>
+                <Input id="supplies_carts" name="supplies_carts" type="number" min={0} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="supplies_smu" className="text-xs">SMU</Label>
+                <Input id="supplies_smu" name="supplies_smu" type="number" min={0} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="supplies_pallets" className="text-xs">Pallets</Label>
+                <Input id="supplies_pallets" name="supplies_pallets" type="number" min={0} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="supplies_boxes" className="text-xs">Boxes</Label>
+                <Input id="supplies_boxes" name="supplies_boxes" type="number" min={0} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="supplies_oven_racks" className="text-xs">Oven Rack</Label>
+                <Input id="supplies_oven_racks" name="supplies_oven_racks" type="number" min={0} />
               </div>
             </div>
           </div>
@@ -321,7 +399,7 @@ export function PartAForm({
                 type="submit"
                 size="xl"
                 className="w-full"
-                disabled={pending || !searchDone || !signature || !sealsReady}
+                disabled={pending || !searchDone || !signature || !sealsReady || cargoTypes.length === 0}
               >
                 {pending ? "Creating…" : "Create Transaction & Generate QR"}
               </Button>

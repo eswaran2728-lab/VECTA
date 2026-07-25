@@ -7,7 +7,9 @@ import { requireProfile, requireRole } from "@/lib/auth";
 import { uploadDataUrl } from "@/lib/storage";
 import { checkpointOrderError, getStep } from "@/lib/workflow";
 import { generateQrToken } from "@/lib/qr-token";
+import { CARGO_TYPES } from "@/lib/constants";
 import type {
+  CargoType,
   DeliveryLocation,
   Direction,
   Seal,
@@ -172,6 +174,14 @@ function bool(formData: FormData, key: string): boolean {
   return formData.get(key) === "on" || formData.get(key) === "true";
 }
 
+/** Non-negative integer, or null when the field was left blank. */
+function optionalInt(formData: FormData, key: string): number | null {
+  const raw = str(formData, key);
+  if (!raw) return null;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.max(0, n) : null;
+}
+
 /**
  * Part A: a PIC creates the transaction + Part A record together.
  * Direction is bound to the creator's role: warehouse_pic -> OUTBOUND,
@@ -200,6 +210,16 @@ export async function createTransaction(
   const escortStaffId = str(formData, "escort_officer_staff_id");
   const escalateExpired = bool(formData, "escalate_expired");
 
+  // IFCSF (AA/SEC/F/010 Rev.01) header + Part A supplies breakdown.
+  const station = str(formData, "station").toUpperCase();
+  const cargoTypes = formData.getAll("cargo_types").map(String) as CargoType[];
+  const suppliesTotal = optionalInt(formData, "supplies_total");
+  const suppliesCarts = optionalInt(formData, "supplies_carts");
+  const suppliesSmu = optionalInt(formData, "supplies_smu");
+  const suppliesPallets = optionalInt(formData, "supplies_pallets");
+  const suppliesBoxes = optionalInt(formData, "supplies_boxes");
+  const suppliesOvenRacks = optionalInt(formData, "supplies_oven_racks");
+
   // The warehouse PIC chooses the direction at creation (Outbound dispatch
   // or Inbound return). Downstream checkpoint order is direction-aware.
   if (direction !== "OUTBOUND" && direction !== "INBOUND") {
@@ -209,6 +229,14 @@ export async function createTransaction(
   }
   if (!vehicleNumber || !driverName || !driverId) {
     return { error: "Vehicle, driver and driver ID are all required." };
+  }
+  if (!station) {
+    return { error: "Station is required. / Stesen diperlukan." };
+  }
+  if (cargoTypes.length === 0 || !cargoTypes.every((c) => CARGO_TYPES.includes(c))) {
+    return {
+      error: "Select at least one cargo type. / Pilih sekurang-kurangnya satu jenis kargo.",
+    };
   }
   if (!seals) {
     return { error: "Add at least one seal with a number, type and color." };
@@ -306,6 +334,14 @@ export async function createTransaction(
       trolley_count: trolleyCount,
       escort_officer_name: escortName || null,
       escort_officer_staff_id: escortStaffId || null,
+      station,
+      cargo_types: cargoTypes,
+      supplies_total: suppliesTotal,
+      supplies_carts: suppliesCarts,
+      supplies_smu: suppliesSmu,
+      supplies_pallets: suppliesPallets,
+      supplies_boxes: suppliesBoxes,
+      supplies_oven_racks: suppliesOvenRacks,
     })
     .select()
     .single();

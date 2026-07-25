@@ -1,4 +1,5 @@
 import type {
+  CargoType,
   DeliveryLocation,
   Direction,
   IncidentStatus,
@@ -53,6 +54,23 @@ export const DELIVERY_LOCATION_LABELS: Record<DeliveryLocation, string> = {
   SRA_WAREHOUSE: "SRA Warehouse",
   AIRCRAFT: "Aircraft",
 };
+
+/** IFCSF (AA/SEC/F/010 Rev.01) cargo-type checklist, Part A header. */
+export const CARGO_TYPE_LABELS: Record<CargoType, string> = {
+  FOOD_BEVERAGE: "Food & Beverage",
+  PERISHABLE: "Perishable",
+  DUTY_FREE: "Duty Free",
+  MERCHANDISE: "Merchandise",
+  VEHICLE_MAINTENANCE: "Vehicle Maintenance",
+};
+
+export const CARGO_TYPES: CargoType[] = [
+  "FOOD_BEVERAGE",
+  "PERISHABLE",
+  "DUTY_FREE",
+  "MERCHANDISE",
+  "VEHICLE_MAINTENANCE",
+];
 
 export const INCIDENT_TYPE_LABELS: Record<IncidentType, string> = {
   BROKEN_SEAL: "Broken Seal",

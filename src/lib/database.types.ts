@@ -28,6 +28,13 @@ export type IncidentType =
   | "OTHER";
 
 export type SealType = "TRUCK_SEAL" | "TROLLEY" | "OTHER";
+/** Cargo category checklist on the amended IFCSF (AA/SEC/F/010 Rev.01). */
+export type CargoType =
+  | "FOOD_BEVERAGE"
+  | "PERISHABLE"
+  | "DUTY_FREE"
+  | "MERCHANDISE"
+  | "VEHICLE_MAINTENANCE";
 export type SealColor = "BLUE" | "GREEN" | "OTHER";
 export type SealCheckpoint = "INFLIGHT_POST" | "AIRPORT_POST" | "PART_D";
 
@@ -116,6 +123,17 @@ export type Transaction = {
   trolley_count: number;
   escort_officer_name: string | null;
   escort_officer_staff_id: string | null;
+  /** IFCSF header field — airport station code/name. */
+  station: string | null;
+  /** IFCSF cargo-type checklist (Food & Beverage, Perishable, etc.) — multi-select. */
+  cargo_types: CargoType[];
+  /** IFCSF Part A supplies breakdown (Carts/SMU/Pallets/Boxes/Oven Rack + total). */
+  supplies_total: number | null;
+  supplies_carts: number | null;
+  supplies_smu: number | null;
+  supplies_pallets: number | null;
+  supplies_boxes: number | null;
+  supplies_oven_racks: number | null;
   status: TransactionStatus;
   current_stage: "A" | "B" | "C" | "D";
   lifecycle_status: "pending" | "completed" | "escalated";
@@ -271,6 +289,14 @@ export type Database = {
           | "trolley_count"
           | "escort_officer_name"
           | "escort_officer_staff_id"
+          | "station"
+          | "cargo_types"
+          | "supplies_total"
+          | "supplies_carts"
+          | "supplies_smu"
+          | "supplies_pallets"
+          | "supplies_boxes"
+          | "supplies_oven_racks"
           | "current_stage"
           | "lifecycle_status"
           | "escalation_reason"
@@ -291,6 +317,14 @@ export type Database = {
           trolley_count?: number;
           escort_officer_name?: string | null;
           escort_officer_staff_id?: string | null;
+          station?: string | null;
+          cargo_types?: CargoType[];
+          supplies_total?: number | null;
+          supplies_carts?: number | null;
+          supplies_smu?: number | null;
+          supplies_pallets?: number | null;
+          supplies_boxes?: number | null;
+          supplies_oven_racks?: number | null;
           current_stage?: "A" | "B" | "C" | "D";
           lifecycle_status?: "pending" | "completed" | "escalated";
           escalation_reason?: string | null;
