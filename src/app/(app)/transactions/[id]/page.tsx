@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Clock3, LockKeyhole } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, FileDown, LockKeyhole } from "lucide-react";
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { signedUrl } from "@/lib/storage";
@@ -181,6 +181,7 @@ export default async function TransactionDetailPage({
   const incidentPhotos = await Promise.all(
     incidents.map((i) => signedUrl("incident-photos", i.photo_url))
   );
+  const completedFormUrl = await signedUrl("completed-forms", transaction.completed_form_url);
 
   // Which checkpoint can this user action right now? (direction-aware)
   const nextStep = nextStepFor(transaction.direction, transaction.status);
@@ -257,6 +258,14 @@ export default async function TransactionDetailPage({
                 Complete without Part D
               </Button>
             </Link>
+          ) : null}
+          {completedFormUrl ? (
+            <a href={completedFormUrl} target="_blank" rel="noopener noreferrer">
+              <Button size="lg" variant="secondary">
+                <FileDown className="mr-1 h-4 w-4" />
+                Completed Form (PDF)
+              </Button>
+            </a>
           ) : null}
           {transaction.status !== "COMPLETED" || profile.role === "supervisor" ? (
             <Link href={`/transactions/${id}/incident`}>

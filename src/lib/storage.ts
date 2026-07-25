@@ -16,7 +16,7 @@ export interface UploadResult {
  * RLS applies. Returns the storage object path and content hash.
  */
 export async function uploadDataUrl(
-  bucket: "signatures" | "incident-photos",
+  bucket: "signatures" | "incident-photos" | "completed-forms",
   dataUrl: string,
   prefix: string
 ): Promise<UploadResult> {
@@ -44,11 +44,31 @@ export async function uploadDataUrl(
 
 /** Creates a short-lived signed URL for a private storage object. */
 export async function signedUrl(
-  bucket: "signatures" | "incident-photos",
+  bucket: "signatures" | "incident-photos" | "completed-forms",
   path: string | null
 ): Promise<string | null> {
   if (!path) return null;
   const supabase = await createClient();
   const { data } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60);
   return data?.signedUrl ?? null;
+}
+
+/**
+ * Uploads a raw PDF buffer (the auto-generated completed-form) using the
+ * caller's own session, so storage RLS applies. Returns the object path.
+ */
+export async function uploadPdfBuffer(
+  bucket: "completed-forms",
+  bytes: Buffer,
+  prefix: string
+): Promise<string> {
+  const supabase = await createClient();
+  const path = `${prefix}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.pdf`;
+  const { error } = await supabase.storage
+    .from(bucket)
+    .upload(path, bytes, { contentType: "application/pdf" });
+  if (error) {
+    throw new Error(`Upload failed: ${error.message}`);
+  }
+  return path;
 }

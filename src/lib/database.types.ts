@@ -145,6 +145,9 @@ export type Transaction = {
    *  from day-to-day dashboards/lists once archived. */
   archived: boolean;
   archived_at: string | null;
+  /** Storage path of the auto-generated completed-form PDF (IFCSF-style),
+   *  written once the transaction finishes. Null until then. */
+  completed_form_url: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -304,6 +307,7 @@ export type Database = {
           | "part_d_skip_reason"
           | "archived"
           | "archived_at"
+          | "completed_form_url"
         > & {
           id?: string;
           transaction_number?: string;
@@ -332,6 +336,7 @@ export type Database = {
           part_d_skip_reason?: string | null;
           archived?: boolean;
           archived_at?: string | null;
+          completed_form_url?: string | null;
         };
         Update: Partial<Transaction>;
         Relationships: [];

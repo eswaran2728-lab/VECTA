@@ -7,6 +7,7 @@ import { requireProfile, requireRole } from "@/lib/auth";
 import { uploadDataUrl } from "@/lib/storage";
 import { checkpointOrderError, getStep } from "@/lib/workflow";
 import { generateQrToken } from "@/lib/qr-token";
+import { generateCompletedFormPdf } from "@/lib/completed-form-pdf";
 import { CARGO_TYPES } from "@/lib/constants";
 import type {
   CargoType,
@@ -522,6 +523,10 @@ async function completeChecklistPart(
     redirect(`/transactions/${transactionId}?escalated=1`);
   }
 
+  if (finalizes) {
+    await generateCompletedFormPdf(transactionId);
+  }
+
   revalidatePath(`/transactions/${transactionId}`);
   revalidatePath("/transactions");
   revalidatePath("/dashboard");
@@ -653,6 +658,8 @@ export async function completePartD(
     redirect(`/transactions/${transactionId}?escalated=1`);
   }
 
+  await generateCompletedFormPdf(transactionId);
+
   revalidatePath(`/transactions/${transactionId}`);
   revalidatePath("/transactions");
   revalidatePath("/dashboard");
@@ -686,6 +693,8 @@ export async function skipPartD(_prev: ActionState, formData: FormData): Promise
   if (error) {
     return { error: error.message };
   }
+
+  await generateCompletedFormPdf(transactionId);
 
   revalidatePath(`/transactions/${transactionId}`);
   revalidatePath("/transactions");
