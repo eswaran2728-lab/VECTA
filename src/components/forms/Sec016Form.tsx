@@ -17,6 +17,7 @@ import {
   FormSection,
 } from "@/components/forms/fields";
 import { SubmissionConfirmation } from "@/components/forms/SubmissionConfirmation";
+import { SmartInputSec016 } from "@/components/forms/SmartInputSec016";
 import type { Profile } from "@/lib/types";
 
 interface UIValues {
@@ -118,6 +119,7 @@ export function Sec016Form({
   const [result, setResult] = useState<
     { kind: "submitted"; id: string; submittedAt?: string } | { kind: "queued" } | null
   >(null);
+  const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
 
   const {
     register,
@@ -164,6 +166,7 @@ export function Sec016Form({
         queued={result.kind === "queued"}
         onSubmitAnother={() => {
           reset(buildDefaults(profile));
+          setAutoFilledFields(new Set());
           setResult(null);
         }}
       />
@@ -172,6 +175,8 @@ export function Sec016Form({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      <SmartInputSec016 setValue={setValue} onParsed={setAutoFilledFields} />
+
       <FormSection title="Staff Details">
         <p className="field-hint">Email: {profile.email}</p>
         <FieldRow>
@@ -183,15 +188,15 @@ export function Sec016Form({
           <TextField name="staff_no" register={register} label="Staff No" required error={errors.staff_no} />
         </FieldRow>
         <FieldRow>
-          <TextField name="duty_date" type="date" register={register} label="Date" required error={errors.duty_date as never} />
+          <TextField name="duty_date" type="date" register={register} label="Date" required error={errors.duty_date as never} autoFilled={autoFilledFields.has("duty_date")} />
           <TextField name="duty_hour" type="time" register={register} label="Duty Hour" required error={errors.duty_hour as never} />
         </FieldRow>
       </FormSection>
 
       <FormSection title="Aircraft">
         <FieldRow>
-          <TextField name="flight" register={register} label="Flight" required error={errors.flight} />
-          <TextField name="origin_arr_dep" register={register} label="Origin Arr / Dep" required error={errors.origin_arr_dep} />
+          <TextField name="flight" register={register} label="Flight" required error={errors.flight} autoFilled={autoFilledFields.has("flight")} />
+          <TextField name="origin_arr_dep" register={register} label="Origin Arr / Dep" required error={errors.origin_arr_dep} autoFilled={autoFilledFields.has("origin_arr_dep")} />
         </FieldRow>
         <TextField name="assisted_by" register={register} label="Assisted By" required error={errors.assisted_by} />
 
@@ -215,14 +220,14 @@ export function Sec016Form({
         )}
 
         <FieldRow>
-          <TextField name="reg_no" register={register} label="Reg No" required error={errors.reg_no} />
-          <TextField name="bay_no" register={register} label="Bay No" required error={errors.bay_no} />
+          <TextField name="reg_no" register={register} label="Reg No" required error={errors.reg_no} autoFilled={autoFilledFields.has("reg_no")} />
+          <TextField name="bay_no" register={register} label="Bay No" required error={errors.bay_no} autoFilled={autoFilledFields.has("bay_no")} />
         </FieldRow>
         <FieldRow>
-          <TextField name="sta_std" type="time" register={register} label="STA / STD" required error={errors.sta_std as never} />
-          <TextField name="ata_atd" type="time" register={register} label="ATA / ATD" required error={errors.ata_atd as never} />
+          <TextField name="sta_std" type="time" register={register} label="STA / STD" required error={errors.sta_std as never} autoFilled={autoFilledFields.has("sta_std")} />
+          <TextField name="ata_atd" type="time" register={register} label="ATA / ATD" required error={errors.ata_atd as never} autoFilled={autoFilledFields.has("ata_atd")} />
         </FieldRow>
-        <TextField name="reason_for_delay" register={register} label="Reason for Delay" error={errors.reason_for_delay} />
+        <TextField name="reason_for_delay" register={register} label="Reason for Delay" error={errors.reason_for_delay} autoFilled={autoFilledFields.has("reason_for_delay")} />
         <RadioGroupField name="do_infmd" register={register} label="D/O INFMD" required options={["YES", "NO"]} error={errors.do_infmd as never} />
 
         <FieldRow>
@@ -249,18 +254,18 @@ export function Sec016Form({
 
         <TextField name="shift_leader" register={register} label="Shift Leader (Ground Handler)" hint="Name & ID" required error={errors.shift_leader} />
         <FieldRow>
-          <TextField name="ramp_staff_1" register={register} label="Ramp Staff (Handler 1)" hint="Name & ID" required error={errors.ramp_staff_1} />
-          <TextField name="ramp_staff_2" register={register} label="Ramp Staff (Handler 2)" hint="Name & ID" required naFillable setValue={setValue} error={errors.ramp_staff_2} />
+          <TextField name="ramp_staff_1" register={register} label="Ramp Staff (Handler 1)" hint="Name & ID" required error={errors.ramp_staff_1} autoFilled={autoFilledFields.has("ramp_staff_1")} />
+          <TextField name="ramp_staff_2" register={register} label="Ramp Staff (Handler 2)" hint="Name & ID" required naFillable setValue={setValue} error={errors.ramp_staff_2} autoFilled={autoFilledFields.has("ramp_staff_2")} />
         </FieldRow>
         <FieldRow>
-          <TextField name="ramp_staff_3" register={register} label="Ramp Staff (Handler 3)" hint="Name & ID" required naFillable setValue={setValue} error={errors.ramp_staff_3} />
-          <TextField name="ramp_staff_4" register={register} label="Ramp Staff (Handler 4)" hint="Name & ID" required naFillable setValue={setValue} error={errors.ramp_staff_4} />
+          <TextField name="ramp_staff_3" register={register} label="Ramp Staff (Handler 3)" hint="Name & ID" required naFillable setValue={setValue} error={errors.ramp_staff_3} autoFilled={autoFilledFields.has("ramp_staff_3")} />
+          <TextField name="ramp_staff_4" register={register} label="Ramp Staff (Handler 4)" hint="Name & ID" required naFillable setValue={setValue} error={errors.ramp_staff_4} autoFilled={autoFilledFields.has("ramp_staff_4")} />
         </FieldRow>
-        <TextField name="ramp_staff_5" register={register} label="Ramp Staff (Handler 5)" hint="Name & ID" required naFillable setValue={setValue} error={errors.ramp_staff_5} />
+        <TextField name="ramp_staff_5" register={register} label="Ramp Staff (Handler 5)" hint="Name & ID" required naFillable setValue={setValue} error={errors.ramp_staff_5} autoFilled={autoFilledFields.has("ramp_staff_5")} />
 
         <FieldRow>
           <RadioGroupField name="cargo_hold_checked" register={register} label="Cargo Hold Checked" required options={["YES", "NO"]} error={errors.cargo_hold_checked as never} />
-          <RadioGroupField name="staff_frisked" register={register} label="Staff Frisked" required options={["YES", "NO"]} error={errors.staff_frisked as never} />
+          <RadioGroupField name="staff_frisked" register={register} label="Staff Frisked" required options={["YES", "NO"]} error={errors.staff_frisked as never} autoFilled={autoFilledFields.has("staff_frisked")} />
         </FieldRow>
 
         <TextAreaField name="discrepancies" register={register} label="Discrepancies (if any)" required rows={3} error={errors.discrepancies} />

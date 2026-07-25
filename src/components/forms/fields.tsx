@@ -22,6 +22,16 @@ interface BaseProps<T extends FieldValues> {
   hint?: string;
   error?: FieldError;
   className?: string;
+  /** Marks the field as populated by Smart Input paste-to-autofill, for a visual cue. */
+  autoFilled?: boolean;
+}
+
+function AutoFilledBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+      ✨ Auto-filled
+    </span>
+  );
 }
 
 export function TextField<T extends FieldValues>({
@@ -37,6 +47,7 @@ export function TextField<T extends FieldValues>({
   naFillable,
   setValue,
   inputMode,
+  autoFilled,
 }: BaseProps<T> & {
   type?: string;
   placeholder?: string;
@@ -51,22 +62,25 @@ export function TextField<T extends FieldValues>({
           {label}
           {required && <span className="text-red-500"> *</span>}
         </label>
-        {naFillable && setValue && (
-          <button
-            type="button"
-            className="btn-quiet -mt-1 shrink-0"
-            onClick={() => setValue(name, "N/A" as never, { shouldValidate: true, shouldDirty: true })}
-          >
-            N/A
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {autoFilled && <AutoFilledBadge />}
+          {naFillable && setValue && (
+            <button
+              type="button"
+              className="btn-quiet -mt-1"
+              onClick={() => setValue(name, "N/A" as never, { shouldValidate: true, shouldDirty: true })}
+            >
+              N/A
+            </button>
+          )}
+        </div>
       </div>
       <input
         id={name}
         type={type}
         inputMode={inputMode}
         placeholder={placeholder}
-        className="input-base"
+        className={cn("input-base", autoFilled && "ring-2 ring-emerald-400 dark:ring-emerald-600")}
         {...register(name)}
       />
       {hint && <p className="field-hint">{hint}</p>}
@@ -141,14 +155,18 @@ export function RadioGroupField<T extends FieldValues>({
   className,
   options,
   columns = 2,
+  autoFilled,
 }: BaseProps<T> & { options: readonly string[]; columns?: 2 | 3 | 4 }) {
   const gridCols = { 2: "grid-cols-2", 3: "grid-cols-3", 4: "grid-cols-4" }[columns];
   return (
     <div className={className}>
-      <label className="field-label">
-        {label}
-        {required && <span className="text-red-500"> *</span>}
-      </label>
+      <div className="flex items-center justify-between gap-2">
+        <label className="field-label">
+          {label}
+          {required && <span className="text-red-500"> *</span>}
+        </label>
+        {autoFilled && <AutoFilledBadge />}
+      </div>
       <div className={cn("grid gap-2", gridCols)}>
         {options.map((opt) => (
           <label
