@@ -85,12 +85,6 @@ export const WORKFLOWS: Record<Direction, CheckpointStep[]> = {
   ],
 };
 
-/** Which direction each PIC role is allowed to create. */
-export const CREATOR_DIRECTIONS: Partial<Record<Role, Direction>> = {
-  warehouse_pic: "OUTBOUND",
-  sra_warehouse_pic: "INBOUND",
-};
-
 export function getStep(direction: Direction, part: CheckpointPart): CheckpointStep | null {
   return WORKFLOWS[direction].find((s) => s.part === part) ?? null;
 }

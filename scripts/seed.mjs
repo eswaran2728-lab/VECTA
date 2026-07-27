@@ -40,7 +40,7 @@ const admin = createClient(url, serviceKey, {
 
 const USERS = [
   { email: "pic@icms.local", name: "Ahmad Warehouse", staff_id: "WH-1001", role: "warehouse_pic" },
-  { email: "sra@icms.local", name: "Nurul SRA Warehouse", staff_id: "SW-4001", role: "sra_warehouse_pic" },
+  { email: "sra@icms.local", name: "Nurul SRA Warehouse", staff_id: "SW-4001", role: "warehouse_pic" },
   { email: "post2@icms.local", name: "Siti Post Two", staff_id: "AV-2001", role: "post2_avsec" },
   { email: "post6@icms.local", name: "Kumar Post Six", staff_id: "AV-6001", role: "post6_avsec" },
   { email: "receiver@icms.local", name: "Lee Receiver", staff_id: "SR-3001", role: "receiver" },
@@ -133,7 +133,8 @@ async function insertPartC(txId, ids) {
  * or "ESCALATED" to raise an incident at the current point.
  */
 async function createTransaction(ids, direction, steps, overrides = {}) {
-  const creator = direction === "OUTBOUND" ? ids.warehouse_pic : ids.sra_warehouse_pic;
+  const creator =
+    direction === "OUTBOUND" ? ids["pic@icms.local"] : ids["sra@icms.local"];
   const picName = direction === "OUTBOUND" ? "Ahmad Warehouse" : "Nurul SRA Warehouse";
   const picStaffId = direction === "OUTBOUND" ? "WH-1001" : "SW-4001";
 
@@ -211,7 +212,11 @@ async function insertPartD(txId, ids) {
 async function main() {
   const ids = {};
   for (const u of USERS) {
-    ids[u.role] = await ensureUser(u);
+    const id = await ensureUser(u);
+    // Keyed by both role and email: the two warehouse accounts now share
+    // the single warehouse_pic role, so email is what tells them apart.
+    ids[u.role] = id;
+    ids[u.email] = id;
   }
 
   const samples = [

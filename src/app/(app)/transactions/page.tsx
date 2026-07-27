@@ -106,12 +106,12 @@ export default async function TransactionsPage({
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Transactions</h1>
           <p className="text-sm text-muted-foreground">
-            {profile.role === "warehouse_pic" || profile.role === "sra_warehouse_pic"
+            {profile.role === "warehouse_pic"
               ? "Your created transactions."
               : "All catering security movements."}
           </p>
         </div>
-        {profile.role === "warehouse_pic" || profile.role === "sra_warehouse_pic" ? (
+        {profile.role === "warehouse_pic" ? (
           <Link href="/transactions/new">
             <Button size="lg">+ New Transaction</Button>
           </Link>

@@ -28,7 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const profile = await requireProfile();
   const lang = await getLang();
 
-  const isPic = profile.role === "warehouse_pic" || profile.role === "sra_warehouse_pic";
+  const isPic = profile.role === "warehouse_pic";
   const isCheckpoint = ["post2_avsec", "post6_avsec", "receiver"].includes(profile.role);
 
   const nav = [

@@ -12,7 +12,6 @@ export interface RegisterState {
 
 const REGISTERABLE_ROLES: Role[] = [
   "warehouse_pic",
-  "sra_warehouse_pic",
   "post2_avsec",
   "post6_avsec",
   "receiver",

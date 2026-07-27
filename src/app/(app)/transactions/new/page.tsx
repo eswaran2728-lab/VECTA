@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "New Transaction (Part A)" };
 export const dynamic = "force-dynamic";
 
 export default async function NewTransactionPage() {
-  const profile = await requireRole(["warehouse_pic", "sra_warehouse_pic"]);
+  const profile = await requireRole(["warehouse_pic"]);
 
   const supabase = await createClient();
   const [companies, vehicles, drivers] = await Promise.all([

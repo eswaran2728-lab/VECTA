@@ -185,15 +185,15 @@ function optionalInt(formData: FormData, key: string): number | null {
 
 /**
  * Part A: a PIC creates the transaction + Part A record together.
- * Direction is bound to the creator's role: warehouse_pic -> OUTBOUND,
- * sra_warehouse_pic -> INBOUND (enforced here AND by RLS).
+ * The PIC picks the direction in the form (Step 1); it is no longer
+ * implied by the role.
  * DB trigger assigns the ICMS-YYYY-NNNNNN number; audit triggers log both writes.
  */
 export async function createTransaction(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const profile = await requireRole(["warehouse_pic", "sra_warehouse_pic"]);
+  const profile = await requireRole(["warehouse_pic"]);
 
   const direction = str(formData, "direction") as Direction;
   const vehicleNumber = str(formData, "vehicle_number").toUpperCase();

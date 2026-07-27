@@ -11,8 +11,9 @@ import type {
 } from "./database.types";
 
 export const ROLE_LABELS: Record<Role, string> = {
+  // Covers both the in-flight catering warehouse and the SRA warehouse —
+  // the direction is chosen per transaction, not implied by the role.
   warehouse_pic: "Warehouse PIC",
-  sra_warehouse_pic: "SRA Warehouse PIC",
   post2_avsec: "AVSEC In-flight Post (Post 2)",
   post6_avsec: "AVSEC Airport Post (Post 6)",
   receiver: "SRA / Aircraft Receiver",
@@ -125,7 +126,6 @@ export const CHECKPOINT_SEAL_COLORS: Extract<SealColor, "BLUE" | "GREEN">[] = ["
 
 export const ALL_ROLES: Role[] = [
   "warehouse_pic",
-  "sra_warehouse_pic",
   "post2_avsec",
   "post6_avsec",
   "receiver",
