@@ -91,6 +91,8 @@ export function PartAForm({
   ]);
   const [cargoTypes, setCargoTypes] = useState<CargoType[]>([]);
 
+  const defaultCompanyId = companies.find((c) => c.code === "IFC")?.id ?? "";
+
   const toggleCargoType = (type: CargoType) => {
     setCargoTypes((prev) =>
       prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
@@ -197,7 +199,11 @@ export function PartAForm({
             </div>
             <div className="space-y-2">
               <Label htmlFor="catering_company_id">Catering Company</Label>
-              <Select id="catering_company_id" name="catering_company_id" defaultValue="">
+              <Select
+                id="catering_company_id"
+                name="catering_company_id"
+                defaultValue={defaultCompanyId}
+              >
                 <option value="">— Not specified —</option>
                 {companies.map((c) => (
                   <option key={c.id} value={c.id}>

@@ -44,52 +44,58 @@ export function SealEditor({ seals, onChange }: SealEditorProps) {
         </Button>
       </div>
       {seals.map((seal, i) => (
-        <div key={i} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2">
+        <div
+          key={i}
+          className="space-y-2 rounded-md border border-input p-2 sm:grid sm:grid-cols-[1fr_auto_auto_auto] sm:items-center sm:gap-2 sm:space-y-0 sm:border-0 sm:p-0"
+        >
           <Input
             aria-label={`Seal ${i + 1} number`}
             placeholder="Seal number"
             value={seal.seal_number}
             onChange={(e) => update(i, { seal_number: e.target.value })}
+            className="text-lg font-semibold tracking-wide"
             required
           />
-          <Select
-            aria-label={`Seal ${i + 1} type`}
-            className="w-auto"
-            value={seal.seal_type}
-            onChange={(e) => update(i, { seal_type: e.target.value as SealType })}
-          >
-            {Object.entries(SEAL_TYPE_LABELS).map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
+          <div className="flex items-center gap-2">
+            <Select
+              aria-label={`Seal ${i + 1} type`}
+              className="w-auto flex-1 sm:flex-none"
+              value={seal.seal_type}
+              onChange={(e) => update(i, { seal_type: e.target.value as SealType })}
+            >
+              {Object.entries(SEAL_TYPE_LABELS).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </Select>
+            <Select
+              aria-label={`Seal ${i + 1} color`}
+              className="w-auto flex-1 sm:flex-none"
+              value={seal.seal_color}
+              required
+              onChange={(e) => update(i, { seal_color: e.target.value as SealColor })}
+            >
+              <option value="" disabled>
+                Select color…
               </option>
-            ))}
-          </Select>
-          <Select
-            aria-label={`Seal ${i + 1} color`}
-            className="w-auto"
-            value={seal.seal_color}
-            required
-            onChange={(e) => update(i, { seal_color: e.target.value as SealColor })}
-          >
-            <option value="" disabled>
-              Select color…
-            </option>
-            {Object.entries(SEAL_COLOR_LABELS).map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </Select>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={`Remove seal ${i + 1}`}
-            onClick={() => remove(i)}
-            disabled={seals.length === 1}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+              {Object.entries(SEAL_COLOR_LABELS).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </Select>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={`Remove seal ${i + 1}`}
+              onClick={() => remove(i)}
+              disabled={seals.length === 1}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       ))}
       <p className="text-xs text-muted-foreground">
