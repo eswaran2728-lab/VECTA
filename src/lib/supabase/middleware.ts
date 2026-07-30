@@ -29,9 +29,18 @@ export async function updateSession(request: NextRequest) {
 
   // IMPORTANT: do not add logic between createServerClient and getUser();
   // it can cause session refresh race conditions.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const {
+      data: { user: fetchedUser },
+    } = await supabase.auth.getUser();
+    user = fetchedUser;
+  } catch {
+    // Stale/invalid refresh token cookie (e.g. session revoked or reused
+    // from another device): treat as signed out instead of crashing the
+    // edge middleware on every request.
+    user = null;
+  }
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
@@ -40,7 +49,11 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", path);
-    return NextResponse.redirect(url);
+    const redirectResponse = NextResponse.redirect(url);
+    request.cookies.getAll().forEach(({ name }) => {
+      if (name.startsWith("sb-")) redirectResponse.cookies.delete(name);
+    });
+    return redirectResponse;
   }
 
   if (user && path === "/login") {

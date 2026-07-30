@@ -15,6 +15,7 @@ import {
   PackageCheck,
   CheckCircle2,
   AlertTriangle,
+  TriangleAlert,
 } from "lucide-react";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -26,8 +27,13 @@ function startOfToday(): string {
   return d.toISOString();
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const profile = await requireProfile();
+  const { error } = await searchParams;
   const supabase = await createClient();
   const today = startOfToday();
 
@@ -171,6 +177,13 @@ export default async function DashboardPage() {
         </div>
         {profile.role === "supervisor" ? <ExportResetButton /> : null}
       </div>
+
+      {error === "forbidden" ? (
+        <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>You don&apos;t have access to that page for your role.</span>
+        </div>
+      ) : null}
 
       {checkpointQueue ? (
         <Link href="/scan" className="animate-scale-in block">
