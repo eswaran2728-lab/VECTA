@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { signOut } from "@/lib/profile-actions";
+import { APP_NAME } from "@/lib/branding";
 import type { Profile } from "@/lib/types";
 
 export function AppHeader({
@@ -28,7 +29,7 @@ export function AppHeader({
           )}
           <div className="min-w-0">
             <Link href="/home" className="font-bold text-brand-700 dark:text-brand-300 block truncate">
-              {title ?? "AVSEC OPS"}
+              {title ?? APP_NAME}
             </Link>
             <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
               {profile.name} · {profile.station} · {profile.team}

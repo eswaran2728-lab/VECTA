@@ -8,6 +8,8 @@ import { sec014Schema } from "@/lib/schemas/sec014";
 import { sec029Schema } from "@/lib/schemas/sec029";
 import { sec018Schema } from "@/lib/schemas/sec018";
 import { clearDraft } from "@/lib/reports/drafts";
+import { notifyReportSubmission } from "@/lib/email/notifyReportSubmission";
+import { sec016EmailFields, sec014EmailFields, sec029EmailFields, sec018EmailFields } from "@/lib/email/reportFields";
 
 export interface ActionResult {
   ok: boolean;
@@ -84,6 +86,13 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
 
   if (error) return { ok: false, error: error.message };
   await clearDraft("sec016");
+  await notifyReportSubmission({
+    reportType: "sec016",
+    submittedAt: data.submitted_at,
+    submittedByName: v.staff_name,
+    submittedByStaffNo: v.staff_no,
+    fields: sec016EmailFields(v),
+  });
   revalidatePath("/history");
   return { ok: true, id: data.id, submittedAt: data.submitted_at };
 }
@@ -134,6 +143,13 @@ export async function submitSec014(input: unknown): Promise<ActionResult> {
   }
 
   await clearDraft("sec014");
+  await notifyReportSubmission({
+    reportType: "sec014",
+    submittedAt: report.submitted_at,
+    submittedByName: v.staff_name,
+    submittedByStaffNo: v.staff_id,
+    fields: sec014EmailFields(v),
+  });
   revalidatePath("/history");
   return { ok: true, id: report.id, submittedAt: report.submitted_at };
 }
@@ -200,6 +216,13 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
     .is("cleared_at", null);
 
   await clearDraft("sec029");
+  await notifyReportSubmission({
+    reportType: "sec029",
+    submittedAt: report.submitted_at,
+    submittedByName: v.staff_name,
+    submittedByStaffNo: v.staff_id,
+    fields: sec029EmailFields(v),
+  });
   revalidatePath("/history");
   revalidatePath("/bay-board");
   return { ok: true, id: report.id, submittedAt: report.submitted_at };
@@ -250,6 +273,13 @@ export async function submitSec018(input: unknown): Promise<ActionResult> {
   }
 
   await clearDraft("sec018");
+  await notifyReportSubmission({
+    reportType: "sec018",
+    submittedAt: report.submitted_at,
+    submittedByName: v.staff_name,
+    submittedByStaffNo: "",
+    fields: sec018EmailFields(v),
+  });
   revalidatePath("/history");
   return { ok: true, id: report.id, submittedAt: report.submitted_at };
 }

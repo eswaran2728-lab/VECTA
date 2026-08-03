@@ -4,10 +4,11 @@ import { OfflineSyncProvider } from "@/components/offline/OfflineSyncProvider";
 import { OfflineStatusBadge } from "@/components/offline/OfflineStatusBadge";
 import { ServiceWorkerRegister } from "@/components/offline/ServiceWorkerRegister";
 import { InstallPrompt } from "@/components/offline/InstallPrompt";
+import { APP_NAME, APP_DESCRIPTION } from "@/lib/branding";
 
 export const metadata: Metadata = {
-  title: "AVSEC OPS",
-  description: "AirAsia AVSEC digital security reporting platform",
+  title: APP_NAME,
+  description: APP_DESCRIPTION,
   manifest: "/manifest.json",
   icons: {
     icon: "/icons/icon.svg",
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "AVSEC OPS",
+    title: APP_NAME,
   },
 };
 

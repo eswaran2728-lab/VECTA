@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { APP_NAME } from "@/lib/branding";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -24,7 +25,7 @@ export function InstallPrompt() {
 
   return (
     <div className="fixed bottom-4 inset-x-4 z-20 card p-4 flex items-center justify-between gap-3 shadow-lg max-w-md mx-auto">
-      <p className="text-sm font-medium">Install AVSEC OPS for quick, offline-ready access.</p>
+      <p className="text-sm font-medium">Install {APP_NAME} for quick, offline-ready access.</p>
       <div className="flex gap-2 shrink-0">
         <button className="btn-quiet" onClick={() => setDismissed(true)}>
           Later

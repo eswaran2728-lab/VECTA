@@ -1,6 +1,6 @@
 {
-  "name": "AVSEC OPS",
-  "short_name": "AVSEC OPS",
+  "name": "AVSEC REPORTS",
+  "short_name": "AVSEC REPORTS",
   "description": "AirAsia AVSEC digital security reporting platform",
   "start_url": "/home",
   "scope": "/",

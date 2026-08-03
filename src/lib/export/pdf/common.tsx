@@ -1,5 +1,6 @@
 import { Text, View } from "@react-pdf/renderer";
 import { pdfStyles as s } from "./styles";
+import { APP_NAME } from "@/lib/branding";
 
 export function PdfHeader({ title, code }: { title: string; code: string }) {
   return (
@@ -41,7 +42,7 @@ export function PdfSection({ title, note, children }: { title: string; note?: st
 export function PdfFooter({ submissionId, submittedAt }: { submissionId: string; submittedAt: string }) {
   return (
     <Text style={s.footer} fixed>
-      AVSEC OPS · Submission ID {submissionId} · Submitted {submittedAt}
+      {APP_NAME} · Submission ID {submissionId} · Submitted {submittedAt}
     </Text>
   );
 }
