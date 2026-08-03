@@ -4,15 +4,19 @@ import { OfflineSyncProvider } from "@/components/offline/OfflineSyncProvider";
 import { OfflineStatusBadge } from "@/components/offline/OfflineStatusBadge";
 import { ServiceWorkerRegister } from "@/components/offline/ServiceWorkerRegister";
 import { InstallPrompt } from "@/components/offline/InstallPrompt";
-import { APP_NAME, APP_DESCRIPTION } from "@/lib/branding";
+import { APP_NAME, APP_DESCRIPTION, BRAND_RED, BRAND_BLACK } from "@/lib/branding";
 
 export const metadata: Metadata = {
   title: APP_NAME,
   description: APP_DESCRIPTION,
   manifest: "/manifest.json",
   icons: {
-    icon: "/icons/icon.svg",
-    apple: "/icons/icon.svg",
+    icon: [
+      { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/favicon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: "/icons/apple-touch-icon.png",
   },
   appleWebApp: {
     capable: true,
@@ -26,8 +30,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#1d5cf5" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
+    { media: "(prefers-color-scheme: light)", color: BRAND_RED },
+    { media: "(prefers-color-scheme: dark)", color: BRAND_BLACK },
   ],
 };
 

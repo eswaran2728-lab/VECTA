@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { APP_NAME } from "@/lib/branding";
@@ -112,10 +113,25 @@ export default function LoginPage() {
     <main className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-sm card p-6">
         <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-brand-700 dark:text-brand-300">{APP_NAME}</h1>
+          <Image
+            src="/icons/icon-192.png"
+            alt="AVSEC AirAsia"
+            width={80}
+            height={80}
+            className="mx-auto rounded-2xl mb-3"
+            priority
+          />
+          <h1 className="text-2xl font-bold text-brand-700 dark:text-brand-400">{APP_NAME}</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
             AirAsia Aviation Security digital reporting
           </p>
+          <Image
+            src="/icons/airasia-logo.png"
+            alt="AirAsia"
+            width={28}
+            height={28}
+            className="mx-auto mt-3 rounded-full"
+          />
         </div>
 
         {status === "checkEmail" ? (

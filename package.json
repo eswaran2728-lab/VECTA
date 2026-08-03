@@ -10,11 +10,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hookform/resolvers": "^3.9.0",
     "@react-pdf/renderer": "^3.4.4",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
-    "@hookform/resolvers": "^3.9.0",
-    "react-hook-form": "^7.53.0",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
     "date-fns-tz": "^3.2.0",
@@ -22,6 +21,7 @@
     "next": "14.2.15",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-hook-form": "^7.53.0",
     "xlsx": "^0.18.5",
     "zod": "^3.23.8"
   },
@@ -31,6 +31,7 @@
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.39",
+    "sharp": "^0.35.3",
     "tailwindcss": "^3.4.6",
     "typescript": "^5.5.3"
   }

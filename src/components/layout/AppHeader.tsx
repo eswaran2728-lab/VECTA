@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { signOut } from "@/lib/profile-actions";
 import { APP_NAME } from "@/lib/branding";
 import type { Profile } from "@/lib/types";
@@ -27,8 +28,15 @@ export function AppHeader({
               ←
             </Link>
           )}
+          <Image
+            src="/icons/icon-192.png"
+            alt="AVSEC AirAsia"
+            width={32}
+            height={32}
+            className="rounded-lg shrink-0"
+          />
           <div className="min-w-0">
-            <Link href="/home" className="font-bold text-brand-700 dark:text-brand-300 block truncate">
+            <Link href="/home" className="font-bold text-brand-700 dark:text-brand-400 block truncate">
               {title ?? APP_NAME}
             </Link>
             <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
