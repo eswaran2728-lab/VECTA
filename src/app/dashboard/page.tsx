@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireRole, MONITOR_ROLES } from "@/lib/auth";
+import { requireRole, MONITOR_ROLES, landingPathForRole } from "@/lib/auth";
 import { STATIONS, TEAMS, REPORT_META, REPORT_TYPES, type ReportType } from "@/lib/reference-data";
 import {
   getTodayCounts,
@@ -14,6 +14,7 @@ import { AppHeader } from "@/components/layout/AppHeader";
 import { CopyButton } from "@/components/dashboard/CopyButton";
 import { formatDateTimeMY, todayISODateMY } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
+import { searchDailyReportsByStaff, searchAircraftReportsByStaff } from "@/lib/search/queries";
 
 export default async function DashboardPage({
   searchParams,
@@ -52,10 +53,86 @@ export default async function DashboardPage({
     discrepancyCount,
   );
 
+  const staffQuery = (searchParams.staffQuery || "").trim();
+  const staffDate = searchParams.staffDate || today;
+  const staffCategory = searchParams.staffCategory === "aircraft" ? "aircraft" : "daily";
+  const staffResults = staffQuery
+    ? await (staffCategory === "aircraft"
+        ? searchAircraftReportsByStaff(staffQuery, staffDate)
+        : searchDailyReportsByStaff(staffQuery, staffDate))
+    : [];
+
   return (
     <main className="min-h-screen pb-16">
-      <AppHeader profile={profile} title="Dashboard" backHref="/home" />
+      <AppHeader profile={profile} title="Dashboard" backHref={landingPathForRole(profile.role)} />
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+        <section className="card p-4 space-y-3">
+          <h2 className="section-title">Staff report lookup</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            End-of-shift check: search a staff name to see their daily report or aircraft reports
+            for that day.
+          </p>
+          <form method="get" className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+            <div className="col-span-2 sm:col-span-1">
+              <label className="field-label">Staff name</label>
+              <input
+                type="text"
+                name="staffQuery"
+                defaultValue={staffQuery}
+                placeholder="e.g. Eswaran"
+                className="input-base"
+              />
+            </div>
+            <div>
+              <label className="field-label">Date</label>
+              <input type="date" name="staffDate" defaultValue={staffDate} className="input-base" />
+            </div>
+            <div>
+              <label className="field-label">Report</label>
+              <select name="staffCategory" defaultValue={staffCategory} className="input-base">
+                <option value="daily">Daily report</option>
+                <option value="aircraft">Aircraft report</option>
+              </select>
+            </div>
+            <button type="submit" className="btn-primary">
+              Search
+            </button>
+          </form>
+
+          {staffQuery && (
+            <div className="divide-y divide-slate-200 dark:divide-slate-800 pt-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400 pb-2">
+                {staffResults.length} result{staffResults.length === 1 ? "" : "s"} for &quot;
+                {staffQuery}&quot; on {staffDate}
+              </p>
+              {staffResults.length === 0 && (
+                <p className="py-3 text-sm text-slate-500 dark:text-slate-400">
+                  No {staffCategory === "aircraft" ? "aircraft" : "daily"} report found for this
+                  staff on this date.
+                </p>
+              )}
+              {staffResults.map((r) => (
+                <Link
+                  key={`${r.reportType}-${r.reportId}`}
+                  href={`/reports/view/${r.reportType}/${r.reportId}`}
+                  className="flex items-center justify-between py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="font-mono text-xs text-slate-400">{REPORT_META[r.reportType].code}</p>
+                    <p className="font-semibold">{r.staffName}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{r.detail}</p>
+                  </div>
+                  <span className="text-xs text-slate-500 text-right shrink-0 ml-3">
+                    {r.station} · {r.team}
+                    <br />
+                    {formatDateTimeMY(r.submittedAt)}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+
         <form method="get" className="card p-4 grid grid-cols-2 sm:grid-cols-5 gap-3 items-end">
           <div>
             <label className="field-label">From</label>

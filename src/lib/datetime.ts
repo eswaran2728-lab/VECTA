@@ -46,3 +46,8 @@ export function splitDateTimeMY(iso: string | null | undefined): { date: string;
     time: formatDateTimeMY(iso, "HH:mm"),
   };
 }
+
+/** ISO {from, to} bounds for a single MY-local calendar day (UTC+8). */
+export function dayRangeMY(date: string): { from: string; to: string } {
+  return { from: `${date}T00:00:00+08:00`, to: `${date}T23:59:59.999+08:00` };
+}
