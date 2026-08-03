@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { signOut } from "@/lib/profile-actions";
+import { landingPathForRole } from "@/lib/auth";
 import { APP_NAME } from "@/lib/branding";
 import type { Profile } from "@/lib/types";
 
@@ -16,6 +17,7 @@ export function AppHeader({
   const isMonitor = profile.role !== "ASO";
   const isEnforcement = profile.role === "ENFORCEMENT" || profile.role === "ADMIN";
   const isAdmin = profile.role === "ADMIN";
+  const canSubmitDaily = profile.role === "SO" || profile.role === "DSE" || profile.role === "ENFORCEMENT";
 
   return (
     <header className="sticky top-0 z-10 bg-white/90 dark:bg-slate-950/90 backdrop-blur border-b border-slate-200 dark:border-slate-800">
@@ -38,7 +40,10 @@ export function AppHeader({
             className="rounded-lg shrink-0"
           />
           <div className="min-w-0">
-            <Link href="/home" className="font-bold text-brand-700 dark:text-brand-400 block truncate">
+            <Link
+              href={landingPathForRole(profile.role)}
+              className="font-bold text-brand-700 dark:text-brand-400 block truncate"
+            >
               {title ?? APP_NAME}
             </Link>
             <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
@@ -50,6 +55,11 @@ export function AppHeader({
           {isMonitor && (
             <Link href="/dashboard" className="btn-quiet">
               Dashboard
+            </Link>
+          )}
+          {canSubmitDaily && (
+            <Link href="/reports/sec014" className="btn-quiet">
+              Daily Report
             </Link>
           )}
           {isEnforcement && (

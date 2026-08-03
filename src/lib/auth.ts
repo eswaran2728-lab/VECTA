@@ -46,8 +46,11 @@ export async function requireRole(roles: UserRole[]): Promise<Profile> {
   return profile;
 }
 
-// ASO submits reports. SO/DSE/ENFORCEMENT/ADMIN monitor everything ASO submits —
-// every report shows up in their dashboard, and ADMIN additionally gets an email copy.
+// Rank hierarchy: ASO < SO < DSE < ENFORCEMENT < ADMIN. Each role monitors every report
+// submitted by a strictly lower-ranked role (enforced identically in RLS via role_rank()).
+// ASO submits all 4 report types; SO/DSE/ENFORCEMENT additionally submit the SEC014 daily
+// report; ADMIN only monitors (plus gets an email copy of every submission) and approves users.
 export const MONITOR_ROLES: UserRole[] = ["SO", "DSE", "ENFORCEMENT", "ADMIN"];
+export const DAILY_REPORT_ROLES: UserRole[] = ["ASO", "SO", "DSE", "ENFORCEMENT"];
 export const ENFORCEMENT_ROLES: UserRole[] = ["ENFORCEMENT", "ADMIN"];
 export const ADMIN_ROLES: UserRole[] = ["ADMIN"];
