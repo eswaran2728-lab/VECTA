@@ -100,7 +100,7 @@ export async function getStationOfficers(station: string): Promise<Profile[]> {
     .from("profiles")
     .select("*")
     .eq("station", station)
-    .eq("role", "OFFICER");
+    .eq("role", "ASO");
   return (data as Profile[]) ?? [];
 }
 

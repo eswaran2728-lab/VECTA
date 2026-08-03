@@ -32,8 +32,23 @@ export type Team = (typeof TEAMS)[number];
 export const AIRCRAFT_TYPES = ["A320", "A321", "A330"] as const;
 export type AircraftType = (typeof AIRCRAFT_TYPES)[number];
 
-export const USER_ROLES = ["OFFICER", "SUPERVISOR", "MANAGER", "ADMIN"] as const;
+export const USER_ROLES = ["ASO", "SO", "DSE", "ENFORCEMENT", "ADMIN"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
+
+// Roles a new signup can request for themselves — ADMIN is never self-selectable,
+// it can only be granted by an existing admin.
+export const REQUESTABLE_ROLES = ["ASO", "SO", "DSE", "ENFORCEMENT"] as const;
+
+export const ROLE_LABELS: Record<UserRole, string> = {
+  ASO: "ASO — Assistant Security Officer",
+  SO: "SO — Security Officer",
+  DSE: "DSE",
+  ENFORCEMENT: "Enforcement",
+  ADMIN: "Admin",
+};
+
+export const PROFILE_STATUSES = ["pending", "approved", "rejected"] as const;
+export type ProfileStatus = (typeof PROFILE_STATUSES)[number];
 
 export const REPORT_TYPES = ["sec016", "sec014", "sec029", "sec018"] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];

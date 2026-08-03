@@ -1,4 +1,4 @@
-import type { AircraftType, ReportType, Station, Team, UserRole } from "./reference-data";
+import type { AircraftType, ProfileStatus, ReportType, Station, Team, UserRole } from "./reference-data";
 
 export type ReportStatus = "draft" | "submitted";
 
@@ -10,6 +10,7 @@ export interface Profile {
   station: Station | null;
   team: Team | null;
   role: UserRole;
+  status: ProfileStatus;
   created_at: string;
   updated_at: string;
 }

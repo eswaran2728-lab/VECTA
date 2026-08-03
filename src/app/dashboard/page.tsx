@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireRole, SUPERVISOR_ROLES } from "@/lib/auth";
+import { requireRole, MONITOR_ROLES } from "@/lib/auth";
 import { STATIONS, TEAMS, REPORT_META, REPORT_TYPES, type ReportType } from "@/lib/reference-data";
 import {
   getTodayCounts,
@@ -20,14 +20,13 @@ export default async function DashboardPage({
 }: {
   searchParams: Record<string, string | undefined>;
 }) {
-  const profile = await requireRole(SUPERVISOR_ROLES);
-  const isManager = profile.role === "MANAGER" || profile.role === "ADMIN";
+  const profile = await requireRole(MONITOR_ROLES);
 
   const today = todayISODateMY();
   const filters: DashboardFilters = {
     dateFrom: searchParams.dateFrom || today,
     dateTo: searchParams.dateTo || today,
-    station: searchParams.station || (isManager ? undefined : profile.station ?? undefined),
+    station: searchParams.station || undefined,
     team: searchParams.team || undefined,
     reportType: (searchParams.reportType as ReportType) || undefined,
   };
@@ -68,7 +67,7 @@ export default async function DashboardPage({
           </div>
           <div>
             <label className="field-label">Station</label>
-            <select name="station" defaultValue={filters.station ?? ""} className="input-base" disabled={!isManager}>
+            <select name="station" defaultValue={filters.station ?? ""} className="input-base">
               <option value="">All</option>
               {STATIONS.map((s) => (
                 <option key={s} value={s}>

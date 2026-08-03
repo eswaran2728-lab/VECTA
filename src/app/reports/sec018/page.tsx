@@ -1,11 +1,11 @@
-import { requireProfile } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { loadDraft } from "@/lib/reports/drafts";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { Sec018Form } from "@/components/forms/Sec018Form";
 import { REPORT_META } from "@/lib/reference-data";
 
 export default async function Sec018Page() {
-  const profile = await requireProfile();
+  const profile = await requireRole(["ASO"]);
   const serverDraft = await loadDraft("sec018");
 
   return (

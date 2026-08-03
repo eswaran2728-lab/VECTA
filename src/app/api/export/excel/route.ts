@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import * as XLSX from "xlsx";
-import { requireRole, SUPERVISOR_ROLES } from "@/lib/auth";
+import { requireRole, MONITOR_ROLES } from "@/lib/auth";
 import { getFullRowsForExport } from "@/lib/export/queries";
 import { buildExportWorkbook } from "@/lib/export/excel";
 import type { ReportType } from "@/lib/reference-data";
@@ -8,15 +8,14 @@ import { todayISODateMY } from "@/lib/datetime";
 import type { DashboardFilters } from "@/lib/dashboard/queries";
 
 export async function GET(request: NextRequest) {
-  const profile = await requireRole(SUPERVISOR_ROLES);
-  const isManager = profile.role === "MANAGER" || profile.role === "ADMIN";
+  await requireRole(MONITOR_ROLES);
 
   const params = request.nextUrl.searchParams;
   const today = todayISODateMY();
   const filters: DashboardFilters = {
     dateFrom: params.get("dateFrom") || today,
     dateTo: params.get("dateTo") || today,
-    station: params.get("station") || (isManager ? undefined : profile.station ?? undefined),
+    station: params.get("station") || undefined,
     team: params.get("team") || undefined,
     reportType: (params.get("reportType") as ReportType) || undefined,
   };

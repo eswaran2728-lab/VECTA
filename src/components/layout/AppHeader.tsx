@@ -13,7 +13,9 @@ export function AppHeader({
   title?: string;
   backHref?: string;
 }) {
-  const isSupervisor = profile.role !== "OFFICER";
+  const isMonitor = profile.role !== "ASO";
+  const isEnforcement = profile.role === "ENFORCEMENT" || profile.role === "ADMIN";
+  const isAdmin = profile.role === "ADMIN";
 
   return (
     <header className="sticky top-0 z-10 bg-white/90 dark:bg-slate-950/90 backdrop-blur border-b border-slate-200 dark:border-slate-800">
@@ -45,9 +47,19 @@ export function AppHeader({
           </div>
         </div>
         <nav className="flex items-center gap-3 shrink-0">
-          {isSupervisor && (
+          {isMonitor && (
             <Link href="/dashboard" className="btn-quiet">
               Dashboard
+            </Link>
+          )}
+          {isEnforcement && (
+            <Link href="/search" className="btn-quiet">
+              Search
+            </Link>
+          )}
+          {isAdmin && (
+            <Link href="/admin/users" className="btn-quiet">
+              Users
             </Link>
           )}
           <form action={signOut}>

@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { requireProfile } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { getOverdueAircraft, getMySubmissions } from "@/lib/reports/queries";
 import { REPORT_META } from "@/lib/reference-data";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { formatDateTimeMY } from "@/lib/datetime";
 
 export default async function HomePage() {
-  const profile = await requireProfile();
+  const profile = await requireRole(["ASO"]);
   const [overdue, recent] = await Promise.all([
     profile.station ? getOverdueAircraft(profile.station) : Promise.resolve([]),
     getMySubmissions({ profileId: profile.id, limit: 5 }),

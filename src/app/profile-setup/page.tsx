@@ -1,7 +1,7 @@
 import { getCurrentProfile, getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { updateProfile } from "@/lib/profile-actions";
-import { STATIONS, TEAMS } from "@/lib/reference-data";
+import { STATIONS, TEAMS, REQUESTABLE_ROLES, ROLE_LABELS } from "@/lib/reference-data";
 
 export default async function ProfileSetupPage({
   searchParams,
@@ -18,6 +18,7 @@ export default async function ProfileSetupPage({
         <h1 className="section-title mb-1">Complete your profile</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
           This auto-fills your details on every report — Email, Name, Staff No, Station and Team.
+          Your role request needs Admin approval before you can access the app.
         </p>
 
         {searchParams.error && (
@@ -101,6 +102,31 @@ export default async function ProfileSetupPage({
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="field-label" htmlFor="role">
+              Role
+            </label>
+            <select
+              id="role"
+              name="role"
+              required
+              defaultValue={profile?.role ?? ""}
+              className="input-base"
+            >
+              <option value="" disabled>
+                Select role
+              </option>
+              {REQUESTABLE_ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABELS[r]}
+                </option>
+              ))}
+            </select>
+            <p className="field-hint">
+              ASO submits reports. SO, DSE and Enforcement monitor reports submitted by ASOs.
+            </p>
           </div>
 
           <button type="submit" className="btn-primary w-full">
