@@ -13,6 +13,7 @@ import { WorkflowStepper } from "@/components/workflow-stepper";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getStep, nextStepFor, type CheckpointPart } from "@/lib/workflow";
+import { SegmentCountdown } from "@/components/segment-countdown";
 import {
   CARGO_TYPE_LABELS,
   DELIVERY_LOCATION_LABELS,
@@ -32,6 +33,7 @@ import type {
   PartD,
   Seal,
   SealVerification,
+  SegmentTimeout,
   Transaction,
   Role,
 } from "@/lib/database.types";
@@ -87,6 +89,7 @@ function PendingPartCard({
   currentPart,
   responsibleRole,
   viewerRole,
+  deadline,
 }: {
   id: string;
   title: string;
@@ -94,6 +97,8 @@ function PendingPartCard({
   currentPart: CheckpointPart | null;
   responsibleRole: Role;
   viewerRole: Role;
+  /** SLA deadline for this segment (Upgrade 5), null when uncapped. */
+  deadline?: string | null;
 }) {
   const isCurrent = currentPart === part;
   const actionable = isCurrent && viewerRole === responsibleRole;
@@ -107,16 +112,22 @@ function PendingPartCard({
       <CardContent>
         {actionable ? (
           <div className="space-y-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-primary">
-              <Clock3 className="h-4 w-4" /> Your turn — ready to verify
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                <Clock3 className="h-4 w-4" /> Your turn — ready to verify
+              </div>
+              {isCurrent ? <SegmentCountdown deadline={deadline ?? null} /> : null}
             </div>
             <Link href={`/transactions/${id}/${slug}`}>
               <Button className="w-full" size="lg">Scan / Verify</Button>
             </Link>
           </div>
         ) : isCurrent ? (
-          <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
-            <Clock3 className="h-4 w-4" /> Awaiting {ROLE_LABELS[responsibleRole]}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
+              <Clock3 className="h-4 w-4" /> Awaiting {ROLE_LABELS[responsibleRole]}
+            </div>
+            <SegmentCountdown deadline={deadline ?? null} />
           </div>
         ) : (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -194,6 +205,26 @@ export default async function TransactionDetailPage({
       : null;
   const currentPart = nextStep?.part ?? null;
 
+  // Segment SLA deadline (Upgrade 5) for whichever checkpoint is currently
+  // pending — null when the transaction is done/escalated, or the segment
+  // is uncapped (e.g. outbound Post 6 -> Receiver has no limit).
+  let segmentDeadline: string | null = null;
+  if (currentPart) {
+    const { data: segmentTimeout } = await supabase
+      .from("segment_timeouts")
+      .select("limit_minutes")
+      .eq("direction", transaction.direction)
+      .eq("from_status", transaction.status)
+      .maybeSingle();
+    const limitMinutes = (segmentTimeout as Pick<SegmentTimeout, "limit_minutes"> | null)
+      ?.limit_minutes;
+    if (limitMinutes != null) {
+      segmentDeadline = new Date(
+        new Date(transaction.status_entered_at).getTime() + limitMinutes * 60_000
+      ).toISOString();
+    }
+  }
+
   const suppliesSum =
     (transaction.supplies_total ?? 0) +
     (transaction.supplies_carts ?? 0) +
@@ -244,6 +275,7 @@ export default async function TransactionDetailPage({
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <StatusBadge status={transaction.status} />
             <DirectionBadge direction={transaction.direction} />
+            {segmentDeadline ? <SegmentCountdown deadline={segmentDeadline} /> : null}
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -451,6 +483,7 @@ export default async function TransactionDetailPage({
             currentPart={currentPart}
             responsibleRole={getStep(transaction.direction, "part_b")?.role ?? "post2_avsec"}
             viewerRole={profile.role}
+            deadline={segmentDeadline}
           />
         )}
 
@@ -479,6 +512,7 @@ export default async function TransactionDetailPage({
             currentPart={currentPart}
             responsibleRole={getStep(transaction.direction, "part_c")?.role ?? "post6_avsec"}
             viewerRole={profile.role}
+            deadline={segmentDeadline}
           />
         )}
 
