@@ -129,6 +129,7 @@ export default async function IncidentsPage() {
                     <TableCell className="min-w-56">
                       <IncidentResolve
                         incidentId={incident.id}
+                        incidentType={incident.incident_type}
                         currentStatus={incident.status}
                       />
                     </TableCell>

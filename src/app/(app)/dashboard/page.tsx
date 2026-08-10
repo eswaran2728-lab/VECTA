@@ -6,7 +6,7 @@ import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { DashboardCharts, type DashTx } from "./dashboard-charts";
 import { ExportResetButton } from "./export-reset-button";
 import { CountUp } from "@/components/count-up";
-import type { Incident } from "@/lib/database.types";
+import type { Direction, Incident, SegmentTimeout, TransactionStatus } from "@/lib/database.types";
 import {
   QrCode,
   TrendingUp,
@@ -116,6 +116,43 @@ export default async function DashboardPage({
   const outCount = totalTodayOut.count ?? 0;
   const inCount = totalTodayIn.count ?? 0;
 
+  // Amber SLA warning: once a pending transaction crosses ~80% of its
+  // segment's time limit, flag its queue before the hard escalation hits.
+  const [pendingForSla, segmentLimits] = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("direction, status, status_entered_at")
+      .eq("archived", false)
+      .in("status", ["CREATED", "INFLIGHT_POST_APPROVED", "AIRPORT_POST_APPROVED"]),
+    supabase.from("segment_timeouts").select("direction, from_status, limit_minutes"),
+  ]);
+  const limitMap = new Map<string, number>();
+  for (const row of (segmentLimits.data ?? []) as Pick<
+    SegmentTimeout,
+    "direction" | "from_status" | "limit_minutes"
+  >[]) {
+    if (row.limit_minutes !== null) limitMap.set(`${row.direction}:${row.from_status}`, row.limit_minutes);
+  }
+  const nowMs = Date.now();
+  let nearingInflightPost = 0;
+  let nearingAirportPost = 0;
+  for (const row of (pendingForSla.data ?? []) as {
+    direction: Direction;
+    status: TransactionStatus;
+    status_entered_at: string;
+  }[]) {
+    const limit = limitMap.get(`${row.direction}:${row.status}`);
+    if (!limit) continue;
+    const elapsedMinutes = (nowMs - new Date(row.status_entered_at).getTime()) / 60000;
+    if (elapsedMinutes < 0.8 * limit) continue;
+    // Same queue mapping as pendingInflightPost/pendingAirportPost above.
+    const isInflightPostQueue =
+      (row.direction === "OUTBOUND" && row.status === "CREATED") ||
+      (row.direction === "INBOUND" && row.status === "AIRPORT_POST_APPROVED");
+    if (isInflightPostQueue) nearingInflightPost += 1;
+    else nearingAirportPost += 1;
+  }
+
   const cards = [
     {
       label: "Total Today",
@@ -129,12 +166,14 @@ export default async function DashboardPage({
       value: pendingInflightPost.count ?? 0,
       href: "/transactions",
       icon: PlaneTakeoff,
+      nearSla: nearingInflightPost,
     },
     {
       label: "Pending Airport Post",
       value: pendingAirportPost.count ?? 0,
       href: "/transactions",
       icon: Building2,
+      nearSla: nearingAirportPost,
     },
     {
       label: "Pending Part D (outbound)",
@@ -211,6 +250,8 @@ export default async function DashboardPage({
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {cards.map((card, i) => {
           const isAlert = card.alert && card.value > 0;
+          const nearSla = ("nearSla" in card ? card.nearSla : 0) ?? 0;
+          const isNearSla = !isAlert && nearSla > 0;
           return (
             <Link
               key={card.label}
@@ -222,7 +263,9 @@ export default async function DashboardPage({
                 className={
                   isAlert
                     ? "h-full border-orange-400/40 bg-orange-500/10 transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-orange-800/60"
-                    : "h-full transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
+                    : isNearSla
+                      ? "h-full border-amber-400/50 bg-amber-500/10 transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-amber-800/60"
+                      : "h-full transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
                 }
               >
                 <CardContent className="group space-y-2 p-4">
@@ -230,7 +273,9 @@ export default async function DashboardPage({
                     className={
                       isAlert
                         ? "animate-glow-pulse flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500/15 text-orange-500"
-                        : "flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary transition-transform duration-200 group-hover:scale-110"
+                        : isNearSla
+                          ? "flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/15 text-amber-600"
+                          : "flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary transition-transform duration-200 group-hover:scale-110"
                     }
                   >
                     <card.icon className="h-4 w-4" />
@@ -243,6 +288,11 @@ export default async function DashboardPage({
                   </p>
                   {"sub" in card && card.sub ? (
                     <p className="text-xs text-muted-foreground">{card.sub}</p>
+                  ) : null}
+                  {isNearSla ? (
+                    <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                      ⚠ {nearSla} nearing SLA limit
+                    </p>
                   ) : null}
                 </CardContent>
               </Card>
