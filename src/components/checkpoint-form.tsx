@@ -60,22 +60,29 @@ export function CheckpointForm({
   const [queuedMsg, setQueuedMsg] = useState<string | null>(null);
   const [result, setResult] = useState<"PASS" | "ESCALATE">("PASS");
   const [escalationReason, setEscalationReason] = useState("");
-  const [observedVehicleNumber, setObservedVehicleNumber] = useState(transaction.vehicle_number);
-  const [observedDriverId, setObservedDriverId] = useState(transaction.driver_id);
+  // Vehicle/driver fields start blank — the officer must read and type in
+  // what they physically observe rather than accepting a pre-filled value
+  // carried over from Part A. The Part A record is shown above for
+  // reference only; nothing here is auto-filled from it.
+  const [observedVehicleNumber, setObservedVehicleNumber] = useState("");
+  const [observedDriverId, setObservedDriverId] = useState("");
+
+  const touched = observedVehicleNumber.trim() !== "" && observedDriverId.trim() !== "";
 
   // Secondary whitelist check (Upgrade 2/3): if the observed vehicle/driver
   // is not on the active whitelist, Pass is disabled — Escalate only.
   const whitelisted = useMemo(() => {
+    if (!touched) return false;
     const v = observedVehicleNumber.trim().toUpperCase();
     const d = observedDriverId.trim().toUpperCase();
     const vehicleOk = vehicles.some((x) => x.vehicle_number.toUpperCase() === v);
     const driverOk = drivers.some((x) => x.driver_id.toUpperCase() === d);
     return vehicleOk && driverOk;
-  }, [observedVehicleNumber, observedDriverId, vehicles, drivers]);
+  }, [touched, observedVehicleNumber, observedDriverId, vehicles, drivers]);
 
   const effectiveResult = whitelisted ? result : "ESCALATE";
   const effectiveEscalationReason =
-    !whitelisted && !escalationReason
+    !whitelisted && touched && !escalationReason
       ? "WHITELIST_VIOLATION: observed vehicle/driver not on the active whitelist."
       : escalationReason;
 
@@ -165,12 +172,13 @@ export function CheckpointForm({
                 name="observed_vehicle_number"
                 value={observedVehicleNumber}
                 onChange={(e) => setObservedVehicleNumber(e.target.value)}
+                placeholder="As physically observed"
                 required
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="observed_driver_name">Driver name</Label>
-              <Input id="observed_driver_name" name="observed_driver_name" defaultValue={transaction.driver_name} required />
+              <Input id="observed_driver_name" name="observed_driver_name" placeholder="As physically observed" required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="observed_driver_id">Driver IC / ID</Label>
@@ -179,17 +187,24 @@ export function CheckpointForm({
                 name="observed_driver_id"
                 value={observedDriverId}
                 onChange={(e) => setObservedDriverId(e.target.value)}
+                placeholder="As physically observed"
                 required
               />
             </div>
           </div>
 
-          {!whitelisted ? (
+          {touched && !whitelisted ? (
             <p className="rounded-md bg-red-100 p-3 text-sm font-medium text-red-800 dark:bg-red-900/40 dark:text-red-200">
               WHITELIST VIOLATION — the observed vehicle/driver is not on the active whitelist. Pass is
               disabled; this checkpoint will be escalated automatically. / PELANGGARAN SENARAI PUTIH —
               kenderaan/pemandu yang diperhatikan tiada dalam senarai putih aktif. Lulus dinyahaktifkan;
               pusat pemeriksaan ini akan dieskalasi secara automatik.
+            </p>
+          ) : !touched ? (
+            <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+              Enter the vehicle number and driver ID exactly as physically observed to enable Pass. /
+              Masukkan nombor kenderaan dan ID pemandu seperti yang diperhatikan secara fizikal untuk
+              membolehkan Lulus.
             </p>
           ) : null}
 
