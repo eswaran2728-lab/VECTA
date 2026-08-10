@@ -346,6 +346,12 @@ export default async function TransactionDetailPage({
                 value={`${transaction.escort_officer_name}${transaction.escort_officer_staff_id ? ` (${transaction.escort_officer_staff_id})` : ""}`}
               />
             ) : null}
+            {transaction.escort_vehicle_number ? (
+              <Row
+                label="Escort Vehicle"
+                value={<span className="font-mono">{transaction.escort_vehicle_number}</span>}
+              />
+            ) : null}
             <Row label="Created" value={formatDateTime(transaction.created_at)} />
             <Row label="Completed" value={formatDateTime(transaction.completed_at)} />
             <div className="space-y-2 pt-2">

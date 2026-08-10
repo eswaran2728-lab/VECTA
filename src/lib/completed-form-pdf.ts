@@ -160,6 +160,14 @@ function buildPdf(
     y
   );
   y += 4;
+  if (transaction.escort_officer_name) {
+    doc.text(
+      `Escort Officer: ${transaction.escort_officer_name} (${transaction.escort_officer_staff_id ?? "—"})    Escort Vehicle: ${transaction.escort_vehicle_number ?? "—"}`,
+      14,
+      y
+    );
+    y += 4;
+  }
   y = addSignatureBlock(doc, y, "PIC", signatures.part_a);
   if (y > 250) {
     doc.addPage();

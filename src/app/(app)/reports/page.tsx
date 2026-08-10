@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { minutesBetween } from "@/lib/utils";
 import { ReportBuilder, type RangeRow } from "./report-builder";
-import type { Direction, Incident, TransactionStatus } from "@/lib/database.types";
+import type { Direction, Incident, SegmentTimeout, TransactionStatus } from "@/lib/database.types";
 
 export const metadata: Metadata = { title: "Reports" };
 export const dynamic = "force-dynamic";
@@ -51,7 +51,7 @@ export default async function ReportsPage({
   const rangeStart = new Date(`${rangeFrom}T00:00:00`).toISOString();
   const rangeEnd = new Date(`${rangeTo}T23:59:59.999`).toISOString();
 
-  const [daily, monthlyTx, monthlyIncidents, rangeTx] = await Promise.all([
+  const [daily, monthlyTx, monthlyIncidents, rangeTx, segmentTimeouts] = await Promise.all([
     supabase
       .from("transactions")
       .select("*, seals(seal_number)")
@@ -78,7 +78,15 @@ export default async function ReportsPage({
       .lte("created_at", rangeEnd)
       .order("created_at")
       .limit(5000),
+    supabase.from("segment_timeouts").select("direction, from_status, limit_minutes"),
   ]);
+  const limitFor = (direction: Direction, fromStatus: TransactionStatus): number | null => {
+    const row = ((segmentTimeouts.data ?? []) as Pick<
+      SegmentTimeout,
+      "direction" | "from_status" | "limit_minutes"
+    >[]).find((r) => r.direction === direction && r.from_status === fromStatus);
+    return row?.limit_minutes ?? null;
+  };
 
   const monthly = (monthlyTx.data ?? []) as unknown as MonthlyTx[];
 
@@ -117,12 +125,40 @@ export default async function ReportsPage({
       if (cb !== null && cb >= 0) seg.cb.push(cb);
     }
   }
+  // SLA compliance %: share of transactions in each segment that stayed
+  // within its configured limit_minutes (Upgrade 5). Uncapped segments
+  // (limit_minutes null, e.g. Outbound C -> D) report no SLA at all.
+  function compliance(values: number[], limit: number | null): number | null {
+    if (limit === null || values.length === 0) return null;
+    return Math.round((values.filter((v) => v <= limit).length / values.length) * 100);
+  }
+
   const dwell = [
-    { segment: "Outbound A → B", minutes: avg(seg.ab) },
-    { segment: "Outbound B → C", minutes: avg(seg.bc) },
-    { segment: "Outbound C → D", minutes: avg(seg.cd) },
-    { segment: "Inbound A → C", minutes: avg(seg.ac) },
-    { segment: "Inbound C → B", minutes: avg(seg.cb) },
+    {
+      segment: "Outbound A → B",
+      minutes: avg(seg.ab),
+      slaPct: compliance(seg.ab, limitFor("OUTBOUND", "CREATED")),
+    },
+    {
+      segment: "Outbound B → C",
+      minutes: avg(seg.bc),
+      slaPct: compliance(seg.bc, limitFor("OUTBOUND", "INFLIGHT_POST_APPROVED")),
+    },
+    {
+      segment: "Outbound C → D",
+      minutes: avg(seg.cd),
+      slaPct: compliance(seg.cd, limitFor("OUTBOUND", "AIRPORT_POST_APPROVED")),
+    },
+    {
+      segment: "Inbound A → C",
+      minutes: avg(seg.ac),
+      slaPct: compliance(seg.ac, limitFor("INBOUND", "CREATED")),
+    },
+    {
+      segment: "Inbound C → B",
+      minutes: avg(seg.cb),
+      slaPct: compliance(seg.cb, limitFor("INBOUND", "AIRPORT_POST_APPROVED")),
+    },
   ];
 
   return (

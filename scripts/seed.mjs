@@ -129,6 +129,38 @@ async function insertPartC(txId, ids) {
 }
 
 /**
+ * Whitelist entries for every vehicle/driver the seed samples use.
+ * Strict whitelist enforcement (enforce_whitelist_on_create trigger) blocks
+ * any Part A whose vehicle_id/driver_id_ref don't resolve, so these must
+ * exist before createTransaction() runs.
+ */
+const SEED_VEHICLES = [
+  "WKD 4521", "WMA 7733", "WTF 1289", "WXY 5566", "WBB 3020",
+  "WQA 9014", "WPP 6612", "WRR 8874",
+];
+const SEED_DRIVERS = [{ name: "Rahman bin Ali", driver_id: "DRV-0091" }];
+
+async function seedWhitelists() {
+  const { error: vErr } = await admin
+    .from("vehicles")
+    .upsert(
+      SEED_VEHICLES.map((vehicle_number) => ({ vehicle_number, is_active: true })),
+      { onConflict: "vehicle_number" }
+    );
+  if (vErr) throw vErr;
+
+  const { error: dErr } = await admin
+    .from("drivers")
+    .upsert(
+      SEED_DRIVERS.map((d) => ({ ...d, is_active: true })),
+      { onConflict: "driver_id" }
+    );
+  if (dErr) throw dErr;
+
+  console.log(`whitelist ready: ${SEED_VEHICLES.length} vehicles, ${SEED_DRIVERS.length} drivers`);
+}
+
+/**
  * stage = number of checkpoint steps already completed after Part A,
  * or "ESCALATED" to raise an incident at the current point.
  */
@@ -138,15 +170,24 @@ async function createTransaction(ids, direction, steps, overrides = {}) {
   const picName = direction === "OUTBOUND" ? "Ahmad Warehouse" : "Nurul SRA Warehouse";
   const picStaffId = direction === "OUTBOUND" ? "WH-1001" : "SW-4001";
 
+  const vehicleNumber = overrides.vehicle_number ?? "WKD 4521";
+  const driverId = overrides.driver_id ?? "DRV-0091";
+  const [{ data: vehicleRec }, { data: driverRec }] = await Promise.all([
+    admin.from("vehicles").select("id").eq("vehicle_number", vehicleNumber).single(),
+    admin.from("drivers").select("id").eq("driver_id", driverId).single(),
+  ]);
+
   const { data: tx, error } = await admin
     .from("transactions")
     .insert({
       direction,
-      vehicle_number: overrides.vehicle_number ?? "WKD 4521",
+      vehicle_number: vehicleNumber,
       driver_name: overrides.driver_name ?? "Rahman bin Ali",
-      driver_id: overrides.driver_id ?? "DRV-0091",
+      driver_id: driverId,
       seal_number: overrides.seal_number ?? `SEAL-${Math.floor(Math.random() * 90000) + 10000}`,
       created_by: creator,
+      vehicle_id: vehicleRec?.id ?? null,
+      driver_id_ref: driverRec?.id ?? null,
     })
     .select()
     .single();
@@ -218,6 +259,8 @@ async function main() {
     ids[u.role] = id;
     ids[u.email] = id;
   }
+
+  await seedWhitelists();
 
   const samples = [
     ["OUTBOUND", 0, { vehicle_number: "WKD 4521" }],

@@ -5,24 +5,28 @@ import { resolveIncident, type ResolveState } from "@/lib/actions/incidents";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { INCIDENT_STATUS_LABELS } from "@/lib/constants";
-import type { IncidentStatus } from "@/lib/database.types";
+import { INCIDENT_STATUS_LABELS, lifecycleFor } from "@/lib/constants";
+import type { IncidentStatus, IncidentType } from "@/lib/database.types";
 
 const initialState: ResolveState = { error: null, success: null };
-const ORDER: IncidentStatus[] = ["OPEN", "UNDER_REVIEW", "RESOLVED", "CLOSED"];
 
-/** Admin lifecycle controls: forward-only, notes mandatory to resolve/close. */
+/** Admin lifecycle controls: forward-only, notes mandatory to resolve/close.
+ *  SEGMENT_TIMEOUT incidents get the lighter OPEN -> RESOLVED lifecycle;
+ *  every other type keeps the full OPEN -> UNDER_REVIEW -> RESOLVED -> CLOSED. */
 export function IncidentResolve({
   incidentId,
+  incidentType,
   currentStatus,
 }: {
   incidentId: string;
+  incidentType: IncidentType;
   currentStatus: IncidentStatus;
 }) {
   const [state, action, pending] = useActionState(resolveIncident, initialState);
   const [target, setTarget] = useState<IncidentStatus | "">("");
 
-  const options = ORDER.slice(ORDER.indexOf(currentStatus) + 1);
+  const order = lifecycleFor(incidentType);
+  const options = order.slice(order.indexOf(currentStatus) + 1);
   if (options.length === 0) return null;
 
   const needsNotes = target === "RESOLVED" || target === "CLOSED";

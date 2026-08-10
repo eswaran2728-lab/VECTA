@@ -43,7 +43,7 @@ interface ReportBuilderProps {
   monthlySummary: MonthlySummary;
   monthlyIncidents: Pick<Incident, "incident_type" | "created_at">[];
   companyBreakdown: { name: string; total: number; completed: number; escalated: number }[];
-  dwell: { segment: string; minutes: number | null }[];
+  dwell: { segment: string; minutes: number | null; slaPct: number | null }[];
 }
 
 function txRows(list: RangeRow[]): string[][] {
@@ -126,8 +126,12 @@ export function ReportBuilder({
       headStyles: { fillColor: [30, 64, 175] },
     });
     autoTable(doc, {
-      head: [["Checkpoint Segment", "Avg Dwell (min)"]],
-      body: dwell.map((d) => [d.segment, d.minutes === null ? "—" : String(d.minutes)]),
+      head: [["Checkpoint Segment", "Avg Dwell (min)", "SLA Compliance"]],
+      body: dwell.map((d) => [
+        d.segment,
+        d.minutes === null ? "—" : String(d.minutes),
+        d.slaPct === null ? "No limit" : `${d.slaPct}%`,
+      ]),
       headStyles: { fillColor: [5, 150, 105] },
     });
     autoTable(doc, {
@@ -166,8 +170,12 @@ export function ReportBuilder({
     XLSX.utils.book_append_sheet(
       wb,
       XLSX.utils.aoa_to_sheet([
-        ["Checkpoint Segment", "Avg Dwell (min)"],
-        ...dwell.map((d) => [d.segment, d.minutes ?? "—"]),
+        ["Checkpoint Segment", "Avg Dwell (min)", "SLA Compliance"],
+        ...dwell.map((d) => [
+          d.segment,
+          d.minutes ?? "—",
+          d.slaPct === null ? "No limit" : `${d.slaPct}%`,
+        ]),
       ]),
       "Dwell Times"
     );
@@ -308,7 +316,7 @@ export function ReportBuilder({
 
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <p className="mb-1 text-sm font-semibold">Average dwell times</p>
+              <p className="mb-1 text-sm font-semibold">Average dwell times &amp; SLA compliance</p>
               <Table>
                 <TableBody>
                   {dwell.map((d) => (
@@ -316,6 +324,13 @@ export function ReportBuilder({
                       <TableCell className="py-2 text-sm">{d.segment}</TableCell>
                       <TableCell className="py-2 text-right font-mono text-sm">
                         {d.minutes === null ? "—" : `${d.minutes} min`}
+                      </TableCell>
+                      <TableCell
+                        className={`py-2 text-right font-mono text-sm ${
+                          d.slaPct !== null && d.slaPct < 90 ? "font-semibold text-amber-600" : ""
+                        }`}
+                      >
+                        {d.slaPct === null ? "No limit" : `${d.slaPct}%`}
                       </TableCell>
                     </TableRow>
                   ))}

@@ -11,6 +11,7 @@ import {
   ScrollText,
   Archive,
   LogOut,
+  ShieldCheck,
 } from "lucide-react";
 import { requireProfile } from "@/lib/auth";
 import { signOut } from "@/lib/actions/auth";
@@ -116,6 +117,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <p className="font-medium">{profile.name}</p>
               <p className="text-muted-foreground">{ROLE_LABELS[profile.role]}</p>
             </div>
+            {/* Persistent role badge: makes it unambiguous which role is acting,
+                especially AVSEC Post 2 vs Post 6 vs PIC/Receiver/Admin. */}
+            <span
+              className="hidden items-center gap-1 rounded-full border bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground md:inline-flex"
+              title={`${ROLE_LABELS[profile.role]} · Staff ID ${profile.staff_id}`}
+            >
+              <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+              {ROLE_LABELS[profile.role]} · Staff ID {profile.staff_id}
+            </span>
             <AirAsiaMark />
             <div className="hidden h-6 w-px bg-border sm:block" />
             <PwaProvider />

@@ -163,6 +163,62 @@ async function verifySealsAtCheckpoint(
   return null;
 }
 
+/**
+ * Secondary whitelist check at Part B/Part C (defense-in-depth for the rare
+ * case a vehicle/driver's whitelist status changed after Part A). A PASS may
+ * only be recorded when the officer's observed vehicle and driver are both
+ * still active whitelist entries — mirrors verifySealsAtCheckpoint: on a
+ * violation, raise WHITELIST_VIOLATION directly (which freezes the
+ * transaction via the existing escalate_on_incident() trigger) and return a
+ * bilingual message, without ever inserting a PASS-result checkpoint record.
+ */
+async function checkWhitelistAtCheckpoint(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  profile: UserProfile,
+  transactionId: string,
+  part: "part_b" | "part_c",
+  observedVehicleNumber: string,
+  observedDriverId: string
+): Promise<string | null> {
+  const [vehicleRes, driverRes] = await Promise.all([
+    supabase
+      .from("vehicles")
+      .select("id")
+      .eq("vehicle_number", observedVehicleNumber)
+      .eq("is_active", true)
+      .maybeSingle(),
+    supabase
+      .from("drivers")
+      .select("id")
+      .eq("driver_id", observedDriverId)
+      .eq("is_active", true)
+      .maybeSingle(),
+  ]);
+
+  if (vehicleRes.data && driverRes.data) return null;
+
+  const unlisted: string[] = [];
+  if (!vehicleRes.data) unlisted.push(`vehicle ${observedVehicleNumber}`);
+  if (!driverRes.data) unlisted.push(`driver ${observedDriverId}`);
+
+  await supabase.from("incidents").insert({
+    transaction_id: transactionId,
+    incident_type: "WHITELIST_VIOLATION",
+    description:
+      `Automatic escalation at ${part === "part_b" ? "Part B" : "Part C"}: observed ${unlisted.join(" and ")} ` +
+      `not on the active whitelist. Verified by ${profile.name} (${profile.staff_id}).`,
+    reported_by: `${profile.name} (${profile.staff_id})`,
+    reported_by_id: profile.id,
+    photo_url: null,
+  });
+
+  return (
+    "WHITELIST VIOLATION — the observed vehicle/driver is not on the active whitelist. The transaction has " +
+    "been escalated and the admin notified. Do not release the vehicle. " +
+    "/ PELANGGARAN SENARAI PUTIH — kenderaan/pemandu tiada dalam senarai putih aktif. Transaksi telah dieskalasi dan admin dimaklumkan. Jangan lepaskan kenderaan."
+  );
+}
+
 export interface ActionState {
   error: string | null;
 }
@@ -209,6 +265,7 @@ export async function createTransaction(
   const trolleyCount = Math.max(0, parseInt(str(formData, "trolley_count") || "0", 10) || 0);
   const escortName = str(formData, "escort_officer_name");
   const escortStaffId = str(formData, "escort_officer_staff_id");
+  const escortVehicleNumber = str(formData, "escort_vehicle_number").toUpperCase();
   const escalateExpired = bool(formData, "escalate_expired");
 
   // IFCSF (AA/SEC/F/010 Rev.01) header + Part A supplies breakdown.
@@ -257,14 +314,23 @@ export async function createTransaction(
   if (!signature) {
     return { error: "Signature is required." };
   }
+  // Escort officer name / staff ID / escort vehicle number are all-or-nothing.
+  const escortFields = [escortName, escortStaffId, escortVehicleNumber].filter(Boolean);
+  if (escortFields.length > 0 && escortFields.length < 3) {
+    return {
+      error:
+        "Escort officer name, staff ID and escort vehicle number must all be filled in together, or all left blank. " +
+        "/ Nama pegawai pengiring, ID kakitangan dan nombor kenderaan pengiring mesti diisi bersama, atau dibiarkan kosong semua.",
+    };
+  }
 
   const supabase = await createClient();
 
   // Whitelist checks: matched entries link to the registry; expired passes
-  // block (or escalate on explicit confirmation); unlisted entries are
-  // allowed only with mandatory remarks and are audit-logged.
+  // block (or escalate on explicit confirmation); unlisted vehicle/driver
+  // (main or escort) is a hard block — see enforce_whitelist_on_create().
   const today = new Date().toISOString().slice(0, 10);
-  const [vehicleRes, driverRes] = await Promise.all([
+  const [vehicleRes, driverRes, escortVehicleRes] = await Promise.all([
     supabase
       .from("vehicles")
       .select("id, pass_expiry_date, is_active")
@@ -277,9 +343,18 @@ export async function createTransaction(
       .eq("driver_id", driverId)
       .eq("is_active", true)
       .maybeSingle(),
+    escortVehicleNumber
+      ? supabase
+          .from("vehicles")
+          .select("id, pass_expiry_date, is_active")
+          .eq("vehicle_number", escortVehicleNumber)
+          .eq("is_active", true)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
   const vehicleRec = vehicleRes.data;
   const driverRec = driverRes.data;
+  const escortVehicleRec = escortVehicleRes.data;
 
   const expiredItems: string[] = [];
   if (vehicleRec?.pass_expiry_date && vehicleRec.pass_expiry_date < today) {
@@ -287,6 +362,9 @@ export async function createTransaction(
   }
   if (driverRec?.pass_expiry_date && driverRec.pass_expiry_date < today) {
     expiredItems.push(`driver ${driverId}`);
+  }
+  if (escortVehicleRec?.pass_expiry_date && escortVehicleRec.pass_expiry_date < today) {
+    expiredItems.push(`escort vehicle ${escortVehicleNumber}`);
   }
   if (expiredItems.length > 0 && !escalateExpired) {
     return {
@@ -297,14 +375,22 @@ export async function createTransaction(
     };
   }
 
+  // Strict whitelist: a vehicle/driver not on the active whitelist is a
+  // hard block, same severity tier as missing signature/seals — no more
+  // "allowed with mandatory remarks" escape hatch. Only the expired-pass
+  // path above stays an override (a vehicle already at the gate). Escort
+  // vehicle goes through the same whitelist system as the primary vehicle
+  // so it isn't a side door around this rule.
   const unlisted: string[] = [];
   if (!vehicleRec) unlisted.push(`vehicle ${vehicleNumber}`);
   if (!driverRec) unlisted.push(`driver ${driverId}`);
-  if (unlisted.length > 0 && !remarks) {
+  if (escortVehicleNumber && !escortVehicleRec) unlisted.push(`escort vehicle ${escortVehicleNumber}`);
+  if (unlisted.length > 0) {
     return {
       error:
-        `${unlisted.join(" and ")} not in the whitelist. Remarks are mandatory when proceeding with unlisted entries. ` +
-        `/ Tiada dalam senarai putih — catatan wajib diisi.`,
+        `WHITELIST_VIOLATION: ${unlisted.join(" and ")} not on the active whitelist. Ask an Admin to add ` +
+        `this vehicle/driver to the whitelist before creating this transaction. ` +
+        `/ Tiada dalam senarai putih aktif — hubungi Admin untuk menambah kenderaan/pemandu ini sebelum mencipta transaksi.`,
     };
   }
 
@@ -335,6 +421,7 @@ export async function createTransaction(
       trolley_count: trolleyCount,
       escort_officer_name: escortName || null,
       escort_officer_staff_id: escortStaffId || null,
+      escort_vehicle_number: escortVehicleNumber || null,
       station,
       cargo_types: cargoTypes,
       supplies_total: suppliesTotal,
@@ -453,6 +540,25 @@ async function completeChecklistPart(
   if (orderError) return { error: orderError };
 
   const finalizes = getStep(tx.direction, part)?.finalizes ?? false;
+
+  // Secondary whitelist check (Upgrade 2/3 defense-in-depth): a PASS is only
+  // recorded when the observed vehicle/driver are still on the active
+  // whitelist. Skipped on Escalate — that path freezes the transaction anyway.
+  if (result === "PASS") {
+    const whitelistError = await checkWhitelistAtCheckpoint(
+      supabaseForCheck,
+      profile,
+      transactionId,
+      part,
+      observedVehicleNumber,
+      observedDriverId
+    );
+    if (whitelistError) {
+      revalidatePath(`/transactions/${transactionId}`);
+      revalidatePath("/dashboard");
+      return { error: whitelistError };
+    }
+  }
 
   // Seals must be entered/scanned by number — mismatch auto-escalates.
   // Skipped when the officer chose Escalate (e.g. a seal too damaged to

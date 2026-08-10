@@ -37,8 +37,8 @@ function whitelistHint(state: WhitelistState): { text: string; className: string
       };
     case "unlisted":
       return {
-        text: "⚠ Not in whitelist — remarks become mandatory",
-        className: "text-amber-600",
+        text: "✕ Not in whitelist — submission will be blocked",
+        className: "font-semibold text-red-600",
       };
     default:
       return null;
@@ -86,6 +86,9 @@ export function PartAForm({
   const [signature, setSignature] = useState<string | null>(null);
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [driverId, setDriverId] = useState("");
+  const [escortOfficerName, setEscortOfficerName] = useState("");
+  const [escortOfficerStaffId, setEscortOfficerStaffId] = useState("");
+  const [escortVehicleNumber, setEscortVehicleNumber] = useState("");
   const [seals, setSeals] = useState<SealDraft[]>([
     { seal_number: "", seal_type: "TRUCK_SEAL", seal_color: "" },
   ]);
@@ -119,9 +122,26 @@ export function PartAForm({
     return rec.pass_expiry_date && rec.pass_expiry_date < today ? "expired" : "matched";
   }, [driverId, drivers, today]);
 
+  const escortVehicleState: WhitelistState = useMemo(() => {
+    const v = escortVehicleNumber.trim().toUpperCase();
+    if (!v) return "empty";
+    const rec = vehicles.find((x) => x.vehicle_number.toUpperCase() === v);
+    if (!rec) return "unlisted";
+    return rec.pass_expiry_date && rec.pass_expiry_date < today ? "expired" : "matched";
+  }, [escortVehicleNumber, vehicles, today]);
+
   const vehicleHint = whitelistHint(vehicleState);
   const driverHint = whitelistHint(driverState);
+  const escortVehicleHint = whitelistHint(escortVehicleState);
   const expiredBlocked = state.error?.startsWith("EXPIRED_PASS:") ?? false;
+
+  // Escort officer name / staff ID / escort vehicle number are all-or-nothing.
+  const escortAny = escortOfficerName.trim() || escortOfficerStaffId.trim() || escortVehicleNumber.trim();
+  const escortComplete =
+    !escortAny ||
+    (escortOfficerName.trim() !== "" && escortOfficerStaffId.trim() !== "" && escortVehicleNumber.trim() !== "");
+  const anyUnlisted =
+    vehicleState === "unlisted" || driverState === "unlisted" || escortVehicleState === "unlisted";
 
   const flow = direction
     ? ["A · Warehouse", ...WORKFLOWS[direction].map((s) => s.shortLabel)].join("  →  ")
@@ -271,9 +291,46 @@ export function PartAForm({
             <div className="space-y-2">
               <Label htmlFor="escort_officer_name">Escort Officer (optional)</Label>
               <div className="flex gap-2">
-                <Input id="escort_officer_name" name="escort_officer_name" placeholder="Name" />
-                <Input name="escort_officer_staff_id" placeholder="Staff ID" className="w-32" />
+                <Input
+                  id="escort_officer_name"
+                  name="escort_officer_name"
+                  placeholder="Name"
+                  value={escortOfficerName}
+                  onChange={(e) => setEscortOfficerName(e.target.value)}
+                />
+                <Input
+                  name="escort_officer_staff_id"
+                  placeholder="Staff ID"
+                  className="w-32"
+                  value={escortOfficerStaffId}
+                  onChange={(e) => setEscortOfficerStaffId(e.target.value)}
+                />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="escort_vehicle_number">
+                Escort Vehicle Number{" "}
+                {escortAny ? <span className="font-normal text-muted-foreground">(required with escort officer)</span> : "(optional)"}
+              </Label>
+              <Input
+                id="escort_vehicle_number"
+                name="escort_vehicle_number"
+                placeholder="e.g. WKD 9912"
+                autoCapitalize="characters"
+                list="vehicle-whitelist"
+                value={escortVehicleNumber}
+                onChange={(e) => setEscortVehicleNumber(e.target.value)}
+              />
+              {escortVehicleHint ? (
+                <p className={`text-xs ${escortVehicleHint.className}`}>{escortVehicleHint.text}</p>
+              ) : null}
+              {!escortComplete ? (
+                <p className="text-xs font-semibold text-red-600">
+                  Escort officer name, staff ID and escort vehicle number must all be filled in
+                  together, or all left blank. / Ketiga-tiganya mesti diisi bersama, atau dibiarkan
+                  kosong semua.
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -360,19 +417,17 @@ export function PartAForm({
           />
 
           <div className="space-y-2">
-            <Label htmlFor="remarks">
-              Remarks{" "}
-              {vehicleState === "unlisted" || driverState === "unlisted"
-                ? "(mandatory — unlisted vehicle/driver)"
-                : "(optional)"}
-            </Label>
-            <Textarea
-              id="remarks"
-              name="remarks"
-              rows={2}
-              required={vehicleState === "unlisted" || driverState === "unlisted"}
-            />
+            <Label htmlFor="remarks">Remarks (optional)</Label>
+            <Textarea id="remarks" name="remarks" rows={2} />
           </div>
+
+          {anyUnlisted ? (
+            <p className="rounded-md bg-red-100 p-3 text-sm font-semibold text-red-800 dark:bg-red-900/40 dark:text-red-200">
+              WHITELIST VIOLATION — a vehicle or driver above is not on the active whitelist.
+              Submission is blocked; ask an Admin to add it under Whitelists. / PELANGGARAN SENARAI
+              PUTIH — hantar dihalang; hubungi Admin untuk menambah dalam Senarai Putih.
+            </p>
+          ) : null}
 
           <div className="rounded-md bg-muted p-3 text-sm">
             <p>
@@ -387,7 +442,7 @@ export function PartAForm({
 
           {state.error ? (
             <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
-              {state.error.replace(/^EXPIRED_PASS:\s*/, "")}
+              {state.error.replace(/^(EXPIRED_PASS|WHITELIST_VIOLATION):\s*/, "")}
             </p>
           ) : null}
 
@@ -405,7 +460,15 @@ export function PartAForm({
                 type="submit"
                 size="xl"
                 className="w-full"
-                disabled={pending || !searchDone || !signature || !sealsReady || cargoTypes.length === 0}
+                disabled={
+                  pending ||
+                  !searchDone ||
+                  !signature ||
+                  !sealsReady ||
+                  cargoTypes.length === 0 ||
+                  anyUnlisted ||
+                  !escortComplete
+                }
               >
                 {pending ? "Creating…" : "Create Transaction & Generate QR"}
               </Button>

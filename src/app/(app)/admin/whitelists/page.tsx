@@ -96,8 +96,10 @@ export default async function WhitelistsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Whitelists</h1>
         <p className="text-sm text-muted-foreground">
-          Approved catering companies, vehicles and drivers. Entries are deactivated, never
-          deleted; every change is audit-logged.
+          Approved catering companies, vehicles and drivers. These are hard gates, not soft
+          warnings: a vehicle or driver not listed and active here is blocked from creating a
+          transaction (Part A) and from passing Post 2/Post 6 checkpoints. Entries are
+          deactivated, never deleted; every change is audit-logged.
         </p>
       </div>
 

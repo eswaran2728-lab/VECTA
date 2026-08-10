@@ -12,30 +12,58 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDateTime } from "@/lib/utils";
-import type { AuditLog } from "@/lib/database.types";
+import { ROLE_LABELS } from "@/lib/constants";
+import { AuditRoleFilter } from "./audit-role-filter";
+import type { AuditLog, Role } from "@/lib/database.types";
 
 export const metadata: Metadata = { title: "Audit Log" };
 export const dynamic = "force-dynamic";
 
-export default async function AuditPage() {
+const ROLES = Object.keys(ROLE_LABELS) as Role[];
+
+export default async function AuditPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ role?: string }>;
+}) {
   await requireRole(["supervisor"]);
+  const { role: roleParam } = await searchParams;
+  const role = (ROLES.includes(roleParam as Role) ? roleParam : "") as Role | "";
   const supabase = await createClient();
 
-  const { data } = await supabase
+  let performedByIds: string[] | null = null;
+  if (role) {
+    const { data: usersOfRole } = await supabase.from("users").select("id").eq("role", role);
+    performedByIds = (usersOfRole ?? []).map((u) => u.id);
+  }
+
+  let query = supabase
     .from("audit_logs")
     .select("*")
     .order("performed_at", { ascending: false })
     .limit(300);
+  if (performedByIds) {
+    // Empty array (no user has this role) still needs a filter that matches
+    // nothing, rather than falling through to "all roles".
+    query = query.in("performed_by_id", performedByIds.length > 0 ? performedByIds : [
+      "00000000-0000-0000-0000-000000000000",
+    ]);
+  }
+  const { data } = await query;
 
   const logs = (data ?? []) as AuditLog[];
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Audit Log</h1>
-        <p className="text-sm text-muted-foreground">
-          Immutable record of every write across the workflow (latest 300 events).
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Audit Log</h1>
+          <p className="text-sm text-muted-foreground">
+            Immutable record of every write across the workflow (latest 300 events
+            {role ? `, filtered to ${ROLE_LABELS[role]}` : ""}).
+          </p>
+        </div>
+        <AuditRoleFilter role={role} />
       </div>
 
       <Card>
