@@ -81,6 +81,23 @@ export async function GET(request: NextRequest) {
   const next = nextStepFor(t.direction, t.status);
   const { data: profile } = await supabase.from("users").select("role").eq("id", user.id).single();
   const role = profile?.role as Role | undefined;
+
+  // A checkpoint role (AVSEC Post 2/6, Receiver) scanning a transaction that
+  // is waiting on a DIFFERENT checkpoint is hard-blocked, not shown the
+  // read-only detail view — surfacing "not your checkpoint" is more useful
+  // (and safer) than a silent fallthrough. PIC/Admin keep read-only access.
+  const checkpointRoles: Role[] = ["post2_avsec", "post6_avsec", "receiver"];
+  if (next && role && checkpointRoles.includes(role) && next.role !== role) {
+    return NextResponse.json(
+      {
+        error:
+          "You are not authorized for this checkpoint — this transaction is waiting on a different post. " +
+          "/ Anda tidak dibenarkan untuk pusat pemeriksaan ini — transaksi ini sedang menunggu pos yang lain.",
+      },
+      { status: 403 }
+    );
+  }
+
   const actionable = !!next && next.role === role;
   const redirectPath = actionable
     ? `/transactions/${t.id}/${next.slug}`

@@ -9,7 +9,7 @@ import { DirectionBadge } from "@/components/direction-badge";
 import { WorkflowStepper } from "@/components/workflow-stepper";
 import { CheckpointContext } from "@/components/checkpoint-context";
 import { Card, CardContent } from "@/components/ui/card";
-import type { PartA, PartBC, Seal, Transaction } from "@/lib/database.types";
+import type { DriverRecord, PartA, PartBC, Seal, Transaction, VehicleRecord } from "@/lib/database.types";
 
 export const metadata: Metadata = { title: "Part B — In-flight Security Post" };
 export const dynamic = "force-dynamic";
@@ -17,6 +17,22 @@ export const dynamic = "force-dynamic";
 export default async function PartBPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const profile = await requireRole(["post2_avsec"]);
+
+  if (!profile.name.trim() || !profile.staff_id.trim()) {
+    return (
+      <div className="mx-auto max-w-lg">
+        <Card className="border-red-300 dark:border-red-900">
+          <CardContent className="pt-6 text-sm font-medium text-red-700 dark:text-red-300">
+            Your profile is missing your name or badge ID, so this checkpoint form cannot be
+            filled in on your behalf. Please contact Admin to complete your profile before
+            continuing. / Profil anda tiada nama atau ID lencana; borang pusat pemeriksaan ini
+            tidak boleh diisi bagi pihak anda. Sila hubungi Admin untuk melengkapkan profil anda
+            sebelum meneruskan.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const supabase = await createClient();
   const { data: tx } = await supabase.from("transactions").select("*").eq("id", id).single();
@@ -28,7 +44,7 @@ export default async function PartBPage({ params }: { params: Promise<{ id: stri
     redirect(`/transactions/${id}`);
   }
 
-  const [sealRes, partARes, partCRes] = await Promise.all([
+  const [sealRes, partARes, partCRes, vehiclesRes, driversRes] = await Promise.all([
     supabase
       .from("seals")
       .select("id, seal_number, seal_type, seal_color")
@@ -36,11 +52,15 @@ export default async function PartBPage({ params }: { params: Promise<{ id: stri
       .order("applied_at"),
     supabase.from("part_a").select("*").eq("transaction_id", id).maybeSingle(),
     supabase.from("part_c").select("*").eq("transaction_id", id).maybeSingle(),
+    supabase.from("vehicles").select("vehicle_number").eq("is_active", true),
+    supabase.from("drivers").select("driver_id").eq("is_active", true),
   ]);
   const seals = (sealRes.data ?? []) as Pick<
     Seal,
     "id" | "seal_number" | "seal_type" | "seal_color"
   >[];
+  const vehicles = (vehiclesRes.data ?? []) as Pick<VehicleRecord, "vehicle_number">[];
+  const drivers = (driversRes.data ?? []) as Pick<DriverRecord, "driver_id">[];
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -79,6 +99,8 @@ export default async function PartBPage({ params }: { params: Promise<{ id: stri
         part="part_b"
         transaction={transaction}
         seals={seals}
+        vehicles={vehicles}
+        drivers={drivers}
         officerName={profile.name}
         officerStaffId={profile.staff_id}
         finalizes={step.finalizes}

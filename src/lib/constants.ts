@@ -82,6 +82,8 @@ export const INCIDENT_TYPE_LABELS: Record<IncidentType, string> = {
   WRONG_SEAL_COLOR: "Wrong Seal Color",
   TIMEOUT: "Transaction Timeout",
   OTHER: "Other",
+  WHITELIST_VIOLATION: "Whitelist Violation",
+  SEGMENT_TIMEOUT: "Segment Timeout",
 };
 
 export const INCIDENT_STATUS_LABELS: Record<IncidentStatus, string> = {
@@ -90,6 +92,17 @@ export const INCIDENT_STATUS_LABELS: Record<IncidentStatus, string> = {
   RESOLVED: "Resolved",
   CLOSED: "Closed",
 };
+
+/** Full 4-stage lifecycle for every incident type except SEGMENT_TIMEOUT. */
+export const INCIDENT_LIFECYCLE: IncidentStatus[] = ["OPEN", "UNDER_REVIEW", "RESOLVED", "CLOSED"];
+/** Lighter lifecycle for SEGMENT_TIMEOUT (low-severity traffic-delay noise):
+ *  OPEN -> RESOLVED in one step, no forced UNDER_REVIEW/CLOSED. */
+export const INCIDENT_LIFECYCLE_LIGHT: IncidentStatus[] = ["OPEN", "RESOLVED"];
+
+/** Which lifecycle stages an incident may move through, keyed off its type. */
+export function lifecycleFor(incidentType: IncidentType): IncidentStatus[] {
+  return incidentType === "SEGMENT_TIMEOUT" ? INCIDENT_LIFECYCLE_LIGHT : INCIDENT_LIFECYCLE;
+}
 
 export const INCIDENT_STATUS_COLORS: Record<IncidentStatus, string> = {
   OPEN: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200",

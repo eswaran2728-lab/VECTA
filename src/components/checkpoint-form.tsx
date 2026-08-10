@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   completePartB,
@@ -17,7 +17,7 @@ import { SignatureField } from "@/components/signature-pad";
 import { SealVerifyFields } from "@/components/seal-verify-fields";
 import { formDataToPayload, queueSubmission } from "@/lib/offline-queue";
 import { t, type Lang } from "@/lib/i18n";
-import type { Seal, Transaction } from "@/lib/database.types";
+import type { DriverRecord, Seal, Transaction, VehicleRecord } from "@/lib/database.types";
 
 const initialState: ActionState = { error: null };
 
@@ -27,6 +27,9 @@ interface CheckpointFormProps {
   seals: Pick<Seal, "id" | "seal_number" | "seal_type" | "seal_color">[];
   officerName: string;
   officerStaffId: string;
+  /** Active whitelist, for the secondary whitelist check on the observed vehicle/driver. */
+  vehicles: Pick<VehicleRecord, "vehicle_number">[];
+  drivers: Pick<DriverRecord, "driver_id">[];
   /** True when this checkpoint is the final step (inbound Part B). */
   finalizes?: boolean;
   lang?: Lang;
@@ -42,6 +45,8 @@ export function CheckpointForm({
   seals,
   officerName,
   officerStaffId,
+  vehicles,
+  drivers,
   finalizes = false,
   lang = "en",
 }: CheckpointFormProps) {
@@ -55,6 +60,24 @@ export function CheckpointForm({
   const [queuedMsg, setQueuedMsg] = useState<string | null>(null);
   const [result, setResult] = useState<"PASS" | "ESCALATE">("PASS");
   const [escalationReason, setEscalationReason] = useState("");
+  const [observedVehicleNumber, setObservedVehicleNumber] = useState(transaction.vehicle_number);
+  const [observedDriverId, setObservedDriverId] = useState(transaction.driver_id);
+
+  // Secondary whitelist check (Upgrade 2/3): if the observed vehicle/driver
+  // is not on the active whitelist, Pass is disabled — Escalate only.
+  const whitelisted = useMemo(() => {
+    const v = observedVehicleNumber.trim().toUpperCase();
+    const d = observedDriverId.trim().toUpperCase();
+    const vehicleOk = vehicles.some((x) => x.vehicle_number.toUpperCase() === v);
+    const driverOk = drivers.some((x) => x.driver_id.toUpperCase() === d);
+    return vehicleOk && driverOk;
+  }, [observedVehicleNumber, observedDriverId, vehicles, drivers]);
+
+  const effectiveResult = whitelisted ? result : "ESCALATE";
+  const effectiveEscalationReason =
+    !whitelisted && !escalationReason
+      ? "WHITELIST_VIOLATION: observed vehicle/driver not on the active whitelist."
+      : escalationReason;
 
   const malaysiaNow = new Date(
     new Date().toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" })
@@ -67,8 +90,8 @@ export function CheckpointForm({
   );
   const ready =
     !!signature &&
-    (result === "ESCALATE"
-      ? escalationReason.trim().length > 0
+    (effectiveResult === "ESCALATE"
+      ? effectiveEscalationReason.trim().length > 0
       : vehicle && driver && allSealsEntered);
 
   const handleOffline = (e: React.FormEvent<HTMLFormElement>) => {
@@ -106,14 +129,23 @@ export function CheckpointForm({
           <input type="hidden" name="seal_entries" value={JSON.stringify(entries)} />
           <input type="hidden" name="seal_colors" value={JSON.stringify(colors)} />
 
+          {/* Officer identity is auto-filled from the signed-in profile and cannot be
+              edited — see requireProfile()/requireRole() in the parent page. This is
+              attribution, not a form field: what you scan in as is who signs this record. */}
+          <input type="hidden" name="officer_name" value={officerName} />
+          <input type="hidden" name="officer_staff_id" value={officerStaffId} />
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="officer_name">AVSEC Officer Name</Label>
-              <Input id="officer_name" name="officer_name" defaultValue={officerName} required />
+              <Label>AVSEC Officer Name</Label>
+              <p className="flex h-10 items-center rounded-md border bg-muted px-3 text-sm font-medium">
+                {officerName}
+              </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="officer_staff_id">AVSEC ID / Badge number</Label>
-              <Input id="officer_staff_id" name="officer_staff_id" defaultValue={officerStaffId} required />
+              <Label>AVSEC ID / Badge number</Label>
+              <p className="flex h-10 items-center rounded-md border bg-muted px-3 font-mono text-sm font-medium">
+                {officerStaffId}
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="checkpoint_date">Date</Label>
@@ -128,7 +160,13 @@ export function CheckpointForm({
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="observed_vehicle_number">Vehicle / Registration</Label>
-              <Input id="observed_vehicle_number" name="observed_vehicle_number" defaultValue={transaction.vehicle_number} required />
+              <Input
+                id="observed_vehicle_number"
+                name="observed_vehicle_number"
+                value={observedVehicleNumber}
+                onChange={(e) => setObservedVehicleNumber(e.target.value)}
+                required
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="observed_driver_name">Driver name</Label>
@@ -136,9 +174,24 @@ export function CheckpointForm({
             </div>
             <div className="space-y-2">
               <Label htmlFor="observed_driver_id">Driver IC / ID</Label>
-              <Input id="observed_driver_id" name="observed_driver_id" defaultValue={transaction.driver_id} required />
+              <Input
+                id="observed_driver_id"
+                name="observed_driver_id"
+                value={observedDriverId}
+                onChange={(e) => setObservedDriverId(e.target.value)}
+                required
+              />
             </div>
           </div>
+
+          {!whitelisted ? (
+            <p className="rounded-md bg-red-100 p-3 text-sm font-medium text-red-800 dark:bg-red-900/40 dark:text-red-200">
+              WHITELIST VIOLATION — the observed vehicle/driver is not on the active whitelist. Pass is
+              disabled; this checkpoint will be escalated automatically. / PELANGGARAN SENARAI PUTIH —
+              kenderaan/pemandu yang diperhatikan tiada dalam senarai putih aktif. Lulus dinyahaktifkan;
+              pusat pemeriksaan ini akan dieskalasi secara automatik.
+            </p>
+          ) : null}
 
           <div className="space-y-3">
             <BigCheckbox
@@ -176,22 +229,37 @@ export function CheckpointForm({
           <div className="space-y-3 rounded-lg border p-4">
             <Label>Result</Label>
             <div className="grid grid-cols-2 gap-3">
-              <label className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 ${result === "PASS" ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30" : ""}`}>
-                <input type="radio" name="result" value="PASS" checked={result === "PASS"} onChange={() => setResult("PASS")} />
+              <label
+                className={`flex items-center gap-2 rounded-lg border p-3 ${whitelisted ? "cursor-pointer" : "cursor-not-allowed opacity-50"} ${effectiveResult === "PASS" ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30" : ""}`}
+              >
+                <input
+                  type="radio"
+                  name="result"
+                  value="PASS"
+                  checked={effectiveResult === "PASS"}
+                  disabled={!whitelisted}
+                  onChange={() => setResult("PASS")}
+                />
                 <span className="font-medium">Pass</span>
               </label>
-              <label className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 ${result === "ESCALATE" ? "border-red-500 bg-red-50 dark:bg-red-950/30" : ""}`}>
-                <input type="radio" name="result" value="ESCALATE" checked={result === "ESCALATE"} onChange={() => setResult("ESCALATE")} />
+              <label className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 ${effectiveResult === "ESCALATE" ? "border-red-500 bg-red-50 dark:bg-red-950/30" : ""}`}>
+                <input
+                  type="radio"
+                  name="result"
+                  value="ESCALATE"
+                  checked={effectiveResult === "ESCALATE"}
+                  onChange={() => setResult("ESCALATE")}
+                />
                 <span className="font-medium">Escalate</span>
               </label>
             </div>
-            {result === "ESCALATE" ? (
+            {effectiveResult === "ESCALATE" ? (
               <div className="space-y-2">
                 <Label htmlFor="escalation_reason">Escalation reason</Label>
                 <Textarea
                   id="escalation_reason"
                   name="escalation_reason"
-                  value={escalationReason}
+                  value={effectiveEscalationReason}
                   onChange={(event) => setEscalationReason(event.target.value)}
                   required
                 />
@@ -217,13 +285,13 @@ export function CheckpointForm({
             <Button
               type="submit"
               size="xl"
-              variant={result === "ESCALATE" ? "destructive" : "default"}
+              variant={effectiveResult === "ESCALATE" ? "destructive" : "default"}
               className="w-full"
               disabled={pending || !ready}
             >
               {pending
                 ? t(lang, "saving")
-                : result === "ESCALATE"
+                : effectiveResult === "ESCALATE"
                   ? "Escalate & Notify Admin"
                   : finalizes
                     ? t(lang, "approve_complete")

@@ -24,7 +24,9 @@ export type IncidentType =
   | "EXPIRED_PASS"
   | "WRONG_SEAL_COLOR"
   | "TIMEOUT"
-  | "OTHER";
+  | "OTHER"
+  | "WHITELIST_VIOLATION"
+  | "SEGMENT_TIMEOUT";
 
 export type SealType = "TRUCK_SEAL" | "TROLLEY" | "OTHER";
 /** Cargo category checklist on the amended IFCSF (AA/SEC/F/010 Rev.01). */
@@ -122,6 +124,8 @@ export type Transaction = {
   trolley_count: number;
   escort_officer_name: string | null;
   escort_officer_staff_id: string | null;
+  /** All-or-nothing with escort_officer_name/staff_id (transactions_escort_pairing_check). */
+  escort_vehicle_number: string | null;
   /** IFCSF header field — airport station code/name. */
   station: string | null;
   /** IFCSF cargo-type checklist (Food & Beverage, Perishable, etc.) — multi-select. */
@@ -147,10 +151,22 @@ export type Transaction = {
   /** Storage path of the auto-generated completed-form PDF (IFCSF-style),
    *  written once the transaction finishes. Null until then. */
   completed_form_url: string | null;
+  /** Set (only) when status changes — the per-segment SLA clock start (Upgrade 5). */
+  status_entered_at: string;
   created_by: string;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+}
+
+export type SegmentTimeout = {
+  id: string;
+  direction: Direction;
+  from_status: TransactionStatus;
+  to_status: TransactionStatus;
+  /** Null = no limit for this segment. */
+  limit_minutes: number | null;
+  created_at: string;
 }
 
 export type PartA = {
@@ -291,6 +307,7 @@ export type Database = {
           | "trolley_count"
           | "escort_officer_name"
           | "escort_officer_staff_id"
+          | "escort_vehicle_number"
           | "station"
           | "cargo_types"
           | "supplies_total"
@@ -307,6 +324,7 @@ export type Database = {
           | "archived"
           | "archived_at"
           | "completed_form_url"
+          | "status_entered_at"
         > & {
           id?: string;
           transaction_number?: string;
@@ -320,6 +338,7 @@ export type Database = {
           trolley_count?: number;
           escort_officer_name?: string | null;
           escort_officer_staff_id?: string | null;
+          escort_vehicle_number?: string | null;
           station?: string | null;
           cargo_types?: CargoType[];
           supplies_total?: number | null;
@@ -336,6 +355,7 @@ export type Database = {
           archived?: boolean;
           archived_at?: string | null;
           completed_form_url?: string | null;
+          status_entered_at?: string;
         };
         Update: Partial<Transaction>;
         Relationships: [];
@@ -479,6 +499,12 @@ export type Database = {
           verified_at?: string;
           observed_seal_color?: "BLUE" | "GREEN" | null;
         };
+        Update: never;
+        Relationships: [];
+      };
+      segment_timeouts: {
+        Row: SegmentTimeout;
+        Insert: Omit<SegmentTimeout, "id" | "created_at"> & { id?: string; created_at?: string };
         Update: never;
         Relationships: [];
       };
