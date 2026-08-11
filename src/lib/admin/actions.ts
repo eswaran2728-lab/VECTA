@@ -33,16 +33,32 @@ export async function createStaffAccount(formData: FormData) {
     redirect("/admin/users?error=" + encodeURIComponent("Staff ID and Team are required for this role."));
   }
 
-  const admin = createAdminClient();
-  const { data, error } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-  });
-
-  if (error || !data.user) {
-    redirect("/admin/users?error=" + encodeURIComponent(error?.message || "Could not create account."));
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    redirect(
+      "/admin/users?error=" +
+        encodeURIComponent(
+          "Server is missing SUPABASE_SERVICE_ROLE_KEY. Add it in Vercel (Settings > Environment Variables) for Production, then redeploy.",
+        ),
+    );
   }
+
+  let createUserResult: Awaited<ReturnType<ReturnType<typeof createAdminClient>["auth"]["admin"]["createUser"]>>;
+  try {
+    const admin = createAdminClient();
+    createUserResult = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unexpected error creating account.";
+    redirect("/admin/users?error=" + encodeURIComponent(message));
+  }
+
+  if (createUserResult.error || !createUserResult.data.user) {
+    redirect("/admin/users?error=" + encodeURIComponent(createUserResult.error?.message || "Could not create account."));
+  }
+  const data = createUserResult.data;
 
   const supabase = createClient();
   const { error: profileError } = await supabase
