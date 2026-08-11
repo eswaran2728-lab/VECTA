@@ -15,6 +15,9 @@ import {
   CheckboxField,
   FieldRow,
   FormSection,
+  FormStepIndicator,
+  EntryCard,
+  RemarkQuickPhrases,
 } from "@/components/forms/fields";
 import { SubmissionConfirmation } from "@/components/forms/SubmissionConfirmation";
 import type { Profile } from "@/lib/types";
@@ -74,6 +77,7 @@ export function Sec014Form({
     handleSubmit,
     watch,
     reset,
+    setValue,
     setError,
     formState: { errors, isSubmitting },
   } = useForm<UIValues>({ defaultValues: buildDefaults(profile, serverDraft) });
@@ -140,6 +144,12 @@ export function Sec014Form({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      <FormStepIndicator
+        code={meta.code}
+        draftNote={savedAt ? `DRAFT SAVED ${savedAt.toLocaleTimeString()}` : "AUTOSAVING…"}
+        activeIndex={values.acknowledgement ? 2 : 1}
+      />
+
       <FormSection title="Staff Details">
         <p className="field-hint">Email: {profile.email}</p>
         <FieldRow>
@@ -175,15 +185,9 @@ export function Sec014Form({
       </FormSection>
 
       <FormSection title="Patrolling" note="Add each patrol entry as it happens — up to 15 per shift.">
-        <div className="space-y-4">
+        <div className="space-y-3">
           {fields.map((field, idx) => (
-            <div key={field.id} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-sm">Entry {idx + 1}</p>
-                <button type="button" className="btn-quiet text-red-600" onClick={() => remove(idx)}>
-                  Remove
-                </button>
-              </div>
+            <EntryCard key={field.id} label={`Entry ${idx + 1}`} onRemove={() => remove(idx)}>
               <FieldRow>
                 <SelectField
                   name={`patrols.${idx}.location`}
@@ -216,12 +220,12 @@ export function Sec014Form({
                 required
                 error={errors.patrols?.[idx]?.description}
               />
-            </div>
+            </EntryCard>
           ))}
           {fields.length < 15 && (
             <button
               type="button"
-              className="btn-secondary w-full"
+              className="btn-add-entry"
               onClick={() =>
                 append({ location: "", time_from: "", time_to: "", description: "" })
               }
@@ -241,6 +245,10 @@ export function Sec014Form({
           rows={4}
           error={errors.remark}
         />
+        <RemarkQuickPhrases
+          value={values.remark}
+          onChange={(next) => setValue("remark", next, { shouldDirty: true })}
+        />
       </FormSection>
 
       <CheckboxField
@@ -250,14 +258,12 @@ export function Sec014Form({
         error={errors.acknowledgement}
       />
 
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-slate-400">
-          {savedAt ? `Draft saved ${savedAt.toLocaleTimeString()}` : "Autosaving…"}
-        </p>
-        <button type="submit" className="btn-primary" disabled={isSubmitting}>
-          {isSubmitting ? "Submitting…" : "Submit report"}
-        </button>
-      </div>
+      <button type="submit" className="btn-primary w-full" disabled={isSubmitting}>
+        {isSubmitting ? "Submitting…" : "Submit report ▸"}
+      </button>
+      <p className="text-center t-mono text-[9.5px]" style={{ color: "var(--faintest)" }}>
+        SUBMITTED REPORTS ARE IMMUTABLE · CORRECTIONS ARE FILED AS AMENDMENTS
+      </p>
     </form>
   );
 }

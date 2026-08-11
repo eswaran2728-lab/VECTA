@@ -3,6 +3,11 @@
 import type { FieldValues, Path, UseFormRegister, UseFormWatch, UseFormSetValue, FieldErrors } from "react-hook-form";
 import { cn } from "@/lib/utils";
 
+const OPTION_BASE =
+  "flex items-center justify-center gap-2 px-2 py-2 min-h-[44px] text-sm font-medium cursor-pointer transition-colors " +
+  "border border-[var(--line3)] text-[var(--mid)] " +
+  "has-[:checked]:border-[var(--gold-fill)] has-[:checked]:bg-[var(--gold-soft)] has-[:checked]:text-[var(--gold)]";
+
 export function Sec029ChecklistItem<T extends FieldValues>({
   index,
   label,
@@ -36,27 +41,17 @@ export function Sec029ChecklistItem<T extends FieldValues>({
 
   return (
     <div
-      className={cn(
-        "rounded-lg border p-3 space-y-3",
-        flagged
-          ? "border-amber-400 bg-amber-50 dark:bg-amber-500/10 dark:border-amber-600"
-          : "border-slate-200 dark:border-slate-800",
-      )}
+      className="card-inset p-3 space-y-3"
+      style={flagged ? { borderColor: "var(--red)", background: "var(--red-panel)" } : undefined}
     >
-      <p className="font-medium text-sm">{label}</p>
+      <p className="font-medium text-sm" style={{ color: "var(--ink2)" }}>{label}</p>
 
       <div>
         <p className="field-hint mb-1">CHECKED</p>
         <div className={cn("grid gap-2", allowNotApplicable ? "grid-cols-3" : "grid-cols-2")}>
           {checkedOptions.map((opt) => (
-            <label
-              key={opt}
-              className="flex items-center justify-center gap-2 rounded-md border border-slate-300 dark:border-slate-700
-                px-2 py-2 min-h-[44px] text-sm font-medium cursor-pointer
-                has-[:checked]:border-brand-600 has-[:checked]:bg-brand-50 has-[:checked]:text-brand-800
-                dark:has-[:checked]:bg-brand-900/30 dark:has-[:checked]:text-brand-200"
-            >
-              <input type="radio" value={opt} className="accent-brand-600" {...register(checkedName)} />
+            <label key={opt} className={OPTION_BASE}>
+              <input type="radio" value={opt} className="sr-only" {...register(checkedName)} />
               {opt}
             </label>
           ))}
@@ -66,33 +61,17 @@ export function Sec029ChecklistItem<T extends FieldValues>({
       <div>
         <p className="field-hint mb-1">REMARK / DETECTION</p>
         <div className={cn("grid gap-2", allowNotApplicable ? "grid-cols-3" : "grid-cols-2")}>
-          <label
-            className="flex items-center justify-center gap-2 rounded-md border border-slate-300 dark:border-slate-700
-              px-2 py-2 min-h-[44px] text-sm font-medium cursor-pointer
-              has-[:checked]:border-brand-600 has-[:checked]:bg-brand-50 has-[:checked]:text-brand-800
-              dark:has-[:checked]:bg-brand-900/30 dark:has-[:checked]:text-brand-200"
-          >
-            <input type="radio" value="nil" className="accent-brand-600" {...register(remarkTypeName)} />
+          <label className={OPTION_BASE}>
+            <input type="radio" value="nil" className="sr-only" {...register(remarkTypeName)} />
             Checked with nil issues
           </label>
-          <label
-            className="flex items-center justify-center gap-2 rounded-md border border-slate-300 dark:border-slate-700
-              px-2 py-2 min-h-[44px] text-sm font-medium cursor-pointer
-              has-[:checked]:border-brand-600 has-[:checked]:bg-brand-50 has-[:checked]:text-brand-800
-              dark:has-[:checked]:bg-brand-900/30 dark:has-[:checked]:text-brand-200"
-          >
-            <input type="radio" value="other" className="accent-brand-600" {...register(remarkTypeName)} />
+          <label className={OPTION_BASE}>
+            <input type="radio" value="other" className="sr-only" {...register(remarkTypeName)} />
             Other:
           </label>
           {allowNotApplicable && (
-            <label
-              className="flex items-center justify-center gap-2 rounded-md border border-slate-300 dark:border-slate-700
-                px-2 py-2 min-h-[44px] text-sm font-medium cursor-pointer
-                has-[:checked]:border-brand-600 has-[:checked]:bg-brand-50 has-[:checked]:text-brand-800
-                dark:has-[:checked]:bg-brand-900/30 dark:has-[:checked]:text-brand-200"
-              onClick={() => setValue(checkedName, "NA" as never)}
-            >
-              <input type="radio" value="na" className="accent-brand-600" {...register(remarkTypeName)} />
+            <label className={OPTION_BASE} onClick={() => setValue(checkedName, "NA" as never)}>
+              <input type="radio" value="na" className="sr-only" {...register(remarkTypeName)} />
               Not Applicable
             </label>
           )}

@@ -8,7 +8,7 @@ import { REPORT_META, REPORT_TYPES, ROLE_RANK, type ReportType, type UserRole } 
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Sec016View, Sec014View, Sec029View, Sec018View, Sec033View, Sec013View } from "@/components/reports/ReportView";
-import { formatDateTimeMY } from "@/lib/datetime";
+import { formatDateTimeMY, formatTimeMY } from "@/lib/datetime";
 import type { Sec016Row, Sec014Row, Sec029Row, Sec018Row, Sec033Row, Sec013Row } from "@/lib/types";
 
 export default async function ReportViewPage({
@@ -49,17 +49,33 @@ export default async function ReportViewPage({
     profile.station === submitter.station &&
     (profile.team ?? "") === (submitter.team ?? "");
 
+  const submittedAt = (report as { submitted_at: string | null }).submitted_at;
+
   return (
     <main className="min-h-screen pb-32">
       <AppHeader profile={profile} title={meta.name} backHref="/history" />
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="form-code-badge">{meta.code}</p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Submitted {formatDateTimeMY((report as { submitted_at: string | null }).submitted_at)}
+
+      <div style={{ background: "var(--view-header)", borderBottom: "1px solid var(--line)" }} className="px-4 py-5">
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-center justify-between gap-2">
+            <span className="t-mono text-[10px]" style={{ color: "var(--mid)" }}>
+              {meta.code}
+            </span>
+            <span
+              className="t-mono text-[9px] font-bold uppercase px-2.5 py-1"
+              style={{ letterSpacing: "0.14em", background: "var(--gold-fill)", color: "var(--on-gold)" }}
+            >
+              Submitted
+            </span>
+          </div>
+          <h1 className="t-display text-xl mt-3">{meta.name}</h1>
+          <p className="t-mono text-[10px] mt-2" style={{ color: "var(--soft)" }}>
+            {formatDateTimeMY(submittedAt)}
           </p>
         </div>
+      </div>
 
+      <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
         <a href={`/api/export/pdf/${type}/${params.id}`} className="btn-secondary w-full" target="_blank">
           Download PDF (audit submission)
         </a>
@@ -92,6 +108,48 @@ export default async function ReportViewPage({
         {type === "sec018" && <Sec018View report={report as unknown as Sec018Row} />}
         {type === "sec033" && <Sec033View report={report as unknown as Sec033Row} />}
         {type === "sec013" && <Sec013View report={report as unknown as Sec013Row} />}
+
+        <section className="card p-4 sm:p-5">
+          <h2 className="section-title mb-3">Record Trail</h2>
+          <div className="space-y-3">
+            <div className="grid grid-cols-[44px_1fr] gap-3">
+              <p className="t-mono text-[11px]" style={{ color: "var(--mid)" }}>
+                {formatTimeMY(submittedAt)}
+              </p>
+              <div className="relative pl-[18px]" style={{ borderLeft: "1px solid var(--line3)" }}>
+                <span
+                  className="absolute -left-[4.5px] top-1 w-2 h-2 rounded-full"
+                  style={{ background: "var(--gold-fill)" }}
+                />
+                <p className="font-semibold text-[13px]" style={{ color: "var(--ink2)" }}>
+                  Submitted · immutable
+                </p>
+                <p className="t-mono text-[10.5px] mt-[2px]" style={{ color: "var(--soft)" }}>
+                  {profile.id === reportRow.profile_id ? profile.name : "Submitter"}
+                </p>
+              </div>
+            </div>
+            {acknowledgement && (
+              <div className="grid grid-cols-[44px_1fr] gap-3">
+                <p className="t-mono text-[11px]" style={{ color: "var(--mid)" }}>
+                  {formatTimeMY(acknowledgement.acknowledgedAt)}
+                </p>
+                <div className="relative pl-[18px]" style={{ borderLeft: "1px solid var(--line3)" }}>
+                  <span
+                    className="absolute -left-[4.5px] top-1 w-2 h-2 rounded-full"
+                    style={{ background: "var(--blue)" }}
+                  />
+                  <p className="font-semibold text-[13px]" style={{ color: "var(--ink2)" }}>
+                    Acknowledged
+                  </p>
+                  <p className="t-mono text-[10.5px] mt-[2px]" style={{ color: "var(--soft)" }}>
+                    {acknowledgement.acknowledgedByName}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
       </div>
       <BottomNav profile={profile} />
     </main>

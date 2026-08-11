@@ -14,6 +14,8 @@ import {
   CheckboxField,
   FieldRow,
   FormSection,
+  FormStepIndicator,
+  EntryCard,
 } from "@/components/forms/fields";
 import { SubmissionConfirmation } from "@/components/forms/SubmissionConfirmation";
 import { combineDateTimeMY } from "@/lib/datetime";
@@ -132,6 +134,12 @@ export function Sec018Form({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      <FormStepIndicator
+        code={meta.code}
+        draftNote={savedAt ? `DRAFT SAVED ${savedAt.toLocaleTimeString()}` : "AUTOSAVING…"}
+        activeIndex={values.acknowledgement ? 2 : 1}
+      />
+
       <FormSection title="Staff Details">
         <p className="field-hint">Email: {profile.email}</p>
         <FieldRow>
@@ -146,15 +154,9 @@ export function Sec018Form({
       </FormSection>
 
       <FormSection title="Patrolling Details" note="Add each patrol entry — up to 6 per shift.">
-        <div className="space-y-4">
+        <div className="space-y-3">
           {fields.map((field, idx) => (
-            <div key={field.id} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-sm">Entry {idx + 1}</p>
-                <button type="button" className="btn-quiet text-red-600" onClick={() => remove(idx)}>
-                  Remove
-                </button>
-              </div>
+            <EntryCard key={field.id} label={`Entry ${idx + 1}`} onRemove={() => remove(idx)}>
               <FieldRow>
                 <TextField name={`patrols.${idx}.time_from`} type="time" register={register} label="Time From" error={errors.patrols?.[idx]?.time_from as never} />
                 <TextField name={`patrols.${idx}.time_to`} type="time" register={register} label="Time To" error={errors.patrols?.[idx]?.time_to as never} />
@@ -171,12 +173,12 @@ export function Sec018Form({
               </FieldRow>
               <TextField name={`patrols.${idx}.reg_no`} register={register} label="Reg. No" error={errors.patrols?.[idx]?.reg_no} />
               <TextAreaField name={`patrols.${idx}.description`} register={register} label="Description / Report" error={errors.patrols?.[idx]?.description} />
-            </div>
+            </EntryCard>
           ))}
           {fields.length < 6 && (
             <button
               type="button"
-              className="btn-secondary w-full"
+              className="btn-add-entry"
               onClick={() =>
                 append({
                   time_from: "",
@@ -201,14 +203,12 @@ export function Sec018Form({
         error={errors.acknowledgement}
       />
 
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-slate-400">
-          {savedAt ? `Draft saved ${savedAt.toLocaleTimeString()}` : "Autosaving…"}
-        </p>
-        <button type="submit" className="btn-primary" disabled={isSubmitting}>
-          {isSubmitting ? "Submitting…" : "Submit report"}
-        </button>
-      </div>
+      <button type="submit" className="btn-primary w-full" disabled={isSubmitting}>
+        {isSubmitting ? "Submitting…" : "Submit report ▸"}
+      </button>
+      <p className="text-center t-mono text-[9.5px]" style={{ color: "var(--faintest)" }}>
+        SUBMITTED REPORTS ARE IMMUTABLE · CORRECTIONS ARE FILED AS AMENDMENTS
+      </p>
     </form>
   );
 }

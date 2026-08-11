@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
-import { REPORT_META, SEC013_DUTY_AREAS, SEC013_LOCATIONS, SEC013_CERTIFICATION_TEXT } from "@/lib/reference-data";
+import { REPORT_META, SEC013_DUTY_AREAS, SEC013_LOCATIONS, SEC013_CERTIFICATION_TEXT, SECURITY_DISCLAIMER } from "@/lib/reference-data";
 import { sec013Schema } from "@/lib/schemas/sec013";
 import { submitSec013 } from "@/lib/reports/actions";
 import { useOfflineSubmit } from "@/lib/offline/useOfflineSubmit";
@@ -15,6 +15,9 @@ import {
   CheckboxField,
   FieldRow,
   FormSection,
+  FormStepIndicator,
+  EntryCard,
+  RemarkQuickPhrases,
 } from "@/components/forms/fields";
 import { SubmissionConfirmation } from "@/components/forms/SubmissionConfirmation";
 import type { Profile } from "@/lib/types";
@@ -92,6 +95,7 @@ export function Sec013Form({
     watch,
     reset,
     trigger,
+    setValue,
     setError,
     formState: { errors, isSubmitting },
   } = useForm<UIValues>({ defaultValues: buildDefaults(profile, serverDraft) });
@@ -170,6 +174,15 @@ export function Sec013Form({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      <FormStepIndicator
+        code={meta.code}
+        draftNote={savedAt ? `DRAFT SAVED ${savedAt.toLocaleTimeString()}` : "AUTOSAVING…"}
+        steps={["STAFF", "PROFILING", "SUBMIT"]}
+        activeIndex={values.acknowledgement ? 2 : 1}
+      />
+
+      <p className="disclaimer-band">{SECURITY_DISCLAIMER}</p>
+
       <FormSection title="Staff Details">
         <p className="field-hint">Email: {profile.email}</p>
         <FieldRow>
@@ -198,21 +211,17 @@ export function Sec013Form({
       </FormSection>
 
       <FormSection title="Profiling Duty">
-        <div className="space-y-4">
+        <div className="space-y-3">
           {fields.map((field, idx) => {
             const timeFrom = values.profiling_duties?.[idx]?.time_from;
             const timeTo = values.profiling_duties?.[idx]?.time_to;
             const crossesMidnight = Boolean(timeFrom && timeTo && timeTo < timeFrom);
             return (
-              <div key={field.id} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="font-semibold text-sm">Profiling Duty #{idx + 1}</p>
-                  {fields.length > 1 && (
-                    <button type="button" className="btn-quiet text-red-600" onClick={() => remove(idx)}>
-                      Remove
-                    </button>
-                  )}
-                </div>
+              <EntryCard
+                key={field.id}
+                label={`Profiling Duty ${idx + 1}`}
+                onRemove={fields.length > 1 ? () => remove(idx) : undefined}
+              >
                 <FieldRow>
                   <SelectField
                     name={`profiling_duties.${idx}.duty_area`}
@@ -270,14 +279,14 @@ export function Sec013Form({
                   label="Incident / Non-Compliance / Remark"
                   error={errors.profiling_duties?.[idx]?.incident_remark}
                 />
-              </div>
+              </EntryCard>
             );
           })}
         </div>
 
-        <div className="rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-950/30 p-4 space-y-3 text-center mt-4">
-          <p className="font-semibold text-sm">Do you need to add another Profiling Report?</p>
-          <div className="flex gap-3 justify-center">
+        <div className="card-inset p-4 space-y-3 text-center mt-3">
+          <p className="font-semibold text-sm" style={{ color: "var(--ink2)" }}>Do you need to add another Profiling Report?</p>
+          <div className="flex gap-2.5 justify-center">
             <button type="button" className="btn-secondary min-w-[100px]" onClick={handleAddAnother}>
               Yes
             </button>
@@ -294,9 +303,13 @@ export function Sec013Form({
         </div>
       </FormSection>
 
-      <div id="sec013-final-section" className="card p-4 sm:p-5 space-y-4 border-2 border-brand-300 dark:border-brand-700">
+      <div id="sec013-final-section" className="card p-4 sm:p-5 space-y-4" style={{ borderColor: "var(--gold-fill)" }}>
         <h2 className="section-title">Final Remarks &amp; Certification</h2>
         <TextAreaField name="remark" register={register} label="Remark" error={errors.remark} />
+        <RemarkQuickPhrases
+          value={values.remark}
+          onChange={(next) => setValue("remark", next, { shouldDirty: true })}
+        />
         <TextAreaField
           name="corrective_action"
           register={register}
@@ -311,14 +324,12 @@ export function Sec013Form({
         />
       </div>
 
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-slate-400">
-          {savedAt ? `Draft saved ${savedAt.toLocaleTimeString()}` : "Autosaving…"}
-        </p>
-        <button type="submit" className="btn-primary" disabled={isSubmitting}>
-          {isSubmitting ? "Submitting…" : "Submit report"}
-        </button>
-      </div>
+      <button type="submit" className="btn-primary w-full" disabled={isSubmitting}>
+        {isSubmitting ? "Submitting…" : "Submit report ▸"}
+      </button>
+      <p className="text-center t-mono text-[9.5px]" style={{ color: "var(--faintest)" }}>
+        SUBMITTED REPORTS ARE IMMUTABLE · CORRECTIONS ARE FILED AS AMENDMENTS
+      </p>
     </form>
   );
 }

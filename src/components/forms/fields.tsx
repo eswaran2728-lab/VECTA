@@ -261,6 +261,120 @@ export function FieldRow({ children }: { children: React.ReactNode }) {
   return <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{children}</div>;
 }
 
+/** Sticky-feeling progress header shown at the top of every report form. */
+export function FormStepIndicator({
+  code,
+  draftNote,
+  steps = ["STAFF", "DETAILS", "SUBMIT"],
+  activeIndex,
+}: {
+  code: string;
+  draftNote: string;
+  steps?: readonly string[];
+  activeIndex: number;
+}) {
+  return (
+    <div className="card-inset px-4 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="t-mono text-[9.5px]" style={{ color: "var(--soft)" }}>
+          {code}
+        </span>
+        <span
+          className="t-mono text-[9.5px] font-semibold"
+          style={{ letterSpacing: "0.1em", color: "var(--gold)" }}
+        >
+          {draftNote}
+        </span>
+      </div>
+      <div className="flex gap-1.5 mt-2.5">
+        {steps.map((label, i) => {
+          const on = i <= activeIndex;
+          return (
+            <div key={label} className="flex-1 min-w-0">
+              <div className="h-[3px]" style={{ background: on ? "var(--gold-fill)" : "var(--line3)" }} />
+              <div
+                className="t-mono text-[8px] mt-1.5 whitespace-nowrap overflow-hidden text-ellipsis"
+                style={{ letterSpacing: "0.08em", color: on ? "var(--ink)" : "var(--faint)" }}
+              >
+                {label}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Wrapper for one row of a repeating field-array (patrol entry, hold check, duty …). */
+export function EntryCard({
+  label,
+  onRemove,
+  children,
+}: {
+  label: string;
+  onRemove?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="card-inset p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className="t-mono text-[10px] font-semibold uppercase"
+          style={{ letterSpacing: "0.12em", color: "var(--ink2)" }}
+        >
+          {label}
+        </span>
+        {onRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="t-mono text-[9px] font-semibold uppercase"
+            style={{ color: "var(--red)" }}
+          >
+            Remove
+          </button>
+        )}
+      </div>
+      <div className="flex flex-col gap-3 mt-3">{children}</div>
+    </div>
+  );
+}
+
+export const DEFAULT_REMARK_PHRASES = [
+  "Nil",
+  "No discrepancies found",
+  "PIC informed",
+  "Escorted to control point",
+  "Supervisor notified",
+] as const;
+
+/** Tap-to-append quick phrases shown under a remark / discrepancies textarea. */
+export function RemarkQuickPhrases({
+  value,
+  onChange,
+  phrases = DEFAULT_REMARK_PHRASES,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  phrases?: readonly string[];
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-2.5">
+      {phrases.map((text) => (
+        <button
+          key={text}
+          type="button"
+          onClick={() => onChange((value ? value.trim() + ". " : "") + text)}
+          className="t-mono text-[10px] font-medium px-2.5 py-1.5 border border-dashed border-[var(--line3)] text-[var(--mid)] hover:border-[var(--gold)] hover:text-[var(--gold)] transition-colors"
+        >
+          + {text}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function FormSection({
   title,
   note,

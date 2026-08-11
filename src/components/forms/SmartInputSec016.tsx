@@ -55,7 +55,7 @@ export function SmartInputSec016<T extends FieldValues>({
   };
 
   return (
-    <section className="card p-4 sm:p-5 space-y-3 border-brand-200 dark:border-brand-900 bg-brand-50/40 dark:bg-brand-900/10">
+    <section className="card-inset p-4 sm:p-5 space-y-3">
       <div>
         <h2 className="section-title">Smart Input</h2>
         <p className="field-hint">
@@ -80,7 +80,11 @@ export function SmartInputSec016<T extends FieldValues>({
         >
           {parsing ? "Parsing…" : "Parse & Fill"}
         </button>
-        {summary && <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">{summary}</p>}
+        {summary && (
+          <p className="text-sm font-medium" style={{ color: "var(--green)" }}>
+            {summary}
+          </p>
+        )}
         {errorMsg && <p className="field-error">{errorMsg}</p>}
       </div>
     </section>

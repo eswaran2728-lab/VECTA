@@ -18,45 +18,49 @@ export function SubmissionConfirmation({
   queued?: boolean;
   onSubmitAnother: () => void;
 }) {
+  const accent = queued ? "var(--blue)" : "var(--gold-fill)";
+
   return (
-    <div className="card p-6 text-center space-y-4">
+    <div className="py-6 space-y-5">
       <div
-        className={
-          "mx-auto flex h-14 w-14 items-center justify-center rounded-full text-2xl " +
-          (queued ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700")
-        }
+        className="w-[60px] h-[66px] flex items-center justify-center text-2xl font-bold"
+        style={{
+          background: accent,
+          color: "var(--on-gold)",
+          clipPath: "polygon(50% 0,100% 16%,100% 62%,50% 100%,0 62%,0 16%)",
+        }}
       >
-        {queued ? "⏳" : "✓"}
+        {queued ? "⇅" : "✓"}
       </div>
+
       <div>
-        <h2 className="section-title">{queued ? "Queued for submission" : "Report submitted"}</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          {reportName} · <span className="form-code-badge">{formCode}</span>
+        <h1 className="t-display text-2xl">{queued ? "Queued offline" : "Report submitted"}</h1>
+        <p className="text-[13px] leading-relaxed mt-2" style={{ color: "var(--mid)" }}>
+          {queued
+            ? "You're offline. This report is saved on your device and will submit automatically once you're back online — no re-entry needed."
+            : "Recorded as an immutable submission. Corrections must be filed as an amendment referencing this record."}
         </p>
       </div>
 
-      {queued ? (
-        <p className="text-sm text-slate-600 dark:text-slate-300">
-          You&apos;re offline. This report is saved on your device and will submit automatically
-          once you&apos;re back online.
+      <div className="card p-4">
+        <p className="t-mono text-[9px] font-medium" style={{ letterSpacing: "0.12em", color: "var(--faint)" }}>
+          {formCode}
         </p>
-      ) : (
-        <div className="text-sm text-slate-600 dark:text-slate-300 space-y-1">
-          {id && (
-            <p>
-              Submission ID: <span className="font-mono">{id}</span>
-            </p>
-          )}
-          {submittedAt && <p>Submitted: {formatDateTimeMY(submittedAt)}</p>}
-        </div>
-      )}
+        <p className="font-semibold text-[15px] mt-1.5" style={{ color: "var(--ink)" }}>
+          {reportName}
+        </p>
+        <p className="t-mono text-[10.5px] mt-2" style={{ color: "var(--gold)" }}>
+          {queued ? "QUEUE REF · SAVED LOCALLY" : id ? `RECORD · ${id.slice(0, 8)}` : "RECORD"}
+          {!queued && submittedAt ? ` · ${formatDateTimeMY(submittedAt)}` : ""}
+        </p>
+      </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-        <button className="btn-secondary" onClick={onSubmitAnother}>
+      <div className="flex gap-2.5">
+        <button type="button" className="btn-secondary flex-1" onClick={onSubmitAnother}>
           Submit another
         </button>
-        <Link href="/home" className="btn-primary">
-          Back to home
+        <Link href="/home" className="btn-primary flex-1 text-center">
+          Done
         </Link>
       </div>
     </div>

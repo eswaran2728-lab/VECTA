@@ -17,10 +17,12 @@ import type {
 export function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+      <p className="t-mono text-[8px] font-medium" style={{ letterSpacing: "0.12em", color: "var(--faint)" }}>
         {label}
       </p>
-      <p className="text-sm font-medium break-words">{value === "" || value == null ? "—" : value}</p>
+      <p className="text-[13.5px] font-semibold mt-[3px] break-words" style={{ color: "var(--ink)" }}>
+        {value === "" || value == null ? "—" : value}
+      </p>
     </div>
   );
 }
@@ -31,6 +33,20 @@ export function ViewSection({ title, children }: { title: string; children: Reac
       <h2 className="section-title">{title}</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{children}</div>
     </section>
+  );
+}
+
+/** Read-only equivalent of the form's EntryCard, for a logged submission. */
+function ViewEntryCard({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="card-inset p-3">
+      <p className="t-mono text-[10px] font-semibold uppercase" style={{ letterSpacing: "0.12em", color: "var(--ink2)" }}>
+        {label}
+      </p>
+      <div className="text-[13px] mt-1.5 leading-relaxed" style={{ color: "var(--ink3)" }}>
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -104,16 +120,16 @@ export function Sec014View({ report }: { report: Sec014Row & { patrols?: Sec014P
       <section className="card p-4 sm:p-5 space-y-3">
         <h2 className="section-title">Patrolling</h2>
         {(!report.patrols || report.patrols.length === 0) && (
-          <p className="text-sm text-slate-500">No patrol entries logged.</p>
+          <p className="text-sm" style={{ color: "var(--soft)" }}>No patrol entries logged.</p>
         )}
         <div className="space-y-2">
           {report.patrols?.map((p) => (
-            <div key={p.entry_no} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 text-sm">
-              <p className="font-semibold">
-                Entry {p.entry_no} — {p.location ?? "—"} · {p.time_from ?? "—"}–{p.time_to ?? "—"}
+            <ViewEntryCard key={p.entry_no} label={`Entry ${p.entry_no}`}>
+              <p className="font-semibold" style={{ color: "var(--ink2)" }}>
+                {p.location ?? "—"} · {p.time_from ?? "—"}–{p.time_to ?? "—"}
               </p>
-              <p className="text-slate-600 dark:text-slate-300">{p.description}</p>
-            </div>
+              <p className="mt-1">{p.description}</p>
+            </ViewEntryCard>
           ))}
         </div>
       </section>
@@ -150,26 +166,28 @@ export function Sec029View({ report }: { report: Sec029Row & { items?: Sec029Ite
         <Field label="Time Completed" value={report.time_completed} />
       </ViewSection>
 
-      <section className="card p-4 sm:p-5 space-y-2">
-        <h2 className="section-title">Checklist</h2>
+      <section className="card p-4 sm:p-5 space-y-1">
+        <h2 className="section-title mb-2">Checklist Result</h2>
         {SEC029_ITEMS.map((item) => {
           const entry = itemMap.get(item.code);
           if (!entry) return null;
           const flagged = entry.checked === "NO" || entry.remark_type === "other";
+          const color = flagged ? "var(--red)" : entry.checked === "NA" ? "var(--mid)" : "var(--green)";
           return (
             <div
               key={item.code}
-              className={
-                "flex items-center justify-between rounded-md border px-3 py-2 text-sm " +
-                (flagged
-                  ? "border-amber-400 bg-amber-50 dark:bg-amber-500/10"
-                  : "border-slate-200 dark:border-slate-800")
-              }
+              className="flex items-center justify-between gap-2 py-2"
+              style={{ borderBottom: "1px solid var(--line2)" }}
             >
-              <span>{item.label}</span>
-              <span className="font-semibold shrink-0 ml-2">
-                {entry.checked}
+              <span className="text-[11.5px]" style={{ color: "var(--ink3)" }}>
+                {item.label}
                 {entry.remark_type === "other" && entry.remark_text ? ` — ${entry.remark_text}` : ""}
+              </span>
+              <span
+                className="t-mono text-[9.5px] font-semibold shrink-0 px-1.5 py-1"
+                style={{ color, border: `1px solid ${color}` }}
+              >
+                {entry.checked}
               </span>
             </div>
           );
@@ -202,17 +220,17 @@ export function Sec018View({ report }: { report: Sec018Row & { patrols?: Sec018P
       <section className="card p-4 sm:p-5 space-y-3">
         <h2 className="section-title">Patrolling Details</h2>
         {(!report.patrols || report.patrols.length === 0) && (
-          <p className="text-sm text-slate-500">No patrol entries logged.</p>
+          <p className="text-sm" style={{ color: "var(--soft)" }}>No patrol entries logged.</p>
         )}
         <div className="space-y-2">
           {report.patrols?.map((p) => (
-            <div key={p.entry_no} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 text-sm">
-              <p className="font-semibold">
-                Entry {p.entry_no} — {p.time_from ?? "—"}–{p.time_to ?? "—"} · Bay {p.parking_bay ?? "—"} ·{" "}
-                {p.aircraft_type ?? "—"} · {p.reg_no ?? "—"}
+            <ViewEntryCard key={p.entry_no} label={`Entry ${p.entry_no}`}>
+              <p className="font-semibold" style={{ color: "var(--ink2)" }}>
+                {p.time_from ?? "—"}–{p.time_to ?? "—"} · Bay {p.parking_bay ?? "—"} · {p.aircraft_type ?? "—"} ·{" "}
+                {p.reg_no ?? "—"}
               </p>
-              <p className="text-slate-600 dark:text-slate-300">{p.description}</p>
-            </div>
+              <p className="mt-1">{p.description}</p>
+            </ViewEntryCard>
           ))}
         </div>
       </section>
@@ -223,9 +241,7 @@ export function Sec018View({ report }: { report: Sec018Row & { patrols?: Sec018P
 export function Sec033View({ report }: { report: Sec033Row & { hold_checks?: Sec033HoldCheckEntry[] } }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3">
-        <p className="text-xs font-semibold text-red-800 dark:text-red-300">{SECURITY_DISCLAIMER}</p>
-      </div>
+      <p className="disclaimer-band">{SECURITY_DISCLAIMER}</p>
 
       <ViewSection title="Staff Details">
         <Field label="Station" value={report.station} />
@@ -239,16 +255,16 @@ export function Sec033View({ report }: { report: Sec033Row & { hold_checks?: Sec
       <section className="card p-4 sm:p-5 space-y-3">
         <h2 className="section-title">Hold Check Details</h2>
         {(!report.hold_checks || report.hold_checks.length === 0) && (
-          <p className="text-sm text-slate-500">No hold check entries logged.</p>
+          <p className="text-sm" style={{ color: "var(--soft)" }}>No hold check entries logged.</p>
         )}
         <div className="space-y-2">
           {report.hold_checks?.map((h) => (
-            <div key={h.entry_no} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 text-sm">
-              <p className="font-semibold">
-                Hold Check #{h.entry_no} — Bay {h.parking_bay_no} · Reg {h.aircraft_registration_no}
+            <ViewEntryCard key={h.entry_no} label={`Hold Check ${h.entry_no}`}>
+              <p className="font-semibold" style={{ color: "var(--ink2)" }}>
+                Bay {h.parking_bay_no} · Reg {h.aircraft_registration_no}
               </p>
-              {h.remarks && <p className="text-slate-600 dark:text-slate-300">{h.remarks}</p>}
-            </div>
+              {h.remarks && <p className="mt-1">{h.remarks}</p>}
+            </ViewEntryCard>
           ))}
         </div>
       </section>
@@ -259,9 +275,7 @@ export function Sec033View({ report }: { report: Sec033Row & { hold_checks?: Sec
 export function Sec013View({ report }: { report: Sec013Row & { profiling_duties?: Sec013ProfilingDutyEntry[] } }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3">
-        <p className="text-xs font-semibold text-red-800 dark:text-red-300">{SECURITY_DISCLAIMER}</p>
-      </div>
+      <p className="disclaimer-band">{SECURITY_DISCLAIMER}</p>
 
       <ViewSection title="Staff Details">
         <Field label="Hub/Station" value={report.station} />
@@ -275,27 +289,30 @@ export function Sec013View({ report }: { report: Sec013Row & { profiling_duties?
       <section className="card p-4 sm:p-5 space-y-3">
         <h2 className="section-title">Profiling Duty</h2>
         {(!report.profiling_duties || report.profiling_duties.length === 0) && (
-          <p className="text-sm text-slate-500">No profiling duty entries logged.</p>
+          <p className="text-sm" style={{ color: "var(--soft)" }}>No profiling duty entries logged.</p>
         )}
         <div className="space-y-2">
           {report.profiling_duties?.map((d) => (
-            <div key={d.entry_no} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 text-sm">
-              <p className="font-semibold">
-                Duty #{d.entry_no} — {d.duty_area} · {d.location} · {d.time_from}–{d.time_to} · Sector/Flight{" "}
-                {d.sector_flight}
+            <ViewEntryCard key={d.entry_no} label={`Duty ${d.entry_no}`}>
+              <p className="font-semibold" style={{ color: "var(--ink2)" }}>
+                {d.duty_area} · {d.location} · {d.time_from}–{d.time_to} · Sector/Flight {d.sector_flight}
               </p>
-              <p className="text-slate-600 dark:text-slate-300">{d.description}</p>
-              {d.incident_remark && <p className="text-amber-700 dark:text-amber-400">{d.incident_remark}</p>}
-            </div>
+              <p className="mt-1">{d.description}</p>
+              {d.incident_remark && (
+                <p className="mt-1" style={{ color: "var(--gold)" }}>
+                  {d.incident_remark}
+                </p>
+              )}
+            </ViewEntryCard>
           ))}
         </div>
       </section>
 
-      <section className="card p-4 sm:p-5 space-y-3 border-2 border-brand-300 dark:border-brand-700">
+      <section className="card p-4 sm:p-5 space-y-3" style={{ borderColor: "var(--gold-fill)" }}>
         <h2 className="section-title">Final Remarks &amp; Certification</h2>
         <Field label="Remark" value={report.remark} />
         <Field label="Corrective Action / Follow-up / Recommendation" value={report.corrective_action} />
-        <p className="text-xs text-slate-500 dark:text-slate-400">
+        <p className="text-xs" style={{ color: "var(--soft)" }}>
           {SEC013_CERTIFICATION_TEXT} — {report.acknowledgement ? "✓ Certified" : "Not certified"}
         </p>
       </section>

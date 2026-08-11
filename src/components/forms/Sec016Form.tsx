@@ -15,6 +15,8 @@ import {
   CheckboxGroupField,
   FieldRow,
   FormSection,
+  FormStepIndicator,
+  RemarkQuickPhrases,
 } from "@/components/forms/fields";
 import { SubmissionConfirmation } from "@/components/forms/SubmissionConfirmation";
 import { SmartInputSec016 } from "@/components/forms/SmartInputSec016";
@@ -175,6 +177,12 @@ export function Sec016Form({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      <FormStepIndicator
+        code={meta.code}
+        draftNote={savedAt ? `DRAFT SAVED ${savedAt.toLocaleTimeString()}` : "AUTOSAVING…"}
+        activeIndex={1}
+      />
+
       <SmartInputSec016 setValue={setValue} onParsed={setAutoFilledFields} />
 
       <FormSection title="Staff Details">
@@ -269,6 +277,10 @@ export function Sec016Form({
         </FieldRow>
 
         <TextAreaField name="discrepancies" register={register} label="Discrepancies (if any)" required rows={3} error={errors.discrepancies} />
+        <RemarkQuickPhrases
+          value={values.discrepancies}
+          onChange={(next) => setValue("discrepancies", next, { shouldDirty: true })}
+        />
       </FormSection>
 
       <FormSection title="Offload Information (Departure Flight)">
@@ -283,14 +295,12 @@ export function Sec016Form({
         <TextAreaField name="offload_remark" register={register} label="Remark" required error={errors.offload_remark} />
       </FormSection>
 
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-slate-400">
-          {savedAt ? `Draft saved ${savedAt.toLocaleTimeString()}` : "Autosaving…"}
-        </p>
-        <button type="submit" className="btn-primary" disabled={isSubmitting}>
-          {isSubmitting ? "Submitting…" : "Submit report"}
-        </button>
-      </div>
+      <button type="submit" className="btn-primary w-full" disabled={isSubmitting}>
+        {isSubmitting ? "Submitting…" : "Submit report ▸"}
+      </button>
+      <p className="text-center t-mono text-[9.5px]" style={{ color: "var(--faintest)" }}>
+        SUBMITTED REPORTS ARE IMMUTABLE · CORRECTIONS ARE FILED AS AMENDMENTS
+      </p>
     </form>
   );
 }

@@ -15,6 +15,7 @@ import {
   CheckboxField,
   FieldRow,
   FormSection,
+  FormStepIndicator,
 } from "@/components/forms/fields";
 import { Sec029ChecklistItem } from "@/components/forms/Sec029ChecklistItem";
 import { SubmissionConfirmation } from "@/components/forms/SubmissionConfirmation";
@@ -164,6 +165,13 @@ export function Sec029Form({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      <FormStepIndicator
+        code={meta.code}
+        draftNote={savedAt ? `DRAFT SAVED ${savedAt.toLocaleTimeString()}` : "AUTOSAVING…"}
+        steps={["STAFF", "CHECKLIST", "SUBMIT"]}
+        activeIndex={values.acknowledgement ? 2 : 1}
+      />
+
       <FormSection title="Staff Details">
         <p className="field-hint">Email: {profile.email}</p>
         <FieldRow>
@@ -211,10 +219,10 @@ export function Sec029Form({
           if (itemsInSection.length === 0) return null;
           return (
             <div key={section} className="space-y-3">
-              <h3 className="font-semibold text-sm text-slate-600 dark:text-slate-300">
+              <h3 className="font-semibold text-sm" style={{ color: "var(--ink3)" }}>
                 {section}
                 {section === "COCKPIT AREA" && (
-                  <span className="block text-xs font-normal text-amber-700 dark:text-amber-400 mt-0.5">
+                  <span className="block text-xs font-normal mt-0.5" style={{ color: "var(--gold)" }}>
                     NOTE: DO NOT TOUCH THE INSTRUMENT PANEL
                   </span>
                 )}
@@ -274,17 +282,17 @@ export function Sec029Form({
 
         <div>
           <label className="field-label">
-            Declaration <span className="text-red-500">*</span>
+            Declaration <span style={{ color: "var(--red)" }}>*</span>
           </label>
           <div className="space-y-2">
             {[DECLARATION_CLEAN, DECLARATION_DISCREPANCY].map((opt) => (
               <label
                 key={opt}
-                className="flex items-start gap-3 rounded-lg border border-slate-300 dark:border-slate-700 p-3 cursor-pointer
-                  has-[:checked]:border-brand-600 has-[:checked]:bg-brand-50 dark:has-[:checked]:bg-brand-900/30"
+                className="flex items-start gap-3 border border-[var(--line3)] p-3 cursor-pointer
+                  has-[:checked]:border-[var(--gold-fill)] has-[:checked]:bg-[var(--gold-soft)]"
               >
-                <input type="radio" value={opt} className="mt-1 accent-brand-600" {...register("declaration")} />
-                <span className="text-sm">{opt}</span>
+                <input type="radio" value={opt} className="mt-1 accent-[var(--gold)]" {...register("declaration")} />
+                <span className="text-sm" style={{ color: "var(--ink2)" }}>{opt}</span>
               </label>
             ))}
           </div>
@@ -309,14 +317,12 @@ export function Sec029Form({
         />
       </FormSection>
 
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-slate-400">
-          {savedAt ? `Draft saved ${savedAt.toLocaleTimeString()}` : "Autosaving…"}
-        </p>
-        <button type="submit" className="btn-primary" disabled={isSubmitting}>
-          {isSubmitting ? "Submitting…" : "Submit report"}
-        </button>
-      </div>
+      <button type="submit" className="btn-primary w-full" disabled={isSubmitting}>
+        {isSubmitting ? "Submitting…" : "Submit report ▸"}
+      </button>
+      <p className="text-center t-mono text-[9.5px]" style={{ color: "var(--faintest)" }}>
+        SUBMITTED REPORTS ARE IMMUTABLE · CORRECTIONS ARE FILED AS AMENDMENTS
+      </p>
     </form>
   );
 }

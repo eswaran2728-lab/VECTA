@@ -7,7 +7,7 @@ import { sec033Schema } from "@/lib/schemas/sec033";
 import { submitSec033 } from "@/lib/reports/actions";
 import { useOfflineSubmit } from "@/lib/offline/useOfflineSubmit";
 import { useDraftAutosave, readLocalDraft, clearLocalDraft } from "@/lib/offline/useDraftAutosave";
-import { TextField, TextAreaField, FieldRow, FormSection } from "@/components/forms/fields";
+import { TextField, TextAreaField, FieldRow, FormSection, FormStepIndicator, EntryCard } from "@/components/forms/fields";
 import { SubmissionConfirmation } from "@/components/forms/SubmissionConfirmation";
 import type { Profile } from "@/lib/types";
 
@@ -119,9 +119,14 @@ export function Sec033Form({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
-      <div className="rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3">
-        <p className="text-xs font-semibold text-red-800 dark:text-red-300">{SECURITY_DISCLAIMER}</p>
-      </div>
+      <FormStepIndicator
+        code={meta.code}
+        draftNote={savedAt ? `DRAFT SAVED ${savedAt.toLocaleTimeString()}` : "AUTOSAVING…"}
+        steps={["STAFF", "HOLD CHECKS", "SUBMIT"]}
+        activeIndex={1}
+      />
+
+      <p className="disclaimer-band">{SECURITY_DISCLAIMER}</p>
 
       <FormSection title="Staff Details">
         <p className="field-hint">Email: {profile.email}</p>
@@ -164,17 +169,13 @@ export function Sec033Form({
         title="Hold Check Details"
         note="Ensure the cargo compartment is completely clear of any left-behind, unattended, prohibited or suspicious items/objects."
       >
-        <div className="space-y-4">
+        <div className="space-y-3">
           {fields.map((field, idx) => (
-            <div key={field.id} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-sm">Hold Check #{idx + 1}</p>
-                {fields.length > 1 && (
-                  <button type="button" className="btn-quiet text-red-600" onClick={() => remove(idx)}>
-                    Remove
-                  </button>
-                )}
-              </div>
+            <EntryCard
+              key={field.id}
+              label={`Hold Check ${idx + 1}`}
+              onRemove={fields.length > 1 ? () => remove(idx) : undefined}
+            >
               <FieldRow>
                 <TextField
                   name={`hold_checks.${idx}.parking_bay_no`}
@@ -197,13 +198,15 @@ export function Sec033Form({
                 label="Discrepancies / Incident / Non-Compliance / Remark / Issue"
                 error={errors.hold_checks?.[idx]?.remarks}
               />
-            </div>
+            </EntryCard>
           ))}
         </div>
 
-        <div className="rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-950/30 p-4 space-y-3 text-center mt-4">
-          <p className="font-semibold text-sm">Do you need to add another Report?</p>
-          <div className="flex gap-3 justify-center">
+        <div className="card-inset p-4 space-y-3 text-center mt-3">
+          <p className="font-semibold text-sm" style={{ color: "var(--ink2)" }}>
+            Do you need to add another Report?
+          </p>
+          <div className="flex gap-2.5 justify-center">
             <button type="button" className="btn-secondary min-w-[100px]" onClick={handleAddAnother}>
               Yes
             </button>
@@ -214,8 +217,8 @@ export function Sec033Form({
         </div>
       </FormSection>
 
-      <p className="text-xs text-slate-400 text-center">
-        {savedAt ? `Draft saved ${savedAt.toLocaleTimeString()}` : "Autosaving…"}
+      <p className="text-center t-mono text-[9.5px]" style={{ color: "var(--faintest)" }}>
+        SUBMITTED REPORTS ARE IMMUTABLE · CORRECTIONS ARE FILED AS AMENDMENTS
       </p>
     </form>
   );
