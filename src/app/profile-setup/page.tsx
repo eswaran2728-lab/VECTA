@@ -1,7 +1,7 @@
-import { getCurrentProfile, getCurrentUser } from "@/lib/auth";
+import { getCurrentProfile, getCurrentUser, landingPathForRole } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { updateProfile } from "@/lib/profile-actions";
-import { STATIONS, REQUESTABLE_ROLES, ROLE_LABELS } from "@/lib/reference-data";
+import { STATIONS, REQUESTABLE_ROLES, ROLE_LABELS, ORG_WIDE_ROLES } from "@/lib/reference-data";
 
 export default async function ProfileSetupPage({
   searchParams,
@@ -11,6 +11,19 @@ export default async function ProfileSetupPage({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const profile = await getCurrentProfile();
+
+  // If the profile is already complete, don't show this form again — send them onward to
+  // wherever requireProfile() would otherwise land them. Without this, anyone who reaches
+  // this URL directly (stale bookmark, cached PWA route, browser history) gets stuck
+  // re-filling a form that's already done — and for ADMIN specifically, saving it again
+  // would silently downgrade their role, since ADMIN was never a selectable option here.
+  if (profile) {
+    const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
+    const complete = profile.name && profile.station && (isOrgWide || profile.team);
+    if (complete) {
+      redirect(profile.status === "approved" ? landingPathForRole(profile.role) : "/pending-approval");
+    }
+  }
 
   return (
     <main className="min-h-screen flex items-center justify-center p-4">
