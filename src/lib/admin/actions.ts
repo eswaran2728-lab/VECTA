@@ -33,11 +33,13 @@ export async function createStaffAccount(formData: FormData) {
     redirect("/admin/users?error=" + encodeURIComponent("Staff ID and Team are required for this role."));
   }
 
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
     redirect(
       "/admin/users?error=" +
         encodeURIComponent(
-          "Server is missing SUPABASE_SERVICE_ROLE_KEY. Add it in Vercel (Settings > Environment Variables) for Production, then redeploy.",
+          `Missing server config — NEXT_PUBLIC_SUPABASE_URL: ${supabaseUrl ? "present (" + supabaseUrl.length + " chars)" : "MISSING"}, SUPABASE_SERVICE_ROLE_KEY: ${serviceRoleKey ? "present (" + serviceRoleKey.length + " chars)" : "MISSING"}.`,
         ),
     );
   }
@@ -52,7 +54,7 @@ export async function createStaffAccount(formData: FormData) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error creating account.";
-    redirect("/admin/users?error=" + encodeURIComponent(message));
+    redirect("/admin/users?error=" + encodeURIComponent(`createUser threw: ${message}`));
   }
 
   if (createUserResult.error || !createUserResult.data.user) {
