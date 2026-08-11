@@ -14,6 +14,15 @@ function ErrorText({ error }: { error?: FieldError }) {
   return <p className="field-error">{error.message}</p>;
 }
 
+// Selectable chip — square, thin-bordered, gold when picked. The <input> inside is
+// visually hidden (sr-only) so the label itself is the control, letting `has-[:checked]`
+// drive the styling while keeping it keyboard- and screen-reader-accessible.
+const CHIP_BASE =
+  "flex items-center gap-2 px-3 py-3 min-h-[48px] text-sm font-semibold cursor-pointer transition-colors " +
+  "border border-[var(--line3)] bg-transparent text-[var(--mid)] " +
+  "has-[:checked]:border-[var(--gold-fill)] has-[:checked]:bg-[var(--gold-soft)] has-[:checked]:text-[var(--gold)] " +
+  "has-[:focus-visible]:border-[var(--gold-fill)] hover:border-[var(--soft)]";
+
 interface BaseProps<T extends FieldValues> {
   name: Path<T>;
   register: UseFormRegister<T>;
@@ -28,8 +37,11 @@ interface BaseProps<T extends FieldValues> {
 
 function AutoFilledBadge() {
   return (
-    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
-      ✨ Auto-filled
+    <span
+      className="inline-flex items-center gap-1 t-mono text-[9px] font-semibold uppercase"
+      style={{ letterSpacing: "0.1em", color: "var(--green)" }}
+    >
+      ✦ Auto-filled
     </span>
   );
 }
@@ -60,7 +72,7 @@ export function TextField<T extends FieldValues>({
       <div className="flex items-center justify-between gap-2">
         <label className="field-label" htmlFor={name}>
           {label}
-          {required && <span className="text-red-500"> *</span>}
+          {required && <span style={{ color: "var(--red)" }}> *</span>}
         </label>
         <div className="flex items-center gap-2 shrink-0">
           {autoFilled && <AutoFilledBadge />}
@@ -80,7 +92,7 @@ export function TextField<T extends FieldValues>({
         type={type}
         inputMode={inputMode}
         placeholder={placeholder}
-        className={cn("input-base", autoFilled && "ring-2 ring-emerald-400 dark:ring-emerald-600")}
+        className={cn("input-base", autoFilled && "border-[var(--green)]")}
         {...register(name)}
       />
       {hint && <p className="field-hint">{hint}</p>}
@@ -103,7 +115,7 @@ export function TextAreaField<T extends FieldValues>({
     <div className={className}>
       <label className="field-label" htmlFor={name}>
         {label}
-        {required && <span className="text-red-500"> *</span>}
+        {required && <span style={{ color: "var(--red)" }}> *</span>}
       </label>
       <textarea id={name} rows={rows} className="input-base" {...register(name)} />
       {hint && <p className="field-hint">{hint}</p>}
@@ -127,7 +139,7 @@ export function SelectField<T extends FieldValues>({
     <div className={className}>
       <label className="field-label" htmlFor={name}>
         {label}
-        {required && <span className="text-red-500"> *</span>}
+        {required && <span style={{ color: "var(--red)" }}> *</span>}
       </label>
       <select id={name} className="input-base" defaultValue="" {...register(name)}>
         <option value="" disabled>
@@ -163,20 +175,14 @@ export function RadioGroupField<T extends FieldValues>({
       <div className="flex items-center justify-between gap-2">
         <label className="field-label">
           {label}
-          {required && <span className="text-red-500"> *</span>}
+          {required && <span style={{ color: "var(--red)" }}> *</span>}
         </label>
         {autoFilled && <AutoFilledBadge />}
       </div>
       <div className={cn("grid gap-2", gridCols)}>
         {options.map((opt) => (
-          <label
-            key={opt}
-            className="flex items-center justify-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700
-              px-3 py-3 min-h-[48px] text-sm font-medium cursor-pointer
-              has-[:checked]:border-brand-600 has-[:checked]:bg-brand-50 has-[:checked]:text-brand-800
-              dark:has-[:checked]:bg-brand-900/30 dark:has-[:checked]:text-brand-200"
-          >
-            <input type="radio" value={opt} className="accent-brand-600" {...register(name)} />
+          <label key={opt} className={cn(CHIP_BASE, "justify-center")}>
+            <input type="radio" value={opt} className="sr-only" {...register(name)} />
             {opt}
           </label>
         ))}
@@ -201,23 +207,12 @@ export function CheckboxGroupField<T extends FieldValues>({
     <div className={className}>
       <label className="field-label">
         {label}
-        {required && <span className="text-red-500"> *</span>}
+        {required && <span style={{ color: "var(--red)" }}> *</span>}
       </label>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {options.map((opt) => (
-          <label
-            key={opt}
-            className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700
-              px-3 py-3 min-h-[48px] text-sm font-medium cursor-pointer
-              has-[:checked]:border-brand-600 has-[:checked]:bg-brand-50 has-[:checked]:text-brand-800
-              dark:has-[:checked]:bg-brand-900/30 dark:has-[:checked]:text-brand-200"
-          >
-            <input
-              type="checkbox"
-              value={opt}
-              className="accent-brand-600 h-4 w-4"
-              {...register(name)}
-            />
+          <label key={opt} className={CHIP_BASE}>
+            <input type="checkbox" value={opt} className="sr-only" {...register(name)} />
             {opt}
           </label>
         ))}
@@ -228,6 +223,7 @@ export function CheckboxGroupField<T extends FieldValues>({
   );
 }
 
+/** Acknowledgement gate — the square check box the prototype uses before submit. */
 export function CheckboxField<T extends FieldValues>({
   name,
   register,
@@ -237,9 +233,24 @@ export function CheckboxField<T extends FieldValues>({
 }: Omit<BaseProps<T>, "required" | "hint">) {
   return (
     <div className={className}>
-      <label className="flex items-start gap-3 rounded-lg border border-slate-300 dark:border-slate-700 p-4 cursor-pointer">
-        <input type="checkbox" className="mt-0.5 h-5 w-5 accent-brand-600" {...register(name)} />
-        <span className="text-sm font-medium">{label}</span>
+      <label
+        className="flex items-start gap-3 p-4 cursor-pointer transition-colors
+          border border-[var(--line3)] bg-[var(--panel)]
+          has-[:checked]:border-[var(--gold-fill)]"
+      >
+        <input type="checkbox" className="peer sr-only" {...register(name)} />
+        <span
+          className="w-[22px] h-[22px] shrink-0 flex items-center justify-center t-mono text-xs font-bold
+            border border-[var(--line3)] text-transparent
+            peer-checked:border-[var(--gold-fill)] peer-checked:bg-[var(--gold-fill)]
+            peer-checked:text-[var(--on-gold)] peer-focus-visible:border-[var(--gold-fill)]"
+          aria-hidden
+        >
+          ✓
+        </span>
+        <span className="text-[11.5px] leading-relaxed" style={{ color: "var(--mid)" }}>
+          {label}
+        </span>
       </label>
       <ErrorText error={error} />
     </div>
@@ -263,7 +274,7 @@ export function FormSection({
     <section className="card p-4 sm:p-5 space-y-4">
       <h2 className="section-title">{title}</h2>
       {note && (
-        <p className="text-xs font-medium bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300 rounded-md px-3 py-2">
+        <p className="text-[10.5px] leading-relaxed" style={{ color: "var(--soft)" }}>
           {note}
         </p>
       )}
