@@ -5,6 +5,7 @@ import {
   addCompany,
   addDriver,
   addVehicle,
+  deleteWhitelistRow,
   type WhitelistActionState,
 } from "@/lib/actions/whitelists";
 import { Button } from "@/components/ui/button";
@@ -133,6 +134,37 @@ export function AddDriverForm({ companies }: { companies: CateringCompany[] }) {
         {pending ? "Adding…" : "Add driver"}
       </Button>
       <Feedback state={state} />
+    </form>
+  );
+}
+
+export function DeleteRowButton({
+  table,
+  id,
+  label,
+}: {
+  table: "vehicles" | "drivers";
+  id: string;
+  label: string;
+}) {
+  const [state, action, pending] = useActionState(deleteWhitelistRow, initialState);
+  return (
+    <form
+      action={action}
+      onSubmit={(e) => {
+        if (!window.confirm(`Permanently delete ${label}? This cannot be undone.`)) {
+          e.preventDefault();
+        }
+      }}
+      className="inline"
+    >
+      <input type="hidden" name="table" value={table} />
+      <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="label" value={label} />
+      <button type="submit" className="text-xs text-red-600 underline" disabled={pending}>
+        {pending ? "Deleting…" : "Delete"}
+      </button>
+      {state.error ? <p className="text-xs text-red-600">{state.error}</p> : null}
     </form>
   );
 }

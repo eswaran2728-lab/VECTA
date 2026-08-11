@@ -13,7 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
 import { toggleWhitelistRow, updatePassExpiry } from "@/lib/actions/whitelists";
-import { AddCompanyForm, AddDriverForm, AddVehicleForm } from "./whitelist-forms";
+import { AddCompanyForm, AddDriverForm, AddVehicleForm, DeleteRowButton } from "./whitelist-forms";
 import type { CateringCompany, DriverRecord, VehicleRecord } from "@/lib/database.types";
 
 export const metadata: Metadata = { title: "Whitelists" };
@@ -178,7 +178,10 @@ export default async function WhitelistsPage() {
                     <ActiveBadge active={v.is_active} />
                   </TableCell>
                   <TableCell>
-                    <ToggleForm table="vehicles" id={v.id} active={v.is_active} />
+                    <div className="flex items-center gap-2">
+                      <ToggleForm table="vehicles" id={v.id} active={v.is_active} />
+                      <DeleteRowButton table="vehicles" id={v.id} label={v.vehicle_number} />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -225,7 +228,14 @@ export default async function WhitelistsPage() {
                     <ActiveBadge active={d.is_active} />
                   </TableCell>
                   <TableCell>
-                    <ToggleForm table="drivers" id={d.id} active={d.is_active} />
+                    <div className="flex items-center gap-2">
+                      <ToggleForm table="drivers" id={d.id} active={d.is_active} />
+                      <DeleteRowButton
+                        table="drivers"
+                        id={d.id}
+                        label={`${d.name} (${d.staff_id})`}
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

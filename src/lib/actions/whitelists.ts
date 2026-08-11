@@ -112,6 +112,45 @@ export async function toggleWhitelistRow(fd: FormData): Promise<void> {
   revalidatePath(PATH);
 }
 
+/**
+ * Permanently delete a vehicle or driver whitelist row. Only possible when
+ * no transaction references it — the FK on transactions.vehicle_id /
+ * driver_id_ref (ON DELETE NO ACTION) rejects the delete otherwise, which
+ * we surface as a friendly "deactivate instead" message rather than a raw
+ * Postgres error. Deactivation (toggleWhitelistRow) remains the default,
+ * audit-preserving way to retire a row; this is for rows that never had
+ * any real activity (e.g. data entered in error).
+ */
+export async function deleteWhitelistRow(
+  _prev: WhitelistActionState,
+  fd: FormData
+): Promise<WhitelistActionState> {
+  await requireRole(["supervisor"]);
+  const table = s(fd, "table");
+  const id = s(fd, "id");
+  const label = s(fd, "label") || "record";
+  if (!["vehicles", "drivers"].includes(table) || !id) {
+    return { error: "Invalid delete request.", success: null };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from(table as "vehicles" | "drivers")
+    .delete()
+    .eq("id", id);
+  if (error) {
+    const blockedByHistory = error.code === "23503";
+    return {
+      error: blockedByHistory
+        ? `Cannot delete ${label} — it has transaction history. Deactivate it instead.`
+        : error.message,
+      success: null,
+    };
+  }
+  revalidatePath(PATH);
+  return { error: null, success: `${label} deleted.` };
+}
+
 /** Update a vehicle's or driver's pass expiry date. */
 export async function updatePassExpiry(fd: FormData): Promise<void> {
   await requireRole(["supervisor"]);
