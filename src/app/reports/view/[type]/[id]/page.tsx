@@ -6,6 +6,7 @@ import { acknowledgeReport } from "@/lib/acknowledgements/actions";
 import { createClient } from "@/lib/supabase/server";
 import { REPORT_META, REPORT_TYPES, ROLE_RANK, type ReportType, type UserRole } from "@/lib/reference-data";
 import { AppHeader } from "@/components/layout/AppHeader";
+import { BottomNav } from "@/components/layout/BottomNav";
 import { Sec016View, Sec014View, Sec029View, Sec018View, Sec033View, Sec013View } from "@/components/reports/ReportView";
 import { formatDateTimeMY } from "@/lib/datetime";
 import type { Sec016Row, Sec014Row, Sec029Row, Sec018Row, Sec033Row, Sec013Row } from "@/lib/types";
@@ -49,7 +50,7 @@ export default async function ReportViewPage({
     (profile.team ?? "") === (submitter.team ?? "");
 
   return (
-    <main className="min-h-screen pb-16">
+    <main className="min-h-screen pb-32">
       <AppHeader profile={profile} title={meta.name} backHref="/history" />
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
         <div className="flex items-center justify-between">
@@ -92,6 +93,7 @@ export default async function ReportViewPage({
         {type === "sec033" && <Sec033View report={report as unknown as Sec033Row} />}
         {type === "sec013" && <Sec013View report={report as unknown as Sec013Row} />}
       </div>
+      <BottomNav profile={profile} />
     </main>
   );
 }

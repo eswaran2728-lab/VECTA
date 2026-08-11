@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { getOverdueAircraft, getMySubmissions } from "@/lib/reports/queries";
 import { REPORT_META } from "@/lib/reference-data";
 import { AppHeader } from "@/components/layout/AppHeader";
+import { BottomNav } from "@/components/layout/BottomNav";
 import { formatDateTimeMY } from "@/lib/datetime";
 
 export default async function HomePage() {
@@ -13,7 +14,7 @@ export default async function HomePage() {
   ]);
 
   return (
-    <main className="min-h-screen pb-12">
+    <main className="min-h-screen pb-32">
       <AppHeader profile={profile} />
 
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
@@ -86,6 +87,7 @@ export default async function HomePage() {
           Bay Board
         </Link>
       </div>
+      <BottomNav profile={profile} />
     </main>
   );
 }

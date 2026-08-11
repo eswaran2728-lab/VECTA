@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireRole, ENFORCEMENT_ROLES } from "@/lib/auth";
 import { searchByAircraftReg } from "@/lib/search/queries";
 import { AppHeader } from "@/components/layout/AppHeader";
+import { BottomNav } from "@/components/layout/BottomNav";
 import { REPORT_META } from "@/lib/reference-data";
 import { formatDateTimeMY } from "@/lib/datetime";
 
@@ -15,7 +16,7 @@ export default async function SearchPage({
   const results = reg ? await searchByAircraftReg(reg) : [];
 
   return (
-    <main className="min-h-screen pb-16">
+    <main className="min-h-screen pb-32">
       <AppHeader profile={profile} title="Search by aircraft" backHref="/dashboard" />
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
         <form method="get" className="flex gap-2">
@@ -67,6 +68,7 @@ export default async function SearchPage({
           </section>
         )}
       </div>
+      <BottomNav profile={profile} />
     </main>
   );
 }

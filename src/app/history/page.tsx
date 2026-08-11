@@ -3,6 +3,7 @@ import { requireProfile } from "@/lib/auth";
 import { getMySubmissions } from "@/lib/reports/queries";
 import { REPORT_META } from "@/lib/reference-data";
 import { AppHeader } from "@/components/layout/AppHeader";
+import { BottomNav } from "@/components/layout/BottomNav";
 import { formatDateTimeMY } from "@/lib/datetime";
 
 export default async function HistoryPage() {
@@ -10,7 +11,7 @@ export default async function HistoryPage() {
   const submissions = await getMySubmissions({ profileId: profile.id, limit: 200 });
 
   return (
-    <main className="min-h-screen pb-12">
+    <main className="min-h-screen pb-32">
       <AppHeader profile={profile} title="My submissions" backHref="/home" />
       <div className="max-w-3xl mx-auto px-4 py-6">
         <section className="card divide-y divide-slate-200 dark:divide-slate-800">
@@ -37,6 +38,7 @@ export default async function HistoryPage() {
           ))}
         </section>
       </div>
+      <BottomNav profile={profile} />
     </main>
   );
 }

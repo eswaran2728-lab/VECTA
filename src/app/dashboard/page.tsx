@@ -11,6 +11,7 @@ import {
 } from "@/lib/dashboard/queries";
 import { getOpenBayBoard } from "@/lib/reports/queries";
 import { AppHeader } from "@/components/layout/AppHeader";
+import { BottomNav } from "@/components/layout/BottomNav";
 import { CopyButton } from "@/components/dashboard/CopyButton";
 import { formatDateTimeMY, todayISODateMY } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
@@ -65,7 +66,7 @@ export default async function DashboardPage({
     : [];
 
   return (
-    <main className="min-h-screen pb-16">
+    <main className="min-h-screen pb-32">
       <AppHeader profile={profile} title="Dashboard" backHref={landingPathForRole(profile.role)} />
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
         <section className="card p-4 space-y-3">
@@ -310,6 +311,7 @@ export default async function DashboardPage({
           </div>
         </section>
       </div>
+      <BottomNav profile={profile} />
     </main>
   );
 }
