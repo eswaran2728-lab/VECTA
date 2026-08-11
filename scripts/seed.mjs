@@ -138,7 +138,7 @@ const SEED_VEHICLES = [
   "WKD 4521", "WMA 7733", "WTF 1289", "WXY 5566", "WBB 3020",
   "WQA 9014", "WPP 6612", "WRR 8874",
 ];
-const SEED_DRIVERS = [{ name: "Rahman bin Ali", driver_id: "DRV-0091" }];
+const SEED_DRIVERS = [{ name: "Rahman bin Ali", staff_id: "DRV-0091" }];
 
 async function seedWhitelists() {
   const { error: vErr } = await admin
@@ -153,7 +153,7 @@ async function seedWhitelists() {
     .from("drivers")
     .upsert(
       SEED_DRIVERS.map((d) => ({ ...d, is_active: true })),
-      { onConflict: "driver_id" }
+      { onConflict: "staff_id" }
     );
   if (dErr) throw dErr;
 
@@ -174,7 +174,7 @@ async function createTransaction(ids, direction, steps, overrides = {}) {
   const driverId = overrides.driver_id ?? "DRV-0091";
   const [{ data: vehicleRec }, { data: driverRec }] = await Promise.all([
     admin.from("vehicles").select("id").eq("vehicle_number", vehicleNumber).single(),
-    admin.from("drivers").select("id").eq("driver_id", driverId).single(),
+    admin.from("drivers").select("id").eq("staff_id", driverId).single(),
   ]);
 
   const { data: tx, error } = await admin

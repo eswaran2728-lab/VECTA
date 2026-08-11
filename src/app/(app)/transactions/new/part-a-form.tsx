@@ -50,7 +50,7 @@ interface PartAFormProps {
   picStaffId: string;
   companies: CateringCompany[];
   vehicles: Pick<VehicleRecord, "vehicle_number" | "pass_expiry_date">[];
-  drivers: Pick<DriverRecord, "name" | "driver_id" | "pass_expiry_date">[];
+  drivers: Pick<DriverRecord, "name" | "staff_id" | "pass_expiry_date">[];
 }
 
 const DIRECTION_OPTIONS: {
@@ -117,7 +117,7 @@ export function PartAForm({
   const driverState: WhitelistState = useMemo(() => {
     const d = driverId.trim().toUpperCase();
     if (!d) return "empty";
-    const rec = drivers.find((x) => x.driver_id.toUpperCase() === d);
+    const rec = drivers.find((x) => x.staff_id.toUpperCase() === d);
     if (!rec) return "unlisted";
     return rec.pass_expiry_date && rec.pass_expiry_date < today ? "expired" : "matched";
   }, [driverId, drivers, today]);
@@ -275,7 +275,7 @@ export function PartAForm({
               />
               <datalist id="driver-whitelist">
                 {drivers.map((d) => (
-                  <option key={d.driver_id} value={d.driver_id}>
+                  <option key={d.staff_id} value={d.staff_id}>
                     {d.name}
                   </option>
                 ))}

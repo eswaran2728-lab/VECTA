@@ -53,14 +53,14 @@ export default async function PartCPage({ params }: { params: Promise<{ id: stri
     supabase.from("part_a").select("*").eq("transaction_id", id).maybeSingle(),
     supabase.from("part_b").select("*").eq("transaction_id", id).maybeSingle(),
     supabase.from("vehicles").select("vehicle_number").eq("is_active", true),
-    supabase.from("drivers").select("driver_id").eq("is_active", true),
+    supabase.from("drivers").select("staff_id").eq("is_active", true),
   ]);
   const seals = (sealRes.data ?? []) as Pick<
     Seal,
     "id" | "seal_number" | "seal_type" | "seal_color"
   >[];
   const vehicles = (vehiclesRes.data ?? []) as Pick<VehicleRecord, "vehicle_number">[];
-  const drivers = (driversRes.data ?? []) as Pick<DriverRecord, "driver_id">[];
+  const drivers = (driversRes.data ?? []) as Pick<DriverRecord, "staff_id">[];
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">

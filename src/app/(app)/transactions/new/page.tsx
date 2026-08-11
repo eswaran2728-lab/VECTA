@@ -20,7 +20,7 @@ export default async function NewTransactionPage() {
       .order("vehicle_number"),
     supabase
       .from("drivers")
-      .select("name, driver_id, pass_expiry_date")
+      .select("name, staff_id, pass_expiry_date")
       .eq("is_active", true)
       .order("name"),
   ]);
@@ -40,7 +40,7 @@ export default async function NewTransactionPage() {
         companies={(companies.data ?? []) as CateringCompany[]}
         vehicles={(vehicles.data ?? []) as Pick<VehicleRecord, "vehicle_number" | "pass_expiry_date">[]}
         drivers={
-          (drivers.data ?? []) as Pick<DriverRecord, "name" | "driver_id" | "pass_expiry_date">[]
+          (drivers.data ?? []) as Pick<DriverRecord, "name" | "staff_id" | "pass_expiry_date">[]
         }
       />
     </div>

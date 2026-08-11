@@ -29,7 +29,7 @@ interface CheckpointFormProps {
   officerStaffId: string;
   /** Active whitelist, for the secondary whitelist check on the observed vehicle/driver. */
   vehicles: Pick<VehicleRecord, "vehicle_number">[];
-  drivers: Pick<DriverRecord, "driver_id">[];
+  drivers: Pick<DriverRecord, "staff_id">[];
   /** True when this checkpoint is the final step (inbound Part B). */
   finalizes?: boolean;
   lang?: Lang;
@@ -76,7 +76,7 @@ export function CheckpointForm({
     const v = observedVehicleNumber.trim().toUpperCase();
     const d = observedDriverId.trim().toUpperCase();
     const vehicleOk = vehicles.some((x) => x.vehicle_number.toUpperCase() === v);
-    const driverOk = drivers.some((x) => x.driver_id.toUpperCase() === d);
+    const driverOk = drivers.some((x) => x.staff_id.toUpperCase() === d);
     return vehicleOk && driverOk;
   }, [touched, observedVehicleNumber, observedDriverId, vehicles, drivers]);
 

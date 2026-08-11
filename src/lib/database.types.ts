@@ -69,12 +69,16 @@ export type CateringCompany = {
   created_at: string;
 }
 
+export type TruckType = "Hi-Lift" | "Bonded Truck";
+
 export type VehicleRecord = {
   id: string;
   vehicle_number: string;
   catering_company_id: string | null;
   airport_pass_number: string | null;
   pass_expiry_date: string | null;
+  truck_type: TruckType | null;
+  truck_registration_number: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -82,10 +86,14 @@ export type VehicleRecord = {
 export type DriverRecord = {
   id: string;
   name: string;
-  driver_id: string;
+  staff_id: string;
   catering_company_id: string | null;
   airport_pass_number: string | null;
   pass_expiry_date: string | null;
+  /** True when staff_ic_number should be used instead of the airport pass ID. */
+  swap_to_staff_ic: boolean;
+  /** Malaysian IC format XXXXXX-XX-XXXX; only set when swap_to_staff_ic is true. */
+  staff_ic_number: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -470,18 +478,22 @@ export type Database = {
       };
       vehicles: {
         Row: VehicleRecord;
-        Insert: Omit<VehicleRecord, "id" | "created_at" | "is_active"> & {
+        Insert: Omit<VehicleRecord, "id" | "created_at" | "is_active" | "truck_type" | "truck_registration_number"> & {
           id?: string;
           is_active?: boolean;
+          truck_type?: TruckType | null;
+          truck_registration_number?: string | null;
         };
         Update: Partial<VehicleRecord>;
         Relationships: [];
       };
       drivers: {
         Row: DriverRecord;
-        Insert: Omit<DriverRecord, "id" | "created_at" | "is_active"> & {
+        Insert: Omit<DriverRecord, "id" | "created_at" | "is_active" | "swap_to_staff_ic" | "staff_ic_number"> & {
           id?: string;
           is_active?: boolean;
+          swap_to_staff_ic?: boolean;
+          staff_ic_number?: string | null;
         };
         Update: Partial<DriverRecord>;
         Relationships: [];

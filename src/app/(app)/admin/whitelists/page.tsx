@@ -153,6 +153,8 @@ export default async function WhitelistsPage() {
                 <TableHead>Company</TableHead>
                 <TableHead>Pass No.</TableHead>
                 <TableHead>Pass Expiry</TableHead>
+                <TableHead>Truck Type</TableHead>
+                <TableHead>Truck Reg. No.</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead />
               </TableRow>
@@ -167,6 +169,10 @@ export default async function WhitelistsPage() {
                   </TableCell>
                   <TableCell>
                     <ExpiryCell table="vehicles" id={v.id} value={v.pass_expiry_date} />
+                  </TableCell>
+                  <TableCell className="text-xs">{v.truck_type ?? "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {v.truck_registration_number ?? "—"}
                   </TableCell>
                   <TableCell>
                     <ActiveBadge active={v.is_active} />
@@ -191,10 +197,11 @@ export default async function WhitelistsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Driver ID</TableHead>
+                <TableHead>Staff ID</TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>Pass No.</TableHead>
-                <TableHead>Pass Expiry</TableHead>
+                <TableHead title="Airport Pass Expiry Date">Airport Pass Expiry Date</TableHead>
+                <TableHead>IC Number</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead />
               </TableRow>
@@ -203,13 +210,16 @@ export default async function WhitelistsPage() {
               {drivers.map((d) => (
                 <TableRow key={d.id}>
                   <TableCell className="font-medium">{d.name}</TableCell>
-                  <TableCell className="font-mono">{d.driver_id}</TableCell>
+                  <TableCell className="font-mono">{d.staff_id}</TableCell>
                   <TableCell>{d.catering_companies?.name ?? "—"}</TableCell>
                   <TableCell className="font-mono text-xs">
                     {d.airport_pass_number ?? "—"}
                   </TableCell>
                   <TableCell>
                     <ExpiryCell table="drivers" id={d.id} value={d.pass_expiry_date} />
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {d.swap_to_staff_ic && d.staff_ic_number ? d.staff_ic_number : "—"}
                   </TableCell>
                   <TableCell>
                     <ActiveBadge active={d.is_active} />

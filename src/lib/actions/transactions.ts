@@ -190,7 +190,7 @@ async function checkWhitelistAtCheckpoint(
     supabase
       .from("drivers")
       .select("id")
-      .eq("driver_id", observedDriverId)
+      .eq("staff_id", observedDriverId)
       .eq("is_active", true)
       .maybeSingle(),
   ]);
@@ -340,7 +340,7 @@ export async function createTransaction(
     supabase
       .from("drivers")
       .select("id, pass_expiry_date, is_active")
-      .eq("driver_id", driverId)
+      .eq("staff_id", driverId)
       .eq("is_active", true)
       .maybeSingle(),
     escortVehicleNumber

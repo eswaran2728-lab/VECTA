@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import type { TruckType } from "@/lib/database.types";
 
 export interface WhitelistActionState {
   error: string | null;
@@ -31,6 +32,8 @@ export async function addCompany(
   return { error: null, success: `Company ${name} added.` };
 }
 
+const TRUCK_TYPES: TruckType[] = ["Hi-Lift", "Bonded Truck"];
+
 export async function addVehicle(
   _prev: WhitelistActionState,
   fd: FormData
@@ -39,17 +42,26 @@ export async function addVehicle(
   const vehicleNumber = s(fd, "vehicle_number").toUpperCase();
   if (!vehicleNumber) return { error: "Vehicle number is required.", success: null };
 
+  const truckType = s(fd, "truck_type");
+  if (!TRUCK_TYPES.includes(truckType as TruckType)) {
+    return { error: "Select a truck type.", success: null };
+  }
+
   const supabase = await createClient();
   const { error } = await supabase.from("vehicles").insert({
     vehicle_number: vehicleNumber,
     catering_company_id: s(fd, "catering_company_id") || null,
     airport_pass_number: s(fd, "airport_pass_number") || null,
     pass_expiry_date: s(fd, "pass_expiry_date") || null,
+    truck_type: truckType as TruckType,
+    truck_registration_number: s(fd, "truck_registration_number") || null,
   });
   if (error) return { error: error.message, success: null };
   revalidatePath(PATH);
   return { error: null, success: `Vehicle ${vehicleNumber} added.` };
 }
+
+const IC_FORMAT = /^\d{6}-\d{2}-\d{4}$/;
 
 export async function addDriver(
   _prev: WhitelistActionState,
@@ -57,16 +69,27 @@ export async function addDriver(
 ): Promise<WhitelistActionState> {
   await requireRole(["supervisor"]);
   const name = s(fd, "name");
-  const driverId = s(fd, "driver_id").toUpperCase();
-  if (!name || !driverId) return { error: "Name and driver ID are required.", success: null };
+  const staffId = s(fd, "staff_id").toUpperCase();
+  if (!name || !staffId) return { error: "Name and staff ID are required.", success: null };
+
+  const swapToStaffIc = fd.get("swap_to_staff_ic") === "on";
+  const staffIcNumber = s(fd, "staff_ic_number");
+  if (swapToStaffIc && !IC_FORMAT.test(staffIcNumber)) {
+    return {
+      error: "Staff IC number must be in the format XXXXXX-XX-XXXX.",
+      success: null,
+    };
+  }
 
   const supabase = await createClient();
   const { error } = await supabase.from("drivers").insert({
     name,
-    driver_id: driverId,
+    staff_id: staffId,
     catering_company_id: s(fd, "catering_company_id") || null,
     airport_pass_number: s(fd, "airport_pass_number") || null,
     pass_expiry_date: s(fd, "pass_expiry_date") || null,
+    swap_to_staff_ic: swapToStaffIc,
+    staff_ic_number: swapToStaffIc ? staffIcNumber : null,
   });
   if (error) return { error: error.message, success: null };
   revalidatePath(PATH);
