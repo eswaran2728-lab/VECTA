@@ -3,10 +3,13 @@
 export const APP_NAME = "AVSEC REPORTS";
 export const APP_DESCRIPTION = "AirAsia AVSEC digital security reporting platform";
 
-// Matches the `brand`/`gold` scales in tailwind.config.ts — kept here too for the few
-// places that need a raw hex value outside Tailwind classes (manifest.json theme_color,
-// <meta name="theme-color">, @react-pdf/renderer styles, which can't reference Tailwind).
-export const BRAND_RED = "#e2001a";
+// Raw hex values for the few places that can't reference Tailwind/CSS variables —
+// manifest.json theme_color, <meta name="theme-color">, @react-pdf/renderer styles.
+// Mirrors the token set in globals.css.
+export const BRAND_GOLD = "#FFD900";
+export const BRAND_RED = "#E30613";
+export const BRAND_BLACK = "#050505";
+export const BRAND_PAGE_LIGHT = "#EFEDE6";
+
+// Kept for the PDF templates, which were built against the previous red/gold pair.
 export const BRAND_RED_DARK = "#8f0014";
-export const BRAND_GOLD = "#f5b400";
-export const BRAND_BLACK = "#0a0a0a";

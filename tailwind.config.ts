@@ -1,52 +1,76 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  // "media": there's no manual light/dark toggle anywhere in the app, so dark mode
-  // should just follow the device's system setting — matches what globals.css assumed.
-  darkMode: "media",
-  content: [
-    "./src/app/**/*.{ts,tsx}",
-    "./src/components/**/*.{ts,tsx}",
-  ],
+  // Theme is driven by CSS variables in globals.css (system preference + an explicit
+  // [data-theme] override on <html>), so Tailwind's own dark: variant follows the same
+  // attribute rather than duplicating the palette in two places.
+  darkMode: ["selector", '[data-theme="dark"]'],
+  content: ["./src/app/**/*.{ts,tsx}", "./src/components/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        // AirAsia red — matches the AirAsia / AVSEC AirAsia badge logos.
-        brand: {
-          50: "#fff1f0",
-          100: "#ffdcda",
-          200: "#ffbab6",
-          300: "#ff8d86",
-          400: "#ff5951",
-          500: "#fb2920",
-          600: "#e2001a",
-          700: "#b80016",
-          800: "#8f0014",
-          900: "#6e0512",
+        surface: "var(--surface)",
+        panel: "var(--panel)",
+        panel2: "var(--panel2)",
+        ink: {
+          DEFAULT: "var(--ink)",
+          2: "var(--ink2)",
+          3: "var(--ink3)",
         },
-        // AVSEC badge gold — used sparingly for accents/highlights alongside brand red.
+        mid: "var(--mid)",
+        soft: "var(--soft)",
+        faint: "var(--faint)",
+        faintest: "var(--faintest)",
+        line: {
+          DEFAULT: "var(--line)",
+          2: "var(--line2)",
+          3: "var(--line3)",
+        },
         gold: {
-          50: "#fffceb",
-          100: "#fff6c2",
-          200: "#ffec85",
-          300: "#ffdc40",
-          400: "#ffc915",
-          500: "#f5b400",
-          600: "#d18f00",
-          700: "#a86b02",
-          800: "#8a5408",
-          900: "#74450b",
+          DEFAULT: "var(--gold)",
+          fill: "var(--gold-fill)",
+          hi: "var(--gold-fill-hi)",
+          soft: "var(--gold-soft)",
         },
-        amber: {
-          50: "#fffbeb",
-          100: "#fef3c7",
-          400: "#fbbf24",
-          500: "#f59e0b",
-          600: "#d97706",
+        // AirAsia red — reserved for security-sensitive forms and destructive actions.
+        red: {
+          DEFAULT: "var(--red)",
+          soft: "var(--red-soft)",
+          ink: "var(--red-ink)",
         },
+        // `brand` was the old red accent scale. The primary accent is now gold, so the
+        // numeric steps are aliased onto the new tokens by role (tint / border / accent /
+        // surface) — this keeps screens not yet reworked on-palette instead of unstyled.
+        brand: {
+          DEFAULT: "var(--gold)",
+          50: "var(--gold-soft)",
+          100: "var(--gold-soft)",
+          200: "var(--line3)",
+          300: "var(--line3)",
+          400: "var(--gold)",
+          500: "var(--gold)",
+          600: "var(--gold)",
+          700: "var(--gold)",
+          800: "var(--gold)",
+          900: "var(--panel)",
+          950: "var(--panel2)",
+        },
+        ok: "var(--green)",
+        info: "var(--blue)",
+        "on-gold": "var(--on-gold)",
       },
-      fontSize: {
-        base: ["1rem", "1.5rem"],
+      fontFamily: {
+        sans: ["var(--font-barlow)", "system-ui", "sans-serif"],
+        condensed: ["var(--font-barlow-condensed)", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
+      },
+      borderRadius: {
+        // The design language is square-cornered throughout.
+        none: "0",
+      },
+      animation: {
+        slide: "avslide .25s ease both",
+        pulse: "avpulse 2s infinite",
       },
     },
   },
