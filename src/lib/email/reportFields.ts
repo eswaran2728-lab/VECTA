@@ -6,6 +6,7 @@ import type { Sec014FormValues } from "@/lib/schemas/sec014";
 import type { Sec029FormValues } from "@/lib/schemas/sec029";
 import type { Sec018FormValues } from "@/lib/schemas/sec018";
 import type { Sec033FormValues } from "@/lib/schemas/sec033";
+import type { Sec013FormValues } from "@/lib/schemas/sec013";
 import { SEC029_ITEMS } from "@/lib/reference-data";
 import type { EmailField } from "./reportEmailTemplate";
 
@@ -124,5 +125,23 @@ export function sec033EmailFields(v: Sec033FormValues): EmailField[] {
     { label: "Date", value: v.report_date },
     { label: "Time", value: v.report_time },
     ...holdCheckFields,
+  ];
+}
+
+export function sec013EmailFields(v: Sec013FormValues): EmailField[] {
+  const dutyFields = v.profiling_duties.map((d, idx) => ({
+    label: `Profiling Duty ${idx + 1}`,
+    value: `${d.duty_area} · ${d.location} · ${d.time_from}–${d.time_to} · Sector/Flight ${d.sector_flight}: ${d.description}${d.incident_remark ? ` — ${d.incident_remark}` : ""}`,
+  }));
+  return [
+    { label: "Hub/Station", value: v.station },
+    { label: "Team", value: v.team },
+    { label: "Name", value: v.staff_name },
+    { label: "Staff ID", value: v.staff_id },
+    { label: "Date & Time In", value: v.date_time_in },
+    { label: "Date & Time Out", value: v.date_time_out },
+    ...dutyFields,
+    { label: "Remark", value: v.remark ?? "" },
+    { label: "Corrective Action / Follow-up / Recommendation", value: v.corrective_action ?? "" },
   ];
 }

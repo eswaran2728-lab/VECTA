@@ -192,6 +192,40 @@ export interface Sec033Row {
   hold_checks?: Sec033HoldCheckEntry[];
 }
 
+export interface Sec013ProfilingDutyEntry {
+  entry_no: number;
+  duty_area: "Departure Gate" | "Terminal Area" | "Apron";
+  time_from: string;
+  time_to: string;
+  location: "Departure Gate Sector 5/6/7 (P-Q)" | "Departure Gate Sector 1 & 3 (J & L/K)" | "Terminal Area (Sector 2)";
+  sector_flight: string;
+  description: string;
+  incident_remark: string | null;
+}
+
+export interface Sec013Row {
+  id: string;
+  profile_id: string;
+  status: ReportStatus;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  amendment_of: string | null;
+
+  station: string;
+  team: string;
+  staff_name: string;
+  staff_id: string;
+  date_time_in: string;
+  date_time_out: string;
+
+  remark: string | null;
+  corrective_action: string | null;
+  acknowledgement: boolean;
+
+  profiling_duties?: Sec013ProfilingDutyEntry[];
+}
+
 export interface BayBoardRow {
   id: string;
   station: string;
@@ -205,7 +239,7 @@ export interface BayBoardRow {
   created_at: string;
 }
 
-export type AnyReportRow = Sec016Row | Sec014Row | Sec029Row | Sec018Row | Sec033Row;
+export type AnyReportRow = Sec016Row | Sec014Row | Sec029Row | Sec018Row | Sec033Row | Sec013Row;
 
 export interface ReportListItem {
   id: string;

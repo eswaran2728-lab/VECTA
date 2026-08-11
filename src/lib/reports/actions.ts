@@ -8,6 +8,7 @@ import { sec014Schema } from "@/lib/schemas/sec014";
 import { sec029Schema } from "@/lib/schemas/sec029";
 import { sec018Schema } from "@/lib/schemas/sec018";
 import { sec033Schema } from "@/lib/schemas/sec033";
+import { sec013Schema } from "@/lib/schemas/sec013";
 import { clearDraft } from "@/lib/reports/drafts";
 import { notifyReportSubmission } from "@/lib/email/notifyReportSubmission";
 import {
@@ -16,6 +17,7 @@ import {
   sec029EmailFields,
   sec018EmailFields,
   sec033EmailFields,
+  sec013EmailFields,
 } from "@/lib/email/reportFields";
 
 export interface ActionResult {
@@ -338,6 +340,65 @@ export async function submitSec033(input: unknown): Promise<ActionResult> {
     submittedByName: v.staff_name,
     submittedByStaffNo: v.staff_id,
     fields: sec033EmailFields(v),
+  });
+  revalidatePath("/history");
+  return { ok: true, id: report.id, submittedAt: report.submitted_at };
+}
+
+// ---------- SEC 013 ----------
+
+export async function submitSec013(input: unknown): Promise<ActionResult> {
+  const profile = await requireProfileId();
+  if (!profile) return { ok: false, error: "Not authenticated" };
+
+  const parsed = sec013Schema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; ") };
+  }
+  const v = parsed.data;
+
+  const supabase = createClient();
+  const { data: report, error } = await supabase
+    .from("report_sec013")
+    .insert({
+      profile_id: profile.id,
+      status: "submitted",
+      station: v.station,
+      team: v.team,
+      staff_name: v.staff_name,
+      staff_id: v.staff_id,
+      date_time_in: v.date_time_in,
+      date_time_out: v.date_time_out,
+      remark: v.remark || null,
+      corrective_action: v.corrective_action || null,
+      acknowledgement: v.acknowledgement,
+    })
+    .select("id, submitted_at")
+    .single();
+
+  if (error) return { ok: false, error: error.message };
+
+  const rows = v.profiling_duties.map((d, idx) => ({
+    report_id: report.id,
+    entry_no: idx + 1,
+    duty_area: d.duty_area,
+    time_from: d.time_from,
+    time_to: d.time_to,
+    location: d.location,
+    sector_flight: d.sector_flight,
+    description: d.description,
+    incident_remark: d.incident_remark || null,
+  }));
+  const { error: dutyError } = await supabase.from("report_sec013_profiling_duties").insert(rows);
+  if (dutyError) return { ok: false, error: dutyError.message };
+
+  await clearDraft("sec013");
+  await notifyReportSubmission({
+    reportType: "sec013",
+    submittedAt: report.submitted_at,
+    submittedByName: v.staff_name,
+    submittedByStaffNo: v.staff_id,
+    fields: sec013EmailFields(v),
   });
   revalidatePath("/history");
   return { ok: true, id: report.id, submittedAt: report.submitted_at };

@@ -43,7 +43,7 @@ export async function getMySubmissions({
   limit = 20,
 }: MySubmissionsOptions): Promise<ReportListItem[]> {
   const supabase = createClient();
-  const types: ReportType[] = ["sec016", "sec014", "sec029", "sec018", "sec033"];
+  const types: ReportType[] = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013"];
 
   const results = await Promise.all(
     types.map(async (type) => {
@@ -81,6 +81,9 @@ function toListItem(type: ReportType, row: Record<string, unknown>): ReportListI
       break;
     case "sec033":
       summary = "Aircraft hold checklist";
+      break;
+    case "sec013":
+      summary = `Profiling duty · ${row.remark ? String(row.remark).slice(0, 60) : ""}`;
       break;
   }
   return {
@@ -131,6 +134,14 @@ export async function getReportById(type: ReportType, id: string) {
       .eq("report_id", id)
       .order("entry_no");
     return { ...data, hold_checks: holdChecks ?? [] };
+  }
+  if (type === "sec013") {
+    const { data: profilingDuties } = await supabase
+      .from("report_sec013_profiling_duties")
+      .select("*")
+      .eq("report_id", id)
+      .order("entry_no");
+    return { ...data, profiling_duties: profilingDuties ?? [] };
   }
   return data;
 }

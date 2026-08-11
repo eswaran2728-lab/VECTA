@@ -67,8 +67,21 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 export const PROFILE_STATUSES = ["pending", "approved", "rejected"] as const;
 export type ProfileStatus = (typeof PROFILE_STATUSES)[number];
 
-export const REPORT_TYPES = ["sec016", "sec014", "sec029", "sec018", "sec033"] as const;
+export const REPORT_TYPES = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013"] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];
+
+// SEC 013 Section 2 "Duty Area" options.
+export const SEC013_DUTY_AREAS = ["Departure Gate", "Terminal Area", "Apron"] as const;
+
+// SEC 013 Section 2 "Location" options.
+export const SEC013_LOCATIONS = [
+  "Departure Gate Sector 5/6/7 (P-Q)",
+  "Departure Gate Sector 1 & 3 (J & L/K)",
+  "Terminal Area (Sector 2)",
+] as const;
+
+export const SEC013_CERTIFICATION_TEXT =
+  "I certify that the information provided in this report is true, complete and accurate to the best of my knowledge.";
 
 export const REPORT_META: Record<
   ReportType,
@@ -103,6 +116,12 @@ export const REPORT_META: Record<
     code: "AA/SEC/F/033 Rev.02",
     table: "report_sec033",
     route: "sec033",
+  },
+  sec013: {
+    name: "DAILY REPORT PROFILING SEC 013",
+    code: "AA/SEC/F/013 Rev.03",
+    table: "report_sec013",
+    route: "sec013",
   },
 };
 

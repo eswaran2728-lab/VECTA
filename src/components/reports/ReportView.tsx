@@ -1,4 +1,4 @@
-import { SEC029_ITEMS, SECURITY_DISCLAIMER } from "@/lib/reference-data";
+import { SEC029_ITEMS, SECURITY_DISCLAIMER, SEC013_CERTIFICATION_TEXT } from "@/lib/reference-data";
 import { formatDateTimeMY, formatDateMY, formatTimeMY } from "@/lib/datetime";
 import type {
   Sec016Row,
@@ -10,6 +10,8 @@ import type {
   Sec018PatrolEntry,
   Sec033Row,
   Sec033HoldCheckEntry,
+  Sec013Row,
+  Sec013ProfilingDutyEntry,
 } from "@/lib/types";
 
 export function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -249,6 +251,53 @@ export function Sec033View({ report }: { report: Sec033Row & { hold_checks?: Sec
             </div>
           ))}
         </div>
+      </section>
+    </div>
+  );
+}
+
+export function Sec013View({ report }: { report: Sec013Row & { profiling_duties?: Sec013ProfilingDutyEntry[] } }) {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3">
+        <p className="text-xs font-semibold text-red-800 dark:text-red-300">{SECURITY_DISCLAIMER}</p>
+      </div>
+
+      <ViewSection title="Staff Details">
+        <Field label="Hub/Station" value={report.station} />
+        <Field label="Team" value={report.team} />
+        <Field label="Name" value={report.staff_name} />
+        <Field label="Staff ID" value={report.staff_id} />
+        <Field label="Date & Time In" value={formatDateTimeMY(report.date_time_in)} />
+        <Field label="Date & Time Out" value={formatDateTimeMY(report.date_time_out)} />
+      </ViewSection>
+
+      <section className="card p-4 sm:p-5 space-y-3">
+        <h2 className="section-title">Profiling Duty</h2>
+        {(!report.profiling_duties || report.profiling_duties.length === 0) && (
+          <p className="text-sm text-slate-500">No profiling duty entries logged.</p>
+        )}
+        <div className="space-y-2">
+          {report.profiling_duties?.map((d) => (
+            <div key={d.entry_no} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 text-sm">
+              <p className="font-semibold">
+                Duty #{d.entry_no} — {d.duty_area} · {d.location} · {d.time_from}–{d.time_to} · Sector/Flight{" "}
+                {d.sector_flight}
+              </p>
+              <p className="text-slate-600 dark:text-slate-300">{d.description}</p>
+              {d.incident_remark && <p className="text-amber-700 dark:text-amber-400">{d.incident_remark}</p>}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="card p-4 sm:p-5 space-y-3 border-2 border-brand-300 dark:border-brand-700">
+        <h2 className="section-title">Final Remarks &amp; Certification</h2>
+        <Field label="Remark" value={report.remark} />
+        <Field label="Corrective Action / Follow-up / Recommendation" value={report.corrective_action} />
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {SEC013_CERTIFICATION_TEXT} — {report.acknowledgement ? "✓ Certified" : "Not certified"}
+        </p>
       </section>
     </div>
   );

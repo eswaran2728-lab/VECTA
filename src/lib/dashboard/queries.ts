@@ -75,6 +75,12 @@ function summarize(type: ReportType, row: Record<string, unknown>): FilteredSubm
     case "sec018":
       summary = `${row.staff_name}`;
       break;
+    case "sec033":
+      summary = `${row.staff_name} · Bay checklist`;
+      break;
+    case "sec013":
+      summary = `${row.staff_name} · Profiling duty`;
+      break;
   }
   return {
     id: String(row.id),
@@ -89,7 +95,7 @@ function summarize(type: ReportType, row: Record<string, unknown>): FilteredSubm
 
 export async function getTodayCounts(filters: DashboardFilters) {
   const submissions = await getFilteredSubmissions({ ...filters, reportType: undefined });
-  const counts: Record<ReportType, number> = { sec016: 0, sec014: 0, sec029: 0, sec018: 0, sec033: 0 };
+  const counts: Record<ReportType, number> = { sec016: 0, sec014: 0, sec029: 0, sec018: 0, sec033: 0, sec013: 0 };
   for (const s of submissions) counts[s.type]++;
   return { counts, submissions };
 }
