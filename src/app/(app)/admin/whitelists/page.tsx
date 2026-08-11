@@ -202,7 +202,6 @@ export default async function WhitelistsPage() {
                 <TableHead>Name</TableHead>
                 <TableHead>Staff ID</TableHead>
                 <TableHead>Company</TableHead>
-                <TableHead>Pass No.</TableHead>
                 <TableHead title="ADP Expiry Date">ADP Expiry Date</TableHead>
                 <TableHead>IC Number</TableHead>
                 <TableHead>Status</TableHead>
@@ -215,9 +214,6 @@ export default async function WhitelistsPage() {
                   <TableCell className="font-medium">{d.name}</TableCell>
                   <TableCell className="font-mono">{d.staff_id}</TableCell>
                   <TableCell>{d.catering_companies?.name ?? "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {d.airport_pass_number ?? "—"}
-                  </TableCell>
                   <TableCell>
                     <ExpiryCell table="drivers" id={d.id} value={d.pass_expiry_date} />
                   </TableCell>
