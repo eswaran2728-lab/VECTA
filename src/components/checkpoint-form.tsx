@@ -174,6 +174,7 @@ export function CheckpointForm({
                 onChange={(e) => setObservedVehicleNumber(e.target.value)}
                 placeholder="As physically observed"
                 required
+                className="font-mono"
               />
             </div>
             <div className="space-y-2">
@@ -189,6 +190,7 @@ export function CheckpointForm({
                 onChange={(e) => setObservedDriverId(e.target.value)}
                 placeholder="As physically observed"
                 required
+                className="font-mono"
               />
             </div>
           </div>

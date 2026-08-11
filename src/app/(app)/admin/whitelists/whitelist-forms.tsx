@@ -67,7 +67,7 @@ export function AddVehicleForm({ companies }: { companies: CateringCompany[] }) 
   const defaultCompanyId = companies.find((c) => c.code === "IFC")?.id ?? "";
   return (
     <form action={action} className="flex flex-wrap items-end gap-2">
-      <Input name="vehicle_number" placeholder="Vehicle number" required className="w-40" />
+      <Input name="vehicle_number" placeholder="Vehicle number" required className="w-40 font-mono" />
       <CompanySelect companies={companies} defaultCompanyId={defaultCompanyId} />
       <Input name="pass_expiry_date" type="date" className="w-40" />
       <Select name="truck_type" defaultValue="" required className="w-36" title="Truck type">
@@ -80,7 +80,11 @@ export function AddVehicleForm({ companies }: { companies: CateringCompany[] }) 
           </option>
         ))}
       </Select>
-      <Input name="truck_registration_number" placeholder="Truck reg. no." className="w-36" />
+      <Input
+        name="truck_registration_number"
+        placeholder="Truck reg. no."
+        className="w-36 font-mono"
+      />
       <Button type="submit" size="sm" disabled={pending}>
         {pending ? "Adding…" : "Add vehicle"}
       </Button>
@@ -98,7 +102,7 @@ export function AddDriverForm({ companies }: { companies: CateringCompany[] }) {
   return (
     <form action={action} className="flex flex-wrap items-end gap-2">
       <Input name="name" placeholder="Driver name" required className="w-48" />
-      <Input name="staff_id" placeholder="Staff ID" required className="w-32" />
+      <Input name="staff_id" placeholder="Staff ID" required className="w-32 font-mono" />
       <CompanySelect companies={companies} defaultCompanyId={defaultCompanyId} />
       <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <input

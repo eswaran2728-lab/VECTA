@@ -32,7 +32,7 @@ export function CreateUserForm() {
           </div>
           <div className="space-y-1">
             <Label htmlFor="new-staff-id">Staff ID</Label>
-            <Input id="new-staff-id" name="staff_id" required />
+            <Input id="new-staff-id" name="staff_id" required className="font-mono" />
           </div>
           <div className="space-y-1">
             <Label htmlFor="new-email">Email</Label>

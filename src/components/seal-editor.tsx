@@ -53,7 +53,7 @@ export function SealEditor({ seals, onChange }: SealEditorProps) {
             placeholder="Seal number"
             value={seal.seal_number}
             onChange={(e) => update(i, { seal_number: e.target.value })}
-            className="text-lg font-semibold tracking-wide"
+            className="font-mono text-lg font-semibold tracking-wide"
             required
           />
           <div className="flex items-center gap-2">

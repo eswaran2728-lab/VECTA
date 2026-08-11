@@ -253,6 +253,7 @@ export function PartAForm({
                 value={vehicleNumber}
                 onChange={(e) => setVehicleNumber(e.target.value)}
                 required
+                className="font-mono"
               />
               <datalist id="vehicle-whitelist">
                 {vehicles.map((v) => (
@@ -272,6 +273,7 @@ export function PartAForm({
                 value={driverId}
                 onChange={(e) => setDriverId(e.target.value)}
                 required
+                className="font-mono"
               />
               <datalist id="driver-whitelist">
                 {drivers.map((d) => (
@@ -301,7 +303,7 @@ export function PartAForm({
                 <Input
                   name="escort_officer_staff_id"
                   placeholder="Staff ID"
-                  className="w-32"
+                  className="w-32 font-mono"
                   value={escortOfficerStaffId}
                   onChange={(e) => setEscortOfficerStaffId(e.target.value)}
                 />
@@ -320,6 +322,7 @@ export function PartAForm({
                 list="vehicle-whitelist"
                 value={escortVehicleNumber}
                 onChange={(e) => setEscortVehicleNumber(e.target.value)}
+                className="font-mono"
               />
               {escortVehicleHint ? (
                 <p className={`text-xs ${escortVehicleHint.className}`}>{escortVehicleHint.text}</p>

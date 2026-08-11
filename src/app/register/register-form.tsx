@@ -40,7 +40,7 @@ export function RegisterForm() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="reg-staff-id">Staff ID</Label>
-            <Input id="reg-staff-id" name="staff_id" required />
+            <Input id="reg-staff-id" name="staff_id" required className="font-mono" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="reg-email">Email</Label>

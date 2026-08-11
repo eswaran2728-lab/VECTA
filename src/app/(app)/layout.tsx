@@ -124,7 +124,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               title={`${ROLE_LABELS[profile.role]} · Staff ID ${profile.staff_id}`}
             >
               <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-              {ROLE_LABELS[profile.role]} · Staff ID {profile.staff_id}
+              {ROLE_LABELS[profile.role]} · Staff ID{" "}
+              <span className="font-mono">{profile.staff_id}</span>
             </span>
             <AirAsiaMark />
             <div className="hidden h-6 w-px bg-border sm:block" />

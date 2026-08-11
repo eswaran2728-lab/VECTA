@@ -55,6 +55,7 @@ export function SealVerifyFields({
                 value={entries[seal.id] ?? ""}
                 onChange={(e) => onChange({ ...entries, [seal.id]: e.target.value })}
                 required
+                className="font-mono"
               />
             </div>
             <div className="flex items-center gap-2">
