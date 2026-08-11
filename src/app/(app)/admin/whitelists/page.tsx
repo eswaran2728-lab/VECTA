@@ -200,7 +200,7 @@ export default async function WhitelistsPage() {
                 <TableHead>Staff ID</TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>Pass No.</TableHead>
-                <TableHead title="Airport Pass Expiry Date">Airport Pass Expiry Date</TableHead>
+                <TableHead title="ADP Expiry Date">ADP Expiry Date</TableHead>
                 <TableHead>IC Number</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead />

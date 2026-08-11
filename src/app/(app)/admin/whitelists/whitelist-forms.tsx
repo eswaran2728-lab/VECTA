@@ -68,7 +68,6 @@ export function AddVehicleForm({ companies }: { companies: CateringCompany[] }) 
     <form action={action} className="flex flex-wrap items-end gap-2">
       <Input name="vehicle_number" placeholder="Vehicle number" required className="w-40" />
       <CompanySelect companies={companies} defaultCompanyId={defaultCompanyId} />
-      <Input name="airport_pass_number" placeholder="Pass no." className="w-32" />
       <Input name="pass_expiry_date" type="date" className="w-40" />
       <Select name="truck_type" defaultValue="" required className="w-36" title="Truck type">
         <option value="" disabled>
@@ -100,13 +99,6 @@ export function AddDriverForm({ companies }: { companies: CateringCompany[] }) {
       <Input name="name" placeholder="Driver name" required className="w-48" />
       <Input name="staff_id" placeholder="Staff ID" required className="w-32" />
       <CompanySelect companies={companies} defaultCompanyId={defaultCompanyId} />
-      <Input name="airport_pass_number" placeholder="Pass no." className="w-32" />
-      <Input
-        name="pass_expiry_date"
-        type="date"
-        className="w-40"
-        title="Airport Pass Expiry Date — used to track when the staff's airport pass expires."
-      />
       <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <input
           type="checkbox"
@@ -131,6 +123,12 @@ export function AddDriverForm({ companies }: { companies: CateringCompany[] }) {
           className="w-36 font-mono"
         />
       ) : null}
+      <div className="flex flex-col gap-1">
+        <label htmlFor="driver_pass_expiry_date" className="text-xs text-muted-foreground">
+          ADP Expiry Date (Optional)
+        </label>
+        <Input id="driver_pass_expiry_date" name="pass_expiry_date" type="date" className="w-40" />
+      </div>
       <Button type="submit" size="sm" disabled={pending}>
         {pending ? "Adding…" : "Add driver"}
       </Button>
