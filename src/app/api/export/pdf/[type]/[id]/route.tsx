@@ -7,7 +7,8 @@ import { Sec016Pdf } from "@/lib/export/pdf/Sec016Pdf";
 import { Sec014Pdf } from "@/lib/export/pdf/Sec014Pdf";
 import { Sec029Pdf } from "@/lib/export/pdf/Sec029Pdf";
 import { Sec018Pdf } from "@/lib/export/pdf/Sec018Pdf";
-import type { Sec016Row, Sec014Row, Sec029Row, Sec018Row } from "@/lib/types";
+import { Sec033Pdf } from "@/lib/export/pdf/Sec033Pdf";
+import type { Sec016Row, Sec014Row, Sec029Row, Sec018Row, Sec033Row } from "@/lib/types";
 
 export async function GET(
   _request: Request,
@@ -38,6 +39,9 @@ export async function GET(
       break;
     case "sec018":
       buffer = await renderToBuffer(<Sec018Pdf report={report as unknown as Sec018Row} />);
+      break;
+    case "sec033":
+      buffer = await renderToBuffer(<Sec033Pdf report={report as unknown as Sec033Row} />);
       break;
   }
 

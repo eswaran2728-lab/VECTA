@@ -67,7 +67,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 export const PROFILE_STATUSES = ["pending", "approved", "rejected"] as const;
 export type ProfileStatus = (typeof PROFILE_STATUSES)[number];
 
-export const REPORT_TYPES = ["sec016", "sec014", "sec029", "sec018"] as const;
+export const REPORT_TYPES = ["sec016", "sec014", "sec029", "sec018", "sec033"] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];
 
 export const REPORT_META: Record<
@@ -98,7 +98,17 @@ export const REPORT_META: Record<
     table: "report_sec018",
     route: "sec018",
   },
+  sec033: {
+    name: "AIRCRAFT HOLD CHECKLIST SEC 033",
+    code: "AA/SEC/F/033 Rev.02",
+    table: "report_sec033",
+    route: "sec033",
+  },
 };
+
+// Shown on SEC033/SEC013-style reports carrying sensitive security information.
+export const SECURITY_DISCLAIMER =
+  "This report contains sensitive security information intended solely for authorized AirAsia Security (AVSEC). Any unauthorized access, disclosure, duplication or distribution is strictly prohibited.";
 
 // SEC 029 checklist item catalogue — order matches the physical form.
 export const SEC029_ITEMS: {

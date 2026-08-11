@@ -20,6 +20,7 @@ export async function getFullRowsForExport(
     sec014: [],
     sec029: [],
     sec018: [],
+    sec033: [],
   };
 
   await Promise.all(

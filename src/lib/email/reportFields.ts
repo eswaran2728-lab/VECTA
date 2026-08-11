@@ -5,6 +5,7 @@ import type { Sec016FormValues } from "@/lib/schemas/sec016";
 import type { Sec014FormValues } from "@/lib/schemas/sec014";
 import type { Sec029FormValues } from "@/lib/schemas/sec029";
 import type { Sec018FormValues } from "@/lib/schemas/sec018";
+import type { Sec033FormValues } from "@/lib/schemas/sec033";
 import { SEC029_ITEMS } from "@/lib/reference-data";
 import type { EmailField } from "./reportEmailTemplate";
 
@@ -107,5 +108,21 @@ export function sec018EmailFields(v: Sec018FormValues): EmailField[] {
     { label: "Name", value: v.staff_name },
     { label: "Date & Time", value: v.date_time },
     ...patrolFields,
+  ];
+}
+
+export function sec033EmailFields(v: Sec033FormValues): EmailField[] {
+  const holdCheckFields = v.hold_checks.map((h, idx) => ({
+    label: `Hold Check ${idx + 1}`,
+    value: `Bay ${h.parking_bay_no} · Reg ${h.aircraft_registration_no}${h.remarks ? ` — ${h.remarks}` : ""}`,
+  }));
+  return [
+    { label: "Station", value: v.station },
+    { label: "Team", value: v.team },
+    { label: "Name", value: v.staff_name },
+    { label: "Staff ID", value: v.staff_id },
+    { label: "Date", value: v.report_date },
+    { label: "Time", value: v.report_time },
+    ...holdCheckFields,
   ];
 }

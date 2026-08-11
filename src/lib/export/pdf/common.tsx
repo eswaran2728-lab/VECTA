@@ -39,6 +39,14 @@ export function PdfSection({ title, note, children }: { title: string; note?: st
   );
 }
 
+export function PdfDisclaimer({ text }: { text: string }) {
+  return (
+    <View style={s.disclaimer}>
+      <Text style={s.disclaimerText}>{text}</Text>
+    </View>
+  );
+}
+
 export function PdfFooter({ submissionId, submittedAt }: { submissionId: string; submittedAt: string }) {
   return (
     <Text style={s.footer} fixed>

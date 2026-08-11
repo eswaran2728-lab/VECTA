@@ -166,6 +166,32 @@ export interface Sec018Row {
   patrols?: Sec018PatrolEntry[];
 }
 
+export interface Sec033HoldCheckEntry {
+  entry_no: number;
+  parking_bay_no: string;
+  aircraft_registration_no: string;
+  remarks: string | null;
+}
+
+export interface Sec033Row {
+  id: string;
+  profile_id: string;
+  status: ReportStatus;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  amendment_of: string | null;
+
+  station: string;
+  team: string;
+  staff_name: string;
+  staff_id: string;
+  report_date: string;
+  report_time: string;
+
+  hold_checks?: Sec033HoldCheckEntry[];
+}
+
 export interface BayBoardRow {
   id: string;
   station: string;
@@ -179,7 +205,7 @@ export interface BayBoardRow {
   created_at: string;
 }
 
-export type AnyReportRow = Sec016Row | Sec014Row | Sec029Row | Sec018Row;
+export type AnyReportRow = Sec016Row | Sec014Row | Sec029Row | Sec018Row | Sec033Row;
 
 export interface ReportListItem {
   id: string;

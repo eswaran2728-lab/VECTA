@@ -8,7 +8,7 @@ import {
   type QueuedSubmission,
 } from "@/lib/offline/db";
 import { clearLocalDraft } from "@/lib/offline/useDraftAutosave";
-import { submitSec016, submitSec014, submitSec029, submitSec018 } from "@/lib/reports/actions";
+import { submitSec016, submitSec014, submitSec029, submitSec018, submitSec033 } from "@/lib/reports/actions";
 import type { ReportType } from "@/lib/reference-data";
 
 const SUBMIT_FNS: Record<ReportType, (input: unknown) => Promise<{ ok: boolean }>> = {
@@ -16,6 +16,7 @@ const SUBMIT_FNS: Record<ReportType, (input: unknown) => Promise<{ ok: boolean }
   sec014: submitSec014,
   sec029: submitSec029,
   sec018: submitSec018,
+  sec033: submitSec033,
 };
 
 interface OfflineContextValue {

@@ -39,7 +39,7 @@ export default async function HomePage() {
         <section>
           <h2 className="section-title mb-3">New report</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {(["sec016", "sec014", "sec029", "sec018"] as const).map((type) => (
+            {(["sec016", "sec014", "sec029", "sec018", "sec033"] as const).map((type) => (
               <Link
                 key={type}
                 href={`/reports/${type}`}

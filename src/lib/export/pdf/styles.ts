@@ -13,6 +13,15 @@ export const pdfStyles = StyleSheet.create({
   label: { fontSize: 7, color: "#64748b", textTransform: "uppercase" },
   value: { fontSize: 9, fontWeight: 700 },
   note: { fontSize: 8, backgroundColor: "#fffbeb", color: "#92400e", padding: 4, marginBottom: 6 },
+  disclaimer: {
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fca5a5",
+    borderStyle: "solid",
+    padding: 6,
+    marginBottom: 10,
+  },
+  disclaimerText: { fontSize: 7, color: "#991b1b", fontFamily: "Helvetica-Bold" },
   checklistRow: {
     flexDirection: "row",
     justifyContent: "space-between",

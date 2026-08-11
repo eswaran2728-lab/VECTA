@@ -1,4 +1,4 @@
-import { SEC029_ITEMS } from "@/lib/reference-data";
+import { SEC029_ITEMS, SECURITY_DISCLAIMER } from "@/lib/reference-data";
 import { formatDateTimeMY, formatDateMY, formatTimeMY } from "@/lib/datetime";
 import type {
   Sec016Row,
@@ -8,6 +8,8 @@ import type {
   Sec029ItemEntry,
   Sec018Row,
   Sec018PatrolEntry,
+  Sec033Row,
+  Sec033HoldCheckEntry,
 } from "@/lib/types";
 
 export function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -208,6 +210,42 @@ export function Sec018View({ report }: { report: Sec018Row & { patrols?: Sec018P
                 {p.aircraft_type ?? "—"} · {p.reg_no ?? "—"}
               </p>
               <p className="text-slate-600 dark:text-slate-300">{p.description}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+export function Sec033View({ report }: { report: Sec033Row & { hold_checks?: Sec033HoldCheckEntry[] } }) {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3">
+        <p className="text-xs font-semibold text-red-800 dark:text-red-300">{SECURITY_DISCLAIMER}</p>
+      </div>
+
+      <ViewSection title="Staff Details">
+        <Field label="Station" value={report.station} />
+        <Field label="Team" value={report.team} />
+        <Field label="Name" value={report.staff_name} />
+        <Field label="Staff ID" value={report.staff_id} />
+        <Field label="Date" value={formatDateMY(report.report_date)} />
+        <Field label="Time" value={formatTimeMY(report.report_time)} />
+      </ViewSection>
+
+      <section className="card p-4 sm:p-5 space-y-3">
+        <h2 className="section-title">Hold Check Details</h2>
+        {(!report.hold_checks || report.hold_checks.length === 0) && (
+          <p className="text-sm text-slate-500">No hold check entries logged.</p>
+        )}
+        <div className="space-y-2">
+          {report.hold_checks?.map((h) => (
+            <div key={h.entry_no} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 text-sm">
+              <p className="font-semibold">
+                Hold Check #{h.entry_no} — Bay {h.parking_bay_no} · Reg {h.aircraft_registration_no}
+              </p>
+              {h.remarks && <p className="text-slate-600 dark:text-slate-300">{h.remarks}</p>}
             </div>
           ))}
         </div>

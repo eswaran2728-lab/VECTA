@@ -7,9 +7,16 @@ import { sec016Schema } from "@/lib/schemas/sec016";
 import { sec014Schema } from "@/lib/schemas/sec014";
 import { sec029Schema } from "@/lib/schemas/sec029";
 import { sec018Schema } from "@/lib/schemas/sec018";
+import { sec033Schema } from "@/lib/schemas/sec033";
 import { clearDraft } from "@/lib/reports/drafts";
 import { notifyReportSubmission } from "@/lib/email/notifyReportSubmission";
-import { sec016EmailFields, sec014EmailFields, sec029EmailFields, sec018EmailFields } from "@/lib/email/reportFields";
+import {
+  sec016EmailFields,
+  sec014EmailFields,
+  sec029EmailFields,
+  sec018EmailFields,
+  sec033EmailFields,
+} from "@/lib/email/reportFields";
 
 export interface ActionResult {
   ok: boolean;
@@ -279,6 +286,58 @@ export async function submitSec018(input: unknown): Promise<ActionResult> {
     submittedByName: v.staff_name,
     submittedByStaffNo: "",
     fields: sec018EmailFields(v),
+  });
+  revalidatePath("/history");
+  return { ok: true, id: report.id, submittedAt: report.submitted_at };
+}
+
+// ---------- SEC 033 ----------
+
+export async function submitSec033(input: unknown): Promise<ActionResult> {
+  const profile = await requireProfileId();
+  if (!profile) return { ok: false, error: "Not authenticated" };
+
+  const parsed = sec033Schema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; ") };
+  }
+  const v = parsed.data;
+
+  const supabase = createClient();
+  const { data: report, error } = await supabase
+    .from("report_sec033")
+    .insert({
+      profile_id: profile.id,
+      status: "submitted",
+      station: v.station,
+      team: v.team,
+      staff_name: v.staff_name,
+      staff_id: v.staff_id,
+      report_date: v.report_date,
+      report_time: v.report_time,
+    })
+    .select("id, submitted_at")
+    .single();
+
+  if (error) return { ok: false, error: error.message };
+
+  const rows = v.hold_checks.map((h, idx) => ({
+    report_id: report.id,
+    entry_no: idx + 1,
+    parking_bay_no: h.parking_bay_no,
+    aircraft_registration_no: h.aircraft_registration_no,
+    remarks: h.remarks || null,
+  }));
+  const { error: holdCheckError } = await supabase.from("report_sec033_hold_checks").insert(rows);
+  if (holdCheckError) return { ok: false, error: holdCheckError.message };
+
+  await clearDraft("sec033");
+  await notifyReportSubmission({
+    reportType: "sec033",
+    submittedAt: report.submitted_at,
+    submittedByName: v.staff_name,
+    submittedByStaffNo: v.staff_id,
+    fields: sec033EmailFields(v),
   });
   revalidatePath("/history");
   return { ok: true, id: report.id, submittedAt: report.submitted_at };

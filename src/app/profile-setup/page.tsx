@@ -57,7 +57,7 @@ export default async function ProfileSetupPage({
               defaultValue={profile?.staff_no ?? ""}
               className="input-base"
             />
-            <p className="field-hint">Leave blank if you're Admin, Management Team or Enforcement.</p>
+            <p className="field-hint">Leave blank if you&apos;re Admin, Management Team or Enforcement.</p>
           </div>
 
           <div>
@@ -93,7 +93,7 @@ export default async function ProfileSetupPage({
               className="input-base"
               placeholder="e.g. Alpha"
             />
-            <p className="field-hint">Leave blank if you're Admin, Management Team or Enforcement.</p>
+            <p className="field-hint">Leave blank if you&apos;re Admin, Management Team or Enforcement.</p>
           </div>
 
           <div>

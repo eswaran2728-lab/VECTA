@@ -58,6 +58,15 @@ const SHEET_COLUMNS: Record<ReportType, { key: string; header: string }[]> = {
     { key: "staff_name", header: "Name" },
     { key: "date_time", header: "Date/Time" },
   ],
+  sec033: [
+    { key: "submitted_at", header: "Submitted At" },
+    { key: "station", header: "Station" },
+    { key: "team", header: "Team" },
+    { key: "staff_name", header: "Name" },
+    { key: "staff_id", header: "Staff ID" },
+    { key: "report_date", header: "Date" },
+    { key: "report_time", header: "Time" },
+  ],
 };
 
 export function buildExportWorkbook(
