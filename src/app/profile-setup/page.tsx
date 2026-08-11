@@ -1,7 +1,7 @@
 import { getCurrentProfile, getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { updateProfile } from "@/lib/profile-actions";
-import { STATIONS, TEAMS, REQUESTABLE_ROLES, ROLE_LABELS } from "@/lib/reference-data";
+import { STATIONS, REQUESTABLE_ROLES, ROLE_LABELS } from "@/lib/reference-data";
 
 export default async function ProfileSetupPage({
   searchParams,
@@ -54,10 +54,10 @@ export default async function ProfileSetupPage({
             <input
               id="staff_no"
               name="staff_no"
-              required
               defaultValue={profile?.staff_no ?? ""}
               className="input-base"
             />
+            <p className="field-hint">Leave blank if you're Admin, Management Team or Enforcement.</p>
           </div>
 
           <div>
@@ -86,22 +86,14 @@ export default async function ProfileSetupPage({
             <label className="field-label" htmlFor="team">
               Team
             </label>
-            <select
+            <input
               id="team"
               name="team"
-              required
               defaultValue={profile?.team ?? ""}
               className="input-base"
-            >
-              <option value="" disabled>
-                Select team
-              </option>
-              {TEAMS.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
+              placeholder="e.g. Alpha"
+            />
+            <p className="field-hint">Leave blank if you're Admin, Management Team or Enforcement.</p>
           </div>
 
           <div>

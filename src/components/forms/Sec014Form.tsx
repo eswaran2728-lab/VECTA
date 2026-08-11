@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
-import { STATIONS, TEAMS, REPORT_META } from "@/lib/reference-data";
+import { STATIONS, REPORT_META } from "@/lib/reference-data";
 import { sec014Schema, type Sec014FormValues } from "@/lib/schemas/sec014";
 import { submitSec014 } from "@/lib/reports/actions";
 import { useOfflineSubmit } from "@/lib/offline/useOfflineSubmit";
@@ -151,12 +151,12 @@ export function Sec014Form({
             options={STATIONS}
             error={errors.station}
           />
-          <SelectField
+          <TextField
             name="team"
             register={register}
             label="Team"
             required
-            options={TEAMS}
+            placeholder="e.g. Alpha"
             error={errors.team}
           />
         </FieldRow>

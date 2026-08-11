@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { APP_NAME } from "@/lib/branding";
+import { STATIONS, REQUESTABLE_ROLES, ROLE_LABELS, ORG_WIDE_ROLES, type UserRole } from "@/lib/reference-data";
 
 type Mode = "signin" | "signup" | "forgot";
 type Status = "idle" | "working" | "error" | "checkEmail";
@@ -15,8 +16,15 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [name, setName] = useState("");
+  const [staffNo, setStaffNo] = useState("");
+  const [station, setStation] = useState("");
+  const [team, setTeam] = useState("");
+  const [role, setRole] = useState<UserRole | "">("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
+
+  const isOrgWideRole = (ORG_WIDE_ROLES as readonly string[]).includes(role);
 
   function resetMessages() {
     setStatus("idle");
@@ -61,6 +69,16 @@ export default function LoginPage() {
       setError("Passwords don't match.");
       return;
     }
+    if (!name.trim() || !station || !role) {
+      setStatus("error");
+      setError("Please fill in your name, station and role.");
+      return;
+    }
+    if (!isOrgWideRole && (!staffNo.trim() || !team.trim())) {
+      setStatus("error");
+      setError("Staff No and Team are required for this role.");
+      return;
+    }
 
     setStatus("working");
     const supabase = createClient();
@@ -78,8 +96,24 @@ export default function LoginPage() {
       return;
     }
 
-    if (data.session) {
-      // Email confirmation is off for this project — signed in immediately.
+    if (data.session && data.user) {
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({
+          name: name.trim(),
+          staff_no: isOrgWideRole ? "" : staffNo.trim(),
+          station,
+          team: isOrgWideRole ? "" : team.trim(),
+          role,
+        })
+        .eq("id", data.user.id);
+
+      if (profileError) {
+        setStatus("error");
+        setError(profileError.message);
+        return;
+      }
+
       router.push("/");
       router.refresh();
       return;
@@ -111,7 +145,7 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-sm card p-6">
+      <div className={`w-full card p-6 ${mode === "signup" ? "max-w-md" : "max-w-sm"}`}>
         <div className="text-center mb-6">
           <Image
             src="/icons/icon-192.png"
@@ -192,22 +226,119 @@ export default function LoginPage() {
               )}
 
               {mode === "signup" && (
-                <div>
-                  <label className="field-label" htmlFor="confirmPassword">
-                    Confirm password
-                  </label>
-                  <input
-                    id="confirmPassword"
-                    type="password"
-                    required
-                    minLength={6}
-                    autoComplete="new-password"
-                    className="input-base"
-                    placeholder="••••••••"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                  />
-                </div>
+                <>
+                  <div>
+                    <label className="field-label" htmlFor="confirmPassword">
+                      Confirm password
+                    </label>
+                    <input
+                      id="confirmPassword"
+                      type="password"
+                      required
+                      minLength={6}
+                      autoComplete="new-password"
+                      className="input-base"
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="field-label" htmlFor="name">
+                      Full name
+                    </label>
+                    <input
+                      id="name"
+                      required
+                      className="input-base"
+                      placeholder="As per staff ID"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="field-label" htmlFor="station">
+                      Station
+                    </label>
+                    <select
+                      id="station"
+                      required
+                      className="input-base"
+                      value={station}
+                      onChange={(e) => setStation(e.target.value)}
+                    >
+                      <option value="" disabled>
+                        Select station
+                      </option>
+                      {STATIONS.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="field-label" htmlFor="role">
+                      Role
+                    </label>
+                    <select
+                      id="role"
+                      required
+                      className="input-base"
+                      value={role}
+                      onChange={(e) => setRole(e.target.value as UserRole)}
+                    >
+                      <option value="" disabled>
+                        Select role
+                      </option>
+                      {REQUESTABLE_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {ROLE_LABELS[r]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {!isOrgWideRole && (
+                    <>
+                      <div>
+                        <label className="field-label" htmlFor="staffNo">
+                          Staff No / ID
+                        </label>
+                        <input
+                          id="staffNo"
+                          required
+                          className="input-base"
+                          value={staffNo}
+                          onChange={(e) => setStaffNo(e.target.value)}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="field-label" htmlFor="team">
+                          Team
+                        </label>
+                        <input
+                          id="team"
+                          required
+                          className="input-base"
+                          placeholder="e.g. Alpha"
+                          value={team}
+                          onChange={(e) => setTeam(e.target.value)}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <p className="field-hint">
+                    ASO submits reports. SO and DSE monitor and acknowledge their own team&apos;s
+                    reports. Enforcement and Management Team monitor every team. Your account needs
+                    Admin approval before you can sign in.
+                  </p>
+                </>
               )}
 
               {mode === "signin" && (

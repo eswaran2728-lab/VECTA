@@ -26,24 +26,41 @@ export const STATIONS = [
 
 export type Station = (typeof STATIONS)[number];
 
-export const TEAMS = ["ALPHA", "BRAVO", "CHARLIE", "DELTA"] as const;
-export type Team = (typeof TEAMS)[number];
+// Team names are free text, entered by hand — different stations use different team
+// names, so this is no longer a fixed list. Kept only as placeholder/example values.
+export const TEAM_EXAMPLES = ["ALPHA", "BRAVO", "CHARLIE", "DELTA"] as const;
 
 export const AIRCRAFT_TYPES = ["A320", "A321", "A330"] as const;
 export type AircraftType = (typeof AIRCRAFT_TYPES)[number];
 
-export const USER_ROLES = ["ASO", "SO", "DSE", "ENFORCEMENT", "ADMIN"] as const;
+export const USER_ROLES = ["ASO", "SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
 // Roles a new signup can request for themselves — ADMIN is never self-selectable,
 // it can only be granted by an existing admin.
-export const REQUESTABLE_ROLES = ["ASO", "SO", "DSE", "ENFORCEMENT"] as const;
+export const REQUESTABLE_ROLES = ["ASO", "SO", "DSE", "ENFORCEMENT", "MANAGEMENT"] as const;
+
+// Org-wide roles aren't tied to a specific team, so they don't need a staff ID/team on
+// their profile and they monitor every team's reports (not just their own).
+export const ORG_WIDE_ROLES = ["ENFORCEMENT", "MANAGEMENT", "ADMIN"] as const;
+
+// Mirrors the role_rank() SQL function — keep in sync. ASO < SO < DSE < ENFORCEMENT <
+// MANAGEMENT < ADMIN. Each role monitors reports from any strictly lower rank.
+export const ROLE_RANK: Record<UserRole, number> = {
+  ASO: 1,
+  SO: 2,
+  DSE: 3,
+  ENFORCEMENT: 4,
+  MANAGEMENT: 5,
+  ADMIN: 6,
+};
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   ASO: "ASO — Assistant Security Officer",
   SO: "SO — Security Officer",
   DSE: "DSE",
   ENFORCEMENT: "Enforcement",
+  MANAGEMENT: "Management Team",
   ADMIN: "Admin",
 };
 

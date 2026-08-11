@@ -94,13 +94,11 @@ export async function getTodayCounts(filters: DashboardFilters) {
   return { counts, submissions };
 }
 
-export async function getStationOfficers(station: string): Promise<Profile[]> {
+export async function getStationOfficers(station: string, team?: string): Promise<Profile[]> {
   const supabase = createClient();
-  const { data } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("station", station)
-    .eq("role", "ASO");
+  let query = supabase.from("profiles").select("*").eq("station", station).eq("role", "ASO");
+  if (team) query = query.eq("team", team);
+  const { data } = await query;
   return (data as Profile[]) ?? [];
 }
 
@@ -110,12 +108,16 @@ export interface ShiftComplianceRow {
   submittedAt: string | null;
 }
 
+// team should be the viewing SO/DSE's own team, since RLS already hides other teams'
+// submissions from them — without it, another team's ASOs would wrongly show as MISSING.
+// Org-wide viewers (Enforcement/Management/Admin) pass undefined to see every team.
 export async function getShiftCompliance(
   station: string,
   date: string,
+  team?: string,
 ): Promise<ShiftComplianceRow[]> {
-  const officers = await getStationOfficers(station);
-  const filters: DashboardFilters = { dateFrom: date, dateTo: date, station, reportType: "sec014" };
+  const officers = await getStationOfficers(station, team);
+  const filters: DashboardFilters = { dateFrom: date, dateTo: date, station, team, reportType: "sec014" };
   const submissions = await getFilteredSubmissions(filters);
   const submittedByOfficer = new Map(submissions.map((s) => [s.profile_id, s.submitted_at]));
 

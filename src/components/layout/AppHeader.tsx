@@ -15,7 +15,8 @@ export function AppHeader({
   backHref?: string;
 }) {
   const isMonitor = profile.role !== "ASO";
-  const isEnforcement = profile.role === "ENFORCEMENT" || profile.role === "ADMIN";
+  const isEnforcement =
+    profile.role === "ENFORCEMENT" || profile.role === "MANAGEMENT" || profile.role === "ADMIN";
   const isAdmin = profile.role === "ADMIN";
   const canSubmitDaily = profile.role === "SO" || profile.role === "DSE" || profile.role === "ENFORCEMENT";
 
@@ -47,7 +48,8 @@ export function AppHeader({
               {title ?? APP_NAME}
             </Link>
             <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-              {profile.name} · {profile.station} · {profile.team}
+              {profile.name} · {profile.station}
+              {profile.team ? ` · ${profile.team}` : ""}
             </p>
           </div>
         </div>

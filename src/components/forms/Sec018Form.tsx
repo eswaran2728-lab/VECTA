@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
-import { STATIONS, TEAMS, REPORT_META, AIRCRAFT_TYPES } from "@/lib/reference-data";
+import { STATIONS, REPORT_META, AIRCRAFT_TYPES } from "@/lib/reference-data";
 import { sec018Schema } from "@/lib/schemas/sec018";
 import { submitSec018 } from "@/lib/reports/actions";
 import { useOfflineSubmit } from "@/lib/offline/useOfflineSubmit";
@@ -136,7 +136,7 @@ export function Sec018Form({
         <p className="field-hint">Email: {profile.email}</p>
         <FieldRow>
           <SelectField name="station" register={register} label="Station" required options={STATIONS} error={errors.station} />
-          <SelectField name="team" register={register} label="Team" required options={TEAMS} error={errors.team} />
+          <TextField name="team" register={register} label="Team" required placeholder="e.g. Alpha" error={errors.team} />
         </FieldRow>
         <TextField name="staff_name" register={register} label="Name" required error={errors.staff_name} />
         <FieldRow>

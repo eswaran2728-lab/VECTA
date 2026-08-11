@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireRole, MONITOR_ROLES, landingPathForRole } from "@/lib/auth";
-import { STATIONS, TEAMS, REPORT_META, REPORT_TYPES, type ReportType } from "@/lib/reference-data";
+import { STATIONS, REPORT_META, REPORT_TYPES, ORG_WIDE_ROLES, type ReportType } from "@/lib/reference-data";
 import {
   getTodayCounts,
   getShiftCompliance,
@@ -38,9 +38,11 @@ export default async function DashboardPage({
     getDiscrepancyCount(filters),
   ]);
 
+  const isOrgWideViewer = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
   const complianceStation = filters.station ?? profile.station ?? "";
+  const complianceTeam = isOrgWideViewer ? filters.team : filters.team ?? profile.team ?? undefined;
   const compliance = complianceStation
-    ? await getShiftCompliance(complianceStation, filters.dateFrom)
+    ? await getShiftCompliance(complianceStation, filters.dateFrom, complianceTeam)
     : [];
 
   const flightCoverage = await getFlightCoverage(filters);
@@ -155,14 +157,13 @@ export default async function DashboardPage({
           </div>
           <div>
             <label className="field-label">Team</label>
-            <select name="team" defaultValue={filters.team ?? ""} className="input-base">
-              <option value="">All</option>
-              {TEAMS.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
+            <input
+              type="text"
+              name="team"
+              defaultValue={filters.team ?? ""}
+              placeholder="All"
+              className="input-base"
+            />
           </div>
           <div>
             <label className="field-label">Report type</label>
@@ -221,7 +222,8 @@ export default async function DashboardPage({
         {complianceStation && (
           <section className="card p-4">
             <h2 className="section-title mb-3">
-              Shift compliance — SEC 014 · {complianceStation} · {filters.dateFrom}
+              Shift compliance — SEC 014 · {complianceStation}
+              {complianceTeam ? ` · ${complianceTeam}` : ""} · {filters.dateFrom}
             </h2>
             {compliance.length === 0 && (
               <p className="text-sm text-slate-500">No officers registered at this station.</p>

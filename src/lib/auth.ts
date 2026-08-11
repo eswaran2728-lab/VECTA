@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "./supabase/server";
 import type { Profile } from "./types";
-import type { UserRole } from "./reference-data";
+import { ORG_WIDE_ROLES, type UserRole } from "./reference-data";
 
 export async function getCurrentUser() {
   const supabase = createClient();
@@ -29,7 +29,10 @@ export function landingPathForRole(role: UserRole): string {
 export async function requireProfile(): Promise<Profile> {
   const profile = await getCurrentProfile();
   if (!profile) redirect("/login");
-  if (!profile.name || !profile.station || !profile.team) {
+  // Org-wide roles (Enforcement/Management/Admin) aren't tied to a team, so a blank team
+  // is expected for them — only the team-scoped roles (ASO/SO/DSE) must have one set.
+  const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
+  if (!profile.name || !profile.station || (!isOrgWide && !profile.team)) {
     redirect("/profile-setup");
   }
   if (profile.status !== "approved") {
@@ -46,11 +49,13 @@ export async function requireRole(roles: UserRole[]): Promise<Profile> {
   return profile;
 }
 
-// Rank hierarchy: ASO < SO < DSE < ENFORCEMENT < ADMIN. Each role monitors every report
-// submitted by a strictly lower-ranked role (enforced identically in RLS via role_rank()).
-// ASO submits all 4 report types; SO/DSE/ENFORCEMENT additionally submit the SEC014 daily
-// report; ADMIN only monitors (plus gets an email copy of every submission) and approves users.
-export const MONITOR_ROLES: UserRole[] = ["SO", "DSE", "ENFORCEMENT", "ADMIN"];
+// Rank hierarchy: ASO < SO < DSE < ENFORCEMENT < MANAGEMENT < ADMIN. Each role monitors
+// every report submitted by a strictly lower-ranked role (enforced identically in RLS via
+// role_rank()) — SO/DSE are further limited to their own station+team, while
+// ENFORCEMENT/MANAGEMENT/ADMIN see every team. ASO submits all 4 report types; SO/DSE/
+// ENFORCEMENT additionally submit the SEC014 daily report. MANAGEMENT and ADMIN only
+// monitor; ADMIN additionally gets an email copy of every submission and approves users.
+export const MONITOR_ROLES: UserRole[] = ["SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"];
 export const DAILY_REPORT_ROLES: UserRole[] = ["ASO", "SO", "DSE", "ENFORCEMENT"];
-export const ENFORCEMENT_ROLES: UserRole[] = ["ENFORCEMENT", "ADMIN"];
+export const ENFORCEMENT_ROLES: UserRole[] = ["ENFORCEMENT", "MANAGEMENT", "ADMIN"];
 export const ADMIN_ROLES: UserRole[] = ["ADMIN"];

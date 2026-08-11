@@ -1,8 +1,8 @@
 import { requireRole, ADMIN_ROLES } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/layout/AppHeader";
-import { approveUser, rejectUser } from "@/lib/admin/actions";
-import { ROLE_LABELS } from "@/lib/reference-data";
+import { approveUser, rejectUser, updateUserAssignment } from "@/lib/admin/actions";
+import { ROLE_LABELS, STATIONS, USER_ROLES } from "@/lib/reference-data";
 import { formatDateTimeMY } from "@/lib/datetime";
 import type { Profile } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -64,24 +64,62 @@ export default async function AdminUsersPage() {
           <h2 className="section-title mb-3">All users</h2>
           <div className="divide-y divide-slate-200 dark:divide-slate-800 text-sm">
             {reviewed.map((p) => (
-              <div key={p.id} className="py-2 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-medium truncate">{p.name || p.email}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                    {p.email} · {ROLE_LABELS[p.role]} · {p.station}
-                  </p>
-                </div>
-                <span
-                  className={cn(
-                    "text-xs font-bold px-2 py-1 rounded-full shrink-0",
-                    p.status === "approved"
-                      ? "bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300"
-                      : "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300",
-                  )}
-                >
-                  {p.status.toUpperCase()}
-                </span>
-              </div>
+              <details key={p.id} className="py-2 group">
+                <summary className="flex items-center justify-between gap-3 cursor-pointer list-none">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{p.name || p.email}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                      {p.email} · {ROLE_LABELS[p.role]} · {p.station}
+                      {p.team ? ` · ${p.team}` : ""}
+                    </p>
+                  </div>
+                  <span
+                    className={cn(
+                      "text-xs font-bold px-2 py-1 rounded-full shrink-0",
+                      p.status === "approved"
+                        ? "bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300"
+                        : "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300",
+                    )}
+                  >
+                    {p.status.toUpperCase()}
+                  </span>
+                </summary>
+                <form action={updateUserAssignment} className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
+                  <input type="hidden" name="profileId" value={p.id} />
+                  <div>
+                    <label className="field-label">Station</label>
+                    <select name="station" defaultValue={p.station ?? ""} className="input-base">
+                      {STATIONS.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="field-label">Team</label>
+                    <input
+                      name="team"
+                      defaultValue={p.team ?? ""}
+                      placeholder="e.g. Alpha"
+                      className="input-base"
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label">Role</label>
+                    <select name="role" defaultValue={p.role} className="input-base">
+                      {USER_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {ROLE_LABELS[r]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button type="submit" className="btn-secondary">
+                    Save
+                  </button>
+                </form>
+              </details>
             ))}
             {reviewed.length === 0 && <p className="py-2 text-slate-500">No reviewed users yet.</p>}
           </div>
