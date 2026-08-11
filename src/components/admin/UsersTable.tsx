@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ROLE_LABELS, STATIONS, USER_ROLES } from "@/lib/reference-data";
-import { updateUserAssignment } from "@/lib/admin/actions";
+import { updateUserAssignment, approveUser, deactivateUser, deleteUserAccount } from "@/lib/admin/actions";
 import { formatDateTimeMY } from "@/lib/datetime";
 import type { Profile } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -57,7 +57,7 @@ export function UsersTable({ users }: { users: Profile[] }) {
               <th className="px-2 py-2 font-semibold">Station / Team</th>
               <th className="px-2 py-2 font-semibold">Status</th>
               <th className="px-2 py-2 font-semibold">Since</th>
-              <th className="px-5 py-2 font-semibold text-right">Save</th>
+              <th className="px-5 py-2 font-semibold text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
@@ -68,12 +68,23 @@ export function UsersTable({ users }: { users: Profile[] }) {
         </table>
       </div>
 
-      {/* Each row's edit form lives here, outside the table (a <form> can't be a valid
-          child of <tr>/<tbody>) — row inputs link back to it via the `form` attribute. */}
+      {/* Each row's forms live here, outside the table (a <form> can't be a valid child of
+          <tr>/<tbody>) — row inputs/buttons link back to them via the `form` attribute. */}
       {filtered.map((p) => (
-        <form key={p.id} id={`edit-user-${p.id}`} action={updateUserAssignment} className="hidden">
-          <input type="hidden" name="profileId" value={p.id} />
-        </form>
+        <div key={p.id} className="hidden">
+          <form id={`edit-user-${p.id}`} action={updateUserAssignment}>
+            <input type="hidden" name="profileId" value={p.id} />
+          </form>
+          <form id={`reactivate-user-${p.id}`} action={approveUser}>
+            <input type="hidden" name="profileId" value={p.id} />
+          </form>
+          <form id={`deactivate-user-${p.id}`} action={deactivateUser}>
+            <input type="hidden" name="profileId" value={p.id} />
+          </form>
+          <form id={`delete-user-${p.id}`} action={deleteUserAccount}>
+            <input type="hidden" name="profileId" value={p.id} />
+          </form>
+        </div>
       ))}
     </section>
   );
@@ -120,7 +131,7 @@ function UserRow({ profile: p }: { profile: Profile }) {
             "text-xs font-bold px-2 py-1 rounded-full",
             p.status === "approved"
               ? "bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300"
-              : p.status === "rejected"
+              : p.status === "rejected" || p.status === "deactivated"
                 ? "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300"
                 : "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",
           )}
@@ -131,10 +142,46 @@ function UserRow({ profile: p }: { profile: Profile }) {
       <td className="px-2 py-3 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
         {formatDateTimeMY(p.created_at, "dd MMM yyyy")}
       </td>
-      <td className="px-5 py-3 text-right">
-        <button form={formId} type="submit" className="btn-quiet font-semibold">
-          Save
-        </button>
+      <td className="px-5 py-3">
+        <div className="flex items-center justify-end gap-1 flex-wrap">
+          <button form={formId} type="submit" className="btn-quiet font-semibold">
+            Save
+          </button>
+          {p.status === "approved" ? (
+            <button
+              form={`deactivate-user-${p.id}`}
+              type="submit"
+              className="btn-quiet font-semibold text-amber-700 dark:text-amber-400"
+              onClick={(e) => {
+                if (!confirm(`Deactivate ${p.name || p.email}? They won't be able to sign in until reactivated.`)) {
+                  e.preventDefault();
+                }
+              }}
+            >
+              Deactivate
+            </button>
+          ) : (
+            <button form={`reactivate-user-${p.id}`} type="submit" className="btn-quiet font-semibold text-green-700 dark:text-green-400">
+              Reactivate
+            </button>
+          )}
+          <button
+            form={`delete-user-${p.id}`}
+            type="submit"
+            className="btn-quiet font-semibold text-red-600 dark:text-red-400"
+            onClick={(e) => {
+              if (
+                !confirm(
+                  `Permanently delete ${p.name || p.email}? This cannot be undone. Only allowed if they have no report history — use Deactivate otherwise.`,
+                )
+              ) {
+                e.preventDefault();
+              }
+            }}
+          >
+            Delete
+          </button>
+        </div>
       </td>
     </tr>
   );

@@ -102,6 +102,85 @@ export async function rejectUser(formData: FormData) {
   revalidatePath("/admin/users");
 }
 
+// For resigned/off-boarded staff: blocks their login immediately but keeps the account and
+// all their historical report submissions intact for audit purposes. Reversible — Admin can
+// reactivate (via approveUser) if it was a mistake or they return.
+export async function deactivateUser(formData: FormData) {
+  const admin = await requireRole(ADMIN_ROLES);
+  const profileId = String(formData.get("profileId") || "");
+  if (!profileId) return;
+
+  if (profileId === admin.id) {
+    redirect("/admin/users?error=" + encodeURIComponent("You cannot deactivate your own account."));
+  }
+
+  const supabase = createClient();
+  await supabase.from("profiles").update({ status: "deactivated" }).eq("id", profileId);
+  revalidatePath("/admin/users");
+}
+
+const REPORT_TABLES = [
+  "report_sec016",
+  "report_sec014",
+  "report_sec029",
+  "report_sec018",
+  "report_sec033",
+  "report_sec013",
+] as const;
+
+// Permanently removes the account (Supabase Auth user + profile). Only allowed when the
+// person has no report submissions at all — deleting a profile with report history would
+// either fail outright (reports keep a required, non-cascading reference to it) or silently
+// destroy official security records, neither of which is safe to do from a button click.
+// Deactivate is the right call for anyone who has actually submitted reports.
+export async function deleteUserAccount(formData: FormData) {
+  const admin = await requireRole(ADMIN_ROLES);
+  const profileId = String(formData.get("profileId") || "");
+  if (!profileId) return;
+
+  if (profileId === admin.id) {
+    redirect("/admin/users?error=" + encodeURIComponent("You cannot delete your own account."));
+  }
+
+  const supabase = createClient();
+  const [reportCounts, ackCount, bayBoardCount] = await Promise.all([
+    Promise.all(
+      REPORT_TABLES.map((table) => supabase.from(table).select("id", { count: "exact", head: true }).eq("profile_id", profileId)),
+    ),
+    supabase.from("report_acknowledgements").select("id", { count: "exact", head: true }).eq("acknowledged_by", profileId),
+    supabase.from("bay_board").select("id", { count: "exact", head: true }).eq("created_by", profileId),
+  ]);
+  const totalReports = reportCounts.reduce((sum, r) => sum + (r.count ?? 0), 0);
+  const totalOther = (ackCount.count ?? 0) + (bayBoardCount.count ?? 0);
+  if (totalReports > 0 || totalOther > 0) {
+    redirect(
+      "/admin/users?error=" +
+        encodeURIComponent(
+          `Can't delete — this account has ${totalReports} submitted report(s) and ${totalOther} other linked record(s) (acknowledgements/bay board entries). Use Deactivate instead to keep their records intact.`,
+        ),
+    );
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
+    redirect("/admin/users?error=" + encodeURIComponent("Server is missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY."));
+  }
+
+  try {
+    const adminClient = createAdminClient();
+    const { error } = await adminClient.auth.admin.deleteUser(profileId);
+    if (error) {
+      redirect("/admin/users?error=" + encodeURIComponent(error.message));
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unexpected error deleting account.";
+    redirect("/admin/users?error=" + encodeURIComponent(`deleteUser threw: ${message}`));
+  }
+
+  revalidatePath("/admin/users");
+}
+
 // Lets Admin reassign someone's station/team mid-month (e.g. Kamal moves from Bravo to
 // Alpha) or correct their role — including promoting to ADMIN, which users can never
 // self-select.

@@ -64,7 +64,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: "Admin",
 };
 
-export const PROFILE_STATUSES = ["pending", "approved", "rejected"] as const;
+export const PROFILE_STATUSES = ["pending", "approved", "rejected", "deactivated"] as const;
 export type ProfileStatus = (typeof PROFILE_STATUSES)[number];
 
 export const REPORT_TYPES = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013"] as const;

@@ -11,12 +11,21 @@ export default async function PendingApprovalPage() {
   if (profile.status === "approved") redirect(landingPathForRole(profile.role));
 
   const rejected = profile.status === "rejected";
+  const deactivated = profile.status === "deactivated";
 
   return (
     <main className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-sm card p-6 text-center space-y-3">
         <h1 className="text-xl font-bold">{APP_NAME}</h1>
-        {rejected ? (
+        {deactivated ? (
+          <>
+            <p className="font-semibold text-red-600 dark:text-red-400">Account deactivated</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Your access to {APP_NAME} has been deactivated. Contact your administrator if you
+              believe this is a mistake.
+            </p>
+          </>
+        ) : rejected ? (
           <>
             <p className="font-semibold text-red-600 dark:text-red-400">Access request declined</p>
             <p className="text-sm text-slate-500 dark:text-slate-400">
