@@ -5,14 +5,11 @@ import {
   getTodayCounts,
   getShiftCompliance,
   getFlightCoverage,
-  getDiscrepancyCount,
-  buildShiftSummary,
   type DashboardFilters,
 } from "@/lib/dashboard/queries";
 import { getOpenBayBoard } from "@/lib/reports/queries";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
-import { CopyButton } from "@/components/dashboard/CopyButton";
 import { formatDateTimeMY, todayISODateMY } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { searchDailyReportsByStaff, searchAircraftReportsByStaff } from "@/lib/search/queries";
@@ -33,10 +30,9 @@ export default async function DashboardPage({
     reportType: (searchParams.reportType as ReportType) || undefined,
   };
 
-  const [{ counts, submissions }, bayBoard, discrepancyCount] = await Promise.all([
+  const [{ counts, submissions }, bayBoard] = await Promise.all([
     getTodayCounts(filters),
     getOpenBayBoard(filters.station),
-    getDiscrepancyCount(filters),
   ]);
 
   const isOrgWideViewer = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
@@ -49,12 +45,6 @@ export default async function DashboardPage({
   const flightCoverage = await getFlightCoverage(filters);
 
   const overdue = bayBoard.filter((b) => b.hoursOnGround >= 4);
-  const shiftSummary = buildShiftSummary(
-    filters.team ?? "ALL",
-    filters.dateFrom,
-    counts,
-    discrepancyCount,
-  );
 
   const staffQuery = (searchParams.staffQuery || "").trim();
   const staffDate = searchParams.staffDate || today;
@@ -274,14 +264,6 @@ export default async function DashboardPage({
             ))}
             {flightCoverage.length === 0 && <p className="text-slate-500 py-2">No SEC 016 submissions in range.</p>}
           </div>
-        </section>
-
-        <section className="card p-4 space-y-3">
-          <h2 className="section-title">Shift summary</h2>
-          <p className="text-sm bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 font-mono">
-            {shiftSummary}
-          </p>
-          <CopyButton text={shiftSummary} />
         </section>
 
         <section className="card p-4">
