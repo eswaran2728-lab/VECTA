@@ -16,9 +16,8 @@ interface NavItem {
 }
 
 // ASO submits reports, so their primary surface is Home + the report FAB. Monitoring
-// roles land on the dashboard instead and get Search in place of the Bay Board.
+// roles land on the dashboard instead.
 function navFor(role: UserRole): { left: NavItem[]; right: NavItem[]; fab: { href: string; label: string } } {
-  const isEnforcement = role === "ENFORCEMENT" || role === "MANAGEMENT" || role === "ADMIN";
   const canSubmitDaily = role === "SO" || role === "DSE" || role === "ENFORCEMENT";
 
   if (role === "ASO") {
@@ -41,9 +40,7 @@ function navFor(role: UserRole): { left: NavItem[]; right: NavItem[]; fab: { hre
       { href: "/history", label: "HISTORY", round: "50%", rot: "0deg", match: ["/reports/view"] },
     ],
     right: [
-      isEnforcement
-        ? { href: "/search", label: "SEARCH", round: "2px", rot: "45deg" }
-        : { href: "/bay-board", label: "BAY BOARD", round: "2px", rot: "45deg" },
+      { href: "/bay-board", label: "BAY BOARD", round: "2px", rot: "45deg" },
       { href: "/profile", label: "PROFILE", round: "7px", rot: "0deg" },
     ],
     fab: canSubmitDaily ? { href: "/reports/sec014", label: "REPORT" } : { href: "/dashboard", label: "REVIEW" },

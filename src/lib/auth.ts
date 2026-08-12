@@ -57,5 +57,4 @@ export async function requireRole(roles: UserRole[]): Promise<Profile> {
 // monitor; ADMIN additionally gets an email copy of every submission and approves users.
 export const MONITOR_ROLES: UserRole[] = ["SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"];
 export const DAILY_REPORT_ROLES: UserRole[] = ["ASO", "SO", "DSE", "ENFORCEMENT"];
-export const ENFORCEMENT_ROLES: UserRole[] = ["ENFORCEMENT", "MANAGEMENT", "ADMIN"];
 export const ADMIN_ROLES: UserRole[] = ["ADMIN"];

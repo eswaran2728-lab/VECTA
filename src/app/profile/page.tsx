@@ -11,14 +11,11 @@ export default async function ProfilePage() {
   const profile = await requireProfile();
 
   const isMonitor = profile.role !== "ASO";
-  const isEnforcement =
-    profile.role === "ENFORCEMENT" || profile.role === "MANAGEMENT" || profile.role === "ADMIN";
 
   const menu: { label: string; href: string; right?: string }[] = [
     { label: "My Reports", href: "/history" },
     ...(isMonitor ? [{ label: "Dashboard", href: "/dashboard" }] : []),
     { label: "Bay Board", href: "/bay-board" },
-    ...(isEnforcement ? [{ label: "Search Reports", href: "/search" }] : []),
     ...(profile.role === "ADMIN" ? [{ label: "User Management", href: "/admin/users" }] : []),
     { label: "Change Password", href: "/auth/update-password" },
   ];
