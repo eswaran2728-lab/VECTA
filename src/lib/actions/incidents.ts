@@ -22,7 +22,7 @@ export async function resolveIncident(
   _prev: ResolveState,
   formData: FormData
 ): Promise<ResolveState> {
-  const admin = await requireRole(["supervisor"]);
+  const admin = await requireRole(["supervisor", "enforcement"]);
 
   const incidentId = String(formData.get("incident_id") ?? "");
   const nextStatus = String(formData.get("status") ?? "") as IncidentStatus;

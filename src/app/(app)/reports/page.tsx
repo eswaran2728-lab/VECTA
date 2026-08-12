@@ -34,7 +34,7 @@ export default async function ReportsPage({
 }: {
   searchParams: Promise<{ date?: string; month?: string; from?: string; to?: string }>;
 }) {
-  await requireRole(["supervisor"]);
+  await requireRole(["supervisor", "enforcement"]);
   const params = await searchParams;
   const supabase = await createClient();
 
