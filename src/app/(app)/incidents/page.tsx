@@ -30,6 +30,7 @@ type IncidentRow = Incident & { transactions: Pick<Transaction, "transaction_num
 
 export default async function IncidentsPage() {
   const profile = await requireProfile();
+  const canResolve = profile.role === "supervisor" || profile.role === "enforcement";
   const supabase = await createClient();
 
   const { data } = await supabase
@@ -73,7 +74,7 @@ export default async function IncidentsPage() {
               <TableHead>Description</TableHead>
               <TableHead>Reported by</TableHead>
               <TableHead>When</TableHead>
-              {profile.role === "supervisor" ? <TableHead>Resolution</TableHead> : null}
+              {canResolve ? <TableHead>Resolution</TableHead> : null}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -125,7 +126,7 @@ export default async function IncidentsPage() {
                       />
                     </span>
                   </TableCell>
-                  {profile.role === "supervisor" ? (
+                  {canResolve ? (
                     <TableCell className="min-w-56">
                       <IncidentResolve
                         incidentId={incident.id}

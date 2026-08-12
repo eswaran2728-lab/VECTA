@@ -299,7 +299,9 @@ export default async function TransactionDetailPage({
               </Button>
             </a>
           ) : null}
-          {transaction.status !== "COMPLETED" || profile.role === "supervisor" ? (
+          {transaction.status !== "COMPLETED" ||
+          profile.role === "supervisor" ||
+          profile.role === "enforcement" ? (
             <Link href={`/transactions/${id}/incident`}>
               <Button variant="destructive" size="lg">
                 Report Incident
@@ -558,7 +560,7 @@ export default async function TransactionDetailPage({
             responsibleRole="receiver"
             viewerRole={profile.role}
           />
-        ) : profile.role === "supervisor" ? (
+        ) : profile.role === "supervisor" || profile.role === "enforcement" ? (
           <Card className="border-dashed">
             <CardHeader><CardTitle className="text-base">Part D — Delivery</CardTitle></CardHeader>
             <CardContent className="text-sm text-muted-foreground">Not applicable to inbound transactions.</CardContent>

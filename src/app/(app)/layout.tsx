@@ -17,7 +17,7 @@ import { requireProfile } from "@/lib/auth";
 import { signOut } from "@/lib/actions/auth";
 import { getLang } from "@/lib/actions/language";
 import { LanguageToggle } from "@/components/language-toggle";
-import { ROLE_LABELS } from "@/lib/constants";
+import { ROLE_COLORS, ROLE_LABELS } from "@/lib/constants";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { PwaProvider } from "@/components/pwa-provider";
@@ -53,7 +53,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       href: "/reports",
       label: "Reports",
       icon: FileBarChart,
-      show: profile.role === "supervisor",
+      show: profile.role === "supervisor" || profile.role === "enforcement",
     },
     {
       href: "/admin/users",
@@ -121,10 +121,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             {/* Persistent role badge: makes it unambiguous which role is acting,
                 especially AVSEC Post 2 vs Post 6 vs PIC/Receiver/Admin. */}
             <span
-              className="hidden items-center gap-1 rounded-full border bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground md:inline-flex"
+              className={`hidden items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium md:inline-flex ${ROLE_COLORS[profile.role]}`}
               title={`${ROLE_LABELS[profile.role]} · Staff ID ${profile.staff_id}`}
             >
-              <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+              <ShieldCheck className="h-3.5 w-3.5" />
               {ROLE_LABELS[profile.role]} · Staff ID{" "}
               <span className="font-mono">{profile.staff_id}</span>
             </span>
