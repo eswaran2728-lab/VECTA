@@ -21,6 +21,7 @@ import { ROLE_LABELS } from "@/lib/constants";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { PwaProvider } from "@/components/pwa-provider";
+import { InstallPrompt } from "@/components/install-prompt";
 import { BrandMark } from "@/components/brand-mark";
 import { AirAsiaMark } from "@/components/airasia-mark";
 import { Button } from "@/components/ui/button";
@@ -141,6 +142,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </header>
+
+      <InstallPrompt />
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 pb-24 md:pb-6">{children}</main>
 
