@@ -20,6 +20,19 @@ export const ROLE_LABELS: Record<Role, string> = {
   // Internal DB role value stays 'supervisor' (RLS, policies, seed data all
   // key off it) — only the user-facing label changes to "Admin".
   supervisor: "Admin",
+  // Full read visibility + incident lifecycle power, same as supervisor,
+  // but no whitelist/user/archive admin access and no checkpoint actions.
+  enforcement: "Enforcement",
+};
+
+/** Distinct color per role for the persistent header badge (AVSEC role identification). */
+export const ROLE_COLORS: Record<Role, string> = {
+  warehouse_pic: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200",
+  post2_avsec: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200",
+  post6_avsec: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200",
+  receiver: "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200",
+  supervisor: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+  enforcement: "bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/40 dark:text-fuchsia-200",
 };
 
 export const STATUS_LABELS: Record<TransactionStatus, string> = {
@@ -143,4 +156,5 @@ export const ALL_ROLES: Role[] = [
   "post6_avsec",
   "receiver",
   "supervisor",
+  "enforcement",
 ];

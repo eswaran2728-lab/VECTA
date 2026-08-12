@@ -3,7 +3,8 @@
   | "post2_avsec"
   | "post6_avsec"
   | "receiver"
-  | "supervisor";
+  | "supervisor"
+  | "enforcement";
 
 export type TransactionStatus =
   | "CREATED"
