@@ -249,17 +249,11 @@ export function PartAForm({
                 name="vehicle_number"
                 placeholder="e.g. WKD 4521"
                 autoCapitalize="characters"
-                list="vehicle-whitelist"
                 value={vehicleNumber}
                 onChange={(e) => setVehicleNumber(e.target.value)}
                 required
                 className="font-mono"
               />
-              <datalist id="vehicle-whitelist">
-                {vehicles.map((v) => (
-                  <option key={v.vehicle_number} value={v.vehicle_number} />
-                ))}
-              </datalist>
               {vehicleHint ? (
                 <p className={`text-xs ${vehicleHint.className}`}>{vehicleHint.text}</p>
               ) : null}
@@ -269,19 +263,11 @@ export function PartAForm({
               <Input
                 id="driver_id"
                 name="driver_id"
-                list="driver-whitelist"
                 value={driverId}
                 onChange={(e) => setDriverId(e.target.value)}
                 required
                 className="font-mono"
               />
-              <datalist id="driver-whitelist">
-                {drivers.map((d) => (
-                  <option key={d.staff_id} value={d.staff_id}>
-                    {d.name}
-                  </option>
-                ))}
-              </datalist>
               {driverHint ? (
                 <p className={`text-xs ${driverHint.className}`}>{driverHint.text}</p>
               ) : null}
@@ -319,7 +305,6 @@ export function PartAForm({
                 name="escort_vehicle_number"
                 placeholder="e.g. WKD 9912"
                 autoCapitalize="characters"
-                list="vehicle-whitelist"
                 value={escortVehicleNumber}
                 onChange={(e) => setEscortVehicleNumber(e.target.value)}
                 className="font-mono"
