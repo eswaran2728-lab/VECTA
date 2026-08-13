@@ -86,6 +86,7 @@ export function PartAForm({
   const [signature, setSignature] = useState<string | null>(null);
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [driverId, setDriverId] = useState("");
+  const [driverName, setDriverName] = useState("");
   const [escortOfficerName, setEscortOfficerName] = useState("");
   const [escortOfficerStaffId, setEscortOfficerStaffId] = useState("");
   const [escortVehicleNumber, setEscortVehicleNumber] = useState("");
@@ -114,34 +115,40 @@ export function PartAForm({
     return rec.pass_expiry_date && rec.pass_expiry_date < today ? "expired" : "matched";
   }, [vehicleNumber, vehicles, today]);
 
-  const driverState: WhitelistState = useMemo(() => {
+  const matchedDriver = useMemo(() => {
     const d = driverId.trim().toUpperCase();
-    if (!d) return "empty";
-    const rec = drivers.find((x) => x.staff_id.toUpperCase() === d);
-    if (!rec) return "unlisted";
-    return rec.pass_expiry_date && rec.pass_expiry_date < today ? "expired" : "matched";
-  }, [driverId, drivers, today]);
+    if (!d) return null;
+    return drivers.find((x) => x.staff_id.toUpperCase() === d) ?? null;
+  }, [driverId, drivers]);
 
-  const escortVehicleState: WhitelistState = useMemo(() => {
-    const v = escortVehicleNumber.trim().toUpperCase();
-    if (!v) return "empty";
-    const rec = vehicles.find((x) => x.vehicle_number.toUpperCase() === v);
-    if (!rec) return "unlisted";
-    return rec.pass_expiry_date && rec.pass_expiry_date < today ? "expired" : "matched";
-  }, [escortVehicleNumber, vehicles, today]);
+  const driverState: WhitelistState = useMemo(() => {
+    if (!driverId.trim()) return "empty";
+    if (!matchedDriver) return "unlisted";
+    return matchedDriver.pass_expiry_date && matchedDriver.pass_expiry_date < today
+      ? "expired"
+      : "matched";
+  }, [driverId, matchedDriver, today]);
+
+  // The driver ID resolved to a whitelist entry, but the typed name must
+  // also match the name on file — an ID alone shouldn't wave through
+  // whoever is actually driving.
+  const driverNameMismatch =
+    matchedDriver !== null &&
+    driverName.trim() !== "" &&
+    driverName.trim().toUpperCase() !== matchedDriver.name.trim().toUpperCase();
 
   const vehicleHint = whitelistHint(vehicleState);
   const driverHint = whitelistHint(driverState);
-  const escortVehicleHint = whitelistHint(escortVehicleState);
   const expiredBlocked = state.error?.startsWith("EXPIRED_PASS:") ?? false;
 
   // Escort officer name / staff ID / escort vehicle number are all-or-nothing.
+  // Deliberately NOT checked against the vehicle/driver whitelist — escort
+  // staffing and vehicles rotate and aren't registered catering entries.
   const escortAny = escortOfficerName.trim() || escortOfficerStaffId.trim() || escortVehicleNumber.trim();
   const escortComplete =
     !escortAny ||
     (escortOfficerName.trim() !== "" && escortOfficerStaffId.trim() !== "" && escortVehicleNumber.trim() !== "");
-  const anyUnlisted =
-    vehicleState === "unlisted" || driverState === "unlisted" || escortVehicleState === "unlisted";
+  const anyUnlisted = vehicleState === "unlisted" || driverState === "unlisted";
 
   const flow = direction
     ? ["A · Warehouse", ...WORKFLOWS[direction].map((s) => s.shortLabel)].join("  →  ")
@@ -274,7 +281,19 @@ export function PartAForm({
             </div>
             <div className="space-y-2">
               <Label htmlFor="driver_name">Driver Name</Label>
-              <Input id="driver_name" name="driver_name" required />
+              <Input
+                id="driver_name"
+                name="driver_name"
+                value={driverName}
+                onChange={(e) => setDriverName(e.target.value)}
+                required
+              />
+              {driverNameMismatch ? (
+                <p className="text-xs font-semibold text-red-600">
+                  ✕ Does not match the whitelisted name for this driver ID — submission will be
+                  blocked. / Tidak sepadan dengan nama dalam senarai putih untuk ID pemandu ini.
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="escort_officer_name">Escort Officer (optional)</Label>
@@ -309,9 +328,6 @@ export function PartAForm({
                 onChange={(e) => setEscortVehicleNumber(e.target.value)}
                 className="font-mono"
               />
-              {escortVehicleHint ? (
-                <p className={`text-xs ${escortVehicleHint.className}`}>{escortVehicleHint.text}</p>
-              ) : null}
               {!escortComplete ? (
                 <p className="text-xs font-semibold text-red-600">
                   Escort officer name, staff ID and escort vehicle number must all be filled in
@@ -417,6 +433,14 @@ export function PartAForm({
             </p>
           ) : null}
 
+          {driverNameMismatch ? (
+            <p className="rounded-md bg-red-100 p-3 text-sm font-semibold text-red-800 dark:bg-red-900/40 dark:text-red-200">
+              WHITELIST VIOLATION — the driver name does not match the whitelisted name on file for
+              this driver ID. Submission is blocked. / PELANGGARAN SENARAI PUTIH — nama pemandu
+              tidak sepadan dengan senarai putih.
+            </p>
+          ) : null}
+
           <div className="rounded-md bg-muted p-3 text-sm">
             <p>
               <span className="text-muted-foreground">PIC:</span>{" "}
@@ -455,6 +479,7 @@ export function PartAForm({
                   !sealsReady ||
                   cargoTypes.length === 0 ||
                   anyUnlisted ||
+                  driverNameMismatch ||
                   !escortComplete
                 }
               >

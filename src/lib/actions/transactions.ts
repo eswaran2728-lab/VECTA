@@ -328,9 +328,12 @@ export async function createTransaction(
 
   // Whitelist checks: matched entries link to the registry; expired passes
   // block (or escalate on explicit confirmation); unlisted vehicle/driver
-  // (main or escort) is a hard block — see enforce_whitelist_on_create().
+  // is a hard block — see enforce_whitelist_on_create(). The escort
+  // officer/vehicle is deliberately NOT checked against any whitelist:
+  // escort staffing rotates and isn't a registered catering vehicle/driver,
+  // unlike the primary vehicle and driver.
   const today = new Date().toISOString().slice(0, 10);
-  const [vehicleRes, driverRes, escortVehicleRes] = await Promise.all([
+  const [vehicleRes, driverRes] = await Promise.all([
     supabase
       .from("vehicles")
       .select("id, pass_expiry_date, is_active")
@@ -339,22 +342,13 @@ export async function createTransaction(
       .maybeSingle(),
     supabase
       .from("drivers")
-      .select("id, pass_expiry_date, is_active")
+      .select("id, name, pass_expiry_date, is_active")
       .eq("staff_id", driverId)
       .eq("is_active", true)
       .maybeSingle(),
-    escortVehicleNumber
-      ? supabase
-          .from("vehicles")
-          .select("id, pass_expiry_date, is_active")
-          .eq("vehicle_number", escortVehicleNumber)
-          .eq("is_active", true)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
   ]);
   const vehicleRec = vehicleRes.data;
   const driverRec = driverRes.data;
-  const escortVehicleRec = escortVehicleRes.data;
 
   const expiredItems: string[] = [];
   if (vehicleRec?.pass_expiry_date && vehicleRec.pass_expiry_date < today) {
@@ -362,9 +356,6 @@ export async function createTransaction(
   }
   if (driverRec?.pass_expiry_date && driverRec.pass_expiry_date < today) {
     expiredItems.push(`driver ${driverId}`);
-  }
-  if (escortVehicleRec?.pass_expiry_date && escortVehicleRec.pass_expiry_date < today) {
-    expiredItems.push(`escort vehicle ${escortVehicleNumber}`);
   }
   if (expiredItems.length > 0 && !escalateExpired) {
     return {
@@ -378,19 +369,30 @@ export async function createTransaction(
   // Strict whitelist: a vehicle/driver not on the active whitelist is a
   // hard block, same severity tier as missing signature/seals — no more
   // "allowed with mandatory remarks" escape hatch. Only the expired-pass
-  // path above stays an override (a vehicle already at the gate). Escort
-  // vehicle goes through the same whitelist system as the primary vehicle
-  // so it isn't a side door around this rule.
+  // path above stays an override (a vehicle already at the gate).
   const unlisted: string[] = [];
   if (!vehicleRec) unlisted.push(`vehicle ${vehicleNumber}`);
   if (!driverRec) unlisted.push(`driver ${driverId}`);
-  if (escortVehicleNumber && !escortVehicleRec) unlisted.push(`escort vehicle ${escortVehicleNumber}`);
   if (unlisted.length > 0) {
     return {
       error:
         `WHITELIST_VIOLATION: ${unlisted.join(" and ")} not on the active whitelist. Ask an Admin to add ` +
         `this vehicle/driver to the whitelist before creating this transaction. ` +
         `/ Tiada dalam senarai putih aktif — hubungi Admin untuk menambah kenderaan/pemandu ini sebelum mencipta transaksi.`,
+    };
+  }
+
+  // The driver ID resolved to a whitelist entry above, but the name typed
+  // in must match the name on file for that ID — otherwise a real,
+  // whitelisted driver's ID could be used to wave through a different
+  // (unlisted) person driving the vehicle.
+  if (driverRec && driverRec.name.trim().toUpperCase() !== driverName.trim().toUpperCase()) {
+    return {
+      error:
+        `WHITELIST_VIOLATION: driver name "${driverName}" does not match the whitelisted name on file for ` +
+        `driver ID ${driverId}. Enter the driver's registered name exactly, or ask an Admin to correct the ` +
+        `whitelist entry if the name on file is wrong. ` +
+        `/ Nama pemandu tidak sepadan dengan nama dalam senarai putih untuk ID pemandu ini.`,
     };
   }
 

@@ -71,20 +71,34 @@ processing until an Admin resolves it).
 
 Captures: direction, flight number, aircraft reg, catering company, station,
 vehicle number, driver ID + name, optional escort officer (name + staff ID +
-**escort vehicle number** — all three are all-or-nothing), cargo type
-checklist (Food & Beverage / Perishable / Duty Free / Merchandise / Vehicle
-Maintenance, per IFCSF), item counts (carts/SMU/pallets/boxes/oven racks),
-one or more seals (number + type + manually-picked color), vehicle search
-confirmation, and a digital signature. Generates the transaction number
-(`ICMS-YYYY-000001`, per-year Postgres sequence) and a signed QR pass.
+**escort vehicle number** — all three are all-or-nothing, NOT whitelist-checked,
+see below), cargo type checklist (Food & Beverage / Perishable / Duty Free /
+Merchandise / Vehicle Maintenance, per IFCSF), item counts
+(carts/SMU/pallets/boxes/oven racks), one or more seals (number + type +
+manually-picked color), vehicle search confirmation, and a digital signature.
+Generates the transaction number (`ICMS-YYYY-000001`, per-year Postgres
+sequence) and a signed QR pass. Vehicle/Driver ID fields require manual
+typing — no browser autocomplete/pick-list of whitelisted values (removed
+2026-08-13, same rationale as Part B/C observed-field auto-fill removal).
 
 **Hard block**: the vehicle and driver must both resolve to an active
 whitelist entry, or Part A is rejected outright (`WHITELIST_VIOLATION`) —
 both client-side, in the server action, and by a DB trigger
-(`enforce_whitelist_on_create`), so no insert path can bypass it. An expired
-pass on an otherwise-whitelisted vehicle/driver is a *different*, explicit
-escape hatch — the PIC can record it anyway, which auto-raises an
-`EXPIRED_PASS` incident instead of hard-blocking.
+(`enforce_whitelist_on_create`), so no insert path can bypass it. As of
+2026-08-13, the typed **Driver Name** must also match the whitelisted name on
+file for that driver ID (case/whitespace-insensitive) — an ID alone can no
+longer wave through a different, unlisted person driving the vehicle; same
+`WHITELIST_VIOLATION` severity, same three-layer enforcement. An expired pass
+on an otherwise-whitelisted vehicle/driver is a *different*, explicit escape
+hatch — the PIC can record it anyway, which auto-raises an `EXPIRED_PASS`
+incident instead of hard-blocking.
+
+**Escort officer/vehicle is NOT whitelist-checked** (changed 2026-08-13):
+escort staffing and vehicles rotate and were never registered catering
+entries, so requiring a whitelist match was blocking legitimate escorts. Only
+the all-or-nothing pairing rule (`transactions_escort_pairing_check`) still
+applies — name, staff ID and vehicle number must be filled together or all
+left blank; none of the three are checked against `vehicles`/`drivers`.
 
 ### Part B / Part C (checkpoints) — AVSEC Post 2 / Post 6
 
@@ -271,6 +285,20 @@ where prosrc ilike '%old_column_name%';
 
 ## Upgrade history (chronological, most recent first)
 
+- **2026-08-13**: Removed browser autocomplete/pick-list from Part A Vehicle Number, Driver ID
+  and Escort Vehicle Number fields (manual typing only, mirrors the Part B/C auto-fill removal).
+  Part A now also validates that the typed Driver Name matches the whitelisted name on file for
+  the entered driver ID (`WHITELIST_VIOLATION` if not — a real driver ID could otherwise be
+  entered with a different, unlisted person's name). Escort officer/vehicle whitelist check
+  removed entirely — escort staffing rotates and isn't a registered catering entry; only the
+  all-or-nothing pairing rule remains.
+- **2026-08-12**: Added the `enforcement` role — full parity with `supervisor` for incident
+  resolution and Reports, but not for whitelist/user-management/audit/archive (those stay
+  supervisor-only). Enabled by widening the existing `transactions` RLS policy (checkpoint +
+  supervisor read) and the `incidents` RLS policy, exploiting the "read follows transaction
+  visibility" cascade that most other tables (`part_a/b/c/d`, `seals`, `incidents`) already use —
+  meant only 2 policies needed touching, not 7. `ROLE_COLORS` added to `constants.ts` for
+  per-role header badge coloring (previously all roles shared one badge style).
 - **2026-08-11**: Install-app prompt banner. IBM Plex Mono applied app-wide to identifier
   codes (following a Claude Design mobile mockup handoff that confirmed the existing theme
   already matched). Whitelist hard-delete added (with FK-based safety). Real IFC driver/vehicle
