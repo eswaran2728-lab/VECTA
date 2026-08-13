@@ -24,21 +24,34 @@ timing, and paper audit trails with database-enforced rules.
 
 ## Roles
 
-Five roles, stored as `users.role`. Accounts are created by an Admin (no
+Six roles, stored as `users.role`. Accounts are created by an Admin (no
 public self-service — new registrations require Admin approval, see below).
 
 | Role (DB value) | Label shown in UI | What they do |
 |---|---|---|
-| `warehouse_pic` | Warehouse PIC | Creates transactions (Part A): picks direction, fills flight/vehicle/driver/cargo details, applies seals, does the vehicle search, signs. Covers both the in-flight catering warehouse and the SRA warehouse — direction is chosen per transaction, not tied to which warehouse. |
+| `warehouse_pic` | Warehouse PIC | Creates transactions (Part A): picks direction, fills flight/vehicle/driver/cargo details, applies seals, does the vehicle search, signs. Covers both the in-flight catering warehouse and the SRA warehouse — direction is chosen per transaction, not tied to which warehouse. In practice (as of 2026-08-13) there is no dedicated warehouse clerk at some sites — the **driver themselves** signs in with their own individual account (own email, role `warehouse_pic`) and creates their own transaction, entering their own Driver ID/Name. See note below. |
 | `post2_avsec` | AVSEC In-flight Post (Post 2) | Verifies vehicle/driver/seals at the in-flight security post (Part B). First checkpoint outbound, final checkpoint inbound. |
 | `post6_avsec` | AVSEC Airport Post (Post 6) | Verifies vehicle/driver/seals at the airport security post (Part C). Second checkpoint outbound, first checkpoint inbound. |
 | `receiver` | SRA / Aircraft Receiver | Confirms delivery (Part D) — outbound only, either at the SRA warehouse or aircraft side. |
+| `enforcement` | Enforcement (added 2026-08-12) | Full parity with `supervisor` for incident resolution and Reports only — not whitelist/user-management/audit/archive, which stay supervisor-only. Does not perform checkpoint actions. |
 | `supervisor` | **Admin** (label only — DB value stays `supervisor`) | Full oversight: approves registrations, manages users, manages the vehicle/driver/company whitelist, views the immutable audit log, runs reports, manages the transaction archive. Does not perform checkpoint actions. |
 
 Every role sees a persistent role badge in the header (`{role label} · Staff
-ID {staff_id}`) so it's always unambiguous which post/role is acting —
-important because Post 2 and Post 6 are easy to confuse. This is what "AVSEC
-role identification" refers to in earlier work on this app.
+ID {staff_id}`), colored per-role via `ROLE_COLORS` in `constants.ts`, so it's
+always unambiguous which post/role is acting — important because Post 2 and
+Post 6 are easy to confuse. This is what "AVSEC role identification" refers
+to in earlier work on this app.
+
+**Operational note (driver-as-PIC, clarified 2026-08-13)**: where there's no
+separate warehouse staff, each driver gets their own individual `users`
+account (own email/login, role `warehouse_pic`) — logins are **not** shared
+between drivers. That same person must *also* have a separate `drivers`
+whitelist row (Staff ID + Name) for the whitelist/name-match checks in Part A
+to pass — the login (`users`) and the whitelist entry (`drivers`) are two
+different tables an Admin must set up independently for every such driver.
+Because each driver has their own login, `part_a.created_by` / `pic_name` /
+`pic_staff_id` correctly identify the specific driver who created each
+transaction — there's no shared-account audit-trail gap.
 
 ### Registration & approval
 
@@ -203,7 +216,8 @@ default; delete is for rows that were never actually used (e.g. entered by mista
 - **`/admin/users`** — approve/reject pending registrations, create/edit users, assign roles.
 - **`/admin/audit`** — read-only immutable audit trail.
 - **`/admin/archive`** — archived (old/completed) transactions, kept out of the main list.
-- **`/reports`** — daily/monthly reports, PDF and Excel export.
+- **`/reports`** — daily/monthly reports, PDF and Excel export. `enforcement` also has full
+  access to this page (and to resolving incidents) — everything else above stays supervisor-only.
 
 ## Other features
 
