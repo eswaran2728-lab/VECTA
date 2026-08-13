@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireRole, ADMIN_ROLES } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/layout/AppHeader";
@@ -25,11 +26,16 @@ export default async function AdminUsersPage({
     <main className="min-h-screen pb-16">
       <AppHeader profile={profile} title="User Management" backHref="/dashboard" />
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">User Management</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Create staff accounts, approve registrations, and assign checkpoint roles.
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">User Management</h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+              Create staff accounts, approve registrations, and assign checkpoint roles.
+            </p>
+          </div>
+          <Link href="/admin/roster" className="btn-secondary shrink-0">
+            Team Roster
+          </Link>
         </div>
 
         {searchParams.error && (

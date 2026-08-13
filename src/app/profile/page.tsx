@@ -16,7 +16,12 @@ export default async function ProfilePage() {
     { label: "My Reports", href: "/history" },
     ...(isMonitor ? [{ label: "Dashboard", href: "/dashboard" }] : []),
     { label: "Bay Board", href: "/bay-board" },
-    ...(profile.role === "ADMIN" ? [{ label: "User Management", href: "/admin/users" }] : []),
+    ...(profile.role === "ADMIN"
+      ? [
+          { label: "User Management", href: "/admin/users" },
+          { label: "Team Roster", href: "/admin/roster" },
+        ]
+      : []),
     { label: "Change Password", href: "/auth/update-password" },
   ];
 
