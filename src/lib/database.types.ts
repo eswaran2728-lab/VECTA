@@ -4,7 +4,8 @@
   | "post6_avsec"
   | "receiver"
   | "supervisor"
-  | "enforcement";
+  | "enforcement"
+  | "vendor";
 
 export type TransactionStatus =
   | "CREATED"
@@ -284,6 +285,73 @@ export type TransactionWithParts = Transaction & {
   incidents: Incident[];
 }
 
+/**
+ * Vendor Movement Module (AA/SEC/F/019 "Vendors Supplies Security Form") —
+ * a second, independent workflow from the catering IFCSF one above.
+ * Part A (Vendor) -> Part B (AirAsia Security / Post 2) -> Part C
+ * (Warehouse, dual signature). See supabase/migrations/20260813000002_vendor_movement.sql.
+ */
+export type VendorTransactionStatus =
+  | "CREATED"
+  | "SECURITY_VERIFIED"
+  | "PART_C_PARTIAL"
+  | "COMPLETED"
+  | "ESCALATED";
+
+export type VendorTransaction = {
+  id: string;
+  transaction_number: string;
+  status: VendorTransactionStatus;
+  qr_token: string | null;
+  completed_form_url: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export type VendorPartA = {
+  id: string;
+  transaction_id: string;
+  driver_name: string;
+  nric_number: string;
+  seal_number: string;
+  signature_url: string;
+  completed_by: string;
+  completed_at: string;
+}
+
+export type VendorPartB = {
+  id: string;
+  transaction_id: string;
+  vehicle_registration_no: string;
+  driver_name: string;
+  driver_nric: string;
+  seal_number: string;
+  remarks: string | null;
+  signature_url: string;
+  avsec_name: string;
+  avsec_staff_id: string;
+  completed_by: string;
+  completed_at: string;
+}
+
+/** Single row, filled in by both sides — each pair is all-or-nothing. */
+export type VendorPartC = {
+  id: string;
+  transaction_id: string;
+  warehouse_pic_id: string | null;
+  warehouse_pic_name: string | null;
+  warehouse_signature_url: string | null;
+  warehouse_signed_at: string | null;
+  vendor_driver_id: string | null;
+  vendor_driver_name: string | null;
+  vendor_signature_url: string | null;
+  vendor_signed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -519,6 +587,50 @@ export type Database = {
         Row: SegmentTimeout;
         Insert: Omit<SegmentTimeout, "id" | "created_at"> & { id?: string; created_at?: string };
         Update: never;
+        Relationships: [];
+      };
+      vendor_transactions: {
+        Row: VendorTransaction;
+        Insert: Omit<
+          VendorTransaction,
+          "id" | "transaction_number" | "status" | "qr_token" | "completed_form_url" | "created_at" | "updated_at" | "completed_at"
+        > & {
+          id?: string;
+          transaction_number?: string;
+          status?: VendorTransactionStatus;
+          qr_token?: string | null;
+          completed_form_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          completed_at?: string | null;
+        };
+        Update: Partial<VendorTransaction>;
+        Relationships: [];
+      };
+      vendor_part_a: {
+        Row: VendorPartA;
+        Insert: Omit<VendorPartA, "id" | "completed_at"> & { id?: string; completed_at?: string };
+        Update: never;
+        Relationships: [];
+      };
+      vendor_part_b: {
+        Row: VendorPartB;
+        Insert: Omit<VendorPartB, "id" | "completed_at" | "remarks"> & {
+          id?: string;
+          completed_at?: string;
+          remarks?: string | null;
+        };
+        Update: never;
+        Relationships: [];
+      };
+      vendor_part_c: {
+        Row: VendorPartC;
+        Insert: Omit<VendorPartC, "id" | "created_at" | "updated_at"> & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<VendorPartC>;
         Relationships: [];
       };
     };

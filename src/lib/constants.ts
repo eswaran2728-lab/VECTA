@@ -8,6 +8,7 @@ import type {
   SealColor,
   SealType,
   TransactionStatus,
+  VendorTransactionStatus,
 } from "./database.types";
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -23,6 +24,9 @@ export const ROLE_LABELS: Record<Role, string> = {
   // Full read visibility + incident lifecycle power, same as supervisor,
   // but no whitelist/user/archive admin access and no checkpoint actions.
   enforcement: "Enforcement",
+  // Vendor Movement Module (AA/SEC/F/019) — external vendor driver, own
+  // separate workflow from the catering IFCSF one above.
+  vendor: "Vendor Driver",
 };
 
 /** Distinct color per role for the persistent header badge (AVSEC role identification). */
@@ -33,6 +37,7 @@ export const ROLE_COLORS: Record<Role, string> = {
   receiver: "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200",
   supervisor: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
   enforcement: "bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/40 dark:text-fuchsia-200",
+  vendor: "bg-lime-100 text-lime-800 dark:bg-lime-900/40 dark:text-lime-200",
 };
 
 export const STATUS_LABELS: Record<TransactionStatus, string> = {
@@ -157,4 +162,21 @@ export const ALL_ROLES: Role[] = [
   "receiver",
   "supervisor",
   "enforcement",
+  "vendor",
 ];
+
+export const VENDOR_STATUS_LABELS: Record<VendorTransactionStatus, string> = {
+  CREATED: "Created — awaiting Post 2",
+  SECURITY_VERIFIED: "Post 2 approved — awaiting warehouse",
+  PART_C_PARTIAL: "Part C in progress — one signature pending",
+  COMPLETED: "Completed",
+  ESCALATED: "Escalated",
+};
+
+export const VENDOR_STATUS_COLORS: Record<VendorTransactionStatus, string> = {
+  CREATED: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200",
+  SECURITY_VERIFIED: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+  PART_C_PARTIAL: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200",
+  COMPLETED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
+  ESCALATED: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200",
+};

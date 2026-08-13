@@ -6,7 +6,11 @@ export const metadata: Metadata = { title: "Scan QR" };
 export const dynamic = "force-dynamic";
 
 export default async function ScanPage() {
-  await requireRole(["post2_avsec", "post6_avsec", "receiver"]);
+  // warehouse_pic has no catering checkpoint of their own, but they scan
+  // here for Vendor Movement Part C (the warehouse dual-signature step) —
+  // qr/validate's checkpointRoles gate still keeps them read-only on any
+  // catering transaction's Part B/C/D.
+  await requireRole(["post2_avsec", "post6_avsec", "receiver", "warehouse_pic"]);
 
   return (
     <div className="mx-auto max-w-lg space-y-4">

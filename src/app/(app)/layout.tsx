@@ -31,7 +31,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const lang = await getLang();
 
   const isPic = profile.role === "warehouse_pic";
-  const isCheckpoint = ["post2_avsec", "post6_avsec", "receiver"].includes(profile.role);
+  const isVendor = profile.role === "vendor";
+  // warehouse_pic scans too now, for Vendor Movement Part C — not a
+  // catering checkpoint of their own, but still needs the Scan nav item.
+  const canScan = ["post2_avsec", "post6_avsec", "receiver", "warehouse_pic"].includes(
+    profile.role
+  );
 
   const nav = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, show: true },
@@ -42,10 +47,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       show: isPic,
     },
     {
+      href: "/vendor-transactions/new",
+      label: "New Delivery",
+      icon: PlusCircle,
+      show: isVendor,
+    },
+    {
       href: "/scan",
       label: "Scan",
       icon: ScanLine,
-      show: isCheckpoint,
+      show: canScan,
     },
     { href: "/transactions", label: "Transactions", icon: ClipboardList, show: true },
     { href: "/incidents", label: "Incidents", icon: ShieldAlert, show: true },
@@ -83,9 +94,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // Bottom bar (phones/tablets): exactly the four per-role primary actions —
   // PIC: Dashboard/New/Transactions/Incidents; checkpoint roles: Dashboard/
-  // Scan/Transactions/Incidents; admin: oversight only (no create/scan).
+  // Scan/Transactions/Incidents; vendor: Dashboard/New Delivery/Transactions/
+  // Incidents; admin: oversight only (no create/scan).
   const bottomNav = nav.filter((item) =>
-    ["/dashboard", "/transactions/new", "/scan", "/transactions", "/incidents"].includes(item.href)
+    [
+      "/dashboard",
+      "/transactions/new",
+      "/vendor-transactions/new",
+      "/scan",
+      "/transactions",
+      "/incidents",
+    ].includes(item.href)
   );
 
   return (

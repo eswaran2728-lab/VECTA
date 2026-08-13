@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { verifyQrToken } from "@/lib/qr-token";
 import { nextStepFor } from "@/lib/workflow";
-import type { Role, Transaction } from "@/lib/database.types";
+import { vendorNextStepFor } from "@/lib/workflow-vendor";
+import type { Database, Role, Transaction, VendorTransaction } from "@/lib/database.types";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +29,59 @@ function rateLimited(ip: string): boolean {
   return entry.count > MAX_PER_WINDOW;
 }
 
+/**
+ * Vendor Movement Module lookup — mirrors the catering path below but
+ * against vendor_transactions/workflow-vendor.ts. Only post2_avsec and
+ * warehouse_pic participate in this flow (post6_avsec/receiver don't).
+ */
+async function handleVendorLookup(
+  supabase: SupabaseClient<Database>,
+  role: Role | undefined,
+  by: { transactionId: string | null; transactionNumber: string }
+): Promise<NextResponse> {
+  const { data: tx } = await supabase
+    .from("vendor_transactions")
+    .select("id, status, transaction_number")
+    .eq(by.transactionId ? "id" : "transaction_number", by.transactionId ?? by.transactionNumber)
+    .maybeSingle();
+
+  if (!tx) {
+    return NextResponse.json(
+      { error: "Vendor transaction not found. / Transaksi vendor tidak dijumpai." },
+      { status: 404 }
+    );
+  }
+
+  const t = tx as Pick<VendorTransaction, "id" | "status" | "transaction_number">;
+  const next = vendorNextStepFor(t.status);
+
+  const checkpointRoles: Role[] = ["post2_avsec", "warehouse_pic"];
+  if (next && role && checkpointRoles.includes(role) && next.role !== role) {
+    return NextResponse.json(
+      {
+        error:
+          "You are not authorized for this checkpoint — this vendor transaction is waiting on a different step. " +
+          "/ Anda tidak dibenarkan untuk langkah ini — transaksi vendor ini sedang menunggu langkah yang lain.",
+      },
+      { status: 403 }
+    );
+  }
+
+  const actionable = !!next && next.role === role;
+  const redirectPath = actionable
+    ? `/vendor-transactions/${t.id}/${next.slug}`
+    : `/vendor-transactions/${t.id}`;
+
+  return NextResponse.json({
+    transactionId: t.id,
+    transactionNumber: t.transaction_number,
+    status: t.status,
+    actionable,
+    redirectPath,
+    nextStep: next ? { part: next.part, slug: next.slug, role: next.role } : null,
+  });
+}
+
 export async function GET(request: NextRequest) {
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
@@ -45,9 +100,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
 
+  const { data: profile } = await supabase.from("users").select("role").eq("id", user.id).single();
+  const role = profile?.role as Role | undefined;
+
   const token = request.nextUrl.searchParams.get("token") ?? "";
   const transactionNumber = request.nextUrl.searchParams.get("number")?.trim().toUpperCase() ?? "";
   let transactionId: string | null = null;
+  let tokenType: "CATERING" | "VENDOR" = "CATERING";
 
   if (token) {
     const result = verifyQrToken(token);
@@ -55,13 +114,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
     transactionId = result.transactionId;
+    tokenType = result.type;
+  } else if (/^VMS-\d{4}-\d{6}$/.test(transactionNumber)) {
+    tokenType = "VENDOR";
   } else if (!/^(ICMS|CSCS)-\d{4}-\d{6}$/.test(transactionNumber)) {
     // Accepts legacy CSCS-* numbers too, so transactions created before the
     // ICMS rebrand remain look-up-able by their original number.
     return NextResponse.json(
-      { error: "Enter a valid ICMS transaction number. / Masukkan nombor transaksi ICMS yang sah." },
+      {
+        error:
+          "Enter a valid ICMS or VMS transaction number. / Masukkan nombor transaksi ICMS atau VMS yang sah.",
+      },
       { status: 400 }
     );
+  }
+
+  if (tokenType === "VENDOR") {
+    return handleVendorLookup(supabase, role, { transactionId, transactionNumber });
   }
 
   const { data: tx } = await supabase
@@ -79,8 +148,6 @@ export async function GET(request: NextRequest) {
 
   const t = tx as Pick<Transaction, "id" | "status" | "direction" | "transaction_number">;
   const next = nextStepFor(t.direction, t.status);
-  const { data: profile } = await supabase.from("users").select("role").eq("id", user.id).single();
-  const role = profile?.role as Role | undefined;
 
   // A checkpoint role (AVSEC Post 2/6, Receiver) scanning a transaction that
   // is waiting on a DIFFERENT checkpoint is hard-blocked, not shown the
