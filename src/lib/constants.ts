@@ -26,7 +26,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   enforcement: "Enforcement",
   // Vendor Movement Module (AA/SEC/F/019) — external vendor driver, own
   // separate workflow from the catering IFCSF one above.
-  vendor: "Vendor Driver",
+  vendor: "Vendor",
 };
 
 /** Distinct color per role for the persistent header badge (AVSEC role identification). */

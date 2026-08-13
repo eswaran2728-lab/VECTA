@@ -22,12 +22,18 @@ export default async function VendorPartBPage({ params }: { params: Promise<{ id
     redirect(`/vendor-transactions/${id}`);
   }
 
+  // Deliberately not selecting seal_number here — the whole point of this
+  // checkpoint is that the officer independently reads the physical seal
+  // and types what they see, the same way the catering Part B/C forms
+  // never surface Part A's recorded seal. Driver name/NRIC are shown as
+  // context only, matching CheckpointContext's precedent for the catering
+  // flow (vehicle/driver shown, seal never is).
   const { data: partARow } = await supabase
     .from("vendor_part_a")
-    .select("*")
+    .select("driver_name, nric_number")
     .eq("transaction_id", id)
     .maybeSingle();
-  const partA = partARow as VendorPartA | null;
+  const partA = partARow as Pick<VendorPartA, "driver_name" | "nric_number"> | null;
 
   return (
     <div className="mx-auto max-w-lg space-y-4">
@@ -51,9 +57,9 @@ export default async function VendorPartBPage({ params }: { params: Promise<{ id
               <span className="text-muted-foreground">NRIC:</span>{" "}
               <span className="font-mono">{partA.nric_number}</span>
             </p>
-            <p>
-              <span className="text-muted-foreground">Seal Number:</span>{" "}
-              <span className="font-mono">{partA.seal_number}</span>
+            <p className="text-xs text-muted-foreground">
+              Seal number is not shown here — check the physical seal and enter what you observe
+              below.
             </p>
           </CardContent>
         </Card>
