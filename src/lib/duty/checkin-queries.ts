@@ -35,3 +35,18 @@ export async function getTodayDutyRecord(profileId: string, shiftCode: string): 
     .maybeSingle();
   return (data as DutyRecordRow) ?? null;
 }
+
+/** True while the caller has an open check-in today (checked in, not yet checked out) —
+ * used to gate report submission on actually being on duty, regardless of shift. */
+export async function hasOpenDutyCheckIn(profileId: string): Promise<boolean> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("duty_records")
+    .select("id")
+    .eq("profile_id", profileId)
+    .eq("duty_date", todayISODateMY())
+    .not("check_in_at", "is", null)
+    .is("check_out_at", null)
+    .maybeSingle();
+  return !!data;
+}

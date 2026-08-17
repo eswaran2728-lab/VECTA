@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
+import { hasOpenDutyCheckIn } from "@/lib/duty/checkin-queries";
 import { sec016Schema } from "@/lib/schemas/sec016";
 import { sec014Schema } from "@/lib/schemas/sec014";
 import { sec029Schema } from "@/lib/schemas/sec029";
@@ -33,11 +34,20 @@ async function requireProfileId(): Promise<{ id: string; station: string; team: 
   return { id: profile.id, station: profile.station, team: profile.team };
 }
 
+// Reports can only be filed while actually on duty — mirrors the dashboard's compliance
+// panel, which already flags a submission from someone who never checked in.
+async function ensureCheckedIn(profileId: string): Promise<string | null> {
+  const checkedIn = await hasOpenDutyCheckIn(profileId);
+  return checkedIn ? null : "You must check in for duty (/duty) before submitting a report.";
+}
+
 // ---------- SEC 016 ----------
 
 export async function submitSec016(input: unknown): Promise<ActionResult> {
   const profile = await requireProfileId();
   if (!profile) return { ok: false, error: "Not authenticated" };
+  const checkInError = await ensureCheckedIn(profile.id);
+  if (checkInError) return { ok: false, error: checkInError };
 
   const parsed = sec016Schema.safeParse(input);
   if (!parsed.success) {
@@ -111,6 +121,8 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
 export async function submitSec014(input: unknown): Promise<ActionResult> {
   const profile = await requireProfileId();
   if (!profile) return { ok: false, error: "Not authenticated" };
+  const checkInError = await ensureCheckedIn(profile.id);
+  if (checkInError) return { ok: false, error: checkInError };
 
   const parsed = sec014Schema.safeParse(input);
   if (!parsed.success) {
@@ -168,6 +180,8 @@ export async function submitSec014(input: unknown): Promise<ActionResult> {
 export async function submitSec029(input: unknown): Promise<ActionResult> {
   const profile = await requireProfileId();
   if (!profile) return { ok: false, error: "Not authenticated" };
+  const checkInError = await ensureCheckedIn(profile.id);
+  if (checkInError) return { ok: false, error: checkInError };
 
   const parsed = sec029Schema.safeParse(input);
   if (!parsed.success) {
@@ -242,6 +256,8 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
 export async function submitSec018(input: unknown): Promise<ActionResult> {
   const profile = await requireProfileId();
   if (!profile) return { ok: false, error: "Not authenticated" };
+  const checkInError = await ensureCheckedIn(profile.id);
+  if (checkInError) return { ok: false, error: checkInError };
 
   const parsed = sec018Schema.safeParse(input);
   if (!parsed.success) {
@@ -298,6 +314,8 @@ export async function submitSec018(input: unknown): Promise<ActionResult> {
 export async function submitSec033(input: unknown): Promise<ActionResult> {
   const profile = await requireProfileId();
   if (!profile) return { ok: false, error: "Not authenticated" };
+  const checkInError = await ensureCheckedIn(profile.id);
+  if (checkInError) return { ok: false, error: checkInError };
 
   const parsed = sec033Schema.safeParse(input);
   if (!parsed.success) {
@@ -350,6 +368,8 @@ export async function submitSec033(input: unknown): Promise<ActionResult> {
 export async function submitSec013(input: unknown): Promise<ActionResult> {
   const profile = await requireProfileId();
   if (!profile) return { ok: false, error: "Not authenticated" };
+  const checkInError = await ensureCheckedIn(profile.id);
+  if (checkInError) return { ok: false, error: checkInError };
 
   const parsed = sec013Schema.safeParse(input);
   if (!parsed.success) {
