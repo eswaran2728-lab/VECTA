@@ -33,9 +33,14 @@ export default async function AdminUsersPage({
               Create staff accounts, approve registrations, and assign checkpoint roles.
             </p>
           </div>
-          <Link href="/admin/roster" className="btn-secondary shrink-0">
-            Team Roster
-          </Link>
+          <div className="flex gap-2 shrink-0">
+            <Link href="/admin/roster" className="btn-secondary">
+              Team Roster
+            </Link>
+            <Link href="/admin/zones" className="btn-secondary">
+              Duty Zones
+            </Link>
+          </div>
         </div>
 
         {searchParams.error && (

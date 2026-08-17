@@ -21,6 +21,7 @@ export default async function ProfilePage() {
       ? [
           { label: "User Management", href: "/admin/users" },
           { label: "Team Roster", href: "/admin/roster" },
+          { label: "Duty Zones", href: "/admin/zones" },
         ]
       : []),
     { label: "Change Password", href: "/auth/update-password" },

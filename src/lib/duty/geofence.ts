@@ -21,3 +21,15 @@ export function pointInPolygon(lng: number, lat: number, polygon: GeoPolygon | n
   }
   return inside;
 }
+
+/** Great-circle distance in meters — used by the zone editor to derive a display radius
+ * from a hand-drawn polygon (the polygon itself is what's actually tested for check-in). */
+export function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}

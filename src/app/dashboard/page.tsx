@@ -8,6 +8,7 @@ import {
   type DashboardFilters,
 } from "@/lib/dashboard/queries";
 import { getOpenBayBoard } from "@/lib/reports/queries";
+import { getDutyComplianceForDate } from "@/lib/duty/compliance-queries";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { formatDateTimeMY, todayISODateMY } from "@/lib/datetime";
@@ -38,9 +39,12 @@ export default async function DashboardPage({
   const isOrgWideViewer = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
   const complianceStation = filters.station ?? profile.station ?? "";
   const complianceTeam = isOrgWideViewer ? filters.team : filters.team ?? profile.team ?? undefined;
-  const compliance = complianceStation
-    ? await getShiftCompliance(complianceStation, filters.dateFrom, complianceTeam)
-    : [];
+  const [compliance, dutyCompliance] = complianceStation
+    ? await Promise.all([
+        getShiftCompliance(complianceStation, filters.dateFrom, complianceTeam),
+        getDutyComplianceForDate(complianceStation, filters.dateFrom, complianceTeam),
+      ])
+    : [[], new Map()];
 
   const flightCoverage = await getFlightCoverage(filters);
 
@@ -220,24 +224,63 @@ export default async function DashboardPage({
               <p className="text-sm text-slate-500">No officers registered at this station.</p>
             )}
             <div className="divide-y divide-slate-200 dark:divide-slate-800">
-              {compliance.map((c) => (
-                <div key={c.profile.id} className="flex items-center justify-between py-2">
-                  <div>
-                    <p className="font-medium text-sm">{c.profile.name || c.profile.email}</p>
-                    <p className="text-xs text-slate-500">{c.profile.team}</p>
+              {compliance.map((c) => {
+                const duty = dutyCompliance.get(c.profile.id);
+                const flagged = duty && (duty.lateMinutes > 0 || duty.earlyOutMinutes > 0);
+                return (
+                  <div key={c.profile.id} className="flex items-center justify-between py-2 gap-2">
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm">{c.profile.name || c.profile.email}</p>
+                      <p className="text-xs text-slate-500">{c.profile.team}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span
+                        className={cn(
+                          "text-xs font-bold px-2 py-1 rounded-full",
+                          c.submitted
+                            ? "bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300"
+                            : "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300",
+                        )}
+                      >
+                        {c.submitted ? "SUBMITTED" : "MISSING"}
+                      </span>
+                      {flagged ? (
+                        <details className="relative">
+                          <summary
+                            className="list-none cursor-pointer text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
+                          >
+                            {duty.lateMinutes > 0 ? "LATE" : "EARLY-OUT"}
+                          </summary>
+                          <div className="absolute right-0 z-10 mt-1 w-56 p-2 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg">
+                            {duty.lateMinutes > 0 && (
+                              <p>
+                                <span className="font-semibold">Late {duty.lateMinutes} min</span> — {duty.lateRemark}
+                              </p>
+                            )}
+                            {duty.earlyOutMinutes > 0 && (
+                              <p className={duty.lateMinutes > 0 ? "mt-1.5" : ""}>
+                                <span className="font-semibold">Early out {duty.earlyOutMinutes} min</span> —{" "}
+                                {duty.earlyOutRemark}
+                              </p>
+                            )}
+                          </div>
+                        </details>
+                      ) : (
+                        <span
+                          className={cn(
+                            "text-xs font-bold px-2 py-1 rounded-full",
+                            duty?.checkedIn
+                              ? "bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300"
+                              : "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300",
+                          )}
+                        >
+                          {duty?.checkedIn ? "CHECKED-IN" : "NOT CHECKED-IN"}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <span
-                    className={cn(
-                      "text-xs font-bold px-2 py-1 rounded-full",
-                      c.submitted
-                        ? "bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300"
-                        : "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300",
-                    )}
-                  >
-                    {c.submitted ? "SUBMITTED" : "MISSING"}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}
