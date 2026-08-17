@@ -14,6 +14,7 @@ export default async function ProfilePage() {
 
   const menu: { label: string; href: string; right?: string }[] = [
     { label: "My Reports", href: "/history" },
+    { label: "My Timesheet", href: "/duty/timesheet" },
     ...(isMonitor ? [{ label: "Dashboard", href: "/dashboard" }] : []),
     { label: "Bay Board", href: "/bay-board" },
     ...(profile.role === "ADMIN"
