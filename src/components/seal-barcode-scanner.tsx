@@ -15,24 +15,43 @@ const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
 const ZOOM_STEP = 0.5;
 
+// Scan-box region as a fraction of the displayed video — wide/short,
+// matching the shape of a 1D barcode strip. The overlay box below is
+// drawn at these exact same percentages, so what the officer sees lined
+// up in the box is what actually gets cropped and decoded.
+const CROP_WIDTH_PCT = 0.8;
+const CROP_HEIGHT_PCT = 0.32;
+const CROP_LEFT_PCT = (1 - CROP_WIDTH_PCT) / 2;
+const CROP_TOP_PCT = (1 - CROP_HEIGHT_PCT) / 2;
+
+// Decoding every animation frame is wasted work (battery/heat) without
+// improving accuracy — throttle actual decode attempts.
+const DECODE_FPS = 6;
+const DECODE_INTERVAL_MS = 1000 / DECODE_FPS;
+
 /**
- * Camera-first barcode scanner for physical seal tags (CODE_128/CODE_39
- * printed alongside the human-readable seal number).
+ * Live camera-first barcode scanner for physical seal tags (CODE_128/
+ * CODE_39 printed alongside the human-readable seal number).
  *
  * Decodes via the `barcode-detector` package (a WebAssembly build of the
- * real ZXing-C++ library) instead of html5-qrcode/the native
- * BarcodeDetector API — those depend on browser support that's missing or
- * weak for 1D formats on WebKit (iPhone Safari *and* iPhone Chrome, which
- * is WebKit underneath), so this gives the same decode engine and
- * accuracy on every platform. Only the .wasm decoder itself is fetched
- * (once, from jsDelivr by default) — every scan afterwards is local, no
- * per-scan network call, and every other part of this workflow already
- * assumes network connectivity.
+ * real ZXing-C++ library) rather than the native BarcodeDetector API
+ * (Safari has none, on iPhone or anywhere else) or html5-qrcode's weak
+ * pure-JS fallback — same decode engine and accuracy on every platform.
+ * Each tick crops the video down to just the visible scan-box region onto
+ * an offscreen canvas before decoding, throttled to ~6/sec, rather than
+ * running the decoder against the full camera frame on every frame.
+ *
+ * Only the .wasm decoder itself is fetched (once, from jsDelivr by
+ * default) — every scan afterwards is local, no per-scan network call,
+ * and every other part of this workflow already assumes network
+ * connectivity.
  */
 export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<BarcodeDetector | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lastDecodeRef = useRef(0);
   const activeRef = useRef(true);
   const handledRef = useRef(false);
   const onDetectedRef = useRef(onDetected);
@@ -45,15 +64,35 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
   useEffect(() => {
     activeRef.current = true;
     handledRef.current = false;
+    lastDecodeRef.current = 0;
     detectorRef.current = new BarcodeDetector({
       formats: ["code_128", "code_39", "codabar"],
     });
+    if (!canvasRef.current) canvasRef.current = document.createElement("canvas");
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
     const scanLoop = async (video: HTMLVideoElement) => {
       if (!activeRef.current || handledRef.current) return;
-      if (video.readyState >= 2) {
+
+      const now = performance.now();
+      if (
+        ctx &&
+        video.readyState >= 2 &&
+        video.videoWidth > 0 &&
+        now - lastDecodeRef.current >= DECODE_INTERVAL_MS
+      ) {
+        lastDecodeRef.current = now;
+        const sx = Math.round(video.videoWidth * CROP_LEFT_PCT);
+        const sy = Math.round(video.videoHeight * CROP_TOP_PCT);
+        const sw = Math.round(video.videoWidth * CROP_WIDTH_PCT);
+        const sh = Math.round(video.videoHeight * CROP_HEIGHT_PCT);
+        canvas.width = sw;
+        canvas.height = sh;
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+
         try {
-          const barcodes = await detectorRef.current!.detect(video);
+          const barcodes = await detectorRef.current!.detect(canvas);
           if (barcodes.length > 0) {
             handledRef.current = true;
             onDetectedRef.current(barcodes[0].rawValue.trim());
@@ -63,6 +102,7 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
           // per-frame decode misses/errors are expected
         }
       }
+
       if (activeRef.current && !handledRef.current) {
         requestAnimationFrame(() => void scanLoop(video));
       }
@@ -137,8 +177,17 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
         </Button>
       </div>
 
-      <div className="mx-auto w-full max-w-sm overflow-hidden rounded-lg border bg-black/90">
+      <div className="relative mx-auto w-full max-w-sm overflow-hidden rounded-lg border bg-black/90">
         <video ref={videoRef} playsInline muted autoPlay className="w-full" />
+        <div
+          className="pointer-events-none absolute rounded-md border-2 border-amber-400"
+          style={{
+            left: `${CROP_LEFT_PCT * 100}%`,
+            top: `${CROP_TOP_PCT * 100}%`,
+            width: `${CROP_WIDTH_PCT * 100}%`,
+            height: `${CROP_HEIGHT_PCT * 100}%`,
+          }}
+        />
       </div>
 
       {!scanning && !error ? (
@@ -169,7 +218,7 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
       ) : null}
 
       <p className="text-center text-xs text-muted-foreground">
-        Hold steady, fill the frame with the barcode. Small/worn tags may need zoom.
+        Line the barcode up inside the box. Small/worn tags may need zoom.
       </p>
     </div>
   );
