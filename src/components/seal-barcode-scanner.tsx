@@ -29,6 +29,12 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
   const [scanning, setScanning] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [zoomSupported, setZoomSupported] = useState(false);
+  // 1D barcode decode is a known weak point of the WebKit/zxing-js fallback
+  // path this library takes on iOS (including "Chrome" on iPhone, which is
+  // WebKit under the hood) — nudge toward manual entry there rather than
+  // pretending the experience is equivalent to Android.
+  const isIOS =
+    typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent);
 
   useEffect(() => {
     const scanner = new Html5Qrcode(REGION_ID, {
@@ -52,9 +58,19 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
       .start(
         { facingMode: "environment" },
         {
-          fps: 10,
+          // 1D decode (the WebKit/zxing-js fallback used on iOS in particular)
+          // is much CPU-heavier per frame than QR and breaks on mirrored
+          // frames, so this config diverges from qr-scanner.tsx's defaults.
+          fps: 5,
           qrbox: { width: 280, height: 120 }, // wide box — seal barcodes are 1D, landscape
           aspectRatio: 1.7777,
+          disableFlip: true,
+          videoConstraints: {
+            facingMode: "environment",
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet],
+          },
         },
         handleDecoded,
         () => undefined // per-frame decode misses are expected
@@ -140,6 +156,12 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
       <p className="text-center text-xs text-muted-foreground">
         Hold steady, fill the frame with the barcode. Small/worn tags may need zoom.
       </p>
+      {isIOS ? (
+        <p className="text-center text-xs text-amber-700 dark:text-amber-400">
+          Barcode scanning works best on Android. On iPhone, typing the seal number is more
+          reliable.
+        </p>
+      ) : null}
     </div>
   );
 }
