@@ -65,6 +65,10 @@ export default async function DutyViewPage({ params }: { params: { id: string } 
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
+        <a href={`/api/export/pdf/duty/${record.id}`} className="btn-secondary w-full" target="_blank">
+          Download PDF
+        </a>
+
         {(record.late_minutes > 0 || record.early_out_minutes > 0) && (
           <div className="card p-4 space-y-2" style={{ borderLeft: "3px solid var(--red)" }}>
             {record.late_minutes > 0 && (

@@ -63,6 +63,12 @@ export default async function DashboardPage({
     <main className="min-h-screen pb-32">
       <AppHeader profile={profile} title="Dashboard" backHref={landingPathForRole(profile.role)} />
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+        {isOrgWideViewer && (
+          <Link href="/dashboard/heatmap" className="btn-secondary w-full block text-center">
+            Duty Heat Map →
+          </Link>
+        )}
+
         <section className="card p-4 space-y-3">
           <h2 className="section-title">Staff report lookup</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400">

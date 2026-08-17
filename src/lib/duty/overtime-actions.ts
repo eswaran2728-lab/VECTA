@@ -7,6 +7,7 @@ import { requireProfile } from "@/lib/auth";
 import { ROLE_RANK } from "@/lib/reference-data";
 import { combineDateTimeMY } from "@/lib/datetime";
 import { overtimeRequestSchema } from "@/lib/schemas/duty";
+import { notifyOvertimeApproval } from "@/lib/email/notifyOvertimeApproval";
 
 function localDateTimeToISO(value: string): string {
   const [date, time] = value.split("T");
@@ -94,13 +95,34 @@ export async function approveOvertimeRequest(formData: FormData) {
   }
 
   const supabase = createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("overtime_requests")
     .update({ status: "approved", approved_by: profile.id, approved_at: new Date().toISOString() })
     .eq("id", id)
-    .in("status", ["pending", "endorsed"]);
+    .in("status", ["pending", "endorsed"])
+    .select("id, profile_id, station, team, work_date, payable_hours, category")
+    .maybeSingle();
 
   if (error) redirect(backTo(id) + "?error=" + encodeURIComponent(error.message));
+
+  if (data) {
+    const { data: submitter } = await supabase.from("profiles").select("name, staff_no").eq("id", data.profile_id).maybeSingle();
+    if (submitter) {
+      // Awaited so the send completes before this serverless invocation ends — the
+      // function itself is still best-effort (try/catch, never throws).
+      await notifyOvertimeApproval({
+        requestId: data.id,
+        submitterName: submitter.name,
+        submitterStaffNo: submitter.staff_no,
+        station: data.station,
+        team: data.team,
+        workDate: data.work_date,
+        payableHours: data.payable_hours,
+        category: data.category,
+        approvedByName: profile.name,
+      });
+    }
+  }
 
   revalidatePath(backTo(id));
   revalidatePath("/duty/overtime");
