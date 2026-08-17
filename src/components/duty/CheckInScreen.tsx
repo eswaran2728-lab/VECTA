@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { RemarkQuickPhrases } from "@/components/forms/fields";
 import { submitDutyCheckIn, submitDutyCheckOut } from "@/lib/duty/checkin-actions";
+import { useOfflineSubmit } from "@/lib/offline/useOfflineSubmit";
 import { scheduledWindow, computeLateMinutes, computeEarlyMinutes } from "@/lib/duty/lateness";
 import { pointInPolygon } from "@/lib/duty/geofence";
 import { todayISODateMY, formatTimeMY } from "@/lib/datetime";
@@ -44,9 +45,13 @@ export function CheckInScreen({
   const [geoError, setGeoError] = useState<string | null>(null);
   const [forceShow, setForceShow] = useState(false);
   const [remark, setRemark] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [queuedKind, setQueuedKind] = useState<"in" | "out" | null>(null);
   const [tick, setTick] = useState(0);
+
+  const { submit: submitCheckIn, pending: submittingIn } = useOfflineSubmit("duty_checkin", submitDutyCheckIn);
+  const { submit: submitCheckOut, pending: submittingOut } = useOfflineSubmit("duty_checkout", submitDutyCheckOut);
+  const submitting = submittingIn || submittingOut;
 
   const isOff = roster?.shift_code === "OFF";
   const showFlow = !!roster && (!isOff || forceShow || !!record);
@@ -93,20 +98,25 @@ export function CheckInScreen({
       setSubmitError("Please add a remark before checking in.");
       return;
     }
-    setSubmitting(true);
     setSubmitError(null);
-    const result = await submitDutyCheckIn({
+    const offline = typeof navigator !== "undefined" && !navigator.onLine;
+    const outcome = await submitCheckIn({
       lat: position.lat,
       lng: position.lng,
       accuracy_m: position.accuracy,
       late_remark: remark,
+      offline,
+      client_timestamp: new Date().toISOString(),
     });
-    setSubmitting(false);
-    if (!result.ok) {
-      setSubmitError(result.error ?? "Couldn't check in.");
+    if (outcome.kind === "error") {
+      setSubmitError(outcome.message);
       return;
     }
     setRemark("");
+    if (outcome.kind === "queued") {
+      setQueuedKind("in");
+      return;
+    }
     router.refresh();
   }
 
@@ -119,19 +129,24 @@ export function CheckInScreen({
       setSubmitError("Please add a remark before checking out.");
       return;
     }
-    setSubmitting(true);
     setSubmitError(null);
-    const result = await submitDutyCheckOut({
+    const offline = typeof navigator !== "undefined" && !navigator.onLine;
+    const outcome = await submitCheckOut({
       lat: position.lat,
       lng: position.lng,
       early_out_remark: remark,
+      offline,
+      client_timestamp: new Date().toISOString(),
     });
-    setSubmitting(false);
-    if (!result.ok) {
-      setSubmitError(result.error ?? "Couldn't check out.");
+    if (outcome.kind === "error") {
+      setSubmitError(outcome.message);
       return;
     }
     setRemark("");
+    if (outcome.kind === "queued") {
+      setQueuedKind("out");
+      return;
+    }
     router.refresh();
   }
 
@@ -151,6 +166,20 @@ export function CheckInScreen({
         <button type="button" className="btn-secondary w-full" onClick={() => setForceShow(true)}>
           Check in anyway (covering another team)
         </button>
+      </div>
+    );
+  }
+
+  if (queuedKind) {
+    return (
+      <div className="card p-5 space-y-2" style={{ borderLeft: "3px solid var(--blue)" }}>
+        <p className="t-mono text-[10px] font-semibold" style={{ color: "var(--blue)" }}>
+          QUEUED OFFLINE
+        </p>
+        <p className="text-[13px]" style={{ color: "var(--soft)" }}>
+          You&apos;re offline. This {queuedKind === "in" ? "check-in" : "check-out"} is saved on your device and
+          will submit automatically once you&apos;re back online — no re-entry needed.
+        </p>
       </div>
     );
   }

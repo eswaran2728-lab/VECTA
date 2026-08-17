@@ -5,9 +5,13 @@ const DB_NAME = "avsec-ops-offline";
 const DB_VERSION = 1;
 const STORE = "queue";
 
+// The report types plus the two duty check-in/out actions — everything that can be
+// queued offline and replayed later shares this one IndexedDB store and sync badge.
+export type QueueItemType = ReportType | "duty_checkin" | "duty_checkout";
+
 export interface QueuedSubmission {
   localId: string;
-  type: ReportType;
+  type: QueueItemType;
   payload: unknown;
   createdAt: string;
   attempts: number;
@@ -32,7 +36,7 @@ function getDb() {
   return dbPromise;
 }
 
-export async function enqueueSubmission(type: ReportType, payload: unknown): Promise<string> {
+export async function enqueueSubmission(type: QueueItemType, payload: unknown): Promise<string> {
   const db = await getDb();
   const localId = crypto.randomUUID();
   const record: QueuedSubmission = {

@@ -6,6 +6,7 @@ import {
   removeQueuedSubmission,
   updateQueuedSubmission,
   type QueuedSubmission,
+  type QueueItemType,
 } from "@/lib/offline/db";
 import { clearLocalDraft } from "@/lib/offline/useDraftAutosave";
 import {
@@ -16,16 +17,23 @@ import {
   submitSec033,
   submitSec013,
 } from "@/lib/reports/actions";
-import type { ReportType } from "@/lib/reference-data";
+import { submitDutyCheckIn, submitDutyCheckOut } from "@/lib/duty/checkin-actions";
+import { REPORT_TYPES, type ReportType } from "@/lib/reference-data";
 
-const SUBMIT_FNS: Record<ReportType, (input: unknown) => Promise<{ ok: boolean }>> = {
+const SUBMIT_FNS: Record<QueueItemType, (input: unknown) => Promise<{ ok: boolean }>> = {
   sec016: submitSec016,
   sec014: submitSec014,
   sec029: submitSec029,
   sec018: submitSec018,
   sec033: submitSec033,
   sec013: submitSec013,
+  duty_checkin: submitDutyCheckIn,
+  duty_checkout: submitDutyCheckOut,
 };
+
+function isReportType(type: QueueItemType): type is ReportType {
+  return (REPORT_TYPES as readonly string[]).includes(type);
+}
 
 interface OfflineContextValue {
   isOnline: boolean;
@@ -65,7 +73,7 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
           const result = await SUBMIT_FNS[item.type](item.payload);
           if (result.ok) {
             await removeQueuedSubmission(item.localId);
-            clearLocalDraft(item.type);
+            if (isReportType(item.type)) clearLocalDraft(item.type);
           } else {
             await updateQueuedSubmission({
               ...item,

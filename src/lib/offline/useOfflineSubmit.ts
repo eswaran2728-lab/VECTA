@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import type { ReportType } from "@/lib/reference-data";
-import { enqueueSubmission } from "./db";
+import { enqueueSubmission, type QueueItemType } from "./db";
 import type { ActionResult } from "@/lib/reports/actions";
 
 type SubmitFn = (input: unknown) => Promise<ActionResult>;
@@ -13,10 +12,11 @@ export type SubmitOutcome =
   | { kind: "error"; message: string };
 
 /**
- * Wraps a report's server action: submits online, or transparently queues to
- * IndexedDB (synced later by OfflineSyncProvider) when the network is unavailable.
+ * Wraps a report's (or duty check-in/out's) server action: submits online, or
+ * transparently queues to IndexedDB (synced later by OfflineSyncProvider) when the
+ * network is unavailable.
  */
-export function useOfflineSubmit(type: ReportType, submitFn: SubmitFn) {
+export function useOfflineSubmit(type: QueueItemType, submitFn: SubmitFn) {
   const [pending, setPending] = useState(false);
 
   const submit = useCallback(
