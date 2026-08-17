@@ -18,7 +18,7 @@ interface NavItem {
 // ASO submits reports, so their primary surface is Home + the report FAB. Monitoring
 // roles land on the dashboard instead.
 function navFor(role: UserRole): { left: NavItem[]; right: NavItem[]; fab: { href: string; label: string } } {
-  const canSubmitDaily = role === "SO" || role === "DSE" || role === "ENFORCEMENT";
+  const canSubmitDaily = role === "SO" || role === "DSE";
 
   if (role === "ASO") {
     return {
