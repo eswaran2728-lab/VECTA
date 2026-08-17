@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireProfile } from "@/lib/auth";
+import { requireRole, DUTY_ROLES } from "@/lib/auth";
 import { getTimesheetRoster, getTimesheetDuty } from "@/lib/duty/timesheet-queries";
 import { scheduledWindow } from "@/lib/duty/lateness";
 import { AppHeader } from "@/components/layout/AppHeader";
@@ -36,7 +36,7 @@ export default async function TimesheetPage({
 }: {
   searchParams: { week?: string };
 }) {
-  const profile = await requireProfile();
+  const profile = await requireRole(DUTY_ROLES);
   const weekStart = mondayOf(searchParams.week || todayISODateMY());
   const weekEnd = addDays(weekStart, 6);
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));

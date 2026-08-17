@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { requireProfile } from "@/lib/auth";
+import { requireRole, DUTY_ROLES } from "@/lib/auth";
 import { getTodayRoster, getDutyZone, getTodayDutyRecord } from "@/lib/duty/checkin-queries";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { CheckInScreen } from "@/components/duty/CheckInScreen";
 
 export default async function DutyPage() {
-  const profile = await requireProfile();
+  const profile = await requireRole(DUTY_ROLES);
 
   const roster = profile.station ? await getTodayRoster(profile.station, profile.team ?? "") : null;
   const [zone, record] = await Promise.all([
@@ -29,6 +29,9 @@ export default async function DutyPage() {
             Overtime →
           </Link>
         </div>
+        <Link href="/duty/zones" className="btn-quiet block text-center">
+          View Duty Zones →
+        </Link>
       </div>
       <BottomNav profile={profile} />
     </main>

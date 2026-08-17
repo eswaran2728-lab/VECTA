@@ -59,3 +59,6 @@ export async function requireRole(roles: UserRole[]): Promise<Profile> {
 export const MONITOR_ROLES: UserRole[] = ["SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"];
 export const DAILY_REPORT_ROLES: UserRole[] = ["ASO", "SO", "DSE"];
 export const ADMIN_ROLES: UserRole[] = ["ADMIN"];
+// Only the team-scoped roles actually work a shift, so only they check in/out at /duty —
+// Enforcement/Management/Admin are org-wide monitors and never roster onto a shift.
+export const DUTY_ROLES: UserRole[] = ["ASO", "SO", "DSE"];

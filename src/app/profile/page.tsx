@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireProfile } from "@/lib/auth";
+import { requireProfile, DUTY_ROLES } from "@/lib/auth";
 import { signOut } from "@/lib/profile-actions";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -11,12 +11,16 @@ export default async function ProfilePage() {
   const profile = await requireProfile();
 
   const isMonitor = profile.role !== "ASO";
+  // Only team-scoped roles work a shift, so only they get a timesheet to look at.
+  const worksAShift = (DUTY_ROLES as readonly string[]).includes(profile.role);
 
   const menu: { label: string; href: string; right?: string }[] = [
     { label: "My Reports", href: "/history" },
-    { label: "My Timesheet", href: "/duty/timesheet" },
+    ...(worksAShift ? [{ label: "My Timesheet", href: "/duty/timesheet" }] : []),
     ...(isMonitor ? [{ label: "Dashboard", href: "/dashboard" }] : []),
     { label: "Bay Board", href: "/bay-board" },
+    // Everyone can see where the geofence zones are; only Admin can edit them.
+    ...(profile.role === "ADMIN" ? [] : [{ label: "Duty Zones", href: "/duty/zones" }]),
     ...(profile.role === "ADMIN"
       ? [
           { label: "User Management", href: "/admin/users" },

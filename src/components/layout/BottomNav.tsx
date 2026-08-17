@@ -34,10 +34,16 @@ function navFor(role: UserRole): { left: NavItem[]; right: NavItem[]; fab: { hre
     };
   }
 
+  // SO/DSE still work a shift and check in/out; Enforcement/Management/Admin are
+  // org-wide monitors who never roster onto one, so they get History back instead.
+  const worksAShift = role === "SO" || role === "DSE";
+
   return {
     left: [
       { href: "/dashboard", label: "DASHBOARD", round: "2px", rot: "0deg" },
-      { href: "/duty", label: "DUTY", round: "50%", rot: "45deg" },
+      worksAShift
+        ? { href: "/duty", label: "DUTY", round: "50%", rot: "45deg" }
+        : { href: "/history", label: "HISTORY", round: "50%", rot: "0deg", match: ["/reports/view"] },
     ],
     right: [
       { href: "/bay-board", label: "BAY BOARD", round: "2px", rot: "45deg" },
