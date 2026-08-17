@@ -42,7 +42,7 @@ const DECODE_INTERVAL_MS = 1000 / DECODE_FPS;
 // Bumped whenever this file changes meaningfully — shown on-screen so a
 // field report ("still doesn't work") can be checked against whether the
 // device actually picked up the latest deploy before debugging further.
-const SCANNER_BUILD = "diag-1";
+const SCANNER_BUILD = "diag-2";
 
 /**
  * Live camera-first barcode scanner for physical seal tags (CODE_128/
@@ -90,7 +90,17 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
     setDecoderStatus("loading");
     setAttempts(0);
     detectorRef.current = new BarcodeDetector({
-      formats: ["code_128", "code_39", "codabar"],
+      // "linear_codes" is a format group, not a single symbology — it
+      // tells the decoder to try every 1D format it supports (Code 128/
+      // 39/93, Codabar, ITF, EAN/UPC, DataBar, ...). Seal tags are printed
+      // by whatever vendor supplied that batch, and there's no reliable
+      // way to know the exact symbology in advance — field testing against
+      // a real AirAsia seal tag showed the decoder running correctly
+      // (confirmed via the on-screen frame counter) but never matching
+      // against the previous narrower {code_128, code_39, codabar} list,
+      // pointing at a symbology outside that guess rather than a decode
+      // failure.
+      formats: ["linear_codes"],
     });
     if (!canvasRef.current) canvasRef.current = document.createElement("canvas");
     const canvas = canvasRef.current;
