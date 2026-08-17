@@ -1,13 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle, CheckCircle2, ScanBarcode } from "lucide-react";
 import { CHECKPOINT_SEAL_COLORS, SEAL_COLOR_LABELS, SEAL_TYPE_LABELS } from "@/lib/constants";
 import { t, type Lang } from "@/lib/i18n";
 import type { Seal } from "@/lib/database.types";
 import { cn } from "@/lib/utils";
+import { SealBarcodeScanner } from "@/components/seal-barcode-scanner";
 
 interface SealVerifyFieldsProps {
   seals: Pick<Seal, "id" | "seal_number" | "seal_type" | "seal_color">[];
@@ -35,6 +38,8 @@ export function SealVerifyFields({
   onColorsChange,
   lang = "en",
 }: SealVerifyFieldsProps) {
+  const [scanningSealId, setScanningSealId] = useState<string | null>(null);
+
   return (
     <div className="space-y-3">
       <Label>{t(lang, "seal_verification")}</Label>
@@ -57,7 +62,25 @@ export function SealVerifyFields({
                 required
                 className="font-mono"
               />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label={`Scan seal ${i + 1} barcode`}
+                onClick={() => setScanningSealId(scanningSealId === seal.id ? null : seal.id)}
+              >
+                <ScanBarcode className="h-4 w-4" />
+              </Button>
             </div>
+            {scanningSealId === seal.id ? (
+              <SealBarcodeScanner
+                onDetected={(value) => {
+                  onChange({ ...entries, [seal.id]: value });
+                  setScanningSealId(null);
+                }}
+                onClose={() => setScanningSealId(null)}
+              />
+            ) : null}
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">Colour observed:</span>
               {CHECKPOINT_SEAL_COLORS.map((c) => (
