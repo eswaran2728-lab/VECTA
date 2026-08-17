@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireProfile } from "@/lib/auth";
 import { getTodayRoster, getDutyZone, getTodayDutyRecord } from "@/lib/duty/checkin-queries";
 import { AppHeader } from "@/components/layout/AppHeader";
@@ -19,6 +20,15 @@ export default async function DutyPage() {
       <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">
         <h1 className="t-display text-2xl">Duty Check-In</h1>
         <CheckInScreen roster={roster} zone={zone} record={record} />
+
+        <div className="flex items-center justify-between gap-2 pt-2">
+          <Link href="/duty/timesheet" className="btn-quiet">
+            My Timesheet →
+          </Link>
+          <Link href="/duty/overtime" className="btn-quiet">
+            Overtime →
+          </Link>
+        </div>
       </div>
       <BottomNav profile={profile} />
     </main>
