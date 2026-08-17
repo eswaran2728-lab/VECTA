@@ -39,6 +39,11 @@ const CROP_TOP_PCT = (1 - CROP_HEIGHT_PCT) / 2;
 const DECODE_FPS = 6;
 const DECODE_INTERVAL_MS = 1000 / DECODE_FPS;
 
+// Bumped whenever this file changes meaningfully — shown on-screen so a
+// field report ("still doesn't work") can be checked against whether the
+// device actually picked up the latest deploy before debugging further.
+const SCANNER_BUILD = "diag-1";
+
 /**
  * Live camera-first barcode scanner for physical seal tags (CODE_128/
  * CODE_39 printed alongside the human-readable seal number).
@@ -70,12 +75,20 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
   const [scanning, setScanning] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [zoomSupported, setZoomSupported] = useState(false);
+  // Diagnostic-only state: makes the invisible decode loop visible on the
+  // officer's own screen, so "still not working" reports come back with
+  // real signal (decoder never came up vs. it's running fine but missing)
+  // instead of needing devtools access on a field device.
+  const [decoderStatus, setDecoderStatus] = useState<"loading" | "ready" | "failed">("loading");
+  const [attempts, setAttempts] = useState(0);
 
   useEffect(() => {
     activeRef.current = true;
     handledRef.current = false;
     lastDecodeRef.current = 0;
     consecutiveErrorsRef.current = 0;
+    setDecoderStatus("loading");
+    setAttempts(0);
     detectorRef.current = new BarcodeDetector({
       formats: ["code_128", "code_39", "codabar"],
     });
@@ -105,6 +118,8 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
         try {
           const barcodes = await detectorRef.current!.detect(canvas);
           consecutiveErrorsRef.current = 0; // a clean resolve means the decoder is alive
+          setDecoderStatus("ready");
+          setAttempts((n) => n + 1);
           if (barcodes.length > 0) {
             handledRef.current = true;
             onDetectedRef.current(barcodes[0].rawValue.trim());
@@ -119,6 +134,7 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
           consecutiveErrorsRef.current += 1;
           console.error("Seal barcode decode failed:", err);
           if (consecutiveErrorsRef.current >= 5) {
+            setDecoderStatus("failed");
             setError(
               "Barcode decoder failed to load — check your connection, or type the seal number instead."
             );
@@ -196,7 +212,12 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
   return (
     <div className="space-y-3 rounded-lg border bg-card p-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium">Scan seal barcode</p>
+        <p className="text-sm font-medium">
+          Scan seal barcode{" "}
+          <span className="font-mono text-[10px] font-normal text-muted-foreground">
+            ({SCANNER_BUILD})
+          </span>
+        </p>
         <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label="Close scanner">
           <X className="h-4 w-4" />
         </Button>
@@ -219,6 +240,11 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
         <p className="text-center text-sm text-muted-foreground">Starting camera…</p>
       ) : null}
       {error ? <p className="text-center text-sm text-red-600">{error}</p> : null}
+      {scanning ? (
+        <p className="text-center font-mono text-xs text-muted-foreground">
+          Decoder: {decoderStatus} · Frames checked: {attempts}
+        </p>
+      ) : null}
 
       {zoomSupported ? (
         <div className="flex items-center justify-center gap-3">
