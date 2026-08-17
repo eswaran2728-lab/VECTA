@@ -24,7 +24,7 @@ function navFor(role: UserRole): { left: NavItem[]; right: NavItem[]; fab: { hre
     return {
       left: [
         { href: "/home", label: "HOME", round: "2px", rot: "0deg" },
-        { href: "/history", label: "HISTORY", round: "50%", rot: "0deg", match: ["/reports/view"] },
+        { href: "/duty", label: "DUTY", round: "50%", rot: "45deg" },
       ],
       right: [
         { href: "/bay-board", label: "BAY BOARD", round: "2px", rot: "45deg" },
@@ -37,7 +37,7 @@ function navFor(role: UserRole): { left: NavItem[]; right: NavItem[]; fab: { hre
   return {
     left: [
       { href: "/dashboard", label: "DASHBOARD", round: "2px", rot: "0deg" },
-      { href: "/history", label: "HISTORY", round: "50%", rot: "0deg", match: ["/reports/view"] },
+      { href: "/duty", label: "DUTY", round: "50%", rot: "45deg" },
     ],
     right: [
       { href: "/bay-board", label: "BAY BOARD", round: "2px", rot: "45deg" },

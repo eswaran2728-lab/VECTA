@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { getOverdueAircraft, getMySubmissions } from "@/lib/reports/queries";
+import { getTodayRoster, getTodayDutyRecord } from "@/lib/duty/checkin-queries";
 import { REPORT_META, type ReportType } from "@/lib/reference-data";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -22,11 +23,19 @@ function greeting() {
 
 export default async function HomePage() {
   const profile = await requireRole(["ASO"]);
-  const [overdue, recent] = await Promise.all([
+  const [overdue, recent, roster] = await Promise.all([
     profile.station ? getOverdueAircraft(profile.station) : Promise.resolve([]),
     getMySubmissions({ profileId: profile.id, limit: 5 }),
+    profile.station ? getTodayRoster(profile.station, profile.team ?? "") : Promise.resolve(null),
   ]);
+  const dutyRecord = roster ? await getTodayDutyRecord(profile.id, roster.shift_code) : null;
   const firstName = profile.name.split(" ")[0] || profile.name;
+
+  const dutyStatusLabel = dutyRecord?.check_out_at
+    ? "Shift complete"
+    : dutyRecord?.check_in_at
+      ? `On duty since ${formatTimeMY(dutyRecord.check_in_at)}`
+      : "Not checked in";
 
   return (
     <main className="min-h-screen pb-32">
@@ -41,6 +50,24 @@ export default async function HomePage() {
             {profile.role} · {profile.team ? `Team ${profile.team}` : profile.station}
           </p>
         </div>
+
+        <Link
+          href="/duty"
+          className="flex items-center justify-between gap-3 p-4"
+          style={{ background: "var(--panel)", border: "1px solid var(--line)", borderLeft: "3px solid var(--gold)" }}
+        >
+          <div>
+            <p className="t-mono text-[10px] font-semibold" style={{ letterSpacing: "0.12em", color: "var(--soft)" }}>
+              DUTY CHECK-IN
+            </p>
+            <p className="text-[14px] font-semibold mt-1" style={{ color: "var(--ink)" }}>
+              {dutyStatusLabel}
+            </p>
+          </div>
+          <span className="t-mono text-[13px] shrink-0" style={{ color: "var(--faintest)" }}>
+            ›
+          </span>
+        </Link>
 
         {overdue.length > 0 && (
           <section className="p-4" style={{ background: "var(--red-panel)", borderLeft: "3px solid var(--red)" }}>
