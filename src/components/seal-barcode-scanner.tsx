@@ -3,16 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { BarcodeDetector, setZXingModuleOverrides } from "barcode-detector/pure";
 import { Button } from "@/components/ui/button";
-import { ZoomIn, ZoomOut, X } from "lucide-react";
+import { ZoomIn, ZoomOut, X, Lightbulb } from "lucide-react";
 
 // Self-host the ~1MB decoder .wasm from this app's own origin instead of
 // the package's default jsDelivr CDN fetch (public/wasm/zxing_reader.wasm,
 // copied from node_modules/zxing-wasm's matching version — see the
 // zxing-wasm dependency pin in package.json if that ever needs updating).
 // Airport/enterprise networks at checkpoints often block third-party CDNs
-// outright, which silently starves every detect() call forever — exactly
-// the "keeps scanning, never finds anything" symptom this fixes. Runs
-// once at module load, before any BarcodeDetector is constructed.
+// outright, which silently starves every detect() call forever. Runs once
+// at module load, before any BarcodeDetector is constructed.
 setZXingModuleOverrides({ locateFile: (path) => `/wasm/${path}` });
 
 interface SealBarcodeScannerProps {
@@ -25,14 +24,18 @@ const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
 const ZOOM_STEP = 0.5;
 
-// Scan-box region as a fraction of the displayed video — wide/short,
-// matching the shape of a 1D barcode strip. The overlay box below is
-// drawn at these exact same percentages, so what the officer sees lined
-// up in the box is what actually gets cropped and decoded.
-const CROP_WIDTH_PCT = 0.8;
-const CROP_HEIGHT_PCT = 0.32;
+// Centre region used for the close-up decode pass. Deliberately generous
+// (not a tight 1D-shaped strip) so a slightly off-centre or tilted tag
+// still lands fully inside it, quiet zones included — Code 128/39 need
+// blank margin either side of the bars or they will not decode.
+const CROP_WIDTH_PCT = 0.9;
+const CROP_HEIGHT_PCT = 0.5;
 const CROP_LEFT_PCT = (1 - CROP_WIDTH_PCT) / 2;
 const CROP_TOP_PCT = (1 - CROP_HEIGHT_PCT) / 2;
+
+// Thin bars decode far better with pixels to spare, so the crop is
+// upscaled to at least this width before being handed to the decoder.
+const MIN_CROP_DECODE_WIDTH = 1280;
 
 // Decoding every animation frame is wasted work (battery/heat) without
 // improving accuracy — throttle actual decode attempts.
@@ -42,23 +45,32 @@ const DECODE_INTERVAL_MS = 1000 / DECODE_FPS;
 // Bumped whenever this file changes meaningfully — shown on-screen so a
 // field report ("still doesn't work") can be checked against whether the
 // device actually picked up the latest deploy before debugging further.
-const SCANNER_BUILD = "diag-2";
+const SCANNER_BUILD = "diag-3";
 
 /**
- * Live camera-first barcode scanner for physical seal tags (CODE_128/
- * CODE_39 printed alongside the human-readable seal number).
+ * Live camera barcode scanner for physical seal tags.
  *
  * Decodes via the `barcode-detector` package (a WebAssembly build of the
  * real ZXing-C++ library) rather than the native BarcodeDetector API
  * (Safari has none, on iPhone or anywhere else) or html5-qrcode's weak
  * pure-JS fallback — same decode engine and accuracy on every platform.
- * Each tick crops the video down to just the visible scan-box region onto
- * an offscreen canvas before decoding, throttled to ~6/sec, rather than
- * running the decoder against the full camera frame on every frame.
+ *
+ * Every tick alternates between two decode passes, because each one
+ * covers the other's blind spot:
+ *  - the FULL camera frame, which cannot be thrown off by any mismatch
+ *    between the on-screen guide box and the video's intrinsic pixel
+ *    dimensions (letterboxing/object-fit), and
+ *  - an upscaled centre CROP, which gives thin or small bars more pixels
+ *    to work with than the full frame does.
+ *
+ * Accepts every symbology the engine supports rather than a hand-picked
+ * list: seal tags come from whichever vendor supplied that batch, and
+ * field testing showed the decoder running correctly (confirmed by the
+ * on-screen frame counter) while a narrower format guess never matched.
  *
  * Only the .wasm decoder itself is fetched (once, self-hosted from this
- * app's own origin — see the setZXingModuleOverrides call above) — every
- * scan afterwards is local, no per-scan network call.
+ * app's own origin) — every scan afterwards is local, no per-scan
+ * network call.
  */
 export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -66,6 +78,7 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
   const detectorRef = useRef<BarcodeDetector | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastDecodeRef = useRef(0);
+  const passRef = useRef(0);
   const consecutiveErrorsRef = useRef(0);
   const activeRef = useRef(true);
   const handledRef = useRef(false);
@@ -75,58 +88,68 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
   const [scanning, setScanning] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [zoomSupported, setZoomSupported] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
   // Diagnostic-only state: makes the invisible decode loop visible on the
   // officer's own screen, so "still not working" reports come back with
-  // real signal (decoder never came up vs. it's running fine but missing)
-  // instead of needing devtools access on a field device.
+  // real signal instead of needing devtools access on a field device.
   const [decoderStatus, setDecoderStatus] = useState<"loading" | "ready" | "failed">("loading");
   const [attempts, setAttempts] = useState(0);
+  const [resolution, setResolution] = useState("");
 
   useEffect(() => {
     activeRef.current = true;
     handledRef.current = false;
     lastDecodeRef.current = 0;
+    passRef.current = 0;
     consecutiveErrorsRef.current = 0;
     setDecoderStatus("loading");
     setAttempts(0);
     detectorRef.current = new BarcodeDetector({
-      // "linear_codes" is a format group, not a single symbology — it
-      // tells the decoder to try every 1D format it supports (Code 128/
-      // 39/93, Codabar, ITF, EAN/UPC, DataBar, ...). Seal tags are printed
-      // by whatever vendor supplied that batch, and there's no reliable
-      // way to know the exact symbology in advance — field testing against
-      // a real AirAsia seal tag showed the decoder running correctly
-      // (confirmed via the on-screen frame counter) but never matching
-      // against the previous narrower {code_128, code_39, codabar} list,
-      // pointing at a symbology outside that guess rather than a decode
-      // failure.
-      formats: ["linear_codes"],
+      // "any" is a format group meaning every symbology the engine
+      // supports — 1D and 2D alike. Nothing is gained by narrowing it:
+      // the decoder is no slower for accepting more, and a seal tag
+      // printed in an unexpected symbology should still scan.
+      formats: ["any"],
     });
     if (!canvasRef.current) canvasRef.current = document.createElement("canvas");
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+    const drawUpscaledCrop = (video: HTMLVideoElement): HTMLCanvasElement | null => {
+      if (!ctx) return null;
+      const sx = Math.round(video.videoWidth * CROP_LEFT_PCT);
+      const sy = Math.round(video.videoHeight * CROP_TOP_PCT);
+      const sw = Math.round(video.videoWidth * CROP_WIDTH_PCT);
+      const sh = Math.round(video.videoHeight * CROP_HEIGHT_PCT);
+      const scale = sw < MIN_CROP_DECODE_WIDTH ? MIN_CROP_DECODE_WIDTH / sw : 1;
+      canvas.width = Math.round(sw * scale);
+      canvas.height = Math.round(sh * scale);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    };
 
     const scanLoop = async (video: HTMLVideoElement) => {
       if (!activeRef.current || handledRef.current) return;
 
       const now = performance.now();
       if (
-        ctx &&
         video.readyState >= 2 &&
         video.videoWidth > 0 &&
         now - lastDecodeRef.current >= DECODE_INTERVAL_MS
       ) {
         lastDecodeRef.current = now;
-        const sx = Math.round(video.videoWidth * CROP_LEFT_PCT);
-        const sy = Math.round(video.videoHeight * CROP_TOP_PCT);
-        const sw = Math.round(video.videoWidth * CROP_WIDTH_PCT);
-        const sh = Math.round(video.videoHeight * CROP_HEIGHT_PCT);
-        canvas.width = sw;
-        canvas.height = sh;
-        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+        passRef.current += 1;
+
+        // Alternate full-frame and upscaled-crop passes — see the class
+        // comment for why neither alone is sufficient.
+        const source =
+          passRef.current % 2 === 1 ? video : (drawUpscaledCrop(video) ?? video);
 
         try {
-          const barcodes = await detectorRef.current!.detect(canvas);
+          const barcodes = await detectorRef.current!.detect(source);
           consecutiveErrorsRef.current = 0; // a clean resolve means the decoder is alive
           setDecoderStatus("ready");
           setAttempts((n) => n + 1);
@@ -180,14 +203,23 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
         await video.play();
         setScanning(true);
 
-        // Zoom capability varies by device — probe after the stream starts.
+        // Zoom/torch capability varies by device — probe after the stream
+        // starts. Torch matters more than it looks: seal tags are grey
+        // plastic with grey print, and the extra light is often what
+        // makes the bars resolvable at all.
         try {
-          const caps = stream.getVideoTracks()[0]?.getCapabilities() as
-            | (MediaTrackCapabilities & { zoom?: { min: number; max: number } })
+          const track = stream.getVideoTracks()[0];
+          const caps = track?.getCapabilities() as
+            | (MediaTrackCapabilities & { zoom?: { min: number; max: number }; torch?: boolean })
             | undefined;
           if (caps?.zoom) setZoomSupported(true);
+          if (caps?.torch) setTorchSupported(true);
+          const settings = track?.getSettings();
+          if (settings?.width && settings?.height) {
+            setResolution(`${settings.width}×${settings.height}`);
+          }
         } catch {
-          // capability probing not supported on this browser — zoom controls just won't show
+          // capability probing not supported on this browser — controls just won't show
         }
 
         requestAnimationFrame(() => void scanLoop(video));
@@ -219,6 +251,19 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
     }
   };
 
+  const toggleTorch = async () => {
+    const next = !torchOn;
+    setTorchOn(next);
+    try {
+      const track = streamRef.current?.getVideoTracks()[0];
+      await track?.applyConstraints({
+        advanced: [{ torch: next } as MediaTrackConstraintSet],
+      });
+    } catch {
+      // device doesn't actually support runtime torch control
+    }
+  };
+
   return (
     <div className="space-y-3 rounded-lg border bg-card p-3">
       <div className="flex items-center justify-between">
@@ -234,9 +279,11 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
       </div>
 
       <div className="relative mx-auto w-full max-w-sm overflow-hidden rounded-lg border bg-black/90">
-        <video ref={videoRef} playsInline muted autoPlay className="w-full" />
+        <video ref={videoRef} playsInline muted autoPlay className="block w-full" />
+        {/* Framing guide only — the full frame is decoded too, so a
+            barcode slightly outside this box still scans. */}
         <div
-          className="pointer-events-none absolute rounded-md border-2 border-amber-400"
+          className="pointer-events-none absolute rounded-md border-2 border-amber-400/70"
           style={{
             left: `${CROP_LEFT_PCT * 100}%`,
             top: `${CROP_TOP_PCT * 100}%`,
@@ -252,34 +299,52 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
       {error ? <p className="text-center text-sm text-red-600">{error}</p> : null}
       {scanning ? (
         <p className="text-center font-mono text-xs text-muted-foreground">
-          Decoder: {decoderStatus} · Frames checked: {attempts}
+          {decoderStatus} · {attempts} frames{resolution ? ` · ${resolution}` : ""}
         </p>
       ) : null}
 
-      {zoomSupported ? (
+      {zoomSupported || torchSupported ? (
         <div className="flex items-center justify-center gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={() => applyZoom(zoom - ZOOM_STEP)}
-          >
-            <ZoomOut className="h-4 w-4" />
-          </Button>
-          <span className="w-12 text-center font-mono text-sm">{zoom.toFixed(1)}×</span>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={() => applyZoom(zoom + ZOOM_STEP)}
-          >
-            <ZoomIn className="h-4 w-4" />
-          </Button>
+          {zoomSupported ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label="Zoom out"
+                onClick={() => applyZoom(zoom - ZOOM_STEP)}
+              >
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <span className="w-12 text-center font-mono text-sm">{zoom.toFixed(1)}×</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label="Zoom in"
+                onClick={() => applyZoom(zoom + ZOOM_STEP)}
+              >
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+            </>
+          ) : null}
+          {torchSupported ? (
+            <Button
+              type="button"
+              variant={torchOn ? "default" : "outline"}
+              size="icon"
+              aria-label={torchOn ? "Turn off light" : "Turn on light"}
+              onClick={() => void toggleTorch()}
+            >
+              <Lightbulb className="h-4 w-4" />
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
       <p className="text-center text-xs text-muted-foreground">
-        Line the barcode up inside the box. Small/worn tags may need zoom.
+        Fill the box with the barcode and hold steady about a hand&apos;s width away. Too much zoom
+        makes it blurry — if it won&apos;t focus, zoom out and move closer instead.
       </p>
     </div>
   );
