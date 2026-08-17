@@ -1,9 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { BarcodeDetector } from "barcode-detector/pure";
+import { BarcodeDetector, setZXingModuleOverrides } from "barcode-detector/pure";
 import { Button } from "@/components/ui/button";
 import { ZoomIn, ZoomOut, X } from "lucide-react";
+
+// Self-host the ~1MB decoder .wasm from this app's own origin instead of
+// the package's default jsDelivr CDN fetch (public/wasm/zxing_reader.wasm,
+// copied from node_modules/zxing-wasm's matching version — see the
+// zxing-wasm dependency pin in package.json if that ever needs updating).
+// Airport/enterprise networks at checkpoints often block third-party CDNs
+// outright, which silently starves every detect() call forever — exactly
+// the "keeps scanning, never finds anything" symptom this fixes. Runs
+// once at module load, before any BarcodeDetector is constructed.
+setZXingModuleOverrides({ locateFile: (path) => `/wasm/${path}` });
 
 interface SealBarcodeScannerProps {
   /** Called with the decoded barcode text; parent closes the scanner. */
@@ -41,10 +51,9 @@ const DECODE_INTERVAL_MS = 1000 / DECODE_FPS;
  * an offscreen canvas before decoding, throttled to ~6/sec, rather than
  * running the decoder against the full camera frame on every frame.
  *
- * Only the .wasm decoder itself is fetched (once, from jsDelivr by
- * default) — every scan afterwards is local, no per-scan network call,
- * and every other part of this workflow already assumes network
- * connectivity.
+ * Only the .wasm decoder itself is fetched (once, self-hosted from this
+ * app's own origin — see the setZXingModuleOverrides call above) — every
+ * scan afterwards is local, no per-scan network call.
  */
 export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -52,6 +61,7 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
   const detectorRef = useRef<BarcodeDetector | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastDecodeRef = useRef(0);
+  const consecutiveErrorsRef = useRef(0);
   const activeRef = useRef(true);
   const handledRef = useRef(false);
   const onDetectedRef = useRef(onDetected);
@@ -65,6 +75,7 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
     activeRef.current = true;
     handledRef.current = false;
     lastDecodeRef.current = 0;
+    consecutiveErrorsRef.current = 0;
     detectorRef.current = new BarcodeDetector({
       formats: ["code_128", "code_39", "codabar"],
     });
@@ -93,13 +104,27 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
 
         try {
           const barcodes = await detectorRef.current!.detect(canvas);
+          consecutiveErrorsRef.current = 0; // a clean resolve means the decoder is alive
           if (barcodes.length > 0) {
             handledRef.current = true;
             onDetectedRef.current(barcodes[0].rawValue.trim());
             return;
           }
-        } catch {
-          // per-frame decode misses/errors are expected
+        } catch (err) {
+          // detect() rejecting is a real failure (decoder/wasm load
+          // problem), not a "no barcode in this frame" miss — an empty
+          // match resolves normally with barcodes.length === 0 instead.
+          // A few isolated rejects can happen transiently; only give up
+          // and surface an error once it's clearly not recovering.
+          consecutiveErrorsRef.current += 1;
+          console.error("Seal barcode decode failed:", err);
+          if (consecutiveErrorsRef.current >= 5) {
+            setError(
+              "Barcode decoder failed to load — check your connection, or type the seal number instead."
+            );
+            activeRef.current = false;
+            return;
+          }
         }
       }
 
