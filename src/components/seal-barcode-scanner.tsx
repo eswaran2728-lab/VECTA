@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
+import { BarcodeDetector } from "barcode-detector/pure";
 import { Button } from "@/components/ui/button";
 import { ZoomIn, ZoomOut, X } from "lucide-react";
 
@@ -11,100 +11,116 @@ interface SealBarcodeScannerProps {
   onClose: () => void;
 }
 
-const REGION_ID = "seal-barcode-reader";
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
 const ZOOM_STEP = 0.5;
 
 /**
  * Camera-first barcode scanner for physical seal tags (CODE_128/CODE_39
- * printed alongside the human-readable seal number). Purely client-side
- * decode, no network call — the decoded text is handed back to whatever
- * seal-number field opened the scanner, exactly as if it had been typed.
+ * printed alongside the human-readable seal number).
+ *
+ * Decodes via the `barcode-detector` package (a WebAssembly build of the
+ * real ZXing-C++ library) instead of html5-qrcode/the native
+ * BarcodeDetector API — those depend on browser support that's missing or
+ * weak for 1D formats on WebKit (iPhone Safari *and* iPhone Chrome, which
+ * is WebKit underneath), so this gives the same decode engine and
+ * accuracy on every platform. Only the .wasm decoder itself is fetched
+ * (once, from jsDelivr by default) — every scan afterwards is local, no
+ * per-scan network call, and every other part of this workflow already
+ * assumes network connectivity.
  */
 export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerProps) {
-  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const detectorRef = useRef<BarcodeDetector | null>(null);
+  const activeRef = useRef(true);
   const handledRef = useRef(false);
+  const onDetectedRef = useRef(onDetected);
+  onDetectedRef.current = onDetected;
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [zoomSupported, setZoomSupported] = useState(false);
-  // 1D barcode decode is a known weak point of the WebKit/zxing-js fallback
-  // path this library takes on iOS (including "Chrome" on iPhone, which is
-  // WebKit under the hood) — nudge toward manual entry there rather than
-  // pretending the experience is equivalent to Android.
-  const isIOS =
-    typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent);
 
   useEffect(() => {
-    const scanner = new Html5Qrcode(REGION_ID, {
-      formatsToSupport: [
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.CODABAR,
-      ],
-      verbose: false,
+    activeRef.current = true;
+    handledRef.current = false;
+    detectorRef.current = new BarcodeDetector({
+      formats: ["code_128", "code_39", "codabar"],
     });
-    scannerRef.current = scanner;
 
-    const handleDecoded = (decodedText: string) => {
-      if (handledRef.current) return;
-      handledRef.current = true;
-      scanner.stop().catch(() => undefined);
-      onDetected(decodedText.trim());
+    const scanLoop = async (video: HTMLVideoElement) => {
+      if (!activeRef.current || handledRef.current) return;
+      if (video.readyState >= 2) {
+        try {
+          const barcodes = await detectorRef.current!.detect(video);
+          if (barcodes.length > 0) {
+            handledRef.current = true;
+            onDetectedRef.current(barcodes[0].rawValue.trim());
+            return;
+          }
+        } catch {
+          // per-frame decode misses/errors are expected
+        }
+      }
+      if (activeRef.current && !handledRef.current) {
+        requestAnimationFrame(() => void scanLoop(video));
+      }
     };
 
-    scanner
-      .start(
-        { facingMode: "environment" },
-        {
-          // 1D decode (the WebKit/zxing-js fallback used on iOS in particular)
-          // is much CPU-heavier per frame than QR and breaks on mirrored
-          // frames, so this config diverges from qr-scanner.tsx's defaults.
-          fps: 5,
-          qrbox: { width: 280, height: 120 }, // wide box — seal barcodes are 1D, landscape
-          aspectRatio: 1.7777,
-          disableFlip: true,
-          videoConstraints: {
+    void (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
             facingMode: "environment",
             width: { ideal: 1920 },
             height: { ideal: 1080 },
             advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet],
           },
-        },
-        handleDecoded,
-        () => undefined // per-frame decode misses are expected
-      )
-      .then(() => {
+        });
+        if (!activeRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (!video) return;
+        video.srcObject = stream;
+        await video.play();
         setScanning(true);
+
         // Zoom capability varies by device — probe after the stream starts.
         try {
-          const caps = scanner.getRunningTrackCapabilities();
-          // 'zoom' isn't in the standard MediaTrackCapabilities TS type yet;
-          // browsers that support it still expose it at runtime.
-          if ((caps as MediaTrackCapabilities & { zoom?: { min: number; max: number } }).zoom) {
-            setZoomSupported(true);
-          }
+          const caps = stream.getVideoTracks()[0]?.getCapabilities() as
+            | (MediaTrackCapabilities & { zoom?: { min: number; max: number } })
+            | undefined;
+          if (caps?.zoom) setZoomSupported(true);
         } catch {
           // capability probing not supported on this browser — zoom controls just won't show
         }
-      })
-      .catch(() =>
-        setError("Camera unavailable. Close this and type the seal number instead.")
-      );
+
+        requestAnimationFrame(() => void scanLoop(video));
+      } catch {
+        setError("Camera unavailable. Close this and type the seal number instead.");
+      }
+    })();
 
     return () => {
-      const s = scannerRef.current;
-      if (s && s.isScanning) s.stop().catch(() => undefined);
+      activeRef.current = false;
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deliberately mount-once: onDetected is read via a ref (kept fresh
+    // above) so the camera/decoder aren't torn down and rebuilt on every
+    // parent re-render.
   }, []);
 
   const applyZoom = async (next: number) => {
     const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
     setZoom(clamped);
     try {
-      await scannerRef.current?.applyVideoConstraints({
+      const track = streamRef.current?.getVideoTracks()[0];
+      await track?.applyConstraints({
         advanced: [{ zoom: clamped } as MediaTrackConstraintSet],
       });
     } catch {
@@ -121,10 +137,9 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
         </Button>
       </div>
 
-      <div
-        id={REGION_ID}
-        className="mx-auto w-full max-w-sm overflow-hidden rounded-lg border bg-black/90 [&_video]:w-full"
-      />
+      <div className="mx-auto w-full max-w-sm overflow-hidden rounded-lg border bg-black/90">
+        <video ref={videoRef} playsInline muted autoPlay className="w-full" />
+      </div>
 
       {!scanning && !error ? (
         <p className="text-center text-sm text-muted-foreground">Starting camera…</p>
@@ -156,12 +171,6 @@ export function SealBarcodeScanner({ onDetected, onClose }: SealBarcodeScannerPr
       <p className="text-center text-xs text-muted-foreground">
         Hold steady, fill the frame with the barcode. Small/worn tags may need zoom.
       </p>
-      {isIOS ? (
-        <p className="text-center text-xs text-amber-700 dark:text-amber-400">
-          Barcode scanning works best on Android. On iPhone, typing the seal number is more
-          reliable.
-        </p>
-      ) : null}
     </div>
   );
 }
