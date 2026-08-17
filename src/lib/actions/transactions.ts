@@ -13,11 +13,13 @@ import type {
   CargoType,
   DeliveryLocation,
   Direction,
+  HubDestination,
   Seal,
   SealCheckpoint,
   SealColor,
   SealType,
   Transaction,
+  TransactionRoute,
   UserProfile,
 } from "@/lib/database.types";
 
@@ -79,10 +81,15 @@ async function verifySealsAtCheckpoint(
     colors = {};
   }
 
+  // superseded_at is null — after a REDQ re-seal, the old (closed-out)
+  // seal row still exists for history but must never be checked against
+  // again; only the active seal set is compared here. A no-op filter for
+  // every non-REDQ transaction, since their seals are never superseded.
   const { data: sealRows, error } = await supabase
     .from("seals")
     .select("*")
-    .eq("transaction_id", transactionId);
+    .eq("transaction_id", transactionId)
+    .is("superseded_at", null);
   if (error || !sealRows || sealRows.length === 0) {
     return "No seals on record for this transaction. / Tiada sil direkodkan untuk transaksi ini.";
   }
@@ -268,6 +275,13 @@ export async function createTransaction(
   const escortVehicleNumber = str(formData, "escort_vehicle_number").toUpperCase();
   const escalateExpired = bool(formData, "escalate_expired");
 
+  // Route (AIRCRAFT/HUB/REDQ) and hub destination — chosen via the flat
+  // Inbound/Outbound/Hub/REDQ→FOB selector on the form. Hub and REDQ imply
+  // direction OUTBOUND (never asked separately); the form already enforces
+  // this, re-validated here since this is the real check.
+  const route = (str(formData, "route") || "AIRCRAFT") as TransactionRoute;
+  const hubDestination = (str(formData, "hub_destination") || null) as HubDestination | null;
+
   // IFCSF (AA/SEC/F/010 Rev.01) header + Part A supplies breakdown.
   const station = str(formData, "station").toUpperCase();
   const cargoTypes = formData.getAll("cargo_types").map(String) as CargoType[];
@@ -284,6 +298,24 @@ export async function createTransaction(
     return {
       error: "Select a direction (Outbound or Inbound). / Pilih arah (Keluar atau Masuk).",
     };
+  }
+  if (!["AIRCRAFT", "HUB", "REDQ"].includes(route)) {
+    return { error: "Invalid route selected." };
+  }
+  if ((route === "HUB" || route === "REDQ") && direction !== "OUTBOUND") {
+    return {
+      error:
+        "Hub and REDQ → FOB are outbound-only routes. / Hub dan REDQ → FOB adalah laluan keluar sahaja.",
+    };
+  }
+  if (route === "HUB" && !hubDestination) {
+    return { error: "Select a hub destination. / Pilih destinasi hab." };
+  }
+  if (route === "HUB" && !["PEN", "JHB", "NILAI"].includes(hubDestination as string)) {
+    return { error: "Invalid hub destination selected." };
+  }
+  if (route !== "HUB" && hubDestination) {
+    return { error: "Hub destination only applies to the Hub route." };
   }
   if (!vehicleNumber || !driverName || !driverId) {
     return { error: "Vehicle, driver and driver ID are all required." };
@@ -409,6 +441,8 @@ export async function createTransaction(
     .insert({
       id: txId,
       direction,
+      route,
+      hub_destination: hubDestination,
       vehicle_number: vehicleNumber,
       driver_name: driverName,
       driver_id: driverId,
@@ -531,17 +565,17 @@ async function completeChecklistPart(
   const supabaseForCheck = await createClient();
   const { data: txRow } = await supabaseForCheck
     .from("transactions")
-    .select("direction, status")
+    .select("direction, status, route")
     .eq("id", transactionId)
     .single();
 
   if (!txRow) return { error: "Transaction not found. / Transaksi tidak dijumpai." };
-  const tx = txRow as Pick<Transaction, "direction" | "status">;
+  const tx = txRow as Pick<Transaction, "direction" | "status" | "route">;
 
-  const orderError = checkpointOrderError(tx.direction, part, tx.status);
+  const orderError = checkpointOrderError(tx.direction, part, tx.status, tx.route);
   if (orderError) return { error: orderError };
 
-  const finalizes = getStep(tx.direction, part)?.finalizes ?? false;
+  const finalizes = getStep(tx.direction, part, tx.route)?.finalizes ?? false;
 
   // Secondary whitelist check (Upgrade 2/3 defense-in-depth): a PASS is only
   // recorded when the observed vehicle/driver are still on the active
@@ -669,6 +703,7 @@ export async function completePartD(
   const checkpointTime = str(formData, "checkpoint_time");
   const result = str(formData, "result") as "PASS" | "ESCALATE";
   const escalationReason = str(formData, "escalation_reason");
+  const aircraftIdentifier = str(formData, "aircraft_identifier");
 
   if (!transactionId) return { error: "Missing transaction reference." };
   if (!receiverName || !receiverStaffId) return { error: "Receiver name and ID are required." };
@@ -683,15 +718,23 @@ export async function completePartD(
   const supabaseForCheck = await createClient();
   const { data: txRow } = await supabaseForCheck
     .from("transactions")
-    .select("direction, status")
+    .select("direction, status, route")
     .eq("id", transactionId)
     .single();
 
   if (!txRow) return { error: "Transaction not found. / Transaksi tidak dijumpai." };
-  const tx = txRow as Pick<Transaction, "direction" | "status">;
+  const tx = txRow as Pick<Transaction, "direction" | "status" | "route">;
 
-  const orderError = checkpointOrderError(tx.direction, "part_d", tx.status);
+  const orderError = checkpointOrderError(tx.direction, "part_d", tx.status, tx.route);
   if (orderError) return { error: orderError };
+
+  // Self-reported — no staff at the aircraft to verify it. Only required
+  // when delivering to the aircraft itself, not the SRA warehouse.
+  if (deliveryLocation === "AIRCRAFT" && !aircraftIdentifier) {
+    return {
+      error: "Aircraft identifier is required for aircraft delivery. / ID pesawat diperlukan.",
+    };
+  }
 
   // Seals are verified by number on the Pass path only; an Escalate result
   // freezes the transaction via the incident instead.
@@ -741,6 +784,7 @@ export async function completePartD(
     checkpoint_time: checkpointTime,
     result,
     escalation_reason: escalationReason || null,
+    aircraft_identifier: aircraftIdentifier || null,
     completed_by: profile.id,
   });
 
@@ -772,6 +816,233 @@ export async function completePartD(
   revalidatePath("/transactions");
   revalidatePath("/dashboard");
   redirect(`/transactions/${transactionId}?completed=1`);
+}
+
+/**
+ * Part Hub: hub_avsec confirms delivery — the terminal step for HUB-route
+ * transactions (no Part C/D). The confirmed destination is derived
+ * server-side from the transaction's own hub_destination rather than
+ * trusted from the client, so there is no way to submit a mismatched
+ * destination in the first place (enforce_part_hub_sequence() also
+ * rejects a mismatch, as a second layer).
+ */
+export async function completePartHub(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const profile = await requireRole(["hub_avsec"]);
+
+  const transactionId = str(formData, "transaction_id");
+  const remarks = str(formData, "remarks");
+  const signature = str(formData, "signature");
+
+  if (!transactionId) return { error: "Missing transaction reference." };
+  if (!signature) return { error: "Signature is required." };
+
+  const supabaseForCheck = await createClient();
+  const { data: txRow } = await supabaseForCheck
+    .from("transactions")
+    .select("direction, status, route, hub_destination")
+    .eq("id", transactionId)
+    .single();
+
+  if (!txRow) return { error: "Transaction not found. / Transaksi tidak dijumpai." };
+  const tx = txRow as Pick<Transaction, "direction" | "status" | "route" | "hub_destination">;
+
+  if (tx.route !== "HUB") {
+    return { error: "This checkpoint only applies to HUB-route transactions." };
+  }
+  const orderError = checkpointOrderError(tx.direction, "part_hub", tx.status, tx.route);
+  if (orderError) return { error: orderError };
+  if (!tx.hub_destination) {
+    return { error: "No hub destination on file for this transaction." };
+  }
+
+  let sig: { path: string; sha256: string };
+  try {
+    sig = await uploadDataUrl("signatures", signature, "part-hub");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Signature upload failed." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("part_hub").insert({
+    transaction_id: transactionId,
+    confirmed_destination: tx.hub_destination,
+    hub_avsec_name: profile.name,
+    hub_avsec_staff_id: profile.staff_id,
+    remarks: remarks || null,
+    signature_url: sig.path,
+    signature_hash: sig.sha256,
+    completed_by: profile.id,
+  });
+
+  if (error) {
+    return { error: `Part Hub could not be saved: ${error.message}` };
+  }
+
+  await generateCompletedFormPdf(transactionId);
+
+  revalidatePath(`/transactions/${transactionId}`);
+  revalidatePath("/transactions");
+  revalidatePath("/dashboard");
+  redirect(`/transactions/${transactionId}?completed=1`);
+}
+
+/**
+ * Part REDQ: the re-seal event for REDQ-route transactions. Verifies the
+ * old (active) truck seal by number and colour — same mismatch/escalation
+ * shape as verifySealsAtCheckpoint, but scoped to exactly one seal rather
+ * than the JSON-map-of-all-seals shape that helper expects, so this is
+ * written directly rather than force-reusing it. Applies the new seal
+ * (must exist before part_redq references it — FK requires this insert
+ * order), then inserts part_redq; enforce_part_redq_sequence() supersedes
+ * the old seal and advances status to REDQ_RESEALED.
+ */
+export async function completePartRedq(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const profile = await requireRole(["redq_avsec"]);
+
+  const transactionId = str(formData, "transaction_id");
+  const oldSealNumber = str(formData, "old_seal_number");
+  const oldSealColor = str(formData, "old_seal_color");
+  const newSealNumber = str(formData, "new_seal_number").toUpperCase();
+  const newSealColor = str(formData, "new_seal_color") as SealColor;
+  const remarks = str(formData, "remarks");
+  const signature = str(formData, "signature");
+
+  if (!transactionId) return { error: "Missing transaction reference." };
+  if (!oldSealNumber || !oldSealColor) {
+    return { error: "Enter the old seal's number and observed colour, as physically read." };
+  }
+  if (!newSealNumber || !newSealColor) {
+    return { error: "Enter the new seal's number and colour." };
+  }
+  if (!signature) return { error: "Signature is required." };
+
+  const supabaseForCheck = await createClient();
+  const { data: txRow } = await supabaseForCheck
+    .from("transactions")
+    .select("direction, status, route")
+    .eq("id", transactionId)
+    .single();
+
+  if (!txRow) return { error: "Transaction not found. / Transaksi tidak dijumpai." };
+  const tx = txRow as Pick<Transaction, "direction" | "status" | "route">;
+
+  if (tx.route !== "REDQ") {
+    return { error: "This checkpoint only applies to REDQ-route transactions." };
+  }
+  const orderError = checkpointOrderError(tx.direction, "part_redq", tx.status, tx.route);
+  if (orderError) return { error: orderError };
+
+  // Scoped to the truck seal specifically — a multi-seal Part A submission
+  // may also have non-superseded trolley/other seals, which REDQ doesn't
+  // touch. superseded_at is null: the current active seal of record.
+  const { data: activeSealRow } = await supabaseForCheck
+    .from("seals")
+    .select("*")
+    .eq("transaction_id", transactionId)
+    .eq("seal_type", "TRUCK_SEAL")
+    .is("superseded_at", null)
+    .maybeSingle();
+
+  if (!activeSealRow) {
+    return { error: "No active truck seal on record for this transaction." };
+  }
+  const activeSeal = activeSealRow as Seal;
+
+  const enteredOldNumber = norm(oldSealNumber);
+  const enteredOldColor = norm(oldSealColor);
+  const numberMatches = enteredOldNumber === norm(activeSeal.seal_number);
+  const colorMatches = enteredOldColor === norm(activeSeal.seal_color);
+
+  const supabase = await createClient();
+
+  const { error: verError } = await supabase.from("seal_verifications").insert({
+    seal_id: activeSeal.id,
+    checkpoint: "REDQ",
+    entered_seal_number: enteredOldNumber,
+    observed_seal_color: (enteredOldColor === "BLUE" || enteredOldColor === "GREEN"
+      ? enteredOldColor
+      : null) as "BLUE" | "GREEN" | null,
+    matched: numberMatches && colorMatches,
+    verified_by: profile.id,
+    photo_url: null,
+  });
+  if (verError) {
+    return { error: `Seal verification could not be saved: ${verError.message}` };
+  }
+
+  if (!numberMatches || !colorMatches) {
+    await supabase.from("incidents").insert({
+      transaction_id: transactionId,
+      incident_type: !numberMatches ? "SEAL_MISMATCH" : "WRONG_SEAL_COLOR",
+      description:
+        `Automatic escalation at REDQ: entered old seal ${enteredOldNumber} (${enteredOldColor}) did not match ` +
+        `the seal of record ${activeSeal.seal_number} (${activeSeal.seal_color}). Verified by ${profile.name} (${profile.staff_id}).`,
+      reported_by: `${profile.name} (${profile.staff_id})`,
+      reported_by_id: profile.id,
+      photo_url: null,
+    });
+    revalidatePath(`/transactions/${transactionId}`);
+    revalidatePath("/dashboard");
+    return {
+      error: !numberMatches
+        ? "SEAL MISMATCH — the old seal number does not match the seal of record. The transaction has been " +
+          "escalated and the admin notified. Do not proceed. / KETIDAKPADANAN SIL — transaksi telah dieskalasi."
+        : "WRONG SEAL COLOUR — the transaction has been escalated and the admin notified. Do not proceed. " +
+          "/ WARNA SIL TIDAK BETUL — transaksi telah dieskalasi.",
+    };
+  }
+
+  // Still outbound — the new seal must be BLUE, same rule as Part A
+  // (enforce_seal_color() checks this at the DB layer too).
+  if (newSealColor !== "BLUE") {
+    return { error: "The new seal at REDQ must be BLUE (outbound). / Sil baharu di REDQ mesti BIRU." };
+  }
+
+  let sig: { path: string; sha256: string };
+  try {
+    sig = await uploadDataUrl("signatures", signature, "part-redq");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Signature upload failed." };
+  }
+
+  const newSealId = crypto.randomUUID();
+  const { error: newSealError } = await supabase.from("seals").insert({
+    id: newSealId,
+    transaction_id: transactionId,
+    seal_number: newSealNumber,
+    seal_type: "TRUCK_SEAL",
+    seal_color: newSealColor,
+  });
+  if (newSealError) {
+    return { error: `New seal could not be saved: ${newSealError.message}` };
+  }
+
+  const { error } = await supabase.from("part_redq").insert({
+    transaction_id: transactionId,
+    old_seal_id: activeSeal.id,
+    new_seal_id: newSealId,
+    redq_avsec_name: profile.name,
+    redq_avsec_staff_id: profile.staff_id,
+    remarks: remarks || null,
+    signature_url: sig.path,
+    signature_hash: sig.sha256,
+    completed_by: profile.id,
+  });
+
+  if (error) {
+    return { error: `Part REDQ could not be saved: ${error.message}` };
+  }
+
+  revalidatePath(`/transactions/${transactionId}`);
+  revalidatePath("/transactions");
+  revalidatePath("/dashboard");
+  redirect(`/transactions/${transactionId}?approved=1`);
 }
 
 /**

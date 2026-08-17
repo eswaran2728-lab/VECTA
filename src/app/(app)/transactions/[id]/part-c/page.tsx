@@ -39,7 +39,7 @@ export default async function PartCPage({ params }: { params: Promise<{ id: stri
   if (!tx) notFound();
   const transaction = tx as Transaction;
 
-  const step = getStep(transaction.direction, "part_c");
+  const step = getStep(transaction.direction, "part_c", transaction.route);
   if (!step || transaction.status !== step.requiredStatus) {
     redirect(`/transactions/${id}`);
   }
@@ -79,7 +79,8 @@ export default async function PartCPage({ params }: { params: Promise<{ id: stri
           <WorkflowStepper
             direction={transaction.direction}
             status={transaction.status}
-            parts={partsDoneFromStatus(transaction.direction, transaction.status)}
+            route={transaction.route}
+            parts={partsDoneFromStatus(transaction.direction, transaction.status, transaction.route)}
           />
         </CardContent>
       </Card>

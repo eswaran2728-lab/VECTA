@@ -17,6 +17,8 @@ const REGISTERABLE_ROLES: Role[] = [
   "receiver",
   "enforcement",
   "vendor",
+  "hub_avsec",
+  "redq_avsec",
 ];
 
 /**

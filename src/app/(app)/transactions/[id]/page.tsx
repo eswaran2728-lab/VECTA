@@ -17,6 +17,7 @@ import { SegmentCountdown } from "@/components/segment-countdown";
 import {
   CARGO_TYPE_LABELS,
   DELIVERY_LOCATION_LABELS,
+  HUB_DESTINATION_LABELS,
   INCIDENT_TYPE_LABELS,
 } from "@/lib/constants";
 import { formatDateTime } from "@/lib/utils";
@@ -31,6 +32,8 @@ import type {
   PartA,
   PartBC,
   PartD,
+  PartHub,
+  PartRedq,
   Seal,
   SealVerification,
   SegmentTimeout,
@@ -161,11 +164,13 @@ export default async function TransactionDetailPage({
     catering_companies: { name: string } | null;
   };
 
-  const [a, b, c, d, inc, sealRes] = await Promise.all([
+  const [a, b, c, d, hub, redq, inc, sealRes] = await Promise.all([
     supabase.from("part_a").select("*").eq("transaction_id", id).maybeSingle(),
     supabase.from("part_b").select("*").eq("transaction_id", id).maybeSingle(),
     supabase.from("part_c").select("*").eq("transaction_id", id).maybeSingle(),
     supabase.from("part_d").select("*").eq("transaction_id", id).maybeSingle(),
+    supabase.from("part_hub").select("*").eq("transaction_id", id).maybeSingle(),
+    supabase.from("part_redq").select("*").eq("transaction_id", id).maybeSingle(),
     supabase.from("incidents").select("*").eq("transaction_id", id).order("created_at"),
     supabase
       .from("seals")
@@ -178,24 +183,28 @@ export default async function TransactionDetailPage({
   const partB = b.data as PartBC | null;
   const partC = c.data as PartBC | null;
   const partD = d.data as PartD | null;
+  const partHub = hub.data as PartHub | null;
+  const partRedq = redq.data as PartRedq | null;
   const incidents = (inc.data ?? []) as Incident[];
   const seals = (sealRes.data ?? []) as unknown as (Seal & {
     seal_verifications: SealVerification[];
   })[];
 
-  const [sigA, sigB, sigC, sigD] = await Promise.all([
+  const [sigA, sigB, sigC, sigD, sigHub, sigRedq] = await Promise.all([
     signedUrl("signatures", partA?.signature_url ?? null),
     signedUrl("signatures", partB?.signature_url ?? null),
     signedUrl("signatures", partC?.signature_url ?? null),
     signedUrl("signatures", partD?.signature_url ?? null),
+    signedUrl("signatures", partHub?.signature_url ?? null),
+    signedUrl("signatures", partRedq?.signature_url ?? null),
   ]);
   const incidentPhotos = await Promise.all(
     incidents.map((i) => signedUrl("incident-photos", i.photo_url))
   );
   const completedFormUrl = await signedUrl("completed-forms", transaction.completed_form_url);
 
-  // Which checkpoint can this user action right now? (direction-aware)
-  const nextStep = nextStepFor(transaction.direction, transaction.status);
+  // Which checkpoint can this user action right now? (direction- and route-aware)
+  const nextStep = nextStepFor(transaction.direction, transaction.status, transaction.route);
   const nextAction =
     nextStep && profile.role === nextStep.role
       ? {
@@ -320,6 +329,16 @@ export default async function TransactionDetailPage({
             {transaction.station ? (
               <Row label="Station" value={<span className="font-mono">{transaction.station}</span>} />
             ) : null}
+            {transaction.route !== "AIRCRAFT" ? (
+              <Row
+                label="Route"
+                value={
+                  transaction.route === "HUB" && transaction.hub_destination
+                    ? `Hub — ${HUB_DESTINATION_LABELS[transaction.hub_destination]}`
+                    : "REDQ → FOB"
+                }
+              />
+            ) : null}
             <Row label="Vehicle" value={<span className="font-mono">{transaction.vehicle_number}</span>} />
             <Row label="Driver" value={transaction.driver_name} />
             <Row label="Driver ID" value={<span className="font-mono">{transaction.driver_id}</span>} />
@@ -396,6 +415,14 @@ export default async function TransactionDetailPage({
                     {SEAL_COLOR_LABELS[seal.seal_color]} {SEAL_TYPE_LABELS[seal.seal_type]}
                   </Badge>
                   <span className="font-mono font-medium">{seal.seal_number}</span>
+                  {seal.superseded_at ? (
+                    <span
+                      className="text-xs font-semibold text-muted-foreground"
+                      title={`Superseded ${formatDateTime(seal.superseded_at)}${seal.superseded_reason ? ` — ${seal.superseded_reason}` : ""}`}
+                    >
+                      Superseded {formatDateTime(seal.superseded_at)}
+                    </span>
+                  ) : null}
                   {seal.seal_verifications.length > 0 ? (
                     <span
                       className={`text-xs ${
@@ -436,7 +463,14 @@ export default async function TransactionDetailPage({
             <WorkflowStepper
               direction={transaction.direction}
               status={transaction.status}
-              parts={{ part_b: !!partB, part_c: !!partC, part_d: !!partD || transaction.part_d_skipped }}
+              route={transaction.route}
+              parts={{
+                part_b: !!partB,
+                part_c: !!partC,
+                part_d: !!partD || transaction.part_d_skipped,
+                part_hub: !!partHub,
+                part_redq: !!partRedq,
+              }}
             />
           </CardContent>
         </Card>
@@ -483,39 +517,113 @@ export default async function TransactionDetailPage({
             title="Part B — AVSEC Post 2"
             part="part_b"
             currentPart={currentPart}
-            responsibleRole={getStep(transaction.direction, "part_b")?.role ?? "post2_avsec"}
+            responsibleRole={
+              getStep(transaction.direction, "part_b", transaction.route)?.role ?? "post2_avsec"
+            }
             viewerRole={profile.role}
             deadline={segmentDeadline}
           />
         )}
 
-        {partC ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Part C — AVSEC Post 6</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Row label="Officer" value={`${partC.avsec_name} (${partC.avsec_staff_id})`} />
-              <Row label="Completed" value={formatDateTime(partC.completed_at)} />
-              <div className="flex flex-wrap gap-2">
-                <Check ok={partC.vehicle_verified} label="Vehicle" />
-                <Check ok={partC.driver_verified} label="Driver" />
-                <Check ok={partC.seal_verified} label="Seal" />
-              </div>
-              {partC.remarks ? <p className="text-sm text-muted-foreground">“{partC.remarks}”</p> : null}
-              <Sig url={sigC} label="Officer signature" />
-            </CardContent>
-          </Card>
+        {transaction.route === "HUB" ? (
+          partHub ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Part Hub — Delivery Confirmation</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Row
+                  label="Hub AVSEC"
+                  value={`${partHub.hub_avsec_name} (${partHub.hub_avsec_staff_id})`}
+                />
+                <Row
+                  label="Confirmed Destination"
+                  value={HUB_DESTINATION_LABELS[partHub.confirmed_destination]}
+                />
+                <Row label="Completed" value={formatDateTime(partHub.completed_at)} />
+                {partHub.remarks ? (
+                  <p className="text-sm text-muted-foreground">“{partHub.remarks}”</p>
+                ) : null}
+                <Sig url={sigHub} label="Hub AVSEC signature" />
+              </CardContent>
+            </Card>
+          ) : (
+            <PendingPartCard
+              id={id}
+              title="Part Hub — Delivery Confirmation"
+              part="part_hub"
+              currentPart={currentPart}
+              responsibleRole="hub_avsec"
+              viewerRole={profile.role}
+              deadline={segmentDeadline}
+            />
+          )
         ) : (
-          <PendingPartCard
-            id={id}
-            title="Part C — AVSEC Post 6"
-            part="part_c"
-            currentPart={currentPart}
-            responsibleRole={getStep(transaction.direction, "part_c")?.role ?? "post6_avsec"}
-            viewerRole={profile.role}
-            deadline={segmentDeadline}
-          />
+          <>
+            {transaction.route === "REDQ" ? (
+              partRedq ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Part REDQ — Re-seal</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <Row
+                      label="REDQ AVSEC"
+                      value={`${partRedq.redq_avsec_name} (${partRedq.redq_avsec_staff_id})`}
+                    />
+                    <Row label="Completed" value={formatDateTime(partRedq.completed_at)} />
+                    {partRedq.remarks ? (
+                      <p className="text-sm text-muted-foreground">“{partRedq.remarks}”</p>
+                    ) : null}
+                    <Sig url={sigRedq} label="REDQ AVSEC signature" />
+                  </CardContent>
+                </Card>
+              ) : (
+                <PendingPartCard
+                  id={id}
+                  title="Part REDQ — Re-seal"
+                  part="part_redq"
+                  currentPart={currentPart}
+                  responsibleRole="redq_avsec"
+                  viewerRole={profile.role}
+                  deadline={segmentDeadline}
+                />
+              )
+            ) : null}
+
+            {partC ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Part C — AVSEC Post 6</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Row label="Officer" value={`${partC.avsec_name} (${partC.avsec_staff_id})`} />
+                  <Row label="Completed" value={formatDateTime(partC.completed_at)} />
+                  <div className="flex flex-wrap gap-2">
+                    <Check ok={partC.vehicle_verified} label="Vehicle" />
+                    <Check ok={partC.driver_verified} label="Driver" />
+                    <Check ok={partC.seal_verified} label="Seal" />
+                  </div>
+                  {partC.remarks ? (
+                    <p className="text-sm text-muted-foreground">“{partC.remarks}”</p>
+                  ) : null}
+                  <Sig url={sigC} label="Officer signature" />
+                </CardContent>
+              </Card>
+            ) : (
+              <PendingPartCard
+                id={id}
+                title="Part C — AVSEC Post 6"
+                part="part_c"
+                currentPart={currentPart}
+                responsibleRole={
+                  getStep(transaction.direction, "part_c", transaction.route)?.role ?? "post6_avsec"
+                }
+                viewerRole={profile.role}
+                deadline={segmentDeadline}
+              />
+            )}
+          </>
         )}
 
         {partD ? (
@@ -529,6 +637,9 @@ export default async function TransactionDetailPage({
                 value={`${partD.receiver_name} (${partD.receiver_staff_id})`}
               />
               <Row label="Location" value={DELIVERY_LOCATION_LABELS[partD.delivery_location]} />
+              {partD.aircraft_identifier ? (
+                <Row label="Aircraft Identifier" value={<span className="font-mono">{partD.aircraft_identifier}</span>} />
+              ) : null}
               <Row label="Completed" value={formatDateTime(partD.completed_at)} />
               <div className="flex flex-wrap gap-2">
                 <Check ok={partD.seal_intact} label="Seal intact" />
@@ -551,7 +662,7 @@ export default async function TransactionDetailPage({
               ) : null}
             </CardContent>
           </Card>
-        ) : transaction.direction === "OUTBOUND" ? (
+        ) : transaction.direction === "OUTBOUND" && transaction.route !== "HUB" ? (
           <PendingPartCard
             id={id}
             title="Part D — Delivery"
@@ -563,7 +674,11 @@ export default async function TransactionDetailPage({
         ) : profile.role === "supervisor" || profile.role === "enforcement" ? (
           <Card className="border-dashed">
             <CardHeader><CardTitle className="text-base">Part D — Delivery</CardTitle></CardHeader>
-            <CardContent className="text-sm text-muted-foreground">Not applicable to inbound transactions.</CardContent>
+            <CardContent className="text-sm text-muted-foreground">
+              {transaction.route === "HUB"
+                ? "Not applicable to HUB-route transactions — Part Hub is the terminal step."
+                : "Not applicable to inbound transactions."}
+            </CardContent>
           </Card>
         ) : null}
       </div>

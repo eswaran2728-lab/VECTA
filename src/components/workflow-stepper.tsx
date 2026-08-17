@@ -1,24 +1,34 @@
 import { AlertTriangle, CheckCircle2, CircleDashed } from "lucide-react";
-import { WORKFLOWS } from "@/lib/workflow";
-import type { Direction, TransactionStatus } from "@/lib/database.types";
+import { stepsFor, type CheckpointPart } from "@/lib/workflow";
+import type { Direction, TransactionRoute, TransactionStatus } from "@/lib/database.types";
 import { cn } from "@/lib/utils";
 
 interface WorkflowStepperProps {
   direction: Direction;
   status: TransactionStatus;
+  route?: TransactionRoute;
   /** Presence of each part record; Part A always exists once created. */
-  parts: { part_b: boolean; part_c: boolean; part_d: boolean };
+  parts: Record<CheckpointPart, boolean>;
   className?: string;
 }
 
 /**
- * Direction-aware progress stepper.
- * OUTBOUND renders A -> B -> C -> D; INBOUND renders A -> C -> B (final).
+ * Direction- and route-aware progress stepper. Pulls the step list from
+ * stepsFor() rather than hardcoding it, so the stepper and the actual
+ * enforced sequence can never drift apart. AIRCRAFT (default) renders
+ * A -> B -> C -> D; HUB renders A -> B -> Hub (terminal); REDQ renders
+ * A -> B -> REDQ -> C -> D; INBOUND renders A -> C -> B (final).
  */
-export function WorkflowStepper({ direction, status, parts, className }: WorkflowStepperProps) {
+export function WorkflowStepper({
+  direction,
+  status,
+  route = "AIRCRAFT",
+  parts,
+  className,
+}: WorkflowStepperProps) {
   const steps = [
     { key: "part_a", shortLabel: "A · Warehouse", done: true, current: false },
-    ...WORKFLOWS[direction].map((s) => ({
+    ...stepsFor(direction, route).map((s) => ({
       key: s.part,
       shortLabel: s.shortLabel,
       done: parts[s.part],

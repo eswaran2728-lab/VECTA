@@ -3,7 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { getLang } from "@/lib/actions/language";
 import { createClient } from "@/lib/supabase/server";
-import { getStep, partsDoneFromStatus } from "@/lib/workflow";
+import { getStep, partsDoneFromStatus, stepsFor } from "@/lib/workflow";
+import { ROUTE_LABELS } from "@/lib/constants";
 import { CheckpointForm } from "@/components/checkpoint-form";
 import { DirectionBadge } from "@/components/direction-badge";
 import { WorkflowStepper } from "@/components/workflow-stepper";
@@ -39,10 +40,15 @@ export default async function PartBPage({ params }: { params: Promise<{ id: stri
   if (!tx) notFound();
   const transaction = tx as Transaction;
 
-  const step = getStep(transaction.direction, "part_b");
+  const step = getStep(transaction.direction, "part_b", transaction.route);
   if (!step || transaction.status !== step.requiredStatus) {
     redirect(`/transactions/${id}`);
   }
+  // What happens next depends on the route chosen at Part A — Post 2
+  // doesn't decide anything here, but should know what to expect.
+  const upcomingSteps = stepsFor(transaction.direction, transaction.route)
+    .filter((s) => s.part !== "part_b")
+    .map((s) => s.shortLabel);
 
   const [sealRes, partARes, partCRes, vehiclesRes, driversRes] = await Promise.all([
     supabase
@@ -76,6 +82,11 @@ export default async function PartBPage({ params }: { params: Promise<{ id: stri
           <p className="rounded-md bg-green-100 p-2 text-sm font-medium text-green-800 dark:bg-green-900/40 dark:text-green-200">
             Final checkpoint — approving here completes this inbound transaction.
           </p>
+        ) : transaction.direction === "OUTBOUND" && transaction.route !== "AIRCRAFT" ? (
+          <p className="rounded-md bg-muted p-2 text-sm text-muted-foreground">
+            Route: <span className="font-medium">{ROUTE_LABELS[transaction.route]}</span> — next up:{" "}
+            {upcomingSteps.join(" → ")}
+          </p>
         ) : null}
       </div>
 
@@ -84,7 +95,8 @@ export default async function PartBPage({ params }: { params: Promise<{ id: stri
           <WorkflowStepper
             direction={transaction.direction}
             status={transaction.status}
-            parts={partsDoneFromStatus(transaction.direction, transaction.status)}
+            route={transaction.route}
+            parts={partsDoneFromStatus(transaction.direction, transaction.status, transaction.route)}
           />
         </CardContent>
       </Card>

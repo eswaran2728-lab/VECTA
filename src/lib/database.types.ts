@@ -5,16 +5,29 @@
   | "receiver"
   | "supervisor"
   | "enforcement"
-  | "vendor";
+  | "vendor"
+  | "hub_avsec"
+  | "redq_avsec";
 
 export type TransactionStatus =
   | "CREATED"
   | "INFLIGHT_POST_APPROVED"
   | "AIRPORT_POST_APPROVED"
+  /** REDQ-route outbound only, between INFLIGHT_POST_APPROVED and AIRPORT_POST_APPROVED. */
+  | "REDQ_RESEALED"
   | "COMPLETED"
   | "ESCALATED";
 
 export type Direction = "OUTBOUND" | "INBOUND";
+
+/**
+ * Outbound-only routing chosen at Part A creation (default AIRCRAFT,
+ * unchanged behavior). INBOUND transactions always stay AIRCRAFT — Hub
+ * and REDQ are never valid inbound. See
+ * supabase/migrations/20260817000002_multiroute_redq_restructure.sql.
+ */
+export type TransactionRoute = "AIRCRAFT" | "HUB" | "REDQ";
+export type HubDestination = "PEN" | "JHB" | "NILAI";
 
 export type DeliveryLocation = "SRA_WAREHOUSE" | "AIRCRAFT";
 
@@ -39,7 +52,7 @@ export type CargoType =
   | "MERCHANDISE"
   | "VEHICLE_MAINTENANCE";
 export type SealColor = "BLUE" | "GREEN" | "OTHER";
-export type SealCheckpoint = "INFLIGHT_POST" | "AIRPORT_POST" | "PART_D";
+export type SealCheckpoint = "INFLIGHT_POST" | "AIRPORT_POST" | "PART_D" | "REDQ";
 
 export type Seal = {
   id: string;
@@ -48,6 +61,12 @@ export type Seal = {
   seal_type: SealType;
   seal_color: SealColor;
   applied_at: string;
+  /** Set together, once, only at a REDQ re-seal — the one mutation a seal
+   *  row is ever allowed (enforce_seal_supersede_only()). Null means still
+   *  the active seal of record. */
+  superseded_at: string | null;
+  superseded_by: string | null;
+  superseded_reason: string | null;
 }
 
 export type SealVerification = {
@@ -138,6 +157,11 @@ export type Transaction = {
   escort_vehicle_number: string | null;
   /** IFCSF header field — airport station code/name. */
   station: string | null;
+  /** Outbound-only routing chosen at Part A; defaults AIRCRAFT (unchanged
+   *  behavior). INBOUND transactions always stay AIRCRAFT. */
+  route: TransactionRoute;
+  /** Required only when route = 'HUB' (transactions_hub_destination_pairing). */
+  hub_destination: HubDestination | null;
   /** IFCSF cargo-type checklist (Food & Beverage, Perishable, etc.) — multi-select. */
   cargo_types: CargoType[];
   /** IFCSF Part A supplies breakdown (Carts/SMU/Pallets/Boxes/Oven Rack + total). */
@@ -228,6 +252,43 @@ export type PartD = {
   checkpoint_time: string;
   result: "PASS" | "ESCALATE";
   escalation_reason: string | null;
+  /** Self-reported, required only when delivery_location = 'AIRCRAFT' — no
+   *  staff at the aircraft to verify it. */
+  aircraft_identifier: string | null;
+  completed_by: string;
+  completed_at: string;
+}
+
+/** Hub AVSEC confirms delivery — terminal step for HUB-route transactions. */
+export type PartHub = {
+  id: string;
+  transaction_id: string;
+  /** Must match the transaction's hub_destination (enforce_part_hub_sequence()). */
+  confirmed_destination: HubDestination;
+  hub_avsec_name: string;
+  hub_avsec_staff_id: string;
+  remarks: string | null;
+  signature_url: string;
+  signature_hash: string | null;
+  completed_by: string;
+  completed_at: string;
+}
+
+/**
+ * REDQ AVSEC re-seal event — closes out old_seal_id (superseded) and opens
+ * new_seal_id, for REDQ-route transactions only. See
+ * enforce_part_redq_sequence().
+ */
+export type PartRedq = {
+  id: string;
+  transaction_id: string;
+  old_seal_id: string;
+  new_seal_id: string;
+  redq_avsec_name: string;
+  redq_avsec_staff_id: string;
+  remarks: string | null;
+  signature_url: string;
+  signature_hash: string | null;
   completed_by: string;
   completed_at: string;
 }
@@ -402,6 +463,8 @@ export type Database = {
           | "archived_at"
           | "completed_form_url"
           | "status_entered_at"
+          | "route"
+          | "hub_destination"
         > & {
           id?: string;
           transaction_number?: string;
@@ -417,6 +480,8 @@ export type Database = {
           escort_officer_staff_id?: string | null;
           escort_vehicle_number?: string | null;
           station?: string | null;
+          route?: TransactionRoute;
+          hub_destination?: HubDestination | null;
           cargo_types?: CargoType[];
           supplies_total?: number | null;
           supplies_carts?: number | null;
@@ -480,7 +545,13 @@ export type Database = {
         Row: PartD;
         Insert: Omit<
           PartD,
-          "id" | "completed_at" | "checkpoint_date" | "checkpoint_time" | "result" | "escalation_reason"
+          | "id"
+          | "completed_at"
+          | "checkpoint_date"
+          | "checkpoint_time"
+          | "result"
+          | "escalation_reason"
+          | "aircraft_identifier"
         > & {
           id?: string;
           completed_at?: string;
@@ -488,8 +559,31 @@ export type Database = {
           checkpoint_time?: string;
           result?: "PASS" | "ESCALATE";
           escalation_reason?: string | null;
+          aircraft_identifier?: string | null;
         };
         Update: Partial<PartD>;
+        Relationships: [];
+      };
+      part_hub: {
+        Row: PartHub;
+        Insert: Omit<PartHub, "id" | "completed_at" | "signature_hash" | "remarks"> & {
+          id?: string;
+          completed_at?: string;
+          signature_hash?: string | null;
+          remarks?: string | null;
+        };
+        Update: never;
+        Relationships: [];
+      };
+      part_redq: {
+        Row: PartRedq;
+        Insert: Omit<PartRedq, "id" | "completed_at" | "signature_hash" | "remarks"> & {
+          id?: string;
+          completed_at?: string;
+          signature_hash?: string | null;
+          remarks?: string | null;
+        };
+        Update: never;
         Relationships: [];
       };
       incidents: {
@@ -569,7 +663,14 @@ export type Database = {
       };
       seals: {
         Row: Seal;
-        Insert: Omit<Seal, "id" | "applied_at"> & { id?: string; applied_at?: string };
+        Insert: Omit<
+          Seal,
+          "id" | "applied_at" | "superseded_at" | "superseded_by" | "superseded_reason"
+        > & { id?: string; applied_at?: string };
+        // The one permitted mutation (superseded_at/by/reason, set once at a
+        // REDQ re-seal) only ever happens inside enforce_part_redq_sequence()
+        // as a security-definer write — application code never calls
+        // .update() on seals directly, so this stays `never`.
         Update: never;
         Relationships: [];
       };

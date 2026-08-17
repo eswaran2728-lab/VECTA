@@ -1,10 +1,10 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
-import { PlaneTakeoff, PlaneLanding } from "lucide-react";
+import { PlaneTakeoff, PlaneLanding, Building2, Repeat } from "lucide-react";
 import { createTransaction, type ActionState } from "@/lib/actions/transactions";
-import { WORKFLOWS } from "@/lib/workflow";
-import { CARGO_TYPE_LABELS, CARGO_TYPES } from "@/lib/constants";
+import { stepsFor } from "@/lib/workflow";
+import { CARGO_TYPE_LABELS, CARGO_TYPES, HUB_DESTINATION_LABELS } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { BigCheckbox } from "@/components/ui/checkbox";
@@ -19,6 +19,8 @@ import type {
   CateringCompany,
   Direction,
   DriverRecord,
+  HubDestination,
+  TransactionRoute,
   VehicleRecord,
 } from "@/lib/database.types";
 
@@ -53,25 +55,58 @@ interface PartAFormProps {
   drivers: Pick<DriverRecord, "name" | "staff_id" | "pass_expiry_date">[];
 }
 
-const DIRECTION_OPTIONS: {
-  value: Direction;
+/**
+ * One flat choice of four — not a two-step direction-then-route picker.
+ * Hub and REDQ → FOB imply direction OUTBOUND automatically (never asked
+ * separately, since neither route is ever valid inbound); underneath, the
+ * form still writes the same direction/route/hub_destination fields as
+ * before, just derived from one selection instead of two.
+ */
+type MovementSelection = "INBOUND" | "OUTBOUND" | "HUB" | "REDQ";
+
+const MOVEMENT_OPTIONS: {
+  value: MovementSelection;
+  direction: Direction;
+  route: TransactionRoute;
   title: string;
   subtitle: string;
   icon: typeof PlaneTakeoff;
 }[] = [
   {
+    value: "INBOUND",
+    direction: "INBOUND",
+    route: "AIRCRAFT",
+    title: "Inbound",
+    subtitle: "Aircraft → SRA warehouse",
+    icon: PlaneLanding,
+  },
+  {
     value: "OUTBOUND",
+    direction: "OUTBOUND",
+    route: "AIRCRAFT",
     title: "Outbound",
     subtitle: "Catering warehouse → aircraft",
     icon: PlaneTakeoff,
   },
   {
-    value: "INBOUND",
-    title: "Inbound",
-    subtitle: "Aircraft → SRA warehouse",
-    icon: PlaneLanding,
+    value: "HUB",
+    direction: "OUTBOUND",
+    route: "HUB",
+    title: "Hub",
+    subtitle: "Catering warehouse → hub",
+    icon: Building2,
+  },
+  {
+    value: "REDQ",
+    direction: "OUTBOUND",
+    route: "REDQ",
+    title: "REDQ → FOB",
+    subtitle: "Re-seal at REDQ, then continue to FOB",
+    icon: Repeat,
   },
 ];
+
+const HUB_DESTINATIONS: HubDestination[] = ["PEN", "JHB", "NILAI"];
 
 export function PartAForm({
   picName,
@@ -81,7 +116,8 @@ export function PartAForm({
   drivers,
 }: PartAFormProps) {
   const [state, formAction, pending] = useActionState(createTransaction, initialState);
-  const [direction, setDirection] = useState<Direction | null>(null);
+  const [movement, setMovement] = useState<MovementSelection | null>(null);
+  const [hubDestination, setHubDestination] = useState<HubDestination | "">("");
   const [searchDone, setSearchDone] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [vehicleNumber, setVehicleNumber] = useState("");
@@ -150,29 +186,40 @@ export function PartAForm({
     (escortOfficerName.trim() !== "" && escortOfficerStaffId.trim() !== "" && escortVehicleNumber.trim() !== "");
   const anyUnlisted = vehicleState === "unlisted" || driverState === "unlisted";
 
-  const flow = direction
-    ? ["A · Warehouse", ...WORKFLOWS[direction].map((s) => s.shortLabel)].join("  →  ")
-    : null;
+  const selectedOption = MOVEMENT_OPTIONS.find((o) => o.value === movement) ?? null;
+  const direction = selectedOption?.direction ?? null;
+  const route = selectedOption?.route ?? null;
+
+  const flow =
+    direction && route
+      ? ["A · Warehouse", ...stepsFor(direction, route).map((s) => s.shortLabel)].join("  →  ")
+      : null;
+
+  const hubDestinationReady = movement !== "HUB" || hubDestination !== "";
 
   return (
     <div className="space-y-4">
-      {/* Step 1 — pick the direction before anything else is shown. */}
+      {/* Step 1 — one flat choice of four, not a two-step direction-then-route
+          picker. Hub and REDQ → FOB imply direction OUTBOUND automatically. */}
       <Card>
         <CardContent className="pt-6">
           <p className="mb-3 text-sm font-semibold">
-            Step 1 — Direction
+            Step 1 — Movement Type
             <span className="ml-2 font-normal text-muted-foreground">
               What kind of movement is this?
             </span>
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
-            {DIRECTION_OPTIONS.map((opt) => {
-              const active = direction === opt.value;
+            {MOVEMENT_OPTIONS.map((opt) => {
+              const active = movement === opt.value;
               return (
                 <button
                   key={opt.value}
                   type="button"
-                  onClick={() => setDirection(opt.value)}
+                  onClick={() => {
+                    setMovement(opt.value);
+                    if (opt.value !== "HUB") setHubDestination("");
+                  }}
                   aria-pressed={active}
                   className={
                     active
@@ -197,6 +244,27 @@ export function PartAForm({
               );
             })}
           </div>
+
+          {movement === "HUB" ? (
+            <div className="mt-3 space-y-2">
+              <Label htmlFor="hub_destination">Hub Destination</Label>
+              <Select
+                id="hub_destination"
+                value={hubDestination}
+                onChange={(e) => setHubDestination(e.target.value as HubDestination)}
+              >
+                <option value="" disabled>
+                  Select destination…
+                </option>
+                {HUB_DESTINATIONS.map((d) => (
+                  <option key={d} value={d}>
+                    {HUB_DESTINATION_LABELS[d]}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          ) : null}
+
           {flow ? (
             <p className="mt-3 rounded-md bg-muted p-2 font-mono text-xs text-muted-foreground">
               {flow}
@@ -205,15 +273,19 @@ export function PartAForm({
         </CardContent>
       </Card>
 
-      {direction === null ? (
+      {direction === null || route === null ? (
         <p className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-          Select Outbound or Inbound above to continue.
+          Select a movement type above to continue.
         </p>
       ) : (
         <Card>
           <CardContent className="pt-6">
             <form action={formAction} className="space-y-5">
               <input type="hidden" name="direction" value={direction} />
+              <input type="hidden" name="route" value={route} />
+              {movement === "HUB" ? (
+                <input type="hidden" name="hub_destination" value={hubDestination} />
+              ) : null}
 
               <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
@@ -480,7 +552,8 @@ export function PartAForm({
                   cargoTypes.length === 0 ||
                   anyUnlisted ||
                   driverNameMismatch ||
-                  !escortComplete
+                  !escortComplete ||
+                  !hubDestinationReady
                 }
               >
                 {pending ? "Creating…" : "Create Transaction & Generate QR"}

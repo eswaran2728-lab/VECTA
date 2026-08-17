@@ -135,7 +135,7 @@ export async function GET(request: NextRequest) {
 
   const { data: tx } = await supabase
     .from("transactions")
-    .select("id, status, direction, transaction_number")
+    .select("id, status, direction, transaction_number, route")
     .eq(transactionId ? "id" : "transaction_number", transactionId ?? transactionNumber)
     .maybeSingle();
 
@@ -146,14 +146,21 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const t = tx as Pick<Transaction, "id" | "status" | "direction" | "transaction_number">;
-  const next = nextStepFor(t.direction, t.status);
+  const t = tx as Pick<Transaction, "id" | "status" | "direction" | "transaction_number" | "route">;
+  const next = nextStepFor(t.direction, t.status, t.route);
 
-  // A checkpoint role (AVSEC Post 2/6, Receiver) scanning a transaction that
-  // is waiting on a DIFFERENT checkpoint is hard-blocked, not shown the
-  // read-only detail view — surfacing "not your checkpoint" is more useful
-  // (and safer) than a silent fallthrough. PIC/Admin keep read-only access.
-  const checkpointRoles: Role[] = ["post2_avsec", "post6_avsec", "receiver"];
+  // A checkpoint role (AVSEC Post 2/6, Receiver, Hub AVSEC, REDQ AVSEC)
+  // scanning a transaction that is waiting on a DIFFERENT checkpoint is
+  // hard-blocked, not shown the read-only detail view — surfacing "not
+  // your checkpoint" is more useful (and safer) than a silent fallthrough.
+  // PIC/Admin keep read-only access.
+  const checkpointRoles: Role[] = [
+    "post2_avsec",
+    "post6_avsec",
+    "receiver",
+    "hub_avsec",
+    "redq_avsec",
+  ];
   if (next && role && checkpointRoles.includes(role) && next.role !== role) {
     return NextResponse.json(
       {

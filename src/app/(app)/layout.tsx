@@ -34,9 +34,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const isVendor = profile.role === "vendor";
   // warehouse_pic scans too now, for Vendor Movement Part C — not a
   // catering checkpoint of their own, but still needs the Scan nav item.
-  const canScan = ["post2_avsec", "post6_avsec", "receiver", "warehouse_pic"].includes(
-    profile.role
-  );
+  // hub_avsec/redq_avsec scan for their own Multi-Route checkpoints.
+  const canScan = [
+    "post2_avsec",
+    "post6_avsec",
+    "receiver",
+    "warehouse_pic",
+    "hub_avsec",
+    "redq_avsec",
+  ].includes(profile.role);
 
   const nav = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, show: true },

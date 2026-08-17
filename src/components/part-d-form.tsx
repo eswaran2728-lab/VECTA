@@ -40,6 +40,8 @@ export function PartDForm({
   const [queuedMsg, setQueuedMsg] = useState<string | null>(null);
   const [result, setResult] = useState<"PASS" | "ESCALATE">("PASS");
   const [escalationReason, setEscalationReason] = useState("");
+  const [deliveryLocation, setDeliveryLocation] = useState("");
+  const [aircraftIdentifier, setAircraftIdentifier] = useState("");
 
   const malaysiaNow = new Date(
     new Date().toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" })
@@ -102,7 +104,13 @@ export function PartDForm({
 
           <div className="space-y-2">
             <Label htmlFor="delivery_location">{t(lang, "delivery_location")}</Label>
-            <Select id="delivery_location" name="delivery_location" required defaultValue="">
+            <Select
+              id="delivery_location"
+              name="delivery_location"
+              required
+              value={deliveryLocation}
+              onChange={(e) => setDeliveryLocation(e.target.value)}
+            >
               <option value="" disabled>
                 {t(lang, "select_location")}
               </option>
@@ -113,6 +121,25 @@ export function PartDForm({
               ))}
             </Select>
           </div>
+
+          {deliveryLocation === "AIRCRAFT" ? (
+            <div className="space-y-2">
+              <Label htmlFor="aircraft_identifier">Aircraft Identifier</Label>
+              <Input
+                id="aircraft_identifier"
+                name="aircraft_identifier"
+                placeholder="e.g. 9M-AQD"
+                autoCapitalize="characters"
+                value={aircraftIdentifier}
+                onChange={(e) => setAircraftIdentifier(e.target.value)}
+                className="font-mono"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Self-reported — no staff at the aircraft to verify it.
+              </p>
+            </div>
+          ) : null}
 
           <SealVerifyFields
             seals={seals}
@@ -180,6 +207,7 @@ export function PartDForm({
                 pending ||
                 !allSealsEntered ||
                 !signature ||
+                (deliveryLocation === "AIRCRAFT" && !aircraftIdentifier.trim()) ||
                 (result === "PASS" ? !sealIntact : escalationReason.trim().length === 0)
               }
             >

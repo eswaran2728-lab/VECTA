@@ -2,11 +2,13 @@ import type {
   CargoType,
   DeliveryLocation,
   Direction,
+  HubDestination,
   IncidentStatus,
   IncidentType,
   Role,
   SealColor,
   SealType,
+  TransactionRoute,
   TransactionStatus,
   VendorTransactionStatus,
 } from "./database.types";
@@ -27,6 +29,11 @@ export const ROLE_LABELS: Record<Role, string> = {
   // Vendor Movement Module (AA/SEC/F/019) — external vendor driver, own
   // separate workflow from the catering IFCSF one above.
   vendor: "Vendor",
+  // Multi-Route Restructure (Hub & REDQ) — confirms delivery for HUB-route
+  // transactions, the terminal step (no Part C/D).
+  hub_avsec: "Hub AVSEC",
+  // Performs the re-seal event for REDQ-route transactions.
+  redq_avsec: "REDQ AVSEC",
 };
 
 /** Distinct color per role for the persistent header badge (AVSEC role identification). */
@@ -38,12 +45,15 @@ export const ROLE_COLORS: Record<Role, string> = {
   supervisor: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
   enforcement: "bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/40 dark:text-fuchsia-200",
   vendor: "bg-lime-100 text-lime-800 dark:bg-lime-900/40 dark:text-lime-200",
+  hub_avsec: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200",
+  redq_avsec: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
 };
 
 export const STATUS_LABELS: Record<TransactionStatus, string> = {
   CREATED: "Created — awaiting checkpoint",
   INFLIGHT_POST_APPROVED: "In-flight Post approved",
   AIRPORT_POST_APPROVED: "Airport Post approved",
+  REDQ_RESEALED: "Re-sealed at REDQ — awaiting Airport Post",
   COMPLETED: "Completed",
   ESCALATED: "Escalated",
 };
@@ -52,10 +62,25 @@ export const STATUS_COLORS: Record<TransactionStatus, string> = {
   CREATED: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200",
   INFLIGHT_POST_APPROVED: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
   AIRPORT_POST_APPROVED: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200",
+  REDQ_RESEALED: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
   COMPLETED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
   // Amber/orange, not red, so escalated status stays visually distinct
   // from the app's red primary brand color.
   ESCALATED: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200",
+};
+
+/** Outbound-only routing chosen at Part A. INBOUND is always AIRCRAFT. */
+export const ROUTE_LABELS: Record<TransactionRoute, string> = {
+  AIRCRAFT: "Aircraft (standard)",
+  HUB: "Hub",
+  REDQ: "REDQ → FOB",
+};
+
+/** Hub destinations only — REDQ is a route, not a Hub destination. */
+export const HUB_DESTINATION_LABELS: Record<HubDestination, string> = {
+  PEN: "Penang (PEN)",
+  JHB: "Johor Bahru (JHB)",
+  NILAI: "Nilai",
 };
 
 export const DIRECTION_LABELS: Record<Direction, string> = {
@@ -163,6 +188,8 @@ export const ALL_ROLES: Role[] = [
   "supervisor",
   "enforcement",
   "vendor",
+  "hub_avsec",
+  "redq_avsec",
 ];
 
 export const VENDOR_STATUS_LABELS: Record<VendorTransactionStatus, string> = {
