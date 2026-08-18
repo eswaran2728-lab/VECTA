@@ -48,6 +48,7 @@ export function CheckInScreen({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [queuedKind, setQueuedKind] = useState<"in" | "out" | null>(null);
   const [tick, setTick] = useState(0);
+  const [locating, setLocating] = useState(false);
 
   const { submit: submitCheckIn, pending: submittingIn } = useOfflineSubmit("duty_checkin", submitDutyCheckIn);
   const { submit: submitCheckOut, pending: submittingOut } = useOfflineSubmit("duty_checkout", submitDutyCheckOut);
@@ -63,13 +64,47 @@ export function CheckInScreen({
     return () => clearInterval(t);
   }, [showFlow]);
 
+  // Fetches the device's *current* position — never trust a position captured earlier in
+  // the session. Both display polling below and the submit handlers call this fresh each
+  // time, so a check-out can never reuse a stale, still-inside-the-zone reading from an
+  // earlier check-in.
+  function fetchFreshPosition(): Promise<GeoPosition> {
+    return new Promise((resolve, reject) => {
+      if (typeof navigator === "undefined" || !navigator.geolocation) {
+        reject(new Error("Location services are unavailable on this device."));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+        (err) => reject(new Error(err.message || "Couldn't get your location.")),
+        { enableHighAccuracy: true, timeout: 15000 },
+      );
+    });
+  }
+
   useEffect(() => {
-    if (!showFlow || typeof navigator === "undefined" || !navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
-      (err) => setGeoError(err.message || "Couldn't get your location."),
-      { enableHighAccuracy: true, timeout: 15000 },
-    );
+    if (!showFlow) return;
+    let cancelled = false;
+    const poll = () => {
+      fetchFreshPosition()
+        .then((pos) => {
+          if (!cancelled) {
+            setPosition(pos);
+            setGeoError(null);
+          }
+        })
+        .catch((err) => {
+          if (!cancelled) setGeoError(err instanceof Error ? err.message : "Couldn't get your location.");
+        });
+    };
+    poll();
+    // Keep the on-screen "IN RANGE / OUT OF RANGE" badge live while the officer is
+    // standing on this screen — the authoritative check still re-fetches at submit time.
+    const interval = setInterval(poll, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [showFlow]);
 
   const insideFence = useMemo(() => {
@@ -92,25 +127,45 @@ export function CheckInScreen({
   // Both check-in and check-out require being at the assigned zone's pin-point location.
   const zoneBlocked = !!zone && insideFence === false;
 
+  // Re-fetches location right now rather than trusting whatever `position` currently
+  // holds — that state can be up to ~15s old from the live-badge poll, and reusing a
+  // check-in-time reading for check-out is exactly how someone could check in inside the
+  // zone, walk away, and still have check-out wrongly succeed.
+  async function resolveCurrentPosition(): Promise<GeoPosition | null> {
+    setLocating(true);
+    try {
+      const fresh = await fetchFreshPosition();
+      setPosition(fresh);
+      setGeoError(null);
+      return fresh;
+    } catch (err) {
+      setGeoError(err instanceof Error ? err.message : "Couldn't get your location.");
+      return null;
+    } finally {
+      setLocating(false);
+    }
+  }
+
   async function handleCheckIn() {
-    if (!position) {
-      setSubmitError("Waiting for your location…");
+    setSubmitError(null);
+    const fresh = await resolveCurrentPosition();
+    if (!fresh) {
+      setSubmitError("Couldn't confirm your current location — try again.");
       return;
     }
-    if (zoneBlocked) {
-      setSubmitError(`You must be at ${zone!.name} to check in — move to the pin-point location and try again.`);
+    if (zone && pointInPolygon(fresh.lng, fresh.lat, zone.polygon) === false) {
+      setSubmitError(`You must be at ${zone.name} to check in — move to the pin-point location and try again.`);
       return;
     }
     if (needsRemark && !remark.trim()) {
       setSubmitError("Please add a remark before checking in.");
       return;
     }
-    setSubmitError(null);
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
     const outcome = await submitCheckIn({
-      lat: position.lat,
-      lng: position.lng,
-      accuracy_m: position.accuracy,
+      lat: fresh.lat,
+      lng: fresh.lng,
+      accuracy_m: fresh.accuracy,
       late_remark: remark,
       offline,
       client_timestamp: new Date().toISOString(),
@@ -128,23 +183,24 @@ export function CheckInScreen({
   }
 
   async function handleCheckOut() {
-    if (!position) {
-      setSubmitError("Waiting for your location…");
+    setSubmitError(null);
+    const fresh = await resolveCurrentPosition();
+    if (!fresh) {
+      setSubmitError("Couldn't confirm your current location — try again.");
       return;
     }
-    if (zoneBlocked) {
-      setSubmitError(`You must be at ${zone!.name} to check out — move to the pin-point location and try again.`);
+    if (zone && pointInPolygon(fresh.lng, fresh.lat, zone.polygon) === false) {
+      setSubmitError(`You must be at ${zone.name} to check out — move to the pin-point location and try again.`);
       return;
     }
     if (needsRemark && !remark.trim()) {
       setSubmitError("Please add a remark before checking out.");
       return;
     }
-    setSubmitError(null);
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
     const outcome = await submitCheckOut({
-      lat: position.lat,
-      lng: position.lng,
+      lat: fresh.lat,
+      lng: fresh.lng,
       early_out_remark: remark,
       offline,
       client_timestamp: new Date().toISOString(),
@@ -288,16 +344,18 @@ export function CheckInScreen({
       <button
         type="button"
         className="btn-primary w-full"
-        disabled={submitting || !position || zoneBlocked}
+        disabled={submitting || locating || !position || zoneBlocked}
         onClick={checkedIn ? handleCheckOut : handleCheckIn}
       >
         {submitting
           ? "Submitting…"
-          : zoneBlocked
-            ? `Move to zone to ${checkedIn ? "check out" : "check in"}`
-            : checkedIn
-              ? "Check out"
-              : "Check in"}
+          : locating
+            ? "Confirming your location…"
+            : zoneBlocked
+              ? `Move to zone to ${checkedIn ? "check out" : "check in"}`
+              : checkedIn
+                ? "Check out"
+                : "Check in"}
       </button>
     </div>
   );
