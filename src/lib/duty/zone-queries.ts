@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type { DutyZone } from "./types";
 
-export async function getZonesForStation(station: string): Promise<DutyZone[]> {
+export async function getZonesForStation(station: string): Promise<(DutyZone & { active: boolean })[]> {
   const supabase = createClient();
   const { data } = await supabase
     .from("duty_zones")

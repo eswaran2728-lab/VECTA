@@ -9,24 +9,25 @@ const KL_FALLBACK: [number, number] = [3.139, 101.6869];
 
 export default function DutyMap({
   position,
-  zone,
+  zones,
 }: {
   position: { lat: number; lng: number; accuracy: number } | null;
-  zone: DutyZone | null;
+  zones: DutyZone[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.CircleMarker | null>(null);
   const accuracyRef = useRef<L.Circle | null>(null);
-  const zoneLayerRef = useRef<L.Polygon | null>(null);
+  const zoneLayersRef = useRef<L.Polygon[]>([]);
 
   // Map instance — created once.
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
+    const firstZone = zones[0];
     const center: [number, number] = position
       ? [position.lat, position.lng]
-      : zone
-        ? [zone.center_lat, zone.center_lng]
+      : firstZone
+        ? [firstZone.center_lat, firstZone.center_lng]
         : KL_FALLBACK;
 
     const map = L.map(containerRef.current, { zoomControl: false, attributionControl: false }).setView(center, 17);
@@ -40,18 +41,21 @@ export default function DutyMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Zone polygon overlay.
+  // Zone polygon overlays — every marked zone for the station, not just one.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    zoneLayerRef.current?.remove();
-    zoneLayerRef.current = null;
+    zoneLayersRef.current.forEach((layer) => layer.remove());
+    zoneLayersRef.current = [];
 
-    const ring = zone?.polygon?.coordinates?.[0];
-    if (!ring) return;
-    const latlngs = ring.map(([lng, lat]) => [lat, lng] as [number, number]);
-    zoneLayerRef.current = L.polygon(latlngs, { color: "#FFD900", weight: 2, fillOpacity: 0.08 }).addTo(map);
-  }, [zone]);
+    for (const zone of zones) {
+      const ring = zone.polygon?.coordinates?.[0];
+      if (!ring) continue;
+      const latlngs = ring.map(([lng, lat]) => [lat, lng] as [number, number]);
+      const layer = L.polygon(latlngs, { color: "#FFD900", weight: 2, fillOpacity: 0.08 }).addTo(map);
+      zoneLayersRef.current.push(layer);
+    }
+  }, [zones]);
 
   // Current position marker + accuracy ring.
   useEffect(() => {

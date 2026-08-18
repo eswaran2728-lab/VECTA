@@ -18,7 +18,6 @@ export async function upsertRosterCell(formData: FormData) {
   const shiftCode = String(formData.get("shift_code") || "").trim();
   const startTime = String(formData.get("start_time") || "").trim();
   const endTime = String(formData.get("end_time") || "").trim();
-  const zoneId = String(formData.get("zone_id") || "").trim();
   const notes = String(formData.get("notes") || "").trim();
   const week = String(formData.get("week") || "").trim();
 
@@ -35,7 +34,6 @@ export async function upsertRosterCell(formData: FormData) {
       shift_code: shiftCode,
       start_time: startTime || null,
       end_time: endTime || null,
-      zone_id: zoneId || null,
       notes: notes || null,
       set_by: admin.id,
     },
@@ -121,7 +119,6 @@ export async function setTeamScheduleRange(formData: FormData) {
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();
   const shiftCode = String(formData.get("shift_code") || "").trim();
-  const zoneId = String(formData.get("zone_id") || "").trim();
   const dateFrom = String(formData.get("date_from") || "").trim();
   const dateTo = String(formData.get("date_to") || "").trim();
   const notes = String(formData.get("notes") || "").trim();
@@ -153,7 +150,6 @@ export async function setTeamScheduleRange(formData: FormData) {
     shift_code: shiftCode,
     start_time: shift?.default_start ?? null,
     end_time: shift?.default_end ?? null,
-    zone_id: zoneId || null,
     notes: notes || null,
     set_by: admin.id,
   }));

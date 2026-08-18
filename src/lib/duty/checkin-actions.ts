@@ -31,6 +31,21 @@ function driftError(clientTimestamp: string): string | null {
   return null;
 }
 
+// Every team checks in/out at any of the station's marked zones — not one zone assigned
+// per shift. Returns the first zone the point falls inside, or null if it's outside all
+// of them (or the station has none defined, in which case there's nothing to enforce).
+async function matchStationZone(
+  supabase: ReturnType<typeof createClient>,
+  station: string,
+  lng: number,
+  lat: number,
+): Promise<{ zones: DutyZone[]; match: DutyZone | null }> {
+  const { data } = await supabase.from("duty_zones").select("*").eq("station", station).eq("active", true);
+  const zones = (data ?? []) as DutyZone[];
+  const match = zones.find((z) => pointInPolygon(lng, lat, z.polygon)) ?? null;
+  return { zones, match };
+}
+
 // Takes unknown input (not a typed interface) so it can be called both directly, online,
 // and later replayed from the IndexedDB offline queue with a JSON round-tripped payload —
 // same contract as the report submit actions (submitSec016 etc). Re-derives everything
@@ -52,7 +67,7 @@ export async function submitDutyCheckIn(input: unknown): Promise<ActionResult> {
 
   const { data: roster } = await supabase
     .from("team_rosters")
-    .select("shift_code, start_time, end_time, zone_id")
+    .select("shift_code, start_time, end_time")
     .eq("station", profile.station)
     .eq("team", profile.team ?? "")
     .eq("roster_date", dutyDate)
@@ -60,23 +75,15 @@ export async function submitDutyCheckIn(input: unknown): Promise<ActionResult> {
 
   if (!roster) return { ok: false, error: "No roster set for today — contact your supervisor." };
 
-  // Both check-in and check-out must happen at the assigned zone's pin-point location.
-  // No zone assigned means nothing to enforce, so that case falls through unblocked.
-  let insideFence: boolean | null = null;
-  let zoneName: string | null = null;
-  if (roster.zone_id) {
-    const { data: zone } = await supabase.from("duty_zones").select("*").eq("id", roster.zone_id).maybeSingle();
-    if (zone) {
-      const z = zone as DutyZone;
-      insideFence = pointInPolygon(values.lng, values.lat, z.polygon);
-      zoneName = z.name;
-    }
-  }
+  // Both check-in and check-out must happen inside one of the station's marked zones.
+  // No zones defined at all means nothing to enforce.
+  const { zones, match } = await matchStationZone(supabase, profile.station, values.lng, values.lat);
+  const insideFence = zones.length === 0 ? null : !!match;
 
   if (insideFence === false) {
     return {
       ok: false,
-      error: `You must be at ${zoneName ?? "the assigned zone"} to check in — move to the pin-point location and try again.`,
+      error: "You must be within a marked duty zone to check in — move to one of the zones and try again.",
     };
   }
 
@@ -99,7 +106,7 @@ export async function submitDutyCheckIn(input: unknown): Promise<ActionResult> {
       team: profile.team || null,
       duty_date: dutyDate,
       shift_code: roster.shift_code,
-      zone_id: roster.zone_id,
+      zone_id: match?.id ?? null,
       check_in_at: now.toISOString(),
       check_in_lat: values.lat,
       check_in_lng: values.lng,
@@ -136,7 +143,7 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
 
   const { data: record } = await supabase
     .from("duty_records")
-    .select("id, zone_id, check_in_at")
+    .select("id, check_in_at")
     .eq("profile_id", profile.id)
     .eq("duty_date", dutyDate)
     .is("check_out_at", null)
@@ -147,24 +154,15 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
 
   if (!record) return { ok: false, error: "No open check-in found for today." };
 
-  // Staff patrol/move during the shift — check-in doesn't require a fixed spot — but
-  // checking out closes the shift and must happen back at the assigned zone. No zone
-  // assigned means nothing to enforce, so that case falls through unblocked.
-  let insideFence: boolean | null = null;
-  let zoneName: string | null = null;
-  if (record.zone_id) {
-    const { data: zone } = await supabase.from("duty_zones").select("*").eq("id", record.zone_id).maybeSingle();
-    if (zone) {
-      const z = zone as DutyZone;
-      insideFence = pointInPolygon(values.lng, values.lat, z.polygon);
-      zoneName = z.name;
-    }
-  }
+  // Checking out must happen inside one of the station's marked zones too — not
+  // necessarily the same one checked in at, since staff patrol/move during the shift.
+  const { zones, match } = await matchStationZone(supabase, profile.station, values.lng, values.lat);
+  const insideFence = zones.length === 0 ? null : !!match;
 
   if (insideFence === false) {
     return {
       ok: false,
-      error: `You must be at ${zoneName ?? "the assigned zone"} to check out — move to the pin-point location and try again.`,
+      error: "You must be within a marked duty zone to check out — move to one of the zones and try again.",
     };
   }
 

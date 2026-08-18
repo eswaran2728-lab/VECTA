@@ -31,13 +31,21 @@ interface GeoPosition {
 
 const LATE_PHRASES = ["Traffic / transport delay", "Medical", "Approved by supervisor", "Ops requirement"];
 
+// Every team checks in/out at any of the station's marked zones — not one zone assigned
+// per shift. `matchZone` returns the first zone the position falls inside, or null if it's
+// outside all of them (or there are none at all, in which case there's nothing to enforce).
+function matchZone(position: { lat: number; lng: number } | null, zones: DutyZone[]): DutyZone | null {
+  if (!position) return null;
+  return zones.find((z) => pointInPolygon(position.lng, position.lat, z.polygon)) ?? null;
+}
+
 export function CheckInScreen({
   roster,
-  zone,
+  zones,
   record,
 }: {
   roster: TodayRoster | null;
-  zone: DutyZone | null;
+  zones: DutyZone[];
   record: DutyRecordRow | null;
 }) {
   const router = useRouter();
@@ -107,10 +115,8 @@ export function CheckInScreen({
     };
   }, [showFlow]);
 
-  const insideFence = useMemo(() => {
-    if (!position || !zone) return null;
-    return pointInPolygon(position.lng, position.lat, zone.polygon);
-  }, [position, zone]);
+  const matchedZone = useMemo(() => matchZone(position, zones), [position, zones]);
+  const insideFence = !position ? null : zones.length === 0 ? null : !!matchedZone;
 
   const scheduled = useMemo(() => {
     if (!roster?.start_time || !roster?.end_time) return null;
@@ -124,8 +130,9 @@ export function CheckInScreen({
   const predictedEarly = scheduled && checkedIn && !record?.check_out_at ? computeEarlyMinutes(scheduled.end, now) : 0;
   const needsRemark = !checkedIn ? predictedLate > 0 : predictedEarly > 0;
 
-  // Both check-in and check-out require being at the assigned zone's pin-point location.
-  const zoneBlocked = !!zone && insideFence === false;
+  // Both check-in and check-out require being inside one of the station's marked zones.
+  // No zones defined at all means nothing to enforce.
+  const zoneBlocked = zones.length > 0 && insideFence === false;
 
   // Re-fetches location right now rather than trusting whatever `position` currently
   // holds — that state can be up to ~15s old from the live-badge poll, and reusing a
@@ -153,8 +160,8 @@ export function CheckInScreen({
       setSubmitError("Couldn't confirm your current location — try again.");
       return;
     }
-    if (zone && pointInPolygon(fresh.lng, fresh.lat, zone.polygon) === false) {
-      setSubmitError(`You must be at ${zone.name} to check in — move to the pin-point location and try again.`);
+    if (zones.length > 0 && !matchZone(fresh, zones)) {
+      setSubmitError("You must be within a marked duty zone to check in — move to one of the zones and try again.");
       return;
     }
     if (needsRemark && !remark.trim()) {
@@ -189,8 +196,8 @@ export function CheckInScreen({
       setSubmitError("Couldn't confirm your current location — try again.");
       return;
     }
-    if (zone && pointInPolygon(fresh.lng, fresh.lat, zone.polygon) === false) {
-      setSubmitError(`You must be at ${zone.name} to check out — move to the pin-point location and try again.`);
+    if (zones.length > 0 && !matchZone(fresh, zones)) {
+      setSubmitError("You must be within a marked duty zone to check out — move to one of the zones and try again.");
       return;
     }
     if (needsRemark && !remark.trim()) {
@@ -277,7 +284,7 @@ export function CheckInScreen({
   return (
     <div className="space-y-3">
       <div className="card overflow-hidden">
-        <DutyMap position={position} zone={zone} />
+        <DutyMap position={position} zones={zones} />
       </div>
 
       {checkedIn && (
@@ -296,7 +303,7 @@ export function CheckInScreen({
               ? ` · ${roster.start_time.slice(0, 5)}–${roster.end_time.slice(0, 5)}`
               : ""}
           </span>
-          {zone && (
+          {zones.length > 0 && (
             <span
               className="t-mono text-[9px] font-bold px-2 py-1 shrink-0"
               style={{
@@ -304,7 +311,7 @@ export function CheckInScreen({
                 border: `1px solid ${insideFence === false ? "var(--red)" : "var(--green)"}`,
               }}
             >
-              {insideFence === null ? "LOCATING…" : insideFence ? `IN RANGE: ${zone.name}` : "OUT OF RANGE"}
+              {insideFence === null ? "LOCATING…" : matchedZone ? `IN RANGE: ${matchedZone.name}` : "OUT OF RANGE"}
             </span>
           )}
         </div>
@@ -317,8 +324,7 @@ export function CheckInScreen({
         )}
         {zoneBlocked && (
           <p className="field-error">
-            Move to {zone!.name} to {checkedIn ? "check out" : "check in"} — you must be at the pin-point
-            location.
+            Move to a marked duty zone to {checkedIn ? "check out" : "check in"}.
           </p>
         )}
       </div>

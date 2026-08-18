@@ -9,7 +9,6 @@ import {
   type RosterCell as RosterCellRow,
 } from "@/lib/duty/roster-queries";
 import { addStationTeam, setTeamScheduleRange, deleteShift } from "@/lib/duty/roster-actions";
-import { getZonesForStation } from "@/lib/duty/zone-queries";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { RosterCell } from "@/components/admin/RosterCell";
 import { CreateScheduleForm } from "@/components/admin/CreateScheduleForm";
@@ -51,12 +50,11 @@ export default async function AdminRosterPage({
   const search = searchParams.q || "";
   const page = Math.max(1, Number(searchParams.page) || 1);
 
-  const [shifts, officers, rosterRows, stationTeams, zones] = await Promise.all([
+  const [shifts, officers, rosterRows, stationTeams] = await Promise.all([
     getShifts(),
     getRosterOfficers(station, search),
     getRosterWeek(station, weekStart, weekEnd),
     getStationTeams(station),
-    getZonesForStation(station),
   ]);
 
   const cellMap = new Map<string, RosterCellRow>();
@@ -203,7 +201,6 @@ export default async function AdminRosterPage({
                             date={date}
                             week={weekStart}
                             shifts={shifts}
-                            zones={zones}
                             cell={cellMap.get(`${o.team}|${date}`)}
                           />
                         ) : (
@@ -300,17 +297,6 @@ export default async function AdminRosterPage({
                   <label className="field-label">To</label>
                   <input type="date" name="date_to" defaultValue={weekEnd} required className="input-base" />
                 </div>
-              </div>
-              <div>
-                <label className="field-label">Zone (leave blank for unrestricted check-in/out)</label>
-                <select name="zone_id" defaultValue="" className="input-base">
-                  <option value="">No zone — unrestricted</option>
-                  {zones.map((z) => (
-                    <option key={z.id} value={z.id}>
-                      {z.name}
-                    </option>
-                  ))}
-                </select>
               </div>
               <input type="text" name="notes" placeholder="Notes (optional)" className="input-base" />
               <button type="submit" className="btn-primary">
