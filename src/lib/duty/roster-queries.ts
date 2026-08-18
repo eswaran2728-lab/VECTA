@@ -29,6 +29,7 @@ export interface RosterCell {
   shift_code: string;
   start_time: string | null;
   end_time: string | null;
+  zone_id: string | null;
   notes: string | null;
   set_by: string;
   updated_at: string;
@@ -70,7 +71,7 @@ export async function getRosterWeek(station: string, weekStart: string, weekEnd:
   const supabase = createClient();
   const { data } = await supabase
     .from("team_rosters")
-    .select("station, team, roster_date, shift_code, start_time, end_time, notes, set_by, updated_at")
+    .select("station, team, roster_date, shift_code, start_time, end_time, zone_id, notes, set_by, updated_at")
     .eq("station", station)
     .gte("roster_date", weekStart)
     .lte("roster_date", weekEnd);

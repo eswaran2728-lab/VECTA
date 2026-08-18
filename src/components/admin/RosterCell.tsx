@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Shift, RosterCell as RosterCellRow } from "@/lib/duty/roster-queries";
 import { upsertRosterCell, clearRosterCell } from "@/lib/duty/roster-actions";
+import type { DutyZone } from "@/lib/duty/types";
 
 function hhmm(t: string | null | undefined) {
   return t ? t.slice(0, 5) : "";
@@ -14,6 +15,7 @@ export function RosterCell({
   date,
   week,
   shifts,
+  zones,
   cell,
 }: {
   station: string;
@@ -21,6 +23,7 @@ export function RosterCell({
   date: string;
   week: string;
   shifts: Shift[];
+  zones: DutyZone[];
   cell?: RosterCellRow;
 }) {
   const [editing, setEditing] = useState(false);
@@ -39,6 +42,7 @@ export function RosterCell({
 
   if (!editing) {
     const preset = shifts.find((s) => s.code === cell?.shift_code);
+    const zone = zones.find((z) => z.id === cell?.zone_id);
     return (
       <button
         type="button"
@@ -59,6 +63,9 @@ export function RosterCell({
                 {hhmm(cell.start_time)}–{hhmm(cell.end_time)}
               </p>
             )}
+            <p className="t-mono text-[8.5px] mt-0.5" style={{ color: zone ? "var(--green)" : "var(--faintest)" }}>
+              {zone ? `📍 ${zone.name}` : "No zone — unrestricted"}
+            </p>
             {cell.notes && (
               <p className="text-[10px] mt-0.5 truncate" style={{ color: "var(--faint)" }}>
                 {cell.notes}
@@ -143,6 +150,26 @@ export function RosterCell({
             ))}
           </select>
         </div>
+
+        {shiftCode !== "OFF" && (
+          <div>
+            <label className="t-mono text-[8px]" style={{ color: "var(--faint)" }}>
+              Zone (leave blank for unrestricted check-in/out)
+            </label>
+            <select
+              name="zone_id"
+              defaultValue={cell?.zone_id ?? ""}
+              className="input-base py-1.5 min-h-0 text-[11px] w-full"
+            >
+              <option value="">No zone — unrestricted</option>
+              {zones.map((z) => (
+                <option key={z.id} value={z.id}>
+                  {z.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <input
           type="text"
