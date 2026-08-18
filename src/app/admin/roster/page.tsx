@@ -5,11 +5,13 @@ import {
   getShifts,
   getRosterOfficers,
   getRosterWeek,
+  getStationTeams,
   type RosterCell as RosterCellRow,
 } from "@/lib/duty/roster-queries";
-import { addStationTeam } from "@/lib/duty/roster-actions";
+import { addStationTeam, setTeamScheduleRange, deleteShift } from "@/lib/duty/roster-actions";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { RosterCell } from "@/components/admin/RosterCell";
+import { CreateScheduleForm } from "@/components/admin/CreateScheduleForm";
 import { todayISODateMY } from "@/lib/datetime";
 import { initials } from "@/lib/utils";
 
@@ -48,10 +50,11 @@ export default async function AdminRosterPage({
   const search = searchParams.q || "";
   const page = Math.max(1, Number(searchParams.page) || 1);
 
-  const [shifts, officers, rosterRows] = await Promise.all([
+  const [shifts, officers, rosterRows, stationTeams] = await Promise.all([
     getShifts(),
     getRosterOfficers(station, search),
     getRosterWeek(station, weekStart, weekEnd),
+    getStationTeams(station),
   ]);
 
   const cellMap = new Map<string, RosterCellRow>();
@@ -247,6 +250,117 @@ export default async function AdminRosterPage({
             </form>
           </div>
         )}
+
+        {stationTeams.length > 0 && (
+          <div className="card p-4 space-y-3">
+            <div>
+              <h2 className="t-display text-lg">Set Shift by Team</h2>
+              <p className="text-[12.5px] mt-1" style={{ color: "var(--soft)" }}>
+                Apply one schedule to a whole team across a date range in one go — same
+                effect as editing every day&apos;s cell for that team by hand.
+              </p>
+            </div>
+            <form action={setTeamScheduleRange} className="space-y-3">
+              <input type="hidden" name="station" value={station} />
+              <input type="hidden" name="week" value={weekStart} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="field-label">Team</label>
+                  <select name="team" required className="input-base">
+                    {stationTeams.map((t) => (
+                      <option key={t.team} value={t.team}>
+                        {t.team}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="field-label">Schedule</label>
+                  <select name="shift_code" required className="input-base" defaultValue="">
+                    <option value="" disabled>
+                      Pick a schedule…
+                    </option>
+                    {shifts.map((s) => (
+                      <option key={s.code} value={s.code}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="field-label">From</label>
+                  <input type="date" name="date_from" defaultValue={weekStart} required className="input-base" />
+                </div>
+                <div>
+                  <label className="field-label">To</label>
+                  <input type="date" name="date_to" defaultValue={weekEnd} required className="input-base" />
+                </div>
+              </div>
+              <input type="text" name="notes" placeholder="Notes (optional)" className="input-base" />
+              <button type="submit" className="btn-primary">
+                Apply to team
+              </button>
+            </form>
+          </div>
+        )}
+
+        <div className="card p-4 space-y-4">
+          <div>
+            <h2 className="t-display text-lg">Create Schedule</h2>
+            <p className="text-[12.5px] mt-1" style={{ color: "var(--soft)" }}>
+              Build a named schedule with its own timing — it shows up as an option in
+              every roster cell above as soon as you save it.
+            </p>
+          </div>
+
+          <CreateScheduleForm />
+
+          {shifts.length > 0 && (
+            <div className="pt-3" style={{ borderTop: "1px solid var(--line2)" }}>
+              <p className="field-label mb-2">Saved schedules</p>
+              <div className="divide-y" style={{ borderColor: "var(--line2)" }}>
+                {shifts.map((s) => (
+                  <div key={s.code} className="flex items-center justify-between py-2 gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0"
+                        style={{ background: s.color_hex ?? "var(--faint)" }}
+                      />
+                      <div className="min-w-0">
+                        <p className="font-semibold text-[13px] truncate" style={{ color: "var(--ink2)" }}>
+                          {s.label}
+                        </p>
+                        <p className="t-mono text-[10px]" style={{ color: "var(--faint)" }}>
+                          {s.default_start && s.default_end
+                            ? `${s.default_start.slice(0, 5)}–${s.default_end.slice(0, 5)}`
+                            : "No shift timing"}
+                        </p>
+                      </div>
+                    </div>
+                    {s.code === "OFF" ? (
+                      <span className="t-mono text-[9px] shrink-0" style={{ color: "var(--faintest)" }}>
+                        PROTECTED
+                      </span>
+                    ) : (
+                      <form action={deleteShift}>
+                        <input type="hidden" name="code" value={s.code} />
+                        <button
+                          type="submit"
+                          className="t-mono text-[9.5px] font-semibold shrink-0"
+                          style={{ color: "var(--red)" }}
+                        >
+                          Delete
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </main>
   );
