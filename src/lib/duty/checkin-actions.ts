@@ -129,6 +129,27 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
 
   if (!record) return { ok: false, error: "No open check-in found for today." };
 
+  // Staff patrol/move during the shift — check-in doesn't require a fixed spot — but
+  // checking out closes the shift and must happen back at the assigned zone. No zone
+  // assigned means nothing to enforce, so that case falls through unblocked.
+  let insideFence: boolean | null = null;
+  let zoneName: string | null = null;
+  if (record.zone_id) {
+    const { data: zone } = await supabase.from("duty_zones").select("*").eq("id", record.zone_id).maybeSingle();
+    if (zone) {
+      const z = zone as DutyZone;
+      insideFence = pointInPolygon(values.lng, values.lat, z.polygon);
+      zoneName = z.name;
+    }
+  }
+
+  if (insideFence === false) {
+    return {
+      ok: false,
+      error: `You must be at ${zoneName ?? "the assigned zone"} to check out — move to the pin-point location and try again.`,
+    };
+  }
+
   const { data: roster } = await supabase
     .from("team_rosters")
     .select("start_time, end_time")
@@ -146,12 +167,6 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
 
   if (earlyMinutes > 0 && !values.early_out_remark.trim()) {
     return { ok: false, error: "A remark is required — you're leaving early." };
-  }
-
-  let insideFence: boolean | null = null;
-  if (record.zone_id) {
-    const { data: zone } = await supabase.from("duty_zones").select("*").eq("id", record.zone_id).maybeSingle();
-    if (zone) insideFence = pointInPolygon(values.lng, values.lat, (zone as DutyZone).polygon);
   }
 
   const { error } = await supabase

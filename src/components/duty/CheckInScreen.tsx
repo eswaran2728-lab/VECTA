@@ -89,6 +89,10 @@ export function CheckInScreen({
   const predictedEarly = scheduled && checkedIn && !record?.check_out_at ? computeEarlyMinutes(scheduled.end, now) : 0;
   const needsRemark = !checkedIn ? predictedLate > 0 : predictedEarly > 0;
 
+  // Check-in is allowed from anywhere (staff patrol/move during the shift) — only
+  // checking out requires being back at the assigned zone's pin-point location.
+  const checkOutBlocked = checkedIn && !!zone && insideFence === false;
+
   async function handleCheckIn() {
     if (!position) {
       setSubmitError("Waiting for your location…");
@@ -123,6 +127,10 @@ export function CheckInScreen({
   async function handleCheckOut() {
     if (!position) {
       setSubmitError("Waiting for your location…");
+      return;
+    }
+    if (checkOutBlocked) {
+      setSubmitError(`You must be at ${zone!.name} to check out — move to the pin-point location and try again.`);
       return;
     }
     if (needsRemark && !remark.trim()) {
@@ -248,6 +256,12 @@ export function CheckInScreen({
             {position.accuracy > 100 ? " — low accuracy, still allowed" : ""}
           </p>
         )}
+        {checkOutBlocked && (
+          <p className="field-error">
+            Move to {zone!.name} to check out — check-in was fine from anywhere, but ending your shift
+            requires being back at the pin-point location.
+          </p>
+        )}
       </div>
 
       {needsRemark && (
@@ -271,10 +285,10 @@ export function CheckInScreen({
       <button
         type="button"
         className="btn-primary w-full"
-        disabled={submitting || !position}
+        disabled={submitting || !position || checkOutBlocked}
         onClick={checkedIn ? handleCheckOut : handleCheckIn}
       >
-        {submitting ? "Submitting…" : checkedIn ? "Check out" : "Check in"}
+        {submitting ? "Submitting…" : checkOutBlocked ? "Move to zone to check out" : checkedIn ? "Check out" : "Check in"}
       </button>
     </div>
   );
