@@ -106,21 +106,36 @@ export function RosterCell({
         </select>
 
         {shiftCode && shiftCode !== "OFF" && (
-          <div className="flex gap-1">
-            <input
-              type="time"
-              name="start_time"
-              value={start}
-              onChange={(e) => setStart(e.target.value)}
-              className="input-base py-1.5 min-h-0 text-[11px] w-full"
-            />
-            <input
-              type="time"
-              name="end_time"
-              value={end}
-              onChange={(e) => setEnd(e.target.value)}
-              className="input-base py-1.5 min-h-0 text-[11px] w-full"
-            />
+          <div>
+            <p className="t-mono text-[8.5px]" style={{ letterSpacing: "0.06em", color: "var(--soft)" }}>
+              EDIT TIMING (pre-filled from preset — change if this shift runs differently)
+            </p>
+            <div className="flex gap-1 mt-1">
+              <div className="flex-1">
+                <label className="t-mono text-[8px]" style={{ color: "var(--faint)" }}>
+                  Start
+                </label>
+                <input
+                  type="time"
+                  name="start_time"
+                  value={start}
+                  onChange={(e) => setStart(e.target.value)}
+                  className="input-base py-1.5 min-h-0 text-[11px] w-full"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="t-mono text-[8px]" style={{ color: "var(--faint)" }}>
+                  End
+                </label>
+                <input
+                  type="time"
+                  name="end_time"
+                  value={end}
+                  onChange={(e) => setEnd(e.target.value)}
+                  className="input-base py-1.5 min-h-0 text-[11px] w-full"
+                />
+              </div>
+            </div>
           </div>
         )}
 
