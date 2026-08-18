@@ -88,27 +88,10 @@ export function RosterCell({
         <input type="hidden" name="roster_date" value={date} />
         <input type="hidden" name="week" value={week} />
 
-        <select
-          name="shift_code"
-          value={shiftCode}
-          onChange={(e) => handleShiftChange(e.target.value)}
-          className="input-base py-1.5 min-h-0 text-[11px] w-full"
-          required
-        >
-          <option value="" disabled>
-            Shift…
-          </option>
-          {shifts.map((s) => (
-            <option key={s.code} value={s.code}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-
-        {shiftCode && shiftCode !== "OFF" && (
+        {shiftCode !== "OFF" && (
           <div>
             <p className="t-mono text-[8.5px]" style={{ letterSpacing: "0.06em", color: "var(--soft)" }}>
-              EDIT TIMING (pre-filled from preset — change if this shift runs differently)
+              SHIFT TIMING (edit freely — picking a shift below just fills in its usual hours)
             </p>
             <div className="flex gap-1 mt-1">
               <div className="flex-1">
@@ -138,6 +121,28 @@ export function RosterCell({
             </div>
           </div>
         )}
+
+        <div>
+          <label className="t-mono text-[8px]" style={{ color: "var(--faint)" }}>
+            Shift
+          </label>
+          <select
+            name="shift_code"
+            value={shiftCode}
+            onChange={(e) => handleShiftChange(e.target.value)}
+            className="input-base py-1.5 min-h-0 text-[11px] w-full"
+            required
+          >
+            <option value="" disabled>
+              Pick what they&apos;re working…
+            </option>
+            {shifts.map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <input
           type="text"
