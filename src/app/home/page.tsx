@@ -7,10 +7,11 @@ import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { formatTimeMY, nowTimeMY } from "@/lib/datetime";
 
-const REPORT_ORDER: ReportType[] = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013"];
+const REPORT_ORDER: ReportType[] = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013", "offload"];
 const RED_ACCENT: Partial<Record<ReportType, true>> = { sec029: true, sec033: true };
 
 function shortLabel(type: ReportType) {
+  if (type === "offload") return "OFL";
   return type.slice(0, 3).toUpperCase() + " " + type.slice(3);
 }
 

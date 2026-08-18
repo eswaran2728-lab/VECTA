@@ -84,6 +84,22 @@ const SHEET_COLUMNS: Record<ReportType, { key: string; header: string }[]> = {
     { key: "remark", header: "Remark" },
     { key: "corrective_action", header: "Corrective Action" },
   ],
+  offload: [
+    { key: "report_no", header: "Report No" },
+    { key: "submitted_at", header: "Submitted At" },
+    { key: "station", header: "Station" },
+    { key: "team", header: "Team" },
+    { key: "staff_name", header: "Name" },
+    { key: "staff_id", header: "Staff ID" },
+    { key: "flight_no", header: "Flight No" },
+    { key: "destination", header: "Destination" },
+    { key: "aircraft_registration", header: "Aircraft Registration" },
+    { key: "flight_date", header: "Flight Date" },
+    { key: "std", header: "STD" },
+    { key: "total_bags", header: "Total Bags" },
+    { key: "remark", header: "Remark" },
+    { key: "verified_by_dse_name", header: "Verified by DSE" },
+  ],
 };
 
 export function buildExportWorkbook(

@@ -67,7 +67,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 export const PROFILE_STATUSES = ["pending", "approved", "rejected", "deactivated"] as const;
 export type ProfileStatus = (typeof PROFILE_STATUSES)[number];
 
-export const REPORT_TYPES = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013"] as const;
+export const REPORT_TYPES = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013", "offload"] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];
 
 // SEC 013 Section 2 "Duty Area" options.
@@ -122,6 +122,12 @@ export const REPORT_META: Record<
     code: "AA/SEC/F/013 Rev.03",
     table: "report_sec013",
     route: "sec013",
+  },
+  offload: {
+    name: "OFFLOAD INFORMATION (DEPARTURE FLIGHT)",
+    code: "AVSEC-OFL Digital",
+    table: "offload_records",
+    route: "offload",
   },
 };
 

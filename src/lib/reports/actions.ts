@@ -10,6 +10,7 @@ import { sec029Schema } from "@/lib/schemas/sec029";
 import { sec018Schema } from "@/lib/schemas/sec018";
 import { sec033Schema } from "@/lib/schemas/sec033";
 import { sec013Schema } from "@/lib/schemas/sec013";
+import { offloadSchema } from "@/lib/schemas/offload";
 import { clearDraft } from "@/lib/reports/drafts";
 import { notifyReportSubmission } from "@/lib/email/notifyReportSubmission";
 import {
@@ -19,6 +20,7 @@ import {
   sec018EmailFields,
   sec033EmailFields,
   sec013EmailFields,
+  offloadEmailFields,
 } from "@/lib/email/reportFields";
 
 export interface ActionResult {
@@ -420,6 +422,67 @@ export async function submitSec013(input: unknown): Promise<ActionResult> {
     submittedByName: v.staff_name,
     submittedByStaffNo: v.staff_id,
     fields: sec013EmailFields(v),
+  });
+  revalidatePath("/history");
+  return { ok: true, id: report.id, submittedAt: report.submitted_at, reportNo: report.report_no ?? undefined };
+}
+
+// ---------- Offload Information (Departure Flight) ----------
+
+export async function submitOffload(input: unknown): Promise<ActionResult> {
+  const profile = await requireProfileId();
+  if (!profile) return { ok: false, error: "Not authenticated" };
+  const checkInError = await ensureCheckedIn(profile.id);
+  if (checkInError) return { ok: false, error: checkInError };
+
+  const parsed = offloadSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; ") };
+  }
+  const v = parsed.data;
+
+  const supabase = createClient();
+  const { data: report, error } = await supabase
+    .from("offload_records")
+    .insert({
+      profile_id: profile.id,
+      status: "submitted",
+      station: v.station,
+      team: v.team,
+      staff_name: v.staff_name,
+      staff_id: v.staff_id,
+      flight_no: v.flight_no,
+      destination: v.destination,
+      aircraft_registration: v.aircraft_registration,
+      flight_date: v.flight_date,
+      std: v.std || null,
+      total_bags: v.items.length,
+      remark: v.remark || null,
+      verified_by_dse_name: v.verified_by_dse_name || null,
+      verified_by_dse_id: v.verified_by_dse_id || null,
+    })
+    .select("id, submitted_at, report_no")
+    .single();
+
+  if (error) return { ok: false, error: error.message };
+
+  const rows = v.items.map((it, idx) => ({
+    report_id: report.id,
+    entry_no: idx + 1,
+    baggage_tag_no: it.baggage_tag_no,
+    reason: it.reason || null,
+    weight_kg: it.weight_kg ? Number(it.weight_kg) : null,
+  }));
+  const { error: itemsError } = await supabase.from("offload_items").insert(rows);
+  if (itemsError) return { ok: false, error: itemsError.message };
+
+  await clearDraft("offload");
+  await notifyReportSubmission({
+    reportType: "offload",
+    submittedAt: report.submitted_at,
+    submittedByName: v.staff_name,
+    submittedByStaffNo: v.staff_id,
+    fields: offloadEmailFields(v),
   });
   revalidatePath("/history");
   return { ok: true, id: report.id, submittedAt: report.submitted_at, reportNo: report.report_no ?? undefined };

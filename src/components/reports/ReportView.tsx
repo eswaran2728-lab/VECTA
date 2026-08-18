@@ -12,6 +12,8 @@ import type {
   Sec033HoldCheckEntry,
   Sec013Row,
   Sec013ProfilingDutyEntry,
+  OffloadRow,
+  OffloadItemEntry,
 } from "@/lib/types";
 
 export function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -316,6 +318,63 @@ export function Sec013View({ report }: { report: Sec013Row & { profiling_duties?
           {SEC013_CERTIFICATION_TEXT} — {report.acknowledgement ? "✓ Certified" : "Not certified"}
         </p>
       </section>
+    </div>
+  );
+}
+
+export function OffloadView({ report }: { report: OffloadRow & { items?: OffloadItemEntry[] } }) {
+  return (
+    <div className="space-y-4">
+      <ViewSection title="Staff Details">
+        <Field label="Station" value={report.station} />
+        <Field label="Team" value={report.team} />
+        <Field label="Name" value={report.staff_name} />
+        <Field label="Staff ID" value={report.staff_id} />
+      </ViewSection>
+
+      <ViewSection title="Flight Details">
+        <Field label="Flight No" value={report.flight_no} />
+        <Field label="Destination" value={report.destination} />
+        <Field label="Aircraft Registration" value={report.aircraft_registration} />
+        <Field label="Flight Date" value={formatDateMY(report.flight_date)} />
+        <Field label="STD" value={report.std} />
+        <Field label="Total Bags" value={report.total_bags} />
+      </ViewSection>
+
+      <section className="card p-4 sm:p-5 space-y-3">
+        <h2 className="section-title">Offloaded Baggage</h2>
+        {(!report.items || report.items.length === 0) && (
+          <p className="text-sm" style={{ color: "var(--soft)" }}>No offloaded baggage entries logged.</p>
+        )}
+        <div className="space-y-2">
+          {report.items?.map((it) => (
+            <ViewEntryCard key={it.entry_no} label={`Bag ${it.entry_no}`}>
+              <p className="font-semibold" style={{ color: "var(--ink2)" }}>
+                Tag {it.baggage_tag_no}
+                {it.weight_kg ? ` · ${it.weight_kg} kg` : ""}
+              </p>
+              {it.reason && <p className="mt-1">{it.reason}</p>}
+            </ViewEntryCard>
+          ))}
+        </div>
+      </section>
+
+      {report.remark && (
+        <section className="card p-4 sm:p-5 space-y-2">
+          <h2 className="section-title">Remark</h2>
+          <p className="text-[13px]" style={{ color: "var(--ink3)" }}>{report.remark}</p>
+        </section>
+      )}
+
+      {report.verified_by_dse_name && (
+        <section className="card p-4 sm:p-5 space-y-3" style={{ borderColor: "var(--gold-fill)" }}>
+          <h2 className="section-title">DSE Verification</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Verified By" value={report.verified_by_dse_name} />
+            <Field label="DSE Staff ID" value={report.verified_by_dse_id} />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

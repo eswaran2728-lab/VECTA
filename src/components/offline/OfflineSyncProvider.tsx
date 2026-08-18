@@ -19,6 +19,7 @@ import {
   submitSec018,
   submitSec033,
   submitSec013,
+  submitOffload,
 } from "@/lib/reports/actions";
 import { submitDutyCheckIn, submitDutyCheckOut } from "@/lib/duty/checkin-actions";
 import { uploadReportAttachment } from "@/lib/attachments/actions";
@@ -34,6 +35,7 @@ const SUBMIT_FNS: Record<
   sec018: submitSec018,
   sec033: submitSec033,
   sec013: submitSec013,
+  offload: submitOffload,
   duty_checkin: submitDutyCheckIn,
   duty_checkout: submitDutyCheckOut,
 };

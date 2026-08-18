@@ -232,6 +232,42 @@ export interface Sec013Row {
   profiling_duties?: Sec013ProfilingDutyEntry[];
 }
 
+export interface OffloadItemEntry {
+  entry_no: number;
+  baggage_tag_no: string;
+  reason: string | null;
+  weight_kg: number | null;
+}
+
+export interface OffloadRow {
+  id: string;
+  profile_id: string;
+  status: ReportStatus;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  amendment_of: string | null;
+  report_no: string | null;
+
+  station: string;
+  team: string;
+  staff_name: string;
+  staff_id: string;
+
+  flight_no: string;
+  destination: string;
+  aircraft_registration: string;
+  flight_date: string;
+  std: string | null;
+  total_bags: number;
+  remark: string | null;
+
+  verified_by_dse_name: string | null;
+  verified_by_dse_id: string | null;
+
+  items?: OffloadItemEntry[];
+}
+
 export interface BayBoardRow {
   id: string;
   station: string;
@@ -245,7 +281,7 @@ export interface BayBoardRow {
   created_at: string;
 }
 
-export type AnyReportRow = Sec016Row | Sec014Row | Sec029Row | Sec018Row | Sec033Row | Sec013Row;
+export type AnyReportRow = Sec016Row | Sec014Row | Sec029Row | Sec018Row | Sec033Row | Sec013Row | OffloadRow;
 
 export interface ReportListItem {
   id: string;

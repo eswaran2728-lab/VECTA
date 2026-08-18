@@ -79,6 +79,12 @@ export default async function DashboardPage({
           </div>
         )}
 
+        {(profile.role === "SO" || profile.role === "DSE") && (
+          <Link href="/reports/offload" className="btn-secondary w-full text-center">
+            + File Offload Report
+          </Link>
+        )}
+
         <section className="card p-4 space-y-3">
           <h2 className="section-title">Staff report lookup</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400">

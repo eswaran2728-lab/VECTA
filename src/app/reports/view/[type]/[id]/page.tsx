@@ -8,10 +8,10 @@ import { createClient } from "@/lib/supabase/server";
 import { REPORT_META, REPORT_TYPES, ROLE_RANK, type ReportType, type UserRole } from "@/lib/reference-data";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
-import { Sec016View, Sec014View, Sec029View, Sec018View, Sec033View, Sec013View } from "@/components/reports/ReportView";
+import { Sec016View, Sec014View, Sec029View, Sec018View, Sec033View, Sec013View, OffloadView } from "@/components/reports/ReportView";
 import { AttachmentGallery } from "@/components/reports/AttachmentGallery";
 import { formatDateTimeMY, formatTimeMY } from "@/lib/datetime";
-import type { Sec016Row, Sec014Row, Sec029Row, Sec018Row, Sec033Row, Sec013Row } from "@/lib/types";
+import type { Sec016Row, Sec014Row, Sec029Row, Sec018Row, Sec033Row, Sec013Row, OffloadRow } from "@/lib/types";
 
 export default async function ReportViewPage({
   params,
@@ -111,6 +111,7 @@ export default async function ReportViewPage({
         {type === "sec018" && <Sec018View report={report as unknown as Sec018Row} />}
         {type === "sec033" && <Sec033View report={report as unknown as Sec033Row} />}
         {type === "sec013" && <Sec013View report={report as unknown as Sec013Row} />}
+        {type === "offload" && <OffloadView report={report as unknown as OffloadRow} />}
 
         <AttachmentGallery attachments={attachments} />
 

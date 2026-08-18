@@ -7,6 +7,7 @@ import type { Sec029FormValues } from "@/lib/schemas/sec029";
 import type { Sec018FormValues } from "@/lib/schemas/sec018";
 import type { Sec033FormValues } from "@/lib/schemas/sec033";
 import type { Sec013FormValues } from "@/lib/schemas/sec013";
+import type { OffloadFormValues } from "@/lib/schemas/offload";
 import { SEC029_ITEMS } from "@/lib/reference-data";
 import type { EmailField } from "./reportEmailTemplate";
 
@@ -143,5 +144,27 @@ export function sec013EmailFields(v: Sec013FormValues): EmailField[] {
     ...dutyFields,
     { label: "Remark", value: v.remark ?? "" },
     { label: "Corrective Action / Follow-up / Recommendation", value: v.corrective_action ?? "" },
+  ];
+}
+
+export function offloadEmailFields(v: OffloadFormValues): EmailField[] {
+  const itemFields = v.items.map((it, idx) => ({
+    label: `Baggage ${idx + 1}`,
+    value: `Tag ${it.baggage_tag_no}${it.reason ? ` — ${it.reason}` : ""}${it.weight_kg ? ` (${it.weight_kg} kg)` : ""}`,
+  }));
+  return [
+    { label: "Station", value: v.station },
+    { label: "Team", value: v.team },
+    { label: "Name", value: v.staff_name },
+    { label: "Staff ID", value: v.staff_id },
+    { label: "Flight No", value: v.flight_no },
+    { label: "Destination", value: v.destination },
+    { label: "Aircraft Registration", value: v.aircraft_registration },
+    { label: "Flight Date", value: v.flight_date },
+    { label: "STD", value: v.std ?? "" },
+    { label: "Total Bags", value: String(v.items.length) },
+    ...itemFields,
+    { label: "Remark", value: v.remark ?? "" },
+    { label: "Verified by DSE", value: v.verified_by_dse_name ?? "" },
   ];
 }
