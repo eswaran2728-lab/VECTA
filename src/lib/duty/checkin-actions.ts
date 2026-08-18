@@ -143,20 +143,23 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
   if (drift) return { ok: false, error: drift };
 
   const supabase = createClient();
-  const dutyDate = todayISODateMY();
 
+  // Find whichever shift is currently open — never assume it started "today". A Night
+  // shift checked in at 23:00 on day 1 checks out after 07:00 on day 2, past midnight —
+  // by then "today" has already flipped, but the shift still belongs to day 1's roster.
   const { data: record } = await supabase
     .from("duty_records")
-    .select("id, check_in_at")
+    .select("id, duty_date, check_in_at")
     .eq("profile_id", profile.id)
-    .eq("duty_date", dutyDate)
     .is("check_out_at", null)
     .not("check_in_at", "is", null)
     .order("check_in_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  if (!record) return { ok: false, error: "No open check-in found for today." };
+  if (!record) return { ok: false, error: "No open check-in found." };
+
+  const dutyDate = record.duty_date;
 
   // Checking out must happen inside one of the station's marked zones too — not
   // necessarily the same one checked in at, since staff patrol/move during the shift.
