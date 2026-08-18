@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireProfile } from "@/lib/auth";
 import { getMySubmissions } from "@/lib/reports/queries";
+import { getAttachmentCounts } from "@/lib/attachments/actions";
 import { REPORT_META } from "@/lib/reference-data";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -16,6 +17,7 @@ export default async function HistoryPage({
 }) {
   const profile = await requireProfile();
   const submissions = await getMySubmissions({ profileId: profile.id, limit: 200 });
+  const attachmentCounts = await getAttachmentCounts(submissions.map((r) => r.id));
 
   const active = FILTERS.includes(searchParams.status as (typeof FILTERS)[number])
     ? (searchParams.status as (typeof FILTERS)[number])
@@ -76,6 +78,7 @@ export default async function HistoryPage({
                   </p>
                   <p className="t-mono text-[10.5px] mt-[3px] truncate" style={{ color: "var(--soft)" }}>
                     {r.summary}
+                    {attachmentCounts[r.id] ? ` · 📎 ${attachmentCounts[r.id]}` : ""}
                   </p>
                 </div>
                 <div className="text-right shrink-0">

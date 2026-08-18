@@ -8,6 +8,7 @@ import {
   type DashboardFilters,
 } from "@/lib/dashboard/queries";
 import { getOpenBayBoard } from "@/lib/reports/queries";
+import { getAttachmentCounts } from "@/lib/attachments/actions";
 import { getDutyComplianceForDate } from "@/lib/duty/compliance-queries";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -35,6 +36,7 @@ export default async function DashboardPage({
     getTodayCounts(filters),
     getOpenBayBoard(filters.station),
   ]);
+  const attachmentCounts = await getAttachmentCounts(submissions.map((s) => s.id));
 
   const isOrgWideViewer = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
   const complianceStation = filters.station ?? profile.station ?? "";
@@ -340,7 +342,10 @@ export default async function DashboardPage({
                     {REPORT_META[s.type].code}
                     {s.report_no ? ` · ${s.report_no}` : ""}
                   </p>
-                  <p className="font-medium">{s.summary}</p>
+                  <p className="font-medium">
+                    {s.summary}
+                    {attachmentCounts[s.id] ? ` · 📎 ${attachmentCounts[s.id]}` : ""}
+                  </p>
                 </div>
                 <span className="text-xs text-slate-500 text-right">
                   {s.station} · {s.team}

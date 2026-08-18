@@ -19,6 +19,7 @@ import {
 } from "@/components/forms/fields";
 import { Sec029ChecklistItem } from "@/components/forms/Sec029ChecklistItem";
 import { SubmissionConfirmation } from "@/components/forms/SubmissionConfirmation";
+import { AttachmentUpload, revokeAttachmentPreviews, type PendingAttachment } from "@/components/forms/AttachmentUpload";
 import type { Profile } from "@/lib/types";
 
 interface UIValues {
@@ -109,8 +110,11 @@ export function Sec029Form({
 }) {
   const meta = REPORT_META.sec029;
   const [result, setResult] = useState<
-    { kind: "submitted"; id: string; submittedAt?: string; reportNo?: string } | { kind: "queued" } | null
+    | { kind: "submitted"; id: string; submittedAt?: string; reportNo?: string; attachmentErrors?: string[] }
+    | { kind: "queued"; pendingAttachments?: number }
+    | null
   >(null);
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
 
   const {
     register,
@@ -135,13 +139,26 @@ export function Sec029Form({
       return;
     }
 
-    const outcome = await submit(parsed.data);
+    const outcome = await submit(
+      parsed.data,
+      attachments.map((a) => ({ name: a.name, mimeType: a.mimeType, size: a.size, blob: a.blob })),
+    );
     if (outcome.kind === "submitted") {
       clearLocalDraft("sec029");
-      setResult({ kind: "submitted", id: outcome.id, submittedAt: outcome.submittedAt, reportNo: outcome.reportNo });
+      revokeAttachmentPreviews(attachments);
+      setAttachments([]);
+      setResult({
+        kind: "submitted",
+        id: outcome.id,
+        submittedAt: outcome.submittedAt,
+        reportNo: outcome.reportNo,
+        attachmentErrors: outcome.attachmentErrors,
+      });
     } else if (outcome.kind === "queued") {
       clearLocalDraft("sec029");
-      setResult({ kind: "queued" });
+      setResult({ kind: "queued", pendingAttachments: attachments.length });
+      revokeAttachmentPreviews(attachments);
+      setAttachments([]);
     } else {
       alert(outcome.message);
     }
@@ -156,6 +173,8 @@ export function Sec029Form({
         submittedAt={result.kind === "submitted" ? result.submittedAt : undefined}
         reportNo={result.kind === "submitted" ? result.reportNo : undefined}
         queued={result.kind === "queued"}
+        pendingAttachments={result.kind === "queued" ? result.pendingAttachments : undefined}
+        attachmentErrors={result.kind === "submitted" ? result.attachmentErrors : undefined}
         onSubmitAnother={() => {
           reset(buildDefaults(profile));
           setResult(null);
@@ -317,6 +336,8 @@ export function Sec029Form({
           error={errors.acknowledgement}
         />
       </FormSection>
+
+      <AttachmentUpload value={attachments} onChange={setAttachments} disabled={isSubmitting} />
 
       <button type="submit" className="btn-primary w-full" disabled={isSubmitting}>
         {isSubmitting ? "Submitting…" : "Submit report ▸"}

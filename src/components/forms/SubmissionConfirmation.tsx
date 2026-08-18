@@ -12,6 +12,8 @@ export function SubmissionConfirmation({
   submittedAt,
   reportNo,
   queued,
+  pendingAttachments,
+  attachmentErrors,
   onSubmitAnother,
 }: {
   reportName: string;
@@ -20,6 +22,8 @@ export function SubmissionConfirmation({
   submittedAt?: string;
   reportNo?: string;
   queued?: boolean;
+  pendingAttachments?: number;
+  attachmentErrors?: string[];
   onSubmitAnother: () => void;
 }) {
   const accent = queued ? "var(--blue)" : "var(--gold-fill)";
@@ -73,10 +77,26 @@ export function SubmissionConfirmation({
         <h1 className="t-display text-2xl">{queued ? "Queued offline" : "Report submitted"}</h1>
         <p className="text-[13px] leading-relaxed mt-2" style={{ color: "var(--mid)" }}>
           {queued
-            ? "You're offline. This report is saved on your device and will submit automatically once you're back online — no re-entry needed."
+            ? `You're offline. This report${pendingAttachments ? " and its attachments are" : " is"} saved on your device and will submit automatically once you're back online — no re-entry needed.`
             : "Recorded as an immutable submission. Corrections must be filed as an amendment referencing this record."}
         </p>
       </div>
+
+      {attachmentErrors && attachmentErrors.length > 0 && (
+        <div className="card p-4 space-y-1.5" style={{ borderColor: "var(--red)" }}>
+          <p className="t-mono text-[9px] font-semibold" style={{ letterSpacing: "0.12em", color: "var(--red)" }}>
+            ATTACHMENT UPLOAD ISSUE
+          </p>
+          <p className="text-[12.5px]" style={{ color: "var(--soft)" }}>
+            The report itself was submitted successfully. These attachments will keep retrying in the background:
+          </p>
+          {attachmentErrors.map((e) => (
+            <p key={e} className="t-mono text-[10.5px]" style={{ color: "var(--red)" }}>
+              {e}
+            </p>
+          ))}
+        </div>
+      )}
 
       {/* Report number — the arm's-length, outdoor-readable panel that ties this digital
           record to the paper AA/SEC/F form the officer also files. */}

@@ -5,7 +5,10 @@ import {
   listQueuedSubmissions,
   removeQueuedSubmission,
   updateQueuedSubmission,
+  enqueueSubmission,
   type QueuedSubmission,
+  type QueuedAttachment,
+  type QueuedAttachmentPayload,
   type QueueItemType,
 } from "@/lib/offline/db";
 import { clearLocalDraft } from "@/lib/offline/useDraftAutosave";
@@ -18,9 +21,13 @@ import {
   submitSec013,
 } from "@/lib/reports/actions";
 import { submitDutyCheckIn, submitDutyCheckOut } from "@/lib/duty/checkin-actions";
+import { uploadReportAttachment } from "@/lib/attachments/actions";
 import { REPORT_TYPES, type ReportType } from "@/lib/reference-data";
 
-const SUBMIT_FNS: Record<QueueItemType, (input: unknown) => Promise<{ ok: boolean }>> = {
+const SUBMIT_FNS: Record<
+  Exclude<QueueItemType, "attachment">,
+  (input: unknown) => Promise<{ ok: boolean; id?: string }>
+> = {
   sec016: submitSec016,
   sec014: submitSec014,
   sec029: submitSec029,
@@ -30,6 +37,14 @@ const SUBMIT_FNS: Record<QueueItemType, (input: unknown) => Promise<{ ok: boolea
   duty_checkin: submitDutyCheckIn,
   duty_checkout: submitDutyCheckOut,
 };
+
+async function syncOneAttachment(reportType: string, reportId: string, att: QueuedAttachment) {
+  const fd = new FormData();
+  fd.set("reportType", reportType);
+  fd.set("reportId", reportId);
+  fd.set("file", new File([att.blob], att.name, { type: att.mimeType }));
+  return uploadReportAttachment(fd);
+}
 
 function isReportType(type: QueueItemType): type is ReportType {
   return (REPORT_TYPES as readonly string[]).includes(type);
@@ -70,10 +85,47 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
       const items = await listQueuedSubmissions();
       for (const item of items) {
         try {
+          // A standalone attachment retry (the report it belongs to already synced) —
+          // never resubmits the report, only retries the file upload.
+          if (item.type === "attachment") {
+            const payload = item.payload as QueuedAttachmentPayload;
+            const att = item.attachments?.[0];
+            if (!att) {
+              await removeQueuedSubmission(item.localId);
+              continue;
+            }
+            const res = await syncOneAttachment(payload.reportType, payload.reportId, att);
+            if (res.ok) {
+              await removeQueuedSubmission(item.localId);
+            } else {
+              await updateQueuedSubmission({
+                ...item,
+                attempts: item.attempts + 1,
+                lastError: res.error ?? "Attachment upload failed",
+              } as QueuedSubmission);
+            }
+            continue;
+          }
+
           const result = await SUBMIT_FNS[item.type](item.payload);
           if (result.ok) {
             await removeQueuedSubmission(item.localId);
             if (isReportType(item.type)) clearLocalDraft(item.type);
+
+            // Report synced — now upload any attachments queued alongside it. A failed
+            // attachment never re-queues the report itself, only a standalone retry item.
+            if (isReportType(item.type) && result.id && item.attachments && item.attachments.length > 0) {
+              for (const att of item.attachments) {
+                const res = await syncOneAttachment(item.type, result.id, att);
+                if (!res.ok) {
+                  await enqueueSubmission(
+                    "attachment",
+                    { reportType: item.type, reportId: result.id } as QueuedAttachmentPayload,
+                    [att],
+                  );
+                }
+              }
+            }
           } else {
             await updateQueuedSubmission({
               ...item,

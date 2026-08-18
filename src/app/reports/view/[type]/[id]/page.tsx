@@ -3,11 +3,13 @@ import { requireProfile } from "@/lib/auth";
 import { getReportById } from "@/lib/reports/queries";
 import { getAcknowledgement } from "@/lib/acknowledgements/queries";
 import { acknowledgeReport } from "@/lib/acknowledgements/actions";
+import { getReportAttachments } from "@/lib/attachments/actions";
 import { createClient } from "@/lib/supabase/server";
 import { REPORT_META, REPORT_TYPES, ROLE_RANK, type ReportType, type UserRole } from "@/lib/reference-data";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Sec016View, Sec014View, Sec029View, Sec018View, Sec033View, Sec013View } from "@/components/reports/ReportView";
+import { AttachmentGallery } from "@/components/reports/AttachmentGallery";
 import { formatDateTimeMY, formatTimeMY } from "@/lib/datetime";
 import type { Sec016Row, Sec014Row, Sec029Row, Sec018Row, Sec033Row, Sec013Row } from "@/lib/types";
 
@@ -29,7 +31,7 @@ export default async function ReportViewPage({
   const meta = REPORT_META[type];
   const reportRow = report as unknown as { profile_id: string; station: string; team: string; status: string };
 
-  const [acknowledgement, submitter] = await Promise.all([
+  const [acknowledgement, submitter, attachments] = await Promise.all([
     getAcknowledgement(type, params.id),
     reportRow.profile_id === profile.id
       ? Promise.resolve(null)
@@ -39,6 +41,7 @@ export default async function ReportViewPage({
           .eq("id", reportRow.profile_id)
           .maybeSingle()
           .then((r) => r.data as { role: UserRole; station: string; team: string } | null),
+    getReportAttachments(type, params.id),
   ]);
 
   const canAcknowledge =
@@ -108,6 +111,8 @@ export default async function ReportViewPage({
         {type === "sec018" && <Sec018View report={report as unknown as Sec018Row} />}
         {type === "sec033" && <Sec033View report={report as unknown as Sec033Row} />}
         {type === "sec013" && <Sec013View report={report as unknown as Sec013Row} />}
+
+        <AttachmentGallery attachments={attachments} />
 
         <section className="card p-4 sm:p-5">
           <h2 className="section-title mb-3">Record Trail</h2>

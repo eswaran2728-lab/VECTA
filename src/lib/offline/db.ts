@@ -5,14 +5,33 @@ const DB_NAME = "avsec-ops-offline";
 const DB_VERSION = 1;
 const STORE = "queue";
 
-// The report types plus the two duty check-in/out actions — everything that can be
-// queued offline and replayed later shares this one IndexedDB store and sync badge.
-export type QueueItemType = ReportType | "duty_checkin" | "duty_checkout";
+// The report types plus the two duty check-in/out actions, plus a standalone
+// "attachment" retry item — everything that can be queued offline and replayed later
+// shares this one IndexedDB store and sync badge.
+export type QueueItemType = ReportType | "duty_checkin" | "duty_checkout" | "attachment";
+
+// A compressed image or PDF blob queued alongside an offline report submission. Uploaded
+// only after the report itself has synced and returned a real report id — never before.
+export interface QueuedAttachment {
+  name: string;
+  mimeType: string;
+  size: number;
+  blob: Blob;
+}
+
+// Payload shape for a standalone "attachment" queue item — created when a report synced
+// successfully but one of its attachment uploads failed, so only the attachment (never
+// the already-submitted report) needs to retry.
+export interface QueuedAttachmentPayload {
+  reportType: ReportType;
+  reportId: string;
+}
 
 export interface QueuedSubmission {
   localId: string;
   type: QueueItemType;
   payload: unknown;
+  attachments?: QueuedAttachment[];
   createdAt: string;
   attempts: number;
   lastError?: string;
@@ -36,13 +55,18 @@ function getDb() {
   return dbPromise;
 }
 
-export async function enqueueSubmission(type: QueueItemType, payload: unknown): Promise<string> {
+export async function enqueueSubmission(
+  type: QueueItemType,
+  payload: unknown,
+  attachments?: QueuedAttachment[],
+): Promise<string> {
   const db = await getDb();
   const localId = crypto.randomUUID();
   const record: QueuedSubmission = {
     localId,
     type,
     payload,
+    attachments: attachments && attachments.length > 0 ? attachments : undefined,
     createdAt: new Date().toISOString(),
     attempts: 0,
   };
