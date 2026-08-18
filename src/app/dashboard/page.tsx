@@ -39,7 +39,10 @@ export default async function DashboardPage({
   const isOrgWideViewer = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
   const complianceStation = filters.station ?? profile.station ?? "";
   const complianceTeam = isOrgWideViewer ? filters.team : filters.team ?? profile.team ?? undefined;
-  const [compliance, dutyCompliance] = complianceStation
+  // Org-wide roles (Enforcement/Management/Admin) get the dedicated /dashboard/duty-monitor
+  // page instead — this panel stays for SO/DSE, who don't have that page.
+  const showCompliance = complianceStation && !isOrgWideViewer;
+  const [compliance, dutyCompliance] = showCompliance
     ? await Promise.all([
         getShiftCompliance(complianceStation, filters.dateFrom, complianceTeam),
         getDutyComplianceForDate(complianceStation, filters.dateFrom, complianceTeam),
@@ -225,7 +228,7 @@ export default async function DashboardPage({
           </section>
         )}
 
-        {complianceStation && (
+        {showCompliance && (
           <section className="card p-4">
             <h2 className="section-title mb-3">
               Shift compliance — SEC 014 · {complianceStation}
