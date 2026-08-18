@@ -4,7 +4,7 @@ import { signOut } from "@/lib/profile-actions";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { ThemeOptions } from "@/components/layout/ThemeToggle";
-import { ROLE_LABELS, REPORT_TYPES } from "@/lib/reference-data";
+import { ROLE_LABELS, REPORT_TYPES, ORG_WIDE_ROLES } from "@/lib/reference-data";
 import { initials } from "@/lib/utils";
 
 export default async function ProfilePage() {
@@ -22,6 +22,9 @@ export default async function ProfilePage() {
       : []),
     ...(worksAShift ? [{ label: "My Timesheet", href: "/duty/timesheet" }] : []),
     ...(isMonitor ? [{ label: "Dashboard", href: "/dashboard" }] : []),
+    ...((ORG_WIDE_ROLES as readonly string[]).includes(profile.role)
+      ? [{ label: "Attendance Report", href: "/admin/attendance-report" }]
+      : []),
     { label: "Bay Board", href: "/bay-board" },
     // Everyone can see where the geofence zones are; only Admin can edit them.
     ...(profile.role === "ADMIN" ? [] : [{ label: "Duty Zones", href: "/duty/zones" }]),

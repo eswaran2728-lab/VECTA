@@ -19,6 +19,10 @@ export interface ActionResult {
 // anything stale enough that the captured location/time no longer means much.
 const MAX_CLIENT_DRIFT_MS = 30 * 60 * 1000;
 
+// Defensive ceiling only — duty_records ties check-in and check-out to the same row
+// (unlike a raw punch-clock event log), so a single shift can't legitimately span days.
+const MAX_SHIFT_MINUTES = 20 * 60;
+
 function driftError(clientTimestamp: string): string | null {
   const drift = Math.abs(Date.now() - new Date(clientTimestamp).getTime());
   if (Number.isNaN(drift) || drift > MAX_CLIENT_DRIFT_MS) {
@@ -132,7 +136,7 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
 
   const { data: record } = await supabase
     .from("duty_records")
-    .select("id, zone_id")
+    .select("id, zone_id, check_in_at")
     .eq("profile_id", profile.id)
     .eq("duty_date", dutyDate)
     .is("check_out_at", null)
@@ -183,6 +187,13 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
     return { ok: false, error: "A remark is required — you're leaving early." };
   }
 
+  const totalMinutes = record.check_in_at
+    ? Math.min(
+        Math.max(Math.round((now.getTime() - new Date(record.check_in_at).getTime()) / 60000), 0),
+        MAX_SHIFT_MINUTES,
+      )
+    : null;
+
   const { error } = await supabase
     .from("duty_records")
     .update({
@@ -192,6 +203,8 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
       check_out_inside_fence: insideFence,
       early_out_minutes: earlyMinutes,
       early_out_remark: earlyMinutes > 0 ? values.early_out_remark.trim() : null,
+      total_minutes: totalMinutes,
+      is_missing_checkout: false,
     })
     .eq("id", record.id)
     .eq("profile_id", profile.id);

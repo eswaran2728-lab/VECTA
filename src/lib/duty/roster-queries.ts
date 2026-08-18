@@ -1,10 +1,19 @@
 import { createClient } from "@/lib/supabase/server";
+import { DUTY_ROLES } from "@/lib/auth";
 
 export interface Shift {
   code: string;
   label: string;
   default_start: string | null;
   default_end: string | null;
+  color_hex: string | null;
+}
+
+export interface RosterOfficer {
+  id: string;
+  name: string;
+  staff_no: string;
+  team: string;
 }
 
 export interface StationTeam {
@@ -40,6 +49,21 @@ export async function getStationTeams(station: string): Promise<StationTeam[]> {
     .eq("active", true)
     .order("display_order");
   return (data as StationTeam[]) ?? [];
+}
+
+// One row per officer, for the grid's row axis — the underlying schedule stays
+// team-level (team_rosters), this is purely a display join.
+export async function getRosterOfficers(station: string, search?: string): Promise<RosterOfficer[]> {
+  const supabase = createClient();
+  let query = supabase
+    .from("profiles")
+    .select("id, name, staff_no, team")
+    .eq("station", station)
+    .eq("status", "approved")
+    .in("role", DUTY_ROLES);
+  if (search?.trim()) query = query.ilike("name", `%${search.trim()}%`);
+  const { data } = await query.order("team").order("name");
+  return ((data ?? []) as RosterOfficer[]).map((o) => ({ ...o, team: o.team ?? "" }));
 }
 
 export async function getRosterWeek(station: string, weekStart: string, weekEnd: string): Promise<RosterCell[]> {

@@ -76,6 +76,9 @@ export default async function DashboardPage({
             <Link href="/dashboard/heatmap" className="btn-secondary text-center">
               Duty Heat Map →
             </Link>
+            <Link href="/admin/attendance-report" className="btn-secondary text-center col-span-2">
+              Attendance Report →
+            </Link>
           </div>
         )}
 
