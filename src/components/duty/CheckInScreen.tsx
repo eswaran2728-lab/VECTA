@@ -89,13 +89,16 @@ export function CheckInScreen({
   const predictedEarly = scheduled && checkedIn && !record?.check_out_at ? computeEarlyMinutes(scheduled.end, now) : 0;
   const needsRemark = !checkedIn ? predictedLate > 0 : predictedEarly > 0;
 
-  // Check-in is allowed from anywhere (staff patrol/move during the shift) — only
-  // checking out requires being back at the assigned zone's pin-point location.
-  const checkOutBlocked = checkedIn && !!zone && insideFence === false;
+  // Both check-in and check-out require being at the assigned zone's pin-point location.
+  const zoneBlocked = !!zone && insideFence === false;
 
   async function handleCheckIn() {
     if (!position) {
       setSubmitError("Waiting for your location…");
+      return;
+    }
+    if (zoneBlocked) {
+      setSubmitError(`You must be at ${zone!.name} to check in — move to the pin-point location and try again.`);
       return;
     }
     if (needsRemark && !remark.trim()) {
@@ -129,7 +132,7 @@ export function CheckInScreen({
       setSubmitError("Waiting for your location…");
       return;
     }
-    if (checkOutBlocked) {
+    if (zoneBlocked) {
       setSubmitError(`You must be at ${zone!.name} to check out — move to the pin-point location and try again.`);
       return;
     }
@@ -256,10 +259,10 @@ export function CheckInScreen({
             {position.accuracy > 100 ? " — low accuracy, still allowed" : ""}
           </p>
         )}
-        {checkOutBlocked && (
+        {zoneBlocked && (
           <p className="field-error">
-            Move to {zone!.name} to check out — check-in was fine from anywhere, but ending your shift
-            requires being back at the pin-point location.
+            Move to {zone!.name} to {checkedIn ? "check out" : "check in"} — you must be at the pin-point
+            location.
           </p>
         )}
       </div>
@@ -285,10 +288,16 @@ export function CheckInScreen({
       <button
         type="button"
         className="btn-primary w-full"
-        disabled={submitting || !position || checkOutBlocked}
+        disabled={submitting || !position || zoneBlocked}
         onClick={checkedIn ? handleCheckOut : handleCheckIn}
       >
-        {submitting ? "Submitting…" : checkOutBlocked ? "Move to zone to check out" : checkedIn ? "Check out" : "Check in"}
+        {submitting
+          ? "Submitting…"
+          : zoneBlocked
+            ? `Move to zone to ${checkedIn ? "check out" : "check in"}`
+            : checkedIn
+              ? "Check out"
+              : "Check in"}
       </button>
     </div>
   );

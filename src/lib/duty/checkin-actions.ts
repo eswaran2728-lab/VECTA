@@ -56,10 +56,24 @@ export async function submitDutyCheckIn(input: unknown): Promise<ActionResult> {
 
   if (!roster) return { ok: false, error: "No roster set for today — contact your supervisor." };
 
+  // Both check-in and check-out must happen at the assigned zone's pin-point location.
+  // No zone assigned means nothing to enforce, so that case falls through unblocked.
   let insideFence: boolean | null = null;
+  let zoneName: string | null = null;
   if (roster.zone_id) {
     const { data: zone } = await supabase.from("duty_zones").select("*").eq("id", roster.zone_id).maybeSingle();
-    if (zone) insideFence = pointInPolygon(values.lng, values.lat, (zone as DutyZone).polygon);
+    if (zone) {
+      const z = zone as DutyZone;
+      insideFence = pointInPolygon(values.lng, values.lat, z.polygon);
+      zoneName = z.name;
+    }
+  }
+
+  if (insideFence === false) {
+    return {
+      ok: false,
+      error: `You must be at ${zoneName ?? "the assigned zone"} to check in — move to the pin-point location and try again.`,
+    };
   }
 
   let lateMinutes = 0;
