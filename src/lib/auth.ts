@@ -62,3 +62,8 @@ export const ADMIN_ROLES: UserRole[] = ["ADMIN"];
 // Only the team-scoped roles actually work a shift, so only they check in/out at /duty —
 // Enforcement/Management/Admin are org-wide monitors and never roster onto a shift.
 export const DUTY_ROLES: UserRole[] = ["ASO", "SO", "DSE"];
+// Flight-attendance search is Enforcement + Management only — Admin is deliberately
+// excluded even though Admin's rank already grants broad visibility everywhere else;
+// the exclusion is enforced again at the DB layer in search_flight_attendance() since
+// rank-based RLS alone would otherwise let Admin through.
+export const ENFORCEMENT_SEARCH_ROLES: UserRole[] = ["ENFORCEMENT", "MANAGEMENT"];

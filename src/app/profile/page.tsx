@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireProfile, DUTY_ROLES } from "@/lib/auth";
+import { requireProfile, DUTY_ROLES, ENFORCEMENT_SEARCH_ROLES } from "@/lib/auth";
 import { signOut } from "@/lib/profile-actions";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -17,6 +17,9 @@ export default async function ProfilePage() {
   const menu: { label: string; href: string; right?: string }[] = [
     { label: "My Reports", href: "/history" },
     { label: "Report Lookup", href: "/reports/lookup" },
+    ...((ENFORCEMENT_SEARCH_ROLES as readonly string[]).includes(profile.role)
+      ? [{ label: "Enforcement Search", href: "/enforcement/search" }]
+      : []),
     ...(worksAShift ? [{ label: "My Timesheet", href: "/duty/timesheet" }] : []),
     ...(isMonitor ? [{ label: "Dashboard", href: "/dashboard" }] : []),
     { label: "Bay Board", href: "/bay-board" },

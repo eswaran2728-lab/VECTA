@@ -79,6 +79,12 @@ export default async function DashboardPage({
           </div>
         )}
 
+        {(profile.role === "ENFORCEMENT" || profile.role === "MANAGEMENT") && (
+          <Link href="/enforcement/search" className="btn-secondary w-full text-center">
+            Enforcement Search →
+          </Link>
+        )}
+
         {(profile.role === "SO" || profile.role === "DSE") && (
           <Link href="/reports/offload" className="btn-secondary w-full text-center">
             + File Offload Report
