@@ -89,7 +89,7 @@ export default async function OvertimeListPage({
                     {formatDateMY(r.work_date + "T00:00:00+08:00")}
                   </p>
                   <p className="font-semibold text-[13px] mt-[3px] truncate" style={{ color: "var(--ink2)" }}>
-                    {r.category.replace(/_/g, " ")} · {r.payable_hours}h
+                    {r.category.replace(/_/g, " ")} · {Number(r.hours).toFixed(2)}h
                   </p>
                   <p className="t-mono text-[10.5px] mt-[3px] truncate" style={{ color: "var(--soft)" }}>
                     {mine ? "by you" : `by ${nameById.get(r.profile_id) ?? "team member"}`}

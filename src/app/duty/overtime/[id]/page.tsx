@@ -52,9 +52,15 @@ export default async function OvertimeDetailPage({
     viewerRank >= ROLE_RANK.ENFORCEMENT ||
     (profile.station === request.station && (profile.team ?? "") === (request.team ?? ""));
   const canSettle = !mine && viewerRank > submitterRank && sameScope;
-  const canEndorse = canSettle && viewerRank < ROLE_RANK.MANAGEMENT && request.status === "pending";
-  const canApprove = canSettle && viewerRank >= ROLE_RANK.MANAGEMENT && ["pending", "endorsed"].includes(request.status);
-  const canReject = canEndorse || canApprove;
+  // DSE endorses a pending request; Management/Admin only give final approval once it's
+  // endorsed — no skipping straight from pending. Either DSE or Management/Admin can still
+  // reject at the stage they'd otherwise act on.
+  const canEndorse = canSettle && profile.role === "DSE" && request.status === "pending";
+  const canApprove = canSettle && viewerRank >= ROLE_RANK.MANAGEMENT && request.status === "endorsed";
+  const canReject =
+    canSettle &&
+    ((profile.role === "DSE" && request.status === "pending") ||
+      (viewerRank >= ROLE_RANK.MANAGEMENT && ["pending", "endorsed"].includes(request.status)));
   const canWithdraw = mine && request.status === "pending";
 
   const color = STATUS_COLOR[request.status] ?? "var(--faint)";
@@ -76,7 +82,7 @@ export default async function OvertimeDetailPage({
               {STATUS_LABEL[request.status] ?? request.status}
             </span>
           </div>
-          <h1 className="t-display text-xl mt-3">{request.payable_hours}h payable</h1>
+          <h1 className="t-display text-xl mt-3">{Number(request.hours).toFixed(2)}h overtime</h1>
           <p className="t-mono text-[10px] mt-2" style={{ color: "var(--soft)" }}>
             {formatDateMY(request.work_date + "T00:00:00+08:00")} · {request.station}
             {request.team ? ` · ${request.team}` : ""}

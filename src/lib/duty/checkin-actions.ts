@@ -23,6 +23,10 @@ const MAX_CLIENT_DRIFT_MS = 30 * 60 * 1000;
 // (unlike a raw punch-clock event log), so a single shift can't legitimately span days.
 const MAX_SHIFT_MINUTES = 20 * 60;
 
+// Below this, it's not worth a claim — matches the "even 30 minutes counts" rule without
+// generating noise for a two-minute overrun.
+const OT_THRESHOLD_MINUTES = 30;
+
 function driftError(clientTimestamp: string): string | null {
   const drift = Math.abs(Date.now() - new Date(clientTimestamp).getTime());
   if (Number.isNaN(drift) || drift > MAX_CLIENT_DRIFT_MS) {
@@ -168,7 +172,7 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
 
   const { data: roster } = await supabase
     .from("team_rosters")
-    .select("start_time, end_time")
+    .select("shift_code, start_time, end_time")
     .eq("station", profile.station)
     .eq("team", profile.team ?? "")
     .eq("roster_date", dutyDate)
@@ -208,6 +212,50 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
     .eq("profile_id", profile.id);
 
   if (error) return { ok: false, error: error.message };
+
+  // Auto-detect overtime from actual worked time vs the roster's scheduled shift — never
+  // something the officer has to remember to file. 30+ minutes past the scheduled end (or,
+  // with no scheduled shift at all, the entire duration) becomes a pending OT request DSE
+  // can endorse and Management/Admin approve, linked straight back to this duty record.
+  // Best-effort: the checkout above has already succeeded, so a failure here must never
+  // surface as a checkout error.
+  try {
+    if (record.check_in_at) {
+      const checkInAt = new Date(record.check_in_at);
+      const hasScheduledShift = !!(roster?.start_time && roster?.end_time && roster.shift_code !== "OFF");
+      const scheduledEnd = hasScheduledShift
+        ? scheduledWindow(dutyDate, roster!.start_time!, roster!.end_time!).end
+        : checkInAt;
+      const overageMinutes = Math.round((now.getTime() - scheduledEnd.getTime()) / 60000);
+
+      if (overageMinutes >= OT_THRESHOLD_MINUTES) {
+        const { data: existingOt } = await supabase
+          .from("overtime_requests")
+          .select("id")
+          .eq("linked_duty_id", record.id)
+          .maybeSingle();
+
+        if (!existingOt) {
+          const overageHours = (overageMinutes / 60).toFixed(1);
+          await supabase.from("overtime_requests").insert({
+            profile_id: profile.id,
+            station: profile.station,
+            team: profile.team || null,
+            work_date: dutyDate,
+            shift_code: roster?.shift_code ?? null,
+            start_at: scheduledEnd.toISOString(),
+            end_at: now.toISOString(),
+            category: hasScheduledShift ? "adhoc" : "off_day_work",
+            reason: `Auto-recorded from check-out — worked ${overageHours}h beyond the scheduled shift.`,
+            linked_duty_id: record.id,
+          });
+          revalidatePath("/duty/overtime");
+        }
+      }
+    }
+  } catch {
+    // Swallowed — the checkout itself already succeeded above.
+  }
 
   revalidatePath("/duty");
   revalidatePath("/home");

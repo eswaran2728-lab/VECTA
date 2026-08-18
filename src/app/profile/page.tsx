@@ -25,7 +25,10 @@ export default async function ProfilePage() {
     ...(worksAShift ? [{ label: "My Timesheet", href: "/duty/timesheet" }] : []),
     ...(isMonitor ? [{ label: "Dashboard", href: "/dashboard" }] : []),
     ...((ORG_WIDE_ROLES as readonly string[]).includes(profile.role)
-      ? [{ label: "Attendance Report", href: "/admin/attendance-report" }]
+      ? [
+          { label: "Attendance Report", href: "/admin/attendance-report" },
+          { label: "Overtime Records", href: "/duty/overtime" },
+        ]
       : []),
     { label: "Bay Board", href: "/bay-board" },
     // Everyone can see where the geofence zones are; only Admin can edit them.

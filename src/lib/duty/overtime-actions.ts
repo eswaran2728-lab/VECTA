@@ -60,16 +60,16 @@ function backTo(id: string) {
   return `/duty/overtime/${id}`;
 }
 
-/** SO/DSE/ENFORCEMENT (rank above the submitter, below MANAGEMENT) endorse a pending
- * request. RLS ("overtime settle update") is the actual authorization boundary — this
- * rank check just keeps the wrong-tier action from being attempted in the first place. */
+/** DSE endorses a pending request, within their own station+team. RLS ("overtime dse
+ * endorse") is the actual authorization boundary — this check just keeps the wrong-role
+ * action from being attempted in the first place. */
 export async function endorseOvertimeRequest(formData: FormData) {
   const profile = await requireProfile();
   const id = String(formData.get("id") || "");
   if (!id) return;
 
-  if (ROLE_RANK[profile.role] >= ROLE_RANK.MANAGEMENT) {
-    redirect(backTo(id) + "?error=" + encodeURIComponent("Management approves directly — no separate endorsement needed."));
+  if (profile.role !== "DSE") {
+    redirect(backTo(id) + "?error=" + encodeURIComponent("Only DSE can endorse an overtime request."));
   }
 
   const supabase = createClient();
@@ -99,7 +99,7 @@ export async function approveOvertimeRequest(formData: FormData) {
     .from("overtime_requests")
     .update({ status: "approved", approved_by: profile.id, approved_at: new Date().toISOString() })
     .eq("id", id)
-    .in("status", ["pending", "endorsed"])
+    .eq("status", "endorsed")
     .select("id, profile_id, station, team, work_date, payable_hours, category")
     .maybeSingle();
 
