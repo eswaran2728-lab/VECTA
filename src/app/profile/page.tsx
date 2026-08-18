@@ -16,7 +16,9 @@ export default async function ProfilePage() {
 
   const menu: { label: string; href: string; right?: string }[] = [
     { label: "My Reports", href: "/history" },
-    { label: "Report Lookup", href: "/reports/lookup" },
+    ...((ORG_WIDE_ROLES as readonly string[]).includes(profile.role)
+      ? [{ label: "Report Lookup", href: "/reports/lookup" }]
+      : []),
     ...((ENFORCEMENT_SEARCH_ROLES as readonly string[]).includes(profile.role)
       ? [{ label: "Enforcement Search", href: "/enforcement/search" }]
       : []),

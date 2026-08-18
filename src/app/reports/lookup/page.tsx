@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { requireProfile } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { searchByReportNoPrefix } from "@/lib/reports/queries";
-import { REPORT_META } from "@/lib/reference-data";
+import { REPORT_META, ORG_WIDE_ROLES } from "@/lib/reference-data";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { formatDateTimeMY } from "@/lib/datetime";
@@ -12,7 +12,7 @@ export default async function ReportLookupPage({
 }: {
   searchParams: { q?: string };
 }) {
-  const profile = await requireProfile();
+  const profile = await requireRole([...ORG_WIDE_ROLES]);
   const q = (searchParams.q || "").trim();
 
   const results = q ? await searchByReportNoPrefix(q) : [];
