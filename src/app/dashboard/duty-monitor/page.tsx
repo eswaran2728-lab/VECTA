@@ -5,6 +5,7 @@ import { getDutyMonitorRows, type DutyMonitorRow } from "@/lib/duty/monitor-quer
 import { getStationTeams } from "@/lib/duty/roster-queries";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { LiveRefresher } from "@/components/duty/LiveRefresher";
 import { todayISODateMY, formatTimeMY } from "@/lib/datetime";
 
 const STATUS_LABEL: Record<DutyMonitorRow["status"], string> = {
@@ -51,6 +52,7 @@ export default async function DutyMonitorPage({
   return (
     <main className="min-h-screen pb-32">
       <AppHeader profile={profile} title="Check-In Monitoring" backHref="/dashboard" />
+      {date === today && <LiveRefresher />}
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
         <div className="grid grid-cols-4 gap-2">
           <div className="card p-3 text-center">
@@ -121,8 +123,13 @@ export default async function DutyMonitorPage({
         </form>
 
         <div className="flex items-center justify-between">
-          <p className="t-mono text-[10px]" style={{ color: "var(--soft)" }}>
+          <p className="t-mono text-[10px] flex items-center gap-1.5" style={{ color: "var(--soft)" }}>
             {rows.length} staff · {date === today ? "Today" : date}
+            {date === today && (
+              <span className="t-mono text-[8.5px] font-bold" style={{ color: "var(--green)" }}>
+                ● LIVE
+              </span>
+            )}
           </p>
           <Link href="/dashboard/heatmap" className="t-mono text-[10px]" style={{ color: "var(--gold)" }}>
             View on map →
