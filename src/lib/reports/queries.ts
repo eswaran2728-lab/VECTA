@@ -1,9 +1,32 @@
 import { createClient } from "@/lib/supabase/server";
-import { REPORT_META, type ReportType } from "@/lib/reference-data";
+import { REPORT_META, REPORT_TYPES, type ReportType } from "@/lib/reference-data";
 import type { ReportListItem, BayBoardRow } from "@/lib/types";
 import { hoursSince } from "@/lib/datetime";
 
 const FOUR_HOURS = 4;
+
+/** Prefix search across all 6 report tables for the report-number reverse lookup —
+ * "AASEC16-20260818" (no sequence yet) matches every SEC016 report filed that day.
+ * RLS scopes results to whatever the caller can already see, same as any other query. */
+export async function searchByReportNoPrefix(prefix: string): Promise<ReportListItem[]> {
+  const supabase = createClient();
+  const cleaned = prefix.trim().toUpperCase();
+  if (!cleaned) return [];
+
+  const results = await Promise.all(
+    REPORT_TYPES.map(async (type) => {
+      const { data } = await supabase
+        .from(REPORT_META[type].table)
+        .select("*")
+        .ilike("report_no", `${cleaned}%`)
+        .order("report_no", { ascending: false })
+        .limit(50);
+      return ((data ?? []) as Record<string, unknown>[]).map((row) => toListItem(type, row));
+    }),
+  );
+
+  return results.flat().sort((a, b) => (a.report_no ?? "") < (b.report_no ?? "") ? 1 : -1);
+}
 
 export async function getOverdueAircraft(station: string): Promise<
   (BayBoardRow & { hoursOnGround: number })[]
@@ -95,6 +118,7 @@ function toListItem(type: ReportType, row: Record<string, unknown>): ReportListI
     station: String(row.station),
     team: String(row.team),
     summary,
+    report_no: (row.report_no as string | null) ?? null,
   };
 }
 

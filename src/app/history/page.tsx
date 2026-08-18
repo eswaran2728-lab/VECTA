@@ -69,6 +69,7 @@ export default async function HistoryPage({
                 <div className="min-w-0 flex-1">
                   <p className="t-mono text-[9.5px]" style={{ color: "var(--faint)" }}>
                     {REPORT_META[r.type].code}
+                    {r.report_no ? ` · ${r.report_no}` : ""}
                   </p>
                   <p className="font-semibold text-[13px] mt-[3px] truncate" style={{ color: "var(--ink2)" }}>
                     {REPORT_META[r.type].name}

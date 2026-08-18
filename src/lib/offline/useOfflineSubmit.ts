@@ -7,7 +7,7 @@ import type { ActionResult } from "@/lib/reports/actions";
 type SubmitFn = (input: unknown) => Promise<ActionResult>;
 
 export type SubmitOutcome =
-  | { kind: "submitted"; id: string; submittedAt?: string }
+  | { kind: "submitted"; id: string; submittedAt?: string; reportNo?: string }
   | { kind: "queued"; localId: string }
   | { kind: "error"; message: string };
 
@@ -30,7 +30,7 @@ export function useOfflineSubmit(type: QueueItemType, submitFn: SubmitFn) {
 
         const result = await submitFn(values);
         if (result.ok && result.id) {
-          return { kind: "submitted", id: result.id, submittedAt: result.submittedAt };
+          return { kind: "submitted", id: result.id, submittedAt: result.submittedAt, reportNo: result.reportNo };
         }
         if (!result.ok && result.error) {
           return { kind: "error", message: result.error };

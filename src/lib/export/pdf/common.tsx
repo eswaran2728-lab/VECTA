@@ -1,12 +1,30 @@
-import { Text, View } from "@react-pdf/renderer";
+import { Text, View, Image } from "@react-pdf/renderer";
 import { pdfStyles as s } from "./styles";
 import { APP_NAME } from "@/lib/branding";
 
-export function PdfHeader({ title, code }: { title: string; code: string }) {
+export function PdfHeader({
+  title,
+  code,
+  reportNo,
+  qrDataUrl,
+}: {
+  title: string;
+  code: string;
+  reportNo?: string | null;
+  qrDataUrl?: string | null;
+}) {
   return (
     <View style={s.headerRow}>
-      <Text style={s.title}>{title}</Text>
-      <Text style={s.formCode}>{code}</Text>
+      <View>
+        <Text style={s.title}>{title}</Text>
+        {reportNo && <Text style={s.reportNo}>{reportNo}</Text>}
+      </View>
+      <View style={{ alignItems: "flex-end" }}>
+        <Text style={s.formCode}>{code}</Text>
+        {/* react-pdf's Image, not an HTML <img> — no alt prop exists on this component. */}
+        {/* eslint-disable-next-line jsx-a11y/alt-text */}
+        {qrDataUrl && <Image src={qrDataUrl} style={s.qr} />}
+      </View>
     </View>
   );
 }

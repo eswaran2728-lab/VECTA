@@ -3,6 +3,7 @@ import type { ReportType } from "@/lib/reference-data";
 
 const SHEET_COLUMNS: Record<ReportType, { key: string; header: string }[]> = {
   sec016: [
+    { key: "report_no", header: "Report No" },
     { key: "submitted_at", header: "Submitted At" },
     { key: "station", header: "Station" },
     { key: "team", header: "Team" },
@@ -26,6 +27,7 @@ const SHEET_COLUMNS: Record<ReportType, { key: string; header: string }[]> = {
     { key: "offload_total_baggage", header: "Offload Total Baggage" },
   ],
   sec014: [
+    { key: "report_no", header: "Report No" },
     { key: "submitted_at", header: "Submitted At" },
     { key: "station", header: "Station" },
     { key: "team", header: "Team" },
@@ -36,6 +38,7 @@ const SHEET_COLUMNS: Record<ReportType, { key: string; header: string }[]> = {
     { key: "remark", header: "Remark" },
   ],
   sec029: [
+    { key: "report_no", header: "Report No" },
     { key: "submitted_at", header: "Submitted At" },
     { key: "station", header: "Station" },
     { key: "team", header: "Team" },
@@ -52,6 +55,7 @@ const SHEET_COLUMNS: Record<ReportType, { key: string; header: string }[]> = {
     { key: "d_remark", header: "Remark/Detection" },
   ],
   sec018: [
+    { key: "report_no", header: "Report No" },
     { key: "submitted_at", header: "Submitted At" },
     { key: "station", header: "Station" },
     { key: "team", header: "Team" },
@@ -59,6 +63,7 @@ const SHEET_COLUMNS: Record<ReportType, { key: string; header: string }[]> = {
     { key: "date_time", header: "Date/Time" },
   ],
   sec033: [
+    { key: "report_no", header: "Report No" },
     { key: "submitted_at", header: "Submitted At" },
     { key: "station", header: "Station" },
     { key: "team", header: "Team" },
@@ -68,6 +73,7 @@ const SHEET_COLUMNS: Record<ReportType, { key: string; header: string }[]> = {
     { key: "report_time", header: "Time" },
   ],
   sec013: [
+    { key: "report_no", header: "Report No" },
     { key: "submitted_at", header: "Submitted At" },
     { key: "station", header: "Hub/Station" },
     { key: "team", header: "Team" },

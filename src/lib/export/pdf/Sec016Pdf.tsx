@@ -5,12 +5,12 @@ import { REPORT_META } from "@/lib/reference-data";
 import { formatDateTimeMY, formatDateMY } from "@/lib/datetime";
 import type { Sec016Row } from "@/lib/types";
 
-export function Sec016Pdf({ report }: { report: Sec016Row }) {
+export function Sec016Pdf({ report, qrDataUrl }: { report: Sec016Row; qrDataUrl?: string | null }) {
   const meta = REPORT_META.sec016;
   return (
     <Document>
       <Page size="A4" style={s.page}>
-        <PdfHeader title={meta.name} code={meta.code} />
+        <PdfHeader title={meta.name} code={meta.code} reportNo={report.report_no} qrDataUrl={qrDataUrl} />
 
         <PdfSection title="Staff Details">
           <PdfField label="Station" value={report.station} />

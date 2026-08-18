@@ -25,6 +25,7 @@ export interface ActionResult {
   ok: boolean;
   id?: string;
   submittedAt?: string;
+  reportNo?: string;
   error?: string;
 }
 
@@ -100,7 +101,7 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
       offload_total_baggage: v.offload_total_baggage,
       offload_remark: v.offload_remark,
     })
-    .select("id, submitted_at")
+    .select("id, submitted_at, report_no")
     .single();
 
   if (error) return { ok: false, error: error.message };
@@ -113,7 +114,7 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
     fields: sec016EmailFields(v),
   });
   revalidatePath("/history");
-  return { ok: true, id: data.id, submittedAt: data.submitted_at };
+  return { ok: true, id: data.id, submittedAt: data.submitted_at, reportNo: data.report_no ?? undefined };
 }
 
 // ---------- SEC 014 ----------
@@ -145,7 +146,7 @@ export async function submitSec014(input: unknown): Promise<ActionResult> {
       remark: v.remark,
       acknowledgement: v.acknowledgement,
     })
-    .select("id, submitted_at")
+    .select("id, submitted_at, report_no")
     .single();
 
   if (error) return { ok: false, error: error.message };
@@ -172,7 +173,7 @@ export async function submitSec014(input: unknown): Promise<ActionResult> {
     fields: sec014EmailFields(v),
   });
   revalidatePath("/history");
-  return { ok: true, id: report.id, submittedAt: report.submitted_at };
+  return { ok: true, id: report.id, submittedAt: report.submitted_at, reportNo: report.report_no ?? undefined };
 }
 
 // ---------- SEC 029 ----------
@@ -215,7 +216,7 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
       d_remark: v.d_remark || null,
       acknowledgement: v.acknowledgement,
     })
-    .select("id, submitted_at")
+    .select("id, submitted_at, report_no")
     .single();
 
   if (error) return { ok: false, error: error.message };
@@ -248,7 +249,7 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
   });
   revalidatePath("/history");
   revalidatePath("/bay-board");
-  return { ok: true, id: report.id, submittedAt: report.submitted_at };
+  return { ok: true, id: report.id, submittedAt: report.submitted_at, reportNo: report.report_no ?? undefined };
 }
 
 // ---------- SEC 018 ----------
@@ -277,7 +278,7 @@ export async function submitSec018(input: unknown): Promise<ActionResult> {
       date_time: v.date_time,
       acknowledgement: v.acknowledgement,
     })
-    .select("id, submitted_at")
+    .select("id, submitted_at, report_no")
     .single();
 
   if (error) return { ok: false, error: error.message };
@@ -306,7 +307,7 @@ export async function submitSec018(input: unknown): Promise<ActionResult> {
     fields: sec018EmailFields(v),
   });
   revalidatePath("/history");
-  return { ok: true, id: report.id, submittedAt: report.submitted_at };
+  return { ok: true, id: report.id, submittedAt: report.submitted_at, reportNo: report.report_no ?? undefined };
 }
 
 // ---------- SEC 033 ----------
@@ -336,7 +337,7 @@ export async function submitSec033(input: unknown): Promise<ActionResult> {
       report_date: v.report_date,
       report_time: v.report_time,
     })
-    .select("id, submitted_at")
+    .select("id, submitted_at, report_no")
     .single();
 
   if (error) return { ok: false, error: error.message };
@@ -360,7 +361,7 @@ export async function submitSec033(input: unknown): Promise<ActionResult> {
     fields: sec033EmailFields(v),
   });
   revalidatePath("/history");
-  return { ok: true, id: report.id, submittedAt: report.submitted_at };
+  return { ok: true, id: report.id, submittedAt: report.submitted_at, reportNo: report.report_no ?? undefined };
 }
 
 // ---------- SEC 013 ----------
@@ -393,7 +394,7 @@ export async function submitSec013(input: unknown): Promise<ActionResult> {
       corrective_action: v.corrective_action || null,
       acknowledgement: v.acknowledgement,
     })
-    .select("id, submitted_at")
+    .select("id, submitted_at, report_no")
     .single();
 
   if (error) return { ok: false, error: error.message };
@@ -421,7 +422,7 @@ export async function submitSec013(input: unknown): Promise<ActionResult> {
     fields: sec013EmailFields(v),
   });
   revalidatePath("/history");
-  return { ok: true, id: report.id, submittedAt: report.submitted_at };
+  return { ok: true, id: report.id, submittedAt: report.submitted_at, reportNo: report.report_no ?? undefined };
 }
 
 // ---------- Bay Board ----------

@@ -5,12 +5,18 @@ import { REPORT_META } from "@/lib/reference-data";
 import { formatDateTimeMY } from "@/lib/datetime";
 import type { Sec018Row, Sec018PatrolEntry } from "@/lib/types";
 
-export function Sec018Pdf({ report }: { report: Sec018Row & { patrols?: Sec018PatrolEntry[] } }) {
+export function Sec018Pdf({
+  report,
+  qrDataUrl,
+}: {
+  report: Sec018Row & { patrols?: Sec018PatrolEntry[] };
+  qrDataUrl?: string | null;
+}) {
   const meta = REPORT_META.sec018;
   return (
     <Document>
       <Page size="A4" style={s.page}>
-        <PdfHeader title={meta.name} code={meta.code} />
+        <PdfHeader title={meta.name} code={meta.code} reportNo={report.report_no} qrDataUrl={qrDataUrl} />
 
         <PdfSection title="Staff Details">
           <PdfField label="Station" value={report.station} />

@@ -5,6 +5,8 @@ export const pdfStyles = StyleSheet.create({
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   title: { fontSize: 13, fontWeight: 700 },
   formCode: { fontSize: 9, fontFamily: "Helvetica-Bold", padding: 4, backgroundColor: "#0f172a", color: "#fff" },
+  reportNo: { fontSize: 10, fontFamily: "Helvetica-Bold", marginTop: 3, letterSpacing: 0.5 },
+  qr: { width: 40, height: 40, marginTop: 4 },
   section: { marginBottom: 10, borderWidth: 1, borderColor: "#cbd5e1", borderStyle: "solid", padding: 8 },
   sectionTitle: { fontSize: 10, fontWeight: 700, marginBottom: 6, textTransform: "uppercase" },
   row: { flexDirection: "row", flexWrap: "wrap", marginBottom: 2 },

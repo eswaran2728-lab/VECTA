@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import QRCode from "qrcode";
 import { formatDateTimeMY } from "@/lib/datetime";
 
 export function SubmissionConfirmation({
@@ -8,6 +10,7 @@ export function SubmissionConfirmation({
   formCode,
   id,
   submittedAt,
+  reportNo,
   queued,
   onSubmitAnother,
 }: {
@@ -15,10 +18,43 @@ export function SubmissionConfirmation({
   formCode: string;
   id?: string;
   submittedAt?: string;
+  reportNo?: string;
   queued?: boolean;
   onSubmitAnother: () => void;
 }) {
   const accent = queued ? "var(--blue)" : "var(--gold-fill)";
+  const [copied, setCopied] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!reportNo) {
+      setQrDataUrl(null);
+      return;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(reportNo, { margin: 1, width: 160 })
+      .then((url) => {
+        if (!cancelled) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reportNo]);
+
+  async function copyReportNo() {
+    if (!reportNo) return;
+    try {
+      await navigator.clipboard.writeText(reportNo);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API can be unavailable (e.g. non-HTTPS) — the number is still visible
+      // to copy by hand, so this failure is silent rather than an error message.
+    }
+  }
 
   return (
     <div className="py-6 space-y-5">
@@ -40,6 +76,38 @@ export function SubmissionConfirmation({
             ? "You're offline. This report is saved on your device and will submit automatically once you're back online — no re-entry needed."
             : "Recorded as an immutable submission. Corrections must be filed as an amendment referencing this record."}
         </p>
+      </div>
+
+      {/* Report number — the arm's-length, outdoor-readable panel that ties this digital
+          record to the paper AA/SEC/F form the officer also files. */}
+      <div className="card p-5 text-center space-y-3" style={{ borderColor: "var(--gold-fill)" }}>
+        <p className="t-mono text-[9px] font-semibold" style={{ letterSpacing: "0.14em", color: "var(--faint)" }}>
+          REPORT NUMBER
+        </p>
+        {queued || !reportNo ? (
+          <p className="t-display text-xl" style={{ color: "var(--soft)" }}>
+            PENDING — assigned on sync
+          </p>
+        ) : (
+          <>
+            <p
+              className="t-mono font-bold text-[28px] leading-none break-all"
+              style={{ color: "var(--ink)", letterSpacing: "0.02em" }}
+            >
+              {reportNo}
+            </p>
+            <p className="t-mono text-[10.5px] font-semibold" style={{ color: "var(--red)" }}>
+              Write this number on the paper form
+            </p>
+            {qrDataUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={qrDataUrl} alt={`QR code for ${reportNo}`} className="mx-auto" width={120} height={120} />
+            )}
+            <button type="button" className="btn-secondary w-full" onClick={copyReportNo}>
+              {copied ? "Copied ✓" : "Copy report number"}
+            </button>
+          </>
+        )}
       </div>
 
       <div className="card p-4">

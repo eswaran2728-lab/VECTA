@@ -109,7 +109,7 @@ export function Sec029Form({
 }) {
   const meta = REPORT_META.sec029;
   const [result, setResult] = useState<
-    { kind: "submitted"; id: string; submittedAt?: string } | { kind: "queued" } | null
+    { kind: "submitted"; id: string; submittedAt?: string; reportNo?: string } | { kind: "queued" } | null
   >(null);
 
   const {
@@ -138,7 +138,7 @@ export function Sec029Form({
     const outcome = await submit(parsed.data);
     if (outcome.kind === "submitted") {
       clearLocalDraft("sec029");
-      setResult({ kind: "submitted", id: outcome.id, submittedAt: outcome.submittedAt });
+      setResult({ kind: "submitted", id: outcome.id, submittedAt: outcome.submittedAt, reportNo: outcome.reportNo });
     } else if (outcome.kind === "queued") {
       clearLocalDraft("sec029");
       setResult({ kind: "queued" });
@@ -154,6 +154,7 @@ export function Sec029Form({
         formCode={meta.code}
         id={result.kind === "submitted" ? result.id : undefined}
         submittedAt={result.kind === "submitted" ? result.submittedAt : undefined}
+        reportNo={result.kind === "submitted" ? result.reportNo : undefined}
         queued={result.kind === "queued"}
         onSubmitAnother={() => {
           reset(buildDefaults(profile));

@@ -336,7 +336,10 @@ export default async function DashboardPage({
                 className="flex items-center justify-between py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50"
               >
                 <div>
-                  <p className="font-mono text-xs text-slate-400">{REPORT_META[s.type].code}</p>
+                  <p className="font-mono text-xs text-slate-400">
+                    {REPORT_META[s.type].code}
+                    {s.report_no ? ` · ${s.report_no}` : ""}
+                  </p>
                   <p className="font-medium">{s.summary}</p>
                 </div>
                 <span className="text-xs text-slate-500 text-right">

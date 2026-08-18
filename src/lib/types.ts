@@ -23,6 +23,7 @@ export interface Sec016Row {
   created_at: string;
   updated_at: string;
   amendment_of: string | null;
+  report_no: string | null;
 
   station: string;
   team: string;
@@ -82,6 +83,7 @@ export interface Sec014Row {
   created_at: string;
   updated_at: string;
   amendment_of: string | null;
+  report_no: string | null;
 
   station: string;
   team: string;
@@ -111,6 +113,7 @@ export interface Sec029Row {
   created_at: string;
   updated_at: string;
   amendment_of: string | null;
+  report_no: string | null;
 
   station: string;
   team: string;
@@ -155,6 +158,7 @@ export interface Sec018Row {
   created_at: string;
   updated_at: string;
   amendment_of: string | null;
+  report_no: string | null;
 
   station: string;
   team: string;
@@ -181,6 +185,7 @@ export interface Sec033Row {
   created_at: string;
   updated_at: string;
   amendment_of: string | null;
+  report_no: string | null;
 
   station: string;
   team: string;
@@ -211,6 +216,7 @@ export interface Sec013Row {
   created_at: string;
   updated_at: string;
   amendment_of: string | null;
+  report_no: string | null;
 
   station: string;
   team: string;
@@ -250,4 +256,5 @@ export interface ReportListItem {
   station: string;
   team: string;
   summary: string;
+  report_no: string | null;
 }

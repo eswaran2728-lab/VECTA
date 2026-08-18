@@ -5,14 +5,20 @@ import { REPORT_META, SEC029_ITEMS } from "@/lib/reference-data";
 import { formatDateTimeMY } from "@/lib/datetime";
 import type { Sec029Row, Sec029ItemEntry } from "@/lib/types";
 
-export function Sec029Pdf({ report }: { report: Sec029Row & { items?: Sec029ItemEntry[] } }) {
+export function Sec029Pdf({
+  report,
+  qrDataUrl,
+}: {
+  report: Sec029Row & { items?: Sec029ItemEntry[] };
+  qrDataUrl?: string | null;
+}) {
   const meta = REPORT_META.sec029;
   const itemMap = new Map((report.items ?? []).map((i) => [i.item_code, i]));
 
   return (
     <Document>
       <Page size="A4" style={s.page}>
-        <PdfHeader title={meta.name} code={meta.code} />
+        <PdfHeader title={meta.name} code={meta.code} reportNo={report.report_no} qrDataUrl={qrDataUrl} />
 
         <PdfSection title="Staff Details">
           <PdfField label="Station" value={report.station} />

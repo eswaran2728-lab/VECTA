@@ -5,12 +5,18 @@ import { REPORT_META, SECURITY_DISCLAIMER, SEC013_CERTIFICATION_TEXT } from "@/l
 import { formatDateTimeMY } from "@/lib/datetime";
 import type { Sec013Row, Sec013ProfilingDutyEntry } from "@/lib/types";
 
-export function Sec013Pdf({ report }: { report: Sec013Row & { profiling_duties?: Sec013ProfilingDutyEntry[] } }) {
+export function Sec013Pdf({
+  report,
+  qrDataUrl,
+}: {
+  report: Sec013Row & { profiling_duties?: Sec013ProfilingDutyEntry[] };
+  qrDataUrl?: string | null;
+}) {
   const meta = REPORT_META.sec013;
   return (
     <Document>
       <Page size="A4" style={s.page}>
-        <PdfHeader title={meta.name} code={meta.code} />
+        <PdfHeader title={meta.name} code={meta.code} reportNo={report.report_no} qrDataUrl={qrDataUrl} />
         <PdfDisclaimer text={SECURITY_DISCLAIMER} />
 
         <PdfSection title="Staff Details">

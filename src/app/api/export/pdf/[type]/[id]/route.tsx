@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { renderToBuffer } from "@react-pdf/renderer";
+import QRCode from "qrcode";
 import { requireProfile } from "@/lib/auth";
 import { getReportById } from "@/lib/reports/queries";
 import { REPORT_TYPES, type ReportType } from "@/lib/reference-data";
@@ -27,32 +28,35 @@ export async function GET(
     return NextResponse.json({ error: "Report not found" }, { status: 404 });
   }
 
+  const reportNo = (report as { report_no?: string | null }).report_no;
+  const qrDataUrl = reportNo ? await QRCode.toDataURL(reportNo, { margin: 1, width: 160 }).catch(() => null) : null;
+
   let buffer: Buffer;
   switch (type) {
     case "sec016":
-      buffer = await renderToBuffer(<Sec016Pdf report={report as unknown as Sec016Row} />);
+      buffer = await renderToBuffer(<Sec016Pdf report={report as unknown as Sec016Row} qrDataUrl={qrDataUrl} />);
       break;
     case "sec014":
-      buffer = await renderToBuffer(<Sec014Pdf report={report as unknown as Sec014Row} />);
+      buffer = await renderToBuffer(<Sec014Pdf report={report as unknown as Sec014Row} qrDataUrl={qrDataUrl} />);
       break;
     case "sec029":
-      buffer = await renderToBuffer(<Sec029Pdf report={report as unknown as Sec029Row} />);
+      buffer = await renderToBuffer(<Sec029Pdf report={report as unknown as Sec029Row} qrDataUrl={qrDataUrl} />);
       break;
     case "sec018":
-      buffer = await renderToBuffer(<Sec018Pdf report={report as unknown as Sec018Row} />);
+      buffer = await renderToBuffer(<Sec018Pdf report={report as unknown as Sec018Row} qrDataUrl={qrDataUrl} />);
       break;
     case "sec033":
-      buffer = await renderToBuffer(<Sec033Pdf report={report as unknown as Sec033Row} />);
+      buffer = await renderToBuffer(<Sec033Pdf report={report as unknown as Sec033Row} qrDataUrl={qrDataUrl} />);
       break;
     case "sec013":
-      buffer = await renderToBuffer(<Sec013Pdf report={report as unknown as Sec013Row} />);
+      buffer = await renderToBuffer(<Sec013Pdf report={report as unknown as Sec013Row} qrDataUrl={qrDataUrl} />);
       break;
   }
 
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${type}-${params.id}.pdf"`,
+      "Content-Disposition": `attachment; filename="${reportNo || `${type}-${params.id}`}.pdf"`,
     },
   });
 }
