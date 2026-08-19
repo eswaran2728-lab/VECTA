@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireProfile } from "@/lib/avsec/auth";
 import { getVisibleOvertimeRequests } from "@/lib/avsec/duty/overtime-queries";
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/avsec/layout/AppHeader";
 import { BottomNav } from "@/components/avsec/layout/BottomNav";
 import { formatDateMY } from "@/lib/avsec/datetime";

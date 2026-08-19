@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/avsec/supabase/client";
+import { createClient } from "@/lib/supabase/client";
 import { APP_NAME } from "@/lib/avsec/branding";
 
 export default function UpdatePasswordPage() {

@@ -3,7 +3,7 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import { requireProfile } from "@/lib/avsec/auth";
 import { getDutyRecordDetail } from "@/lib/avsec/duty/timesheet-queries";
 import { getDutyZone } from "@/lib/avsec/duty/checkin-queries";
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { DutyRecordPdf } from "@/lib/avsec/export/pdf/DutyRecordPdf";
 
 export async function GET(_request: Request, { params: paramsPromise }: { params: Promise<{ id: string }> }) {

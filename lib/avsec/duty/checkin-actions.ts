@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/avsec/auth";
 import { todayISODateMY } from "@/lib/avsec/datetime";
 import { dutyCheckInSchema, dutyCheckOutSchema } from "@/lib/avsec/schemas/duty";
@@ -45,7 +45,7 @@ async function matchStationZone(
   lat: number,
 ): Promise<{ zones: DutyZone[]; match: DutyZone | null }> {
   const { data } = await supabase.from("duty_zones").select("*").eq("station", station).eq("active", true);
-  const zones = (data ?? []) as DutyZone[];
+  const zones = (data ?? []) as unknown as DutyZone[];
   const match = zones.find((z) => pointInPolygon(lng, lat, z.polygon)) ?? null;
   return { zones, match };
 }

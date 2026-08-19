@@ -5,7 +5,7 @@
 // itself (lib/icms/offline-queue.ts, lib/avsec/offline/db.ts) and replayed
 // on reconnect; this worker only handles asset/page caching.
 const CACHE = "aa-ops-shell-v1";
-const SHELL = ["/manifest.json", "/icms/offline", "/icons/icms-icon-192.png", "/icons/avsec-icon-192.png"];
+const SHELL = ["/manifest.json", "/icms/offline", "/icons/vecta-icon-192.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

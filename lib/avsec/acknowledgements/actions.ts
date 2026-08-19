@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/avsec/auth";
 import { REPORT_TYPES, type ReportType } from "@/lib/avsec/reference-data";
 

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireProfile } from "@/lib/avsec/auth";
 import { getOvertimeRequestById } from "@/lib/avsec/duty/overtime-queries";
 import { endorseOvertimeRequest, approveOvertimeRequest, rejectOvertimeRequest, withdrawOvertimeRequest } from "@/lib/avsec/duty/overtime-actions";
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { ROLE_RANK, type UserRole } from "@/lib/avsec/reference-data";
 import { AppHeader } from "@/components/avsec/layout/AppHeader";
 import { BottomNav } from "@/components/avsec/layout/BottomNav";

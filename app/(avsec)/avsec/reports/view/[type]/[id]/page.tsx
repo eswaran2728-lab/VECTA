@@ -4,7 +4,7 @@ import { getReportById } from "@/lib/avsec/reports/queries";
 import { getAcknowledgement } from "@/lib/avsec/acknowledgements/queries";
 import { acknowledgeReport } from "@/lib/avsec/acknowledgements/actions";
 import { getReportAttachments } from "@/lib/avsec/attachments/actions";
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { REPORT_META, REPORT_TYPES, ROLE_RANK, type ReportType, type UserRole } from "@/lib/avsec/reference-data";
 import { AppHeader } from "@/components/avsec/layout/AppHeader";
 import { BottomNav } from "@/components/avsec/layout/BottomNav";

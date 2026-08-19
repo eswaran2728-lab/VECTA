@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { REPORT_META, REPORT_TYPES, type ReportType } from "@/lib/avsec/reference-data";
 import type { DashboardFilters } from "@/lib/avsec/dashboard/queries";
 
@@ -28,7 +28,7 @@ export async function getFullRowsForExport(
   await Promise.all(
     types.map(async (type) => {
       let query = supabase
-        .from(REPORT_META[type].table)
+        .from(REPORT_META[type].table as never)
         .select("*")
         .eq("status", "submitted")
         .gte("submitted_at", from)

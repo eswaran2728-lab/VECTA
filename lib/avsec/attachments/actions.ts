@@ -1,6 +1,6 @@
 "use server";
 
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/avsec/auth";
 import { REPORT_TYPES, type ReportType } from "@/lib/avsec/reference-data";
 

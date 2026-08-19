@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { scheduledWindow } from "./lateness";
 import { calcOtHours } from "./overtime";
 

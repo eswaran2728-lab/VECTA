@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/avsec/auth";
 import { hasOpenDutyCheckIn } from "@/lib/avsec/duty/checkin-queries";
 import { sec016Schema } from "@/lib/avsec/schemas/sec016";
@@ -110,13 +110,13 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
   await clearDraft("sec016");
   await notifyReportSubmission({
     reportType: "sec016",
-    submittedAt: data.submitted_at,
+    submittedAt: data.submitted_at ?? new Date().toISOString(),
     submittedByName: v.staff_name,
     submittedByStaffNo: v.staff_no,
     fields: sec016EmailFields(v),
   });
   revalidatePath("/avsec/history");
-  return { ok: true, id: data.id, submittedAt: data.submitted_at, reportNo: data.report_no ?? undefined };
+  return { ok: true, id: data.id, submittedAt: data.submitted_at ?? new Date().toISOString(), reportNo: data.report_no ?? undefined };
 }
 
 // ---------- SEC 014 ----------
@@ -169,13 +169,13 @@ export async function submitSec014(input: unknown): Promise<ActionResult> {
   await clearDraft("sec014");
   await notifyReportSubmission({
     reportType: "sec014",
-    submittedAt: report.submitted_at,
+    submittedAt: report.submitted_at ?? new Date().toISOString(),
     submittedByName: v.staff_name,
     submittedByStaffNo: v.staff_id,
     fields: sec014EmailFields(v),
   });
   revalidatePath("/avsec/history");
-  return { ok: true, id: report.id, submittedAt: report.submitted_at, reportNo: report.report_no ?? undefined };
+  return { ok: true, id: report.id, submittedAt: report.submitted_at ?? new Date().toISOString(), reportNo: report.report_no ?? undefined };
 }
 
 // ---------- SEC 029 ----------
@@ -244,14 +244,14 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
   await clearDraft("sec029");
   await notifyReportSubmission({
     reportType: "sec029",
-    submittedAt: report.submitted_at,
+    submittedAt: report.submitted_at ?? new Date().toISOString(),
     submittedByName: v.staff_name,
     submittedByStaffNo: v.staff_id,
     fields: sec029EmailFields(v),
   });
   revalidatePath("/avsec/history");
   revalidatePath("/avsec/bay-board");
-  return { ok: true, id: report.id, submittedAt: report.submitted_at, reportNo: report.report_no ?? undefined };
+  return { ok: true, id: report.id, submittedAt: report.submitted_at ?? new Date().toISOString(), reportNo: report.report_no ?? undefined };
 }
 
 // ---------- SEC 018 ----------
@@ -303,13 +303,13 @@ export async function submitSec018(input: unknown): Promise<ActionResult> {
   await clearDraft("sec018");
   await notifyReportSubmission({
     reportType: "sec018",
-    submittedAt: report.submitted_at,
+    submittedAt: report.submitted_at ?? new Date().toISOString(),
     submittedByName: v.staff_name,
     submittedByStaffNo: "",
     fields: sec018EmailFields(v),
   });
   revalidatePath("/avsec/history");
-  return { ok: true, id: report.id, submittedAt: report.submitted_at, reportNo: report.report_no ?? undefined };
+  return { ok: true, id: report.id, submittedAt: report.submitted_at ?? new Date().toISOString(), reportNo: report.report_no ?? undefined };
 }
 
 // ---------- SEC 033 ----------
@@ -357,13 +357,13 @@ export async function submitSec033(input: unknown): Promise<ActionResult> {
   await clearDraft("sec033");
   await notifyReportSubmission({
     reportType: "sec033",
-    submittedAt: report.submitted_at,
+    submittedAt: report.submitted_at ?? new Date().toISOString(),
     submittedByName: v.staff_name,
     submittedByStaffNo: v.staff_id,
     fields: sec033EmailFields(v),
   });
   revalidatePath("/avsec/history");
-  return { ok: true, id: report.id, submittedAt: report.submitted_at, reportNo: report.report_no ?? undefined };
+  return { ok: true, id: report.id, submittedAt: report.submitted_at ?? new Date().toISOString(), reportNo: report.report_no ?? undefined };
 }
 
 // ---------- SEC 013 ----------
@@ -418,13 +418,13 @@ export async function submitSec013(input: unknown): Promise<ActionResult> {
   await clearDraft("sec013");
   await notifyReportSubmission({
     reportType: "sec013",
-    submittedAt: report.submitted_at,
+    submittedAt: report.submitted_at ?? new Date().toISOString(),
     submittedByName: v.staff_name,
     submittedByStaffNo: v.staff_id,
     fields: sec013EmailFields(v),
   });
   revalidatePath("/avsec/history");
-  return { ok: true, id: report.id, submittedAt: report.submitted_at, reportNo: report.report_no ?? undefined };
+  return { ok: true, id: report.id, submittedAt: report.submitted_at ?? new Date().toISOString(), reportNo: report.report_no ?? undefined };
 }
 
 // ---------- Offload Information (Departure Flight) ----------
@@ -479,13 +479,13 @@ export async function submitOffload(input: unknown): Promise<ActionResult> {
   await clearDraft("offload");
   await notifyReportSubmission({
     reportType: "offload",
-    submittedAt: report.submitted_at,
+    submittedAt: report.submitted_at ?? new Date().toISOString(),
     submittedByName: v.staff_name,
     submittedByStaffNo: v.staff_id,
     fields: offloadEmailFields(v),
   });
   revalidatePath("/avsec/history");
-  return { ok: true, id: report.id, submittedAt: report.submitted_at, reportNo: report.report_no ?? undefined };
+  return { ok: true, id: report.id, submittedAt: report.submitted_at ?? new Date().toISOString(), reportNo: report.report_no ?? undefined };
 }
 
 // ---------- Bay Board ----------

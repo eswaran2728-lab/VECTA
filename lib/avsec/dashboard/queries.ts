@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { REPORT_META, REPORT_TYPES, type ReportType } from "@/lib/avsec/reference-data";
 import type { Profile } from "@/lib/avsec/types";
 import { todayISODateMY } from "@/lib/avsec/datetime";
@@ -43,7 +43,7 @@ export async function getFilteredSubmissions(filters: DashboardFilters): Promise
   const results = await Promise.all(
     types.map(async (type) => {
       let query = supabase
-        .from(REPORT_META[type].table)
+        .from(REPORT_META[type].table as never)
         .select("*")
         .eq("status", "submitted")
         .gte("submitted_at", from)
@@ -118,7 +118,7 @@ export async function getStationOfficers(station: string, team?: string): Promis
   let query = supabase.from("profiles").select("*").eq("station", station).eq("role", "ASO");
   if (team) query = query.eq("team", team);
   const { data } = await query;
-  return (data as Profile[]) ?? [];
+  return (data as unknown as Profile[]) ?? [];
 }
 
 export interface ShiftComplianceRow {

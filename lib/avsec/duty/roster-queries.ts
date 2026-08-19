@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { DUTY_ROLES } from "@/lib/avsec/auth";
 
 export interface Shift {
@@ -74,5 +74,5 @@ export async function getRosterWeek(station: string, weekStart: string, weekEnd:
     .eq("station", station)
     .gte("roster_date", weekStart)
     .lte("roster_date", weekEnd);
-  return (data as RosterCell[]) ?? [];
+  return (data as unknown as RosterCell[]) ?? [];
 }

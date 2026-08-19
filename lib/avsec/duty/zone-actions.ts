@@ -2,12 +2,13 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
+import type { Json } from "@/lib/supabase/database.types";
 import type { GeoPolygon } from "./geofence";
 
 function backTo(station: string) {
-  return `/admin/zones?station=${encodeURIComponent(station)}`;
+  return `/avsec/admin/zones?station=${encodeURIComponent(station)}`;
 }
 
 export async function upsertZone(formData: FormData) {
@@ -42,10 +43,10 @@ export async function upsertZone(formData: FormData) {
       station,
       code,
       name,
-      polygon: geometry.polygon,
+      polygon: geometry.polygon as unknown as Json,
       center_lat: geometry.center_lat,
       center_lng: geometry.center_lng,
-      radius_m: geometry.radius_m,
+      radius_m: geometry.radius_m ?? undefined,
       created_by: admin.id,
     },
     { onConflict: id ? "id" : "station,code" },

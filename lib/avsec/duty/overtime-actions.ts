@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/avsec/auth";
 import { ROLE_RANK } from "@/lib/avsec/reference-data";
 import { combineDateTimeMY } from "@/lib/avsec/datetime";
@@ -117,7 +117,7 @@ export async function approveOvertimeRequest(formData: FormData) {
         station: data.station,
         team: data.team,
         workDate: data.work_date,
-        payableHours: data.payable_hours,
+        payableHours: data.payable_hours ?? 0,
         category: data.category,
         approvedByName: profile.name,
       });

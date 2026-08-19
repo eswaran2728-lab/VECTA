@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { todayISODateMY } from "@/lib/avsec/datetime";
 import type { DutyZone, TodayRoster, DutyRecordRow } from "./types";
 
@@ -17,7 +17,7 @@ export async function getTodayRoster(station: string, team: string): Promise<Tod
 export async function getDutyZone(zoneId: string): Promise<DutyZone | null> {
   const supabase = await createClient();
   const { data } = await supabase.from("duty_zones").select("*").eq("id", zoneId).maybeSingle();
-  return (data as DutyZone) ?? null;
+  return (data as unknown as DutyZone) ?? null;
 }
 
 /** The most recent of today's duty records for this shift — profile_id is implied by RLS

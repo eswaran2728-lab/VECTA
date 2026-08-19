@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { sendEmail } from "./resend";
 import { buildReportEmailHtml } from "./reportEmailTemplate";
 

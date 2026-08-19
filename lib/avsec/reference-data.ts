@@ -83,6 +83,10 @@ export const SEC013_LOCATIONS = [
 export const SEC013_CERTIFICATION_TEXT =
   "I certify that the information provided in this report is true, complete and accurate to the best of my knowledge.";
 
+// Table names are typed loosely here (not against the generated Database
+// type) so this file doesn't need to import the Supabase schema just to
+// describe report metadata — callers that pass REPORT_META[type].table into
+// supabase.from() cast it to the literal table-name union at the call site.
 export const REPORT_META: Record<
   ReportType,
   { name: string; code: string; table: string; route: string }

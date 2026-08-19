@@ -1,15 +1,15 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { Role } from "@/lib/icms/database.types";
 
-// Until the two Supabase projects are merged (a separate, later task — see
-// Phase 5/12 of the merge), role checks run against ICMS's `users.role`
-// column, the only role table the single shared client can see. AVSEC's own
-// role list (ASO/SO/DSE/ENFORCEMENT/MANAGEMENT/ADMIN) doesn't exist there yet,
-// so the mapping below is a best-effort bridge, not a real role merge.
-const AVSEC_ACCESS_ROLES: Role[] = ["enforcement", "supervisor"];
-const ADMIN_ROLES: Role[] = ["supervisor"];
+// Unified role vocabulary (supabase/migrations/unified_role_model):
+// admin, management, enforcement, so, aso, dse, vendor. Org-wide roles
+// (admin/management/enforcement) get both apps; so/aso/dse/vendor get
+// whichever app their account actually lives in (public.profiles for
+// AVSEC-origin, public.users for ICMS-origin) — a bare "aso" mapping
+// doesn't by itself grant ICMS RLS access, since that's keyed off having
+// an actual public.users row, not just the unified_role string.
+const ORG_WIDE_ROLES = ["admin", "management", "enforcement"];
 
 export default async function LandingPage() {
   const supabase = await createClient();
@@ -19,18 +19,28 @@ export default async function LandingPage() {
 
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("users")
-    .select("role, name")
-    .eq("id", user.id)
-    .single();
+  const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("unified_role, name")
+      .eq("id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("users")
+      .select("unified_role, name")
+      .eq("id", user.id)
+      .maybeSingle(),
+  ]);
 
+  const profile = avsecProfile ?? icmsProfile;
   if (!profile) redirect("/login?error=no-profile");
 
-  const role = profile.role as Role;
-  const showIfc = true; // every active ICMS user row has an ICMS-side role
-  const showAvsec = AVSEC_ACCESS_ROLES.includes(role);
-  const showAdmin = ADMIN_ROLES.includes(role);
+  const role = profile.unified_role as string | null;
+  const orgWide = role ? ORG_WIDE_ROLES.includes(role) : false;
+
+  const showIfc = Boolean(icmsProfile) || orgWide;
+  const showAvsec = Boolean(avsecProfile) || orgWide;
+  const showAdmin = role === "admin";
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-8 p-8">

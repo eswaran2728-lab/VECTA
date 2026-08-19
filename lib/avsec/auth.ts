@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import type { Profile } from "./types";
 import { ORG_WIDE_ROLES, type UserRole } from "./reference-data";
 

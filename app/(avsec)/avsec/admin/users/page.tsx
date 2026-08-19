@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/avsec/layout/AppHeader";
 import { approveUser, rejectUser } from "@/lib/avsec/admin/actions";
 import { CreateAccountForm } from "@/components/avsec/admin/CreateAccountForm";
@@ -18,7 +18,7 @@ export default async function AdminUsersPage({
 
   const supabase = await createClient();
   const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
-  const profiles = (data as Profile[]) ?? [];
+  const profiles = (data as unknown as Profile[]) ?? [];
 
   const pending = profiles.filter((p) => p.status === "pending");
   const reviewed = profiles.filter((p) => p.status !== "pending");

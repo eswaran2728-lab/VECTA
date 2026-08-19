@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import type { ReportType } from "@/lib/avsec/reference-data";
 
 export interface FlightAttendanceRow {
@@ -32,7 +32,7 @@ export async function searchFlightAttendance(flightNo: string, date?: string): P
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("search_flight_attendance", {
     p_flight_no: flightNo,
-    p_date: date || null,
+    p_date: date || undefined,
   });
 
   if (error) return { ok: false, results: [], error: error.message };

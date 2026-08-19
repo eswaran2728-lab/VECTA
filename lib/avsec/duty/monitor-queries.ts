@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import type { UserRole } from "@/lib/avsec/reference-data";
 
 export type DutyMonitorStatus = "checked_in" | "checked_out" | "off" | "no_roster" | "missed" | "pending" | "upcoming";

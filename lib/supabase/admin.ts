@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/lib/icms/database.types";
+import type { Database } from "@/lib/supabase/database.types";
 
 /**
  * Service-role client. Bypasses RLS — use only in server actions that

@@ -4,7 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { verifyQrToken } from "@/lib/icms/qr-token";
 import { nextStepFor } from "@/lib/icms/workflow";
 import { vendorNextStepFor } from "@/lib/icms/workflow-vendor";
-import type { Database, Role, Transaction, VendorTransaction } from "@/lib/icms/database.types";
+import type { Role, Transaction, VendorTransaction } from "@/lib/icms/database.types";
+import type { Database } from "@/lib/supabase/database.types";
 
 export const dynamic = "force-dynamic";
 

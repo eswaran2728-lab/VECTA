@@ -1,10 +1,25 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Roles stored on ICMS's `users.role` column (see lib/icms/database.types.ts).
-// "supervisor" is labeled "Admin" in the UI; there is currently no ICMS-side
-// equivalent of AVSEC's "MANAGEMENT" role — flagged in the merge report.
-const EXEMPT_FROM_CHECKIN: string[] = ["supervisor", "enforcement"];
+// Unified role vocabulary (see supabase/migrations/unified_role_model and
+// the merge report): admin, management, enforcement, so, aso, dse, vendor.
+// Values live in the `unified_role` column on both public.profiles
+// (AVSEC-origin) and public.users (ICMS-origin) — the original per-app
+// role columns/enums are untouched, see that migration's header comment
+// for why a rename-in-place was too risky to do live.
+
+// Seniority-based exemptions: admin/management/enforcement are not
+// shift-based staff, so the check-in gate doesn't apply to them at all.
+const SENIORITY_EXEMPT_ROLES = ["admin", "management", "enforcement"];
+
+// Vendor is a SEPARATE exemption, kept apart from the seniority list on
+// purpose: vendors are third-party/external, not AirAsia staff, so the
+// AirAsia attendance/check-in concept doesn't apply to them at all — a
+// different reason than "senior enough to skip it".
+const VENDOR_EXEMPT_ROLE = "vendor";
+
+// so / aso / dse are all subject to the check-in gate regardless of
+// duty_post/station — there is no station-based exemption.
 
 const PUBLIC_PATHS = ["/login", "/icms/register"];
 
@@ -67,33 +82,41 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // --- Role + check-in gate (Phase 6) ---
+  // --- Role + check-in gate ---
   if (user && isGated) {
-    const { data: profile } = await supabase
-      .from("users")
-      .select("role, status")
-      .eq("id", user.id)
-      .single();
+    // Unified profile lives in whichever app's table the account was
+    // created through — AVSEC's public.profiles or ICMS's public.users —
+    // both now carry the same unified_role vocabulary in this shared project.
+    const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("unified_role, status")
+        .eq("id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("users")
+        .select("unified_role, status")
+        .eq("id", user.id)
+        .maybeSingle(),
+    ]);
+    const profile = avsecProfile ?? icmsProfile;
 
-    const role = profile?.role as string | undefined;
-
-    if (!profile || profile.status !== "active") {
+    const activeStatuses = ["approved", "active"];
+    if (!profile || !activeStatuses.includes(profile.status as string)) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
-      url.searchParams.set("error", profile ? profile.status : "no-profile");
+      url.searchParams.set("error", profile ? String(profile.status) : "no-profile");
       return NextResponse.redirect(url);
     }
 
-    const exempt = role ? EXEMPT_FROM_CHECKIN.includes(role) : false;
+    const role = profile.unified_role as string | null;
+    const seniorityExempt = role ? SENIORITY_EXEMPT_ROLES.includes(role) : false;
+    const vendorExempt = role === VENDOR_EXEMPT_ROLE;
+    const exempt = seniorityExempt || vendorExempt;
     const alreadyOnCheckin = path.startsWith("/avsec/duty");
 
     if (!exempt && !alreadyOnCheckin) {
       const today = new Date().toISOString().slice(0, 10);
-      // duty_records lives in AVSEC's schema (profile_id, duty_date,
-      // check_in_at, check_out_at). Until the two Supabase projects are
-      // merged this table may not exist under the single ICMS project —
-      // in that case we fail open (skip the gate) rather than lock every
-      // non-exempt user out, and this is called out in the merge report.
       const { data: dutyRecord, error } = await supabase
         .from("duty_records")
         .select("check_in_at, check_out_at")
@@ -104,7 +127,24 @@ export async function updateSession(request: NextRequest) {
         .limit(1)
         .maybeSingle();
 
-      if (!error && !dutyRecord) {
+      // duty_records now exists in this shared project (migrated from
+      // ICMS/created by AVSEC — see the merge report), so a query error
+      // here is a real failure, not "table doesn't exist yet". Fail
+      // CLOSED: block access and log, rather than silently letting a
+      // non-exempt user through with no check-in record.
+      if (error) {
+        console.error("[middleware] duty_records check-in gate query failed", {
+          userId: user.id,
+          path,
+          error: error.message,
+        });
+        const url = request.nextUrl.clone();
+        url.pathname = "/login";
+        url.searchParams.set("error", "checkin-gate-unavailable");
+        return NextResponse.redirect(url);
+      }
+
+      if (!dutyRecord) {
         const url = request.nextUrl.clone();
         url.pathname = "/avsec/duty";
         url.searchParams.set("next", path);

@@ -50,12 +50,12 @@ test("checkpointOrderError: part_d does not apply to inbound", () => {
 
 test("partsDoneFromStatus: outbound marks earlier parts done, later parts pending", () => {
   const done = partsDoneFromStatus("OUTBOUND", "AIRPORT_POST_APPROVED");
-  assert.deepEqual(done, { part_b: true, part_c: true, part_d: false });
+  assert.deepEqual(done, { part_b: true, part_c: true, part_d: false, part_hub: false, part_redq: false });
 });
 
 test("partsDoneFromStatus: inbound marks part_c done once airport post approved, part_b (final) not yet", () => {
   const done = partsDoneFromStatus("INBOUND", "AIRPORT_POST_APPROVED");
-  assert.deepEqual(done, { part_b: false, part_c: true, part_d: false });
+  assert.deepEqual(done, { part_b: false, part_c: true, part_d: false, part_hub: false, part_redq: false });
 });
 
 test("partsDoneFromStatus: escalated yields all-false regardless of direction", () => {
@@ -63,5 +63,7 @@ test("partsDoneFromStatus: escalated yields all-false regardless of direction", 
     part_b: false,
     part_c: false,
     part_d: false,
+    part_hub: false,
+    part_redq: false,
   });
 });

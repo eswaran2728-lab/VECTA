@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
 
 function backTo(station: string, week: string) {

@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { REPORT_META, REPORT_TYPES, type ReportType } from "@/lib/avsec/reference-data";
 import type { ReportListItem, BayBoardRow } from "@/lib/avsec/types";
 import { hoursSince } from "@/lib/avsec/datetime";
@@ -16,7 +16,7 @@ export async function searchByReportNoPrefix(prefix: string): Promise<ReportList
   const results = await Promise.all(
     REPORT_TYPES.map(async (type) => {
       const { data } = await supabase
-        .from(REPORT_META[type].table)
+        .from(REPORT_META[type].table as never)
         .select("*")
         .ilike("report_no", `${cleaned}%`)
         .order("report_no", { ascending: false })
@@ -72,7 +72,7 @@ export async function getMySubmissions({
     types.map(async (type) => {
       const table = REPORT_META[type].table;
       const { data } = await supabase
-        .from(table)
+        .from(table as never)
         .select("*")
         .eq("profile_id", profileId)
         .order("created_at", { ascending: false })
@@ -128,7 +128,8 @@ function toListItem(type: ReportType, row: Record<string, unknown>): ReportListI
 export async function getReportById(type: ReportType, id: string) {
   const supabase = await createClient();
   const table = REPORT_META[type].table;
-  const { data } = await supabase.from(table).select("*").eq("id", id).single();
+  const { data: rawData } = await supabase.from(table as never).select("*").eq("id", id).single();
+  const data = rawData as Record<string, unknown> | null;
   if (!data) return null;
 
   if (type === "sec014") {

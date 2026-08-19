@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
-import { createClient } from "@/lib/avsec/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 
 export async function runAttendanceSweep(formData: FormData) {
   await requireRole(ADMIN_ROLES);

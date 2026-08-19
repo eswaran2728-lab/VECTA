@@ -451,6 +451,9 @@ export async function createTransaction(
     .from("transactions")
     .insert({
       id: txId,
+      // Always recomputed by trg_sync_transaction_stage (before insert) from
+      // status/direction/route — "A" is just a type-satisfying placeholder.
+      current_stage: "A",
       direction,
       route: effectiveRoute,
       hub_destination: hubDestination,
