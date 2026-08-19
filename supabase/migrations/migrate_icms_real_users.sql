@@ -6,12 +6,12 @@
 -- migration report). Applied directly against the shared project
 -- (ddlctzbnqewubltcavkh) via the Supabase MCP tool.
 --
--- HELD BACK (not inserted — flagged for manual resolution, not guessed):
+-- DISCARDED, not migrated (confirmed by the project owner — a demo/test
+-- account, not a real person; no conflict resolution needed):
 --   4179bf5c-3fb5-4818-b2b9-55d33625a919, "gopi", staff_id 75656,
 --   post6_avsec, email karmagaming3561@gmail.com — that email already
 --   belongs to a DIFFERENT existing AVSEC account ("raq", unified_role
---   'aso') in this shared project. Same login, two different identities
---   across the two source systems.
+--   'aso') in this shared project.
 --
 -- Same-UUID preservation: every id below is copied verbatim from ICMS's
 -- auth.users/public.users so any future historical-data migration (e.g.
