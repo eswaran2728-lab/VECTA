@@ -23,13 +23,13 @@ const mono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "ICMS — Inflight Catering Management System",
-    template: "%s | ICMS",
+    default: "VECTA",
+    template: "%s | VECTA",
   },
   description:
-    "Digital IFCSF workflow for airport catering security: Part A–D checkpoints, incidents, audit trail.",
+    "VECTA — unified AirAsia operations platform: IFC catering security workflow and AVSEC duty & reporting.",
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, title: "ICMS", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "VECTA", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {
