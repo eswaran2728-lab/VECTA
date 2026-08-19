@@ -71,7 +71,7 @@ export default async function LandingPage() {
         )}
         {showAdmin && (
           <Link
-            href="/icms/admin"
+            href="/avsec/admin/users"
             className="rounded-xl border p-8 text-center hover:shadow-lg transition-shadow"
           >
             <h2 className="text-xl font-semibold">Admin</h2>

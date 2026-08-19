@@ -29,10 +29,11 @@ export function landingPathForRole(role: UserRole): string {
 export async function requireProfile(): Promise<Profile> {
   const profile = await getCurrentProfile();
   if (!profile) redirect("/login");
-  // Org-wide roles (Enforcement/Management/Admin) aren't tied to a team, so a blank team
-  // is expected for them — only the team-scoped roles (ASO/SO/DSE) must have one set.
+  // Org-wide roles (Enforcement/Management/Admin) aren't tied to a station or team, so
+  // both are expected blank for them — only the team-scoped roles (ASO/SO/DSE) must
+  // have station+team set.
   const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
-  if (!profile.name || !profile.station || (!isOrgWide && !profile.team)) {
+  if (!profile.name || (!isOrgWide && (!profile.station || !profile.team))) {
     redirect("/avsec/profile-setup");
   }
   if (profile.status !== "approved") {
