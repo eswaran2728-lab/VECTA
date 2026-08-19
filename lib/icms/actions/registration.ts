@@ -3,82 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/icms/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { Role } from "@/lib/icms/database.types";
 
-export interface RegisterState {
-  error: string | null;
-  success: string | null;
-}
-
-const REGISTERABLE_ROLES: Role[] = [
-  "warehouse_pic",
-  "post2_avsec",
-  "post6_avsec",
-  "receiver",
-  "enforcement",
-  "vendor",
-  "hub_avsec",
-  "redq_avsec",
-];
-
-/**
- * Public: new staff self-registration. Creates a real Supabase Auth
- * account right away (so credentials live only in Supabase Auth, never
- * a second password store) but the profile is inserted with
- * status='pending', which blocks sign-in until an admin approves it
- * (enforced in signIn, src/lib/actions/auth.ts).
- */
-export async function registerStaff(
-  _prev: RegisterState,
-  formData: FormData
-): Promise<RegisterState> {
-  const name = String(formData.get("name") ?? "").trim();
-  const staffId = String(formData.get("staff_id") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const role = String(formData.get("role") ?? "") as Role;
-  const password = String(formData.get("password") ?? "");
-
-  if (!name || !staffId || !email) {
-    return { error: "Name, staff ID and email are required.", success: null };
-  }
-  if (!REGISTERABLE_ROLES.includes(role)) {
-    return { error: "Select a valid checkpoint.", success: null };
-  }
-  if (password.length < 10) {
-    return { error: "Password must be at least 10 characters.", success: null };
-  }
-
-  const admin = createAdminClient();
-
-  const { data: created, error: authError } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-  });
-
-  if (authError || !created.user) {
-    return { error: authError?.message ?? "Could not create account.", success: null };
-  }
-
-  const { error: profileError } = await admin.from("users").insert({
-    id: created.user.id,
-    name,
-    staff_id: staffId,
-    email,
-    role,
-    status: "pending",
-  });
-
-  if (profileError) {
-    await admin.auth.admin.deleteUser(created.user.id);
-    return { error: `Registration could not be saved: ${profileError.message}`, success: null };
-  }
-
-  return {
-    error: null,
-    success: "Registration submitted. An admin must approve your account before you can sign in.",
-  };
-}
+// Self-registration (registerStaff / app/(icms)/icms/register) has been
+// removed — accounts are admin/management-created only, via the Admin
+// panel (see app/(icms)/icms/admin/users and
+// components/avsec/admin/CreateAccountForm.tsx). Full SSO via AirAsia's
+// Google Workspace domain is planned as a future replacement for Supabase
+// email/password auth, but that's a later migration — approveStaff/
+// rejectStaff below are kept only to resolve any pre-existing 'pending'
+// rows from before self-registration was removed.
 
 export interface ApprovalState {
   error: string | null;

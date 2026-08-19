@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { TriangleAlert, Clock3 } from "lucide-react";
 import { LoginForm } from "./login-form";
 import { PartnerLogos } from "./partner-logos";
@@ -54,6 +53,15 @@ export default async function LoginPage({
             </div>
           ) : null}
 
+          {/*
+            No self-registration: accounts are created only by an
+            admin/management user via the Admin panel
+            (/avsec/admin/users, app/(icms)/icms/admin/users). Full SSO
+            via AirAsia's Google Workspace domain is planned as a future
+            replacement for Supabase email/password auth, but that's a
+            later migration — for now Supabase auth continues, just
+            without any self-service path to create an account.
+          */}
           <LoginForm />
 
           <div className="mt-7 flex items-center justify-center gap-4">
@@ -63,13 +71,6 @@ export default async function LoginPage({
             </span>
           </div>
         </div>
-
-        <p className="mt-6 text-center font-sans text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-          New staff member?{" "}
-          <Link href="/icms/register" className="text-primary underline underline-offset-4">
-            Register here
-          </Link>
-        </p>
       </div>
     </main>
   );

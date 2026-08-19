@@ -21,7 +21,14 @@ const VENDOR_EXEMPT_ROLE = "vendor";
 // so / aso / dse are all subject to the check-in gate regardless of
 // duty_post/station — there is no station-based exemption.
 
-const PUBLIC_PATHS = ["/login", "/icms/register"];
+// No self-registration: accounts are admin/management-created only, via
+// the Admin panel (/avsec/admin/users, app/(icms)/icms/admin/users) —
+// there is no public sign-up route, so /login is the only public path.
+// Full SSO via AirAsia's Google Workspace domain is planned as a future
+// replacement for Supabase email/password auth, but that's a later
+// migration — for now Supabase auth continues, just without any
+// self-service path to create an account.
+const PUBLIC_PATHS = ["/login"];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
