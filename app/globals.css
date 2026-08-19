@@ -32,26 +32,32 @@
 
   .dark {
     color-scheme: dark;
-    /* Dark navy/black background kept as-is for contrast. */
-    --background: 224 47% 7%;
-    --foreground: 210 20% 98%;
-    --card: 224 44% 10%;
-    --card-foreground: 210 20% 98%;
-    --primary: 46 80% 58%;
+    /* VECTA "command center" palette — near-black, sharp, Inter-driven. */
+    --background: 210 25% 5%;
+    --foreground: 216 20% 94%;
+    --card: 212 22% 9%;
+    --card-foreground: 216 20% 94%;
+    /* Gold/amber — status accents, stripes, badges. */
+    --primary: 44 78% 60%;
     --primary-foreground: 224 71% 4%;
-    --brand: 3 90% 60%;
+    /* Red — primary CTA gradient, AirAsia brand accent, destructive. */
+    --brand: 6 74% 50%;
     --brand-foreground: 0 0% 100%;
-    --secondary: 222 30% 18%;
-    --secondary-foreground: 210 20% 98%;
-    --muted: 222 30% 16%;
-    --muted-foreground: 218 11% 65%;
-    --accent: 222 30% 18%;
-    --accent-foreground: 210 20% 98%;
-    --destructive: 3 90% 60%;
+    --secondary: 214 18% 14%;
+    --secondary-foreground: 216 20% 94%;
+    --muted: 214 18% 13%;
+    --muted-foreground: 215 12% 59%;
+    --accent: 214 18% 14%;
+    --accent-foreground: 216 20% 94%;
+    --destructive: 6 74% 50%;
     --destructive-foreground: 0 0% 100%;
-    --border: 222 30% 20%;
-    --input: 222 30% 24%;
-    --ring: 46 80% 58%;
+    --border: 215 15% 18%;
+    --input: 210 25% 7%;
+    --ring: 44 78% 60%;
+    /* Success/live/cleared indicators (check-in gate, ops dashboard). */
+    --success: 150 45% 55%;
+    --success-foreground: 210 25% 5%;
+    --radius: 0.125rem;
   }
 
   * {
@@ -199,6 +205,51 @@
   .animate-shimmer {
     background-size: 200% auto;
     animation: shimmer 2.5s linear infinite;
+  }
+}
+
+/* ------------------------------------------------------------
+   VECTA "command center" design system — sharp, dark, Inter,
+   uppercase-tracked labels. Reused across login/check-in/landing/
+   dashboard screens; see the applied Claude Design mockup this
+   was translated from.
+   ------------------------------------------------------------ */
+@layer components {
+  .vecta-panel {
+    @apply relative bg-card border border-white/[0.09] px-10 py-11;
+  }
+  .vecta-panel::before {
+    content: "";
+    @apply absolute left-0 top-0 h-0.5 w-[22px] bg-primary;
+  }
+  .vecta-eyebrow {
+    @apply font-sans text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70;
+  }
+  .vecta-label {
+    @apply mb-1.5 block font-sans text-[9.5px] font-bold uppercase tracking-[0.1em] text-muted-foreground;
+  }
+  .vecta-input {
+    @apply h-[46px] w-full border border-white/[0.12] bg-input px-3.5 font-sans text-sm font-semibold text-foreground/90 placeholder:text-muted-foreground/60 outline-none focus:border-primary/60;
+  }
+  .vecta-btn-primary {
+    @apply flex h-[50px] w-full items-center justify-center bg-gradient-to-b from-brand to-brand/80 font-sans text-xs font-bold uppercase tracking-[0.12em] text-white transition-opacity hover:opacity-90 disabled:opacity-50;
+  }
+  .vecta-status-dot {
+    @apply inline-block h-[5px] w-[5px] rounded-full bg-success;
+    animation: vecta-flicker 3s ease-in-out infinite;
+  }
+  .vecta-status {
+    @apply inline-flex items-center gap-1.5 font-sans text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground;
+  }
+}
+
+@keyframes vecta-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
   }
 }
 
