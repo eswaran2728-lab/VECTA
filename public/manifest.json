@@ -1,0 +1,18 @@
+{
+  "name": "VECTA — AirAsia Ops",
+  "short_name": "VECTA",
+  "description": "Unified AirAsia operations platform: IFC catering security workflow (ICMS) and AVSEC duty & reporting.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0b0f",
+  "theme_color": "#EE2E24",
+  "icons": [
+    { "src": "/icons/icms-icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icms-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/avsec-icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/avsec-icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/avsec-icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
