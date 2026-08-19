@@ -61,10 +61,6 @@ export default async function LoginPage({
               <span className="vecta-status-dot" />
               SYSTEM NOMINAL
             </span>
-            <span className="h-[11px] w-px bg-white/[0.15]" />
-            <span className="font-sans text-[10px] font-semibold tracking-[0.12em] text-muted-foreground">
-              KUL · TERMINAL 1 · KLIA2
-            </span>
           </div>
         </div>
 
