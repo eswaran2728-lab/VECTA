@@ -30,7 +30,7 @@ type IncidentRow = Incident & { transactions: Pick<Transaction, "transaction_num
 
 export default async function IncidentsPage() {
   const profile = await requireProfile();
-  const canResolve = profile.role === "supervisor" || profile.role === "enforcement";
+  const canResolve = profile.role === "supervisor" || profile.role === "enforcement" || profile.role === "management";
   const supabase = await createClient();
 
   const { data } = await supabase

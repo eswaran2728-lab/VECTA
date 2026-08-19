@@ -70,7 +70,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       href: "/icms/reports",
       label: "Reports",
       icon: FileBarChart,
-      show: profile.role === "supervisor" || profile.role === "enforcement",
+      show: profile.role === "supervisor" || profile.role === "enforcement" || profile.role === "management",
     },
     {
       href: "/icms/admin/users",
