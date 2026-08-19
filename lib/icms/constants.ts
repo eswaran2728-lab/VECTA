@@ -34,6 +34,13 @@ export const ROLE_LABELS: Record<Role, string> = {
   hub_avsec: "Hub AVSEC",
   // Performs the re-seal event for REDQ-route transactions.
   redq_avsec: "REDQ AVSEC",
+  // AVSEC MANAGEMENT's ICMS shadow role — same read/incident-resolution
+  // permission footprint as enforcement, kept as a distinct role string.
+  management: "Management",
+  // Shadow role for AVSEC SO/ASO/DSE accounts — no elevated or
+  // checkpoint-specific ICMS permission, just enough to give
+  // requireProfile()/the ops_group scan check a row to find.
+  ops_staff: "Ops Staff",
 };
 
 /** Distinct color per role for the persistent header badge (AVSEC role identification). */
@@ -47,6 +54,8 @@ export const ROLE_COLORS: Record<Role, string> = {
   vendor: "bg-lime-100 text-lime-800 dark:bg-lime-900/40 dark:text-lime-200",
   hub_avsec: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200",
   redq_avsec: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
+  management: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
+  ops_staff: "bg-slate-100 text-slate-800 dark:bg-slate-900/40 dark:text-slate-200",
 };
 
 export const STATUS_LABELS: Record<TransactionStatus, string> = {
@@ -191,6 +200,8 @@ export const ALL_ROLES: Role[] = [
   "vendor",
   "hub_avsec",
   "redq_avsec",
+  "management",
+  "ops_staff",
 ];
 
 /**

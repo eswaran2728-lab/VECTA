@@ -13,6 +13,7 @@ import {
   type UserRole,
   type OpsGroup,
 } from "@/lib/avsec/reference-data";
+import { buildShadowUserRow } from "@/lib/icms/shadow-user";
 
 // Admin-created accounts skip the self-signup approval queue entirely (Admin vouches for
 // them directly), and are created already email-confirmed since there's no signup flow
@@ -92,6 +93,34 @@ export async function createStaffAccount(formData: FormData) {
 
   if (profileError) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent(profileError.message));
+  }
+
+  // Every AVSEC-native account also needs an ICMS-side shadow identity
+  // (public.users, same id) so ICMS's own access control (requireProfile())
+  // recognizes it without a separate auth change — see
+  // lib/icms/shadow-user.ts and supabase/migrations/backfill_icms_shadow_users.sql
+  // for the one-time backfill this mirrors going forward. Done sequentially,
+  // after the profile write, using the same admin client so a failure here
+  // is surfaced (not silently swallowed) rather than rolled back — the
+  // AVSEC account itself is already valid at this point.
+  const { error: shadowUserError } = await createAdminClient()
+    .from("users")
+    .insert(
+      buildShadowUserRow({
+        id: data.user!.id,
+        name,
+        email,
+        role,
+        staff_no: isOrgWide ? null : staffNo,
+        ops_group: opsGroup,
+      })
+    );
+
+  if (shadowUserError) {
+    redirect(
+      "/avsec/admin/users?error=" +
+        encodeURIComponent(`Account created, but its ICMS identity could not be provisioned: ${shadowUserError.message}`),
+    );
   }
 
   revalidatePath("/avsec/admin/users");

@@ -7,7 +7,18 @@
   | "enforcement"
   | "vendor"
   | "hub_avsec"
-  | "redq_avsec";
+  | "redq_avsec"
+  /** AVSEC MANAGEMENT's ICMS-side shadow role — full read/incident-resolution
+   *  parity with enforcement (see supabase/migrations/management_icms_parity.sql),
+   *  a distinct role string, not merged into enforcement. */
+  | "management"
+  /** Shadow role for AVSEC SO/ASO/DSE accounts (see
+   *  supabase/migrations/backfill_icms_shadow_users.sql) — gives
+   *  requireProfile() a row to find and lets the ops_group-scoped Scan
+   *  check work, but carries no elevated or checkpoint-specific ICMS
+   *  permission beyond whatever "current_user_role() is not null"
+   *  catch-all policies already grant every authenticated ICMS role. */
+  | "ops_staff";
 
 /** Functional grouping (supabase/migrations/team_based_ops_groups.sql) — a
  *  separate axis from shift-rotation `team`. Scopes Reports/Scan visibility.
