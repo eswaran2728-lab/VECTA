@@ -1,0 +1,366 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   Design tokens — AVSEC Security Operations
+   Dark-first: :root is the dark palette, light is opt-in via
+   prefers-color-scheme or an explicit [data-theme] on <html>.
+   ============================================================ */
+
+:root {
+  color-scheme: dark;
+
+  --page: #0a0a0a;
+  --page-bg: radial-gradient(120% 90% at 50% 0%, #1a1a1a 0%, #070707 60%);
+  --surface: #050505;
+  --panel: #0e0e0e;
+  --panel2: #0b0b0b;
+  --input: #111111;
+  --view-header: linear-gradient(180deg, #141212, #0a0a0a);
+  --red-panel: #121010;
+  --hover-panel: #101010;
+  --hover-warm: #141210;
+
+  --ink: #ffffff;
+  --ink2: #eaeaea;
+  --ink3: #c9c9c9;
+  --mid: #8f8f8f;
+  --soft: #6f6f6f;
+  --faint: #5f5f5f;
+  --faintest: #464646;
+
+  --line: #1c1c1c;
+  --line2: #171717;
+  --line3: #282828;
+
+  --gold: #ffd900;
+  --gold-fill: #ffd900;
+  --gold-fill-hi: #ffe23d;
+  --gold-soft: rgba(255, 217, 0, 0.12);
+  --gold-soft2: rgba(255, 217, 0, 0.14);
+  --gold-glow: rgba(255, 217, 0, 0.22);
+  --on-gold: #050505;
+
+  --red: #e30613;
+  --red-soft: rgba(227, 6, 19, 0.14);
+  --red-ink: #c78d8d;
+  --green: #37d67a;
+  --blue: #7fa8ff;
+}
+
+/* System light — only when the user hasn't explicitly chosen dark. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+
+    --page: #efede6;
+    --page-bg: radial-gradient(120% 90% at 50% 0%, #ffffff 0%, #ebe8e1 60%);
+    --surface: #ffffff;
+    --panel: #ffffff;
+    --panel2: #faf9f5;
+    --input: #ffffff;
+    --view-header: linear-gradient(180deg, #fff7f5, #ffffff);
+    --red-panel: #fdf1f0;
+    --hover-panel: #f5f3ec;
+    --hover-warm: #fffae6;
+
+    --ink: #17160f;
+    --ink2: #26251f;
+    --ink3: #4a483f;
+    --mid: #6b6960;
+    --soft: #848278;
+    --faint: #9a988e;
+    --faintest: #b4b2a8;
+
+    --line: #e4e2dc;
+    --line2: #eae8e2;
+    --line3: #d5d2ca;
+
+    --gold: #8a6a00;
+    --gold-fill: #ffd900;
+    --gold-fill-hi: #ffe23d;
+    --gold-soft: rgba(255, 217, 0, 0.3);
+    --gold-soft2: rgba(255, 217, 0, 0.28);
+    --gold-glow: rgba(0, 0, 0, 0.12);
+    --on-gold: #050505;
+
+    --red: #c1000f;
+    --red-soft: rgba(193, 0, 15, 0.1);
+    --red-ink: #9b4a4a;
+    --green: #1e9e56;
+    --blue: #2f62c4;
+  }
+}
+
+/* Explicit light choice always wins, regardless of system preference. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --page: #efede6;
+  --page-bg: radial-gradient(120% 90% at 50% 0%, #ffffff 0%, #ebe8e1 60%);
+  --surface: #ffffff;
+  --panel: #ffffff;
+  --panel2: #faf9f5;
+  --input: #ffffff;
+  --view-header: linear-gradient(180deg, #fff7f5, #ffffff);
+  --red-panel: #fdf1f0;
+  --hover-panel: #f5f3ec;
+  --hover-warm: #fffae6;
+
+  --ink: #17160f;
+  --ink2: #26251f;
+  --ink3: #4a483f;
+  --mid: #6b6960;
+  --soft: #848278;
+  --faint: #9a988e;
+  --faintest: #b4b2a8;
+
+  --line: #e4e2dc;
+  --line2: #eae8e2;
+  --line3: #d5d2ca;
+
+  --gold: #8a6a00;
+  --gold-fill: #ffd900;
+  --gold-fill-hi: #ffe23d;
+  --gold-soft: rgba(255, 217, 0, 0.3);
+  --gold-soft2: rgba(255, 217, 0, 0.28);
+  --gold-glow: rgba(0, 0, 0, 0.12);
+  --on-gold: #050505;
+
+  --red: #c1000f;
+  --red-soft: rgba(193, 0, 15, 0.1);
+  --red-ink: #9b4a4a;
+  --green: #1e9e56;
+  --blue: #2f62c4;
+}
+
+html,
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-barlow), system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Hidden scrollbars on scroll regions, as in the prototype. */
+.scr::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+.scr {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+@keyframes avpulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes avslide {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@layer components {
+  /* ---------- Typography ---------- */
+
+  /* Condensed uppercase display type — screen titles, page headings. */
+  .t-display {
+    font-family: var(--font-barlow-condensed), system-ui, sans-serif;
+    @apply font-semibold uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink);
+  }
+
+  /* Monospace micro-label — section headers, field labels, metadata, codes. */
+  .t-mono-label {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    @apply text-[10px] font-semibold uppercase;
+    letter-spacing: 0.18em;
+    color: var(--gold);
+  }
+
+  .t-mono-meta {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    @apply text-[10px];
+    letter-spacing: 0.08em;
+    color: var(--soft);
+  }
+
+  .t-mono {
+    font-family: var(--font-mono), ui-monospace, monospace;
+  }
+
+  /* ---------- Form fields ---------- */
+
+  .field-label {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    @apply block text-[9px] font-medium uppercase mb-1.5;
+    letter-spacing: 0.12em;
+    color: var(--faint);
+  }
+
+  .field-hint {
+    @apply text-[11px] mt-1.5 leading-relaxed;
+    color: var(--soft);
+  }
+
+  .field-error {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    @apply text-[10px] mt-1.5;
+    letter-spacing: 0.04em;
+    color: var(--red);
+  }
+
+  .input-base {
+    @apply w-full px-3 py-3 text-base min-h-[48px] outline-none transition-colors;
+    background: var(--input);
+    border: 1px solid var(--line3);
+    border-radius: 0;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .input-base::placeholder {
+    color: var(--faintest);
+  }
+  .input-base:focus {
+    border-color: var(--gold-fill);
+  }
+  .input-base:disabled {
+    opacity: 0.55;
+  }
+
+  /* ---------- Buttons ---------- */
+
+  .btn-primary {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    @apply inline-flex items-center justify-center px-4 py-4 min-h-[48px] text-xs font-bold uppercase
+      transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    letter-spacing: 0.12em;
+    background: var(--gold-fill);
+    color: var(--on-gold);
+    border: 1px solid var(--gold-fill);
+    border-radius: 0;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--gold-fill-hi);
+    border-color: var(--gold-fill-hi);
+  }
+
+  .btn-secondary {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    @apply inline-flex items-center justify-center px-4 py-4 min-h-[48px] text-xs font-semibold uppercase
+      transition-colors disabled:opacity-50;
+    letter-spacing: 0.12em;
+    background: transparent;
+    border: 1px solid var(--line3);
+    border-radius: 0;
+    color: var(--ink3);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    border-color: var(--gold);
+    color: var(--gold);
+  }
+
+  .btn-quiet {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    @apply inline-flex items-center justify-center px-3 py-2 text-[11px] font-semibold uppercase transition-colors;
+    letter-spacing: 0.1em;
+    color: var(--gold);
+    border-radius: 0;
+  }
+  .btn-quiet:hover {
+    background: var(--hover-warm);
+  }
+
+  /* Dashed "add another entry" affordance used by the repeating-block forms. */
+  .btn-add-entry {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    @apply w-full text-center px-4 py-3.5 text-[11px] font-semibold uppercase transition-colors cursor-pointer;
+    letter-spacing: 0.12em;
+    border: 1px dashed var(--line3);
+    color: var(--gold);
+  }
+  .btn-add-entry:hover {
+    border-color: var(--gold);
+    background: var(--hover-warm);
+  }
+
+  /* ---------- Surfaces ---------- */
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 0;
+  }
+
+  .card-inset {
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 0;
+  }
+
+  .section-title {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    @apply text-[10px] font-semibold uppercase;
+    letter-spacing: 0.18em;
+    color: var(--gold);
+  }
+
+  .form-code-badge {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    @apply inline-block px-2 py-1 text-[10px];
+    letter-spacing: 0.08em;
+    background: transparent;
+    border: 1px solid var(--line3);
+    color: var(--soft);
+  }
+
+  /* Security-sensitive disclaimer band (SEC 033 / SEC 013). */
+  .disclaimer-band {
+    @apply px-3.5 py-3 text-[11px] leading-relaxed font-medium;
+    background: var(--red-panel);
+    border-left: 3px solid var(--red);
+    color: var(--red-ink);
+  }
+
+  /* ---------- Status pills ---------- */
+
+  .pill {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    @apply inline-block px-2 py-1 text-[9px] font-bold uppercase;
+    letter-spacing: 0.1em;
+    border: 1px solid currentColor;
+  }
+  .pill-gold {
+    color: var(--gold);
+  }
+  .pill-green {
+    color: var(--green);
+  }
+  .pill-red {
+    color: var(--red);
+  }
+  .pill-blue {
+    color: var(--blue);
+  }
+  .pill-mid {
+    color: var(--mid);
+  }
+}
