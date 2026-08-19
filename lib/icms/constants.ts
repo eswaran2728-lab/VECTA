@@ -193,6 +193,42 @@ export const ALL_ROLES: Role[] = [
   "redq_avsec",
 ];
 
+/**
+ * Roles that may be assigned to a NEW or existing account going forward.
+ * warehouse_pic/receiver/vendor are obsolete (that responsibility is
+ * moving to a separate app, CaterLink, built independently) and are
+ * intentionally excluded here — but they stay in ROLE_LABELS/ROLE_COLORS/
+ * ALL_ROLES above so the 3 already-disabled historical accounts on those
+ * roles still render correctly in admin lists.
+ */
+export const CREATABLE_ROLES: Role[] = [
+  "supervisor",
+  "enforcement",
+  "post2_avsec",
+  "post6_avsec",
+  "hub_avsec",
+  "redq_avsec",
+];
+
+/** ICMS role -> duty_post -> ops_group mapping (matches
+ *  supabase/migrations/unified_role_model.sql and
+ *  team_based_ops_groups.sql exactly — keep in sync). Roles that don't
+ *  correspond to a single checkpoint (supervisor/enforcement, org-wide)
+ *  map to null on both. */
+export const DUTY_POST_BY_ROLE: Partial<Record<Role, string>> = {
+  post2_avsec: "Post 2",
+  post6_avsec: "Post 6",
+  hub_avsec: "Hub",
+  redq_avsec: "REDQ",
+};
+
+export const OPS_GROUP_BY_DUTY_POST: Record<string, "operation_avsec" | "ifc_avsec" | "hub_avsec"> = {
+  "Post 2": "ifc_avsec",
+  "Post 6": "operation_avsec",
+  REDQ: "operation_avsec",
+  Hub: "hub_avsec",
+};
+
 export const VENDOR_STATUS_LABELS: Record<VendorTransactionStatus, string> = {
   CREATED: "Created — awaiting Post 2",
   SECURITY_VERIFIED: "Post 2 approved — awaiting warehouse",

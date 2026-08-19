@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/icms/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Role } from "@/lib/icms/database.types";
-import { ALL_ROLES } from "@/lib/icms/constants";
+import { CREATABLE_ROLES, DUTY_POST_BY_ROLE, OPS_GROUP_BY_DUTY_POST } from "@/lib/icms/constants";
 
 export interface UserActionState {
   error: string | null;
@@ -27,7 +27,7 @@ export async function createUser(
   if (!name || !staffId || !email) {
     return { error: "Name, staff ID and email are required.", success: null };
   }
-  if (!ALL_ROLES.includes(role)) {
+  if (!CREATABLE_ROLES.includes(role)) {
     return { error: "Select a valid role.", success: null };
   }
   if (password.length < 10) {
@@ -46,12 +46,23 @@ export async function createUser(
     return { error: authError?.message ?? "Could not create auth account.", success: null };
   }
 
+  // duty_post/ops_group are derived from the role, not asked as a
+  // separate choice — see supabase/migrations/unified_role_model.sql and
+  // team_based_ops_groups.sql. supervisor/enforcement are org-wide (both
+  // stay null).
+  const dutyPost = DUTY_POST_BY_ROLE[role] ?? null;
+  const opsGroup = dutyPost ? OPS_GROUP_BY_DUTY_POST[dutyPost] : null;
+  const unifiedRole = role === "supervisor" ? "admin" : role === "enforcement" ? "enforcement" : "aso";
+
   const { error: profileError } = await admin.from("users").insert({
     id: created.user.id,
     name,
     staff_id: staffId,
     email,
     role,
+    duty_post: dutyPost,
+    ops_group: opsGroup,
+    unified_role: unifiedRole,
   });
 
   if (profileError) {
@@ -74,15 +85,22 @@ export async function updateUserRole(
   const userId = String(formData.get("user_id") ?? "");
   const role = String(formData.get("role") ?? "") as Role;
 
-  if (!userId || !ALL_ROLES.includes(role)) {
+  if (!userId || !CREATABLE_ROLES.includes(role)) {
     return { error: "Invalid role update request.", success: null };
   }
   if (userId === profile.id) {
     return { error: "You cannot change your own role.", success: null };
   }
 
+  const dutyPost = DUTY_POST_BY_ROLE[role] ?? null;
+  const opsGroup = dutyPost ? OPS_GROUP_BY_DUTY_POST[dutyPost] : null;
+  const unifiedRole = role === "supervisor" ? "admin" : role === "enforcement" ? "enforcement" : "aso";
+
   const admin = createAdminClient();
-  const { error } = await admin.from("users").update({ role }).eq("id", userId);
+  const { error } = await admin
+    .from("users")
+    .update({ role, duty_post: dutyPost, ops_group: opsGroup, unified_role: unifiedRole })
+    .eq("id", userId);
 
   if (error) {
     return { error: error.message, success: null };

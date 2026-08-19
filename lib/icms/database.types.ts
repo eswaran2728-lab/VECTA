@@ -9,6 +9,12 @@
   | "hub_avsec"
   | "redq_avsec";
 
+/** Functional grouping (supabase/migrations/team_based_ops_groups.sql) — a
+ *  separate axis from shift-rotation `team`. Scopes Reports/Scan visibility.
+ *  admin/management/enforcement are org-wide (null); checkpoint roles carry
+ *  exactly one, derived from duty_post. */
+export type OpsGroup = "operation_avsec" | "ifc_avsec" | "hub_avsec";
+
 export type TransactionStatus =
   | "CREATED"
   | "INFLIGHT_POST_APPROVED"
@@ -125,7 +131,7 @@ export type DriverRecord = {
   created_at: string;
 }
 
-export type UserStatus = "pending" | "active" | "rejected";
+export type UserStatus = "pending" | "active" | "rejected" | "disabled";
 
 export type UserProfile = {
   id: string;
@@ -135,8 +141,16 @@ export type UserProfile = {
   role: Role;
   preferred_language: "en" | "ms";
   /** Self-registered accounts start 'pending' and cannot sign in until an
-   *  admin approves them. Existing/admin-created accounts default 'active'. */
+   *  admin approves them. Existing/admin-created accounts default 'active'.
+   *  'disabled' is for accounts on now-obsolete roles (warehouse_pic/
+   *  receiver/vendor), kept for history but blocked from sign-in. */
   status: UserStatus;
+  /** Unified role vocabulary read layer (supabase/migrations/unified_role_model.sql). */
+  unified_role: string | null;
+  /** Which post/checkpoint this ICMS role maps to (same migration). */
+  duty_post: string | null;
+  /** supabase/migrations/team_based_ops_groups.sql — see OpsGroup. */
+  ops_group: OpsGroup | null;
   created_at: string;
 }
 
@@ -424,10 +438,16 @@ export type Database = {
     Tables: {
       users: {
         Row: UserProfile;
-        Insert: Omit<UserProfile, "created_at" | "preferred_language" | "status"> & {
+        Insert: Omit<
+          UserProfile,
+          "created_at" | "preferred_language" | "status" | "unified_role" | "duty_post" | "ops_group"
+        > & {
           created_at?: string;
           preferred_language?: "en" | "ms";
           status?: UserStatus;
+          unified_role?: string | null;
+          duty_post?: string | null;
+          ops_group?: OpsGroup | null;
         };
         Update: Partial<UserProfile>;
         Relationships: [];

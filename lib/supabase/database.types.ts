@@ -1271,6 +1271,7 @@ export type Database = {
           email: string
           id: string
           name: string
+          ops_group: string | null
           role: Database["public"]["Enums"]["user_role"]
           staff_no: string
           station: string | null
@@ -1285,6 +1286,7 @@ export type Database = {
           email: string
           id: string
           name?: string
+          ops_group?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           staff_no?: string
           station?: string | null
@@ -1299,6 +1301,7 @@ export type Database = {
           email?: string
           id?: string
           name?: string
+          ops_group?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           staff_no?: string
           station?: string | null
@@ -2760,6 +2763,7 @@ export type Database = {
           email: string
           id: string
           name: string
+          ops_group: string | null
           preferred_language: string
           role: string
           staff_id: string
@@ -2772,6 +2776,7 @@ export type Database = {
           email: string
           id: string
           name: string
+          ops_group?: string | null
           preferred_language?: string
           role: string
           staff_id: string
@@ -2784,6 +2789,7 @@ export type Database = {
           email?: string
           id?: string
           name?: string
+          ops_group?: string | null
           preferred_language?: string
           role?: string
           staff_id?: string

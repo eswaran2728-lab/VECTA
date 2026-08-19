@@ -11,6 +11,11 @@ export interface Profile {
   team: string | null;
   role: UserRole;
   status: ProfileStatus;
+  /** supabase/migrations/team_based_ops_groups.sql — a separate axis from
+   *  `team` (shift rotation). Scopes Reports/Scan visibility: null for
+   *  org-wide roles (ADMIN/MANAGEMENT/ENFORCEMENT), one of
+   *  operation_avsec/ifc_avsec/hub_avsec for SO/ASO/DSE. */
+  ops_group: "operation_avsec" | "ifc_avsec" | "hub_avsec" | null;
   created_at: string;
   updated_at: string;
 }

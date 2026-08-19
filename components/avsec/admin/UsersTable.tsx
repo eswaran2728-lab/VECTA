@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ROLE_LABELS, STATIONS, USER_ROLES } from "@/lib/avsec/reference-data";
+import { ROLE_LABELS, STATIONS, USER_ROLES, OPS_GROUPS, OPS_GROUP_LABELS, OPS_GROUP_REQUIRED_ROLES } from "@/lib/avsec/reference-data";
 import { updateUserAssignment, approveUser, deactivateUser, deleteUserAccount } from "@/lib/avsec/admin/actions";
 import { formatDateTimeMY } from "@/lib/avsec/datetime";
 import type { Profile } from "@/lib/avsec/types";
@@ -55,6 +55,7 @@ export function UsersTable({ users }: { users: Profile[] }) {
               <th className="px-2 py-2 font-semibold">Email</th>
               <th className="px-2 py-2 font-semibold">Role</th>
               <th className="px-2 py-2 font-semibold">Station / Team</th>
+              <th className="px-2 py-2 font-semibold">Ops Group</th>
               <th className="px-2 py-2 font-semibold">Status</th>
               <th className="px-2 py-2 font-semibold">Since</th>
               <th className="px-5 py-2 font-semibold text-right">Actions</th>
@@ -124,6 +125,24 @@ function UserRow({ profile: p }: { profile: Profile }) {
             className="input-base py-2 min-h-0 text-sm w-24"
           />
         </div>
+      </td>
+      <td className="px-2 py-3">
+        <select
+          form={formId}
+          name="opsGroup"
+          defaultValue={p.ops_group ?? ""}
+          disabled={!(OPS_GROUP_REQUIRED_ROLES as readonly string[]).includes(p.role)}
+          className="input-base py-2 min-h-0 text-sm"
+        >
+          <option value="">
+            {(OPS_GROUP_REQUIRED_ROLES as readonly string[]).includes(p.role) ? "Select…" : "Not required"}
+          </option>
+          {OPS_GROUPS.map((g) => (
+            <option key={g} value={g}>
+              {OPS_GROUP_LABELS[g]}
+            </option>
+          ))}
+        </select>
       </td>
       <td className="px-2 py-3 whitespace-nowrap">
         <span

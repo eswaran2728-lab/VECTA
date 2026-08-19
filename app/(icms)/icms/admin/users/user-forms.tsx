@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/icms/ui/c
 import { Input } from "@/components/icms/ui/input";
 import { Label } from "@/components/icms/ui/label";
 import { Select } from "@/components/icms/ui/select";
-import { ROLE_LABELS } from "@/lib/icms/constants";
+import { ROLE_LABELS, CREATABLE_ROLES } from "@/lib/icms/constants";
 import type { Role } from "@/lib/icms/database.types";
 
 const initialState: UserActionState = { error: null, success: null };
@@ -44,9 +44,9 @@ export function CreateUserForm() {
               <option value="" disabled>
                 Select role…
               </option>
-              {Object.entries(ROLE_LABELS).map(([value, label]) => (
+              {CREATABLE_ROLES.map((value) => (
                 <option key={value} value={value}>
-                  {label}
+                  {ROLE_LABELS[value]}
                 </option>
               ))}
             </Select>
@@ -86,6 +86,14 @@ export function CreateUserForm() {
 export function RoleSelect({ userId, currentRole }: { userId: string; currentRole: Role }) {
   const [state, formAction, pending] = useActionState(updateUserRole, initialState);
 
+  // Obsolete roles (warehouse_pic/receiver/vendor) are no longer
+  // selectable, but a handful of existing (now-disabled) accounts still
+  // carry one — keep the current value in the option list purely for
+  // display so this control doesn't silently show the wrong role.
+  const options: Role[] = CREATABLE_ROLES.includes(currentRole)
+    ? CREATABLE_ROLES
+    : [currentRole, ...CREATABLE_ROLES];
+
   return (
     <form action={formAction} className="flex items-center gap-2">
       <input type="hidden" name="user_id" value={userId} />
@@ -95,9 +103,9 @@ export function RoleSelect({ userId, currentRole }: { userId: string; currentRol
         className="h-9 w-auto min-w-40 text-sm"
         disabled={pending}
       >
-        {Object.entries(ROLE_LABELS).map(([value, label]) => (
+        {options.map((value) => (
           <option key={value} value={value}>
-            {label}
+            {ROLE_LABELS[value]}
           </option>
         ))}
       </Select>

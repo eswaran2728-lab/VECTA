@@ -5,7 +5,14 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
-import { REQUESTABLE_ROLES, ORG_WIDE_ROLES, type UserRole } from "@/lib/avsec/reference-data";
+import {
+  REQUESTABLE_ROLES,
+  ORG_WIDE_ROLES,
+  OPS_GROUPS,
+  OPS_GROUP_REQUIRED_ROLES,
+  type UserRole,
+  type OpsGroup,
+} from "@/lib/avsec/reference-data";
 
 // Admin-created accounts skip the self-signup approval queue entirely (Admin vouches for
 // them directly), and are created already email-confirmed since there's no signup flow
@@ -21,10 +28,12 @@ export async function createStaffAccount(formData: FormData) {
   const role = String(formData.get("role") || "").trim() as UserRole;
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();
+  const opsGroupInput = String(formData.get("opsGroup") || "").trim() as OpsGroup | "";
   const password = String(formData.get("password") || "");
 
   const allRoles: readonly string[] = [...REQUESTABLE_ROLES, "ADMIN"];
   const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(role);
+  const needsOpsGroup = (OPS_GROUP_REQUIRED_ROLES as readonly string[]).includes(role);
 
   if (!name || !email || !allRoles.includes(role) || !station || password.length < 6) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent("Fill in name, email, role, station and a password of at least 6 characters."));
@@ -32,6 +41,11 @@ export async function createStaffAccount(formData: FormData) {
   if (!isOrgWide && (!staffNo || !team)) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent("Staff ID and Team are required for this role."));
   }
+  if (needsOpsGroup && !(OPS_GROUPS as readonly string[]).includes(opsGroupInput)) {
+    redirect("/avsec/admin/users?error=" + encodeURIComponent("Select an ops group for this role (Operation AVSEC / IFC AVSEC / Hub AVSEC)."));
+  }
+  // ORG_WIDE_ROLES (see across all 3 groups) never carry an ops_group.
+  const opsGroup: OpsGroup | null = needsOpsGroup ? (opsGroupInput as OpsGroup) : null;
 
   const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -71,6 +85,7 @@ export async function createStaffAccount(formData: FormData) {
       station,
       team: isOrgWide ? "" : team,
       role,
+      ops_group: opsGroup,
       status: "approved",
     })
     .eq("id", data.user!.id);
@@ -190,16 +205,20 @@ export async function updateUserAssignment(formData: FormData) {
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();
   const role = String(formData.get("role") || "").trim() as UserRole;
+  const opsGroupInput = String(formData.get("opsGroup") || "").trim() as OpsGroup | "";
   if (!profileId || !station || !role) return;
 
   const allRoles: readonly string[] = [...REQUESTABLE_ROLES, "ADMIN"];
   if (!allRoles.includes(role)) return;
   const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(role);
+  const needsOpsGroup = (OPS_GROUP_REQUIRED_ROLES as readonly string[]).includes(role);
+  const opsGroup: OpsGroup | null =
+    needsOpsGroup && (OPS_GROUPS as readonly string[]).includes(opsGroupInput) ? (opsGroupInput as OpsGroup) : null;
 
   const supabase = await createClient();
   await supabase
     .from("profiles")
-    .update({ station, team: isOrgWide ? "" : team, role })
+    .update({ station, team: isOrgWide ? "" : team, role, ops_group: opsGroup })
     .eq("id", profileId);
   revalidatePath("/avsec/admin/users");
 }

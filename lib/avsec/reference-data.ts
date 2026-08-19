@@ -64,6 +64,22 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: "Admin",
 };
 
+// Functional grouping (supabase/migrations/team_based_ops_groups.sql) — a
+// separate axis from `team` (ALPHA/BRAVO/CHARLIE/DELTA shift rotation).
+// Scopes Reports/Scan visibility. Required for SO/ASO/DSE; org-wide roles
+// (ADMIN/MANAGEMENT/ENFORCEMENT) never have one.
+export const OPS_GROUPS = ["operation_avsec", "ifc_avsec", "hub_avsec"] as const;
+export type OpsGroup = (typeof OPS_GROUPS)[number];
+
+export const OPS_GROUP_LABELS: Record<OpsGroup, string> = {
+  operation_avsec: "Operation AVSEC",
+  ifc_avsec: "IFC AVSEC",
+  hub_avsec: "Hub AVSEC",
+};
+
+// Roles that require an ops_group (everyone who isn't org-wide).
+export const OPS_GROUP_REQUIRED_ROLES = ["ASO", "SO", "DSE"] as const;
+
 export const PROFILE_STATUSES = ["pending", "approved", "rejected", "deactivated"] as const;
 export type ProfileStatus = (typeof PROFILE_STATUSES)[number];
 
