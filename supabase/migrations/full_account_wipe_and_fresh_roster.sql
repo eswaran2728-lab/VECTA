@@ -171,7 +171,10 @@ begin
     insert into auth.users (
       instance_id, id, aud, role, email, encrypted_password,
       email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
-      is_sso_user, is_anonymous, created_at, updated_at
+      is_sso_user, is_anonymous, created_at, updated_at,
+      confirmation_token, email_change, email_change_token_new,
+      email_change_token_current, recovery_token, phone_change,
+      phone_change_token, reauthentication_token
     ) values (
       '00000000-0000-0000-0000-000000000000',
       r.id, 'authenticated', 'authenticated', r.email,
@@ -179,7 +182,10 @@ begin
       now(),
       '{"provider":"email","providers":["email"]}',
       jsonb_build_object('email', r.email),
-      false, false, now(), now()
+      false, false, now(), now(),
+      -- GoTrue's Go scanner errors on NULL here ("converting NULL to
+      -- string is unsupported") — these columns must be '' not NULL.
+      '', '', '', '', '', '', '', ''
     );
 
     insert into auth.identities (
@@ -215,7 +221,10 @@ begin
   insert into auth.users (
     instance_id, id, aud, role, email, encrypted_password,
     email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
-    is_sso_user, is_anonymous, created_at, updated_at
+    is_sso_user, is_anonymous, created_at, updated_at,
+    confirmation_token, email_change, email_change_token_new,
+    email_change_token_current, recovery_token, phone_change,
+    phone_change_token, reauthentication_token
   ) values (
     '00000000-0000-0000-0000-000000000000',
     v_id, 'authenticated', 'authenticated', 'demo.vendor@vecta.local',
@@ -223,7 +232,10 @@ begin
     now(),
     '{"provider":"email","providers":["email"]}',
     '{"email":"demo.vendor@vecta.local"}',
-    false, false, now(), now()
+    false, false, now(), now(),
+    -- GoTrue's Go scanner errors on NULL here ("converting NULL to
+    -- string is unsupported") — these columns must be '' not NULL.
+    '', '', '', '', '', '', '', ''
   );
 
   insert into auth.identities (
