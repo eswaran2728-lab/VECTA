@@ -51,7 +51,7 @@ export default async function LandingPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 w-full max-w-3xl">
         {showIfc && (
           <Link
-            href="/icms"
+            href="/icms/dashboard"
             className="rounded-xl border p-8 text-center hover:shadow-lg transition-shadow"
           >
             <h2 className="text-xl font-semibold">IFC</h2>
@@ -62,7 +62,7 @@ export default async function LandingPage() {
         )}
         {showAvsec && (
           <Link
-            href="/avsec"
+            href="/avsec/home"
             className="rounded-xl border p-8 text-center hover:shadow-lg transition-shadow"
           >
             <h2 className="text-xl font-semibold">Reports</h2>
