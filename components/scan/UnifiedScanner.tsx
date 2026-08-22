@@ -84,27 +84,83 @@ export function UnifiedScanner() {
   };
 
   return (
-    <div className="space-y-4">
-      <div
-        id={REGION_ID}
-        className="mx-auto w-full max-w-md overflow-hidden rounded-lg border bg-black/90 [&_video]:w-full"
-      />
-      {!scanning && !error ? (
-        <p className="text-center text-sm text-muted-foreground">Starting camera…</p>
-      ) : null}
-      {looking ? (
-        <p className="text-center text-sm text-muted-foreground">Validating…</p>
-      ) : null}
-      {error ? <p className="text-center text-sm text-red-600">{error}</p> : null}
+    <div className="flex flex-col gap-5">
+      {/* Glass viewfinder frame — cyan corner-node reticle + horizontal scan
+          beam are purely decorative overlays on top of the real camera feed
+          rendered into #REGION_ID by html5-qrcode; none of the scan logic
+          below was touched. */}
+      <div className="vecta-panel relative aspect-square overflow-hidden !rounded-[20px] !p-0">
+        <div
+          id={REGION_ID}
+          className="absolute inset-0 h-full w-full [&_video]:h-full [&_video]:w-full [&_video]:object-cover"
+        />
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background: "radial-gradient(ellipse at 50% 40%, oklch(0.62 0.2 300 / 0.16), transparent 65%)",
+          }}
+        />
+        <div
+          className="pointer-events-none absolute left-0 right-0 top-[42%] h-0.5"
+          style={{
+            background: "linear-gradient(90deg, transparent, var(--cyan), transparent)",
+            boxShadow: "0 0 12px 2px var(--cyan)",
+          }}
+        />
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-[62%] w-[62%] -translate-x-1/2 -translate-y-1/2">
+          <span className="absolute left-0 top-0 h-[30px] w-[30px] rounded-tl-lg border-l-[1.5px] border-t-[1.5px] border-primary" />
+          <span className="absolute right-0 top-0 h-[30px] w-[30px] rounded-tr-lg border-r-[1.5px] border-t-[1.5px] border-primary" />
+          <span className="absolute bottom-0 left-0 h-[30px] w-[30px] rounded-bl-lg border-b-[1.5px] border-l-[1.5px] border-primary" />
+          <span className="absolute bottom-0 right-0 h-[30px] w-[30px] rounded-br-lg border-b-[1.5px] border-r-[1.5px] border-primary" />
+          {[
+            { top: "-2.5px", left: "-2.5px" },
+            { top: "-2.5px", right: "-2.5px" },
+            { bottom: "-2.5px", left: "-2.5px" },
+            { bottom: "-2.5px", right: "-2.5px" },
+          ].map((pos, i) => (
+            <span
+              key={i}
+              className="absolute h-[5px] w-[5px] rounded-full bg-primary"
+              style={{ ...pos, boxShadow: "0 0 6px 1px var(--cyan)" }}
+            />
+          ))}
+        </div>
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 text-center">
+          <span className="vecta-eyebrow">
+            {!scanning && !error ? "Starting camera…" : looking ? "Validating…" : "Align QR within frame"}
+          </span>
+        </div>
+      </div>
 
-      <form onSubmit={handleManual} className="mx-auto flex max-w-md flex-col gap-2">
-        <label htmlFor="unified-scan-manual" className="text-sm font-medium">
+      {error ? (
+        <div
+          className="vecta-panel !rounded-2xl px-[18px] py-4"
+          style={{
+            borderColor: "oklch(0.6 0.2 25 / 0.5)",
+            boxShadow: "0 0 30px -10px oklch(0.6 0.2 25 / 0.3)",
+          }}
+        >
+          <div className="flex items-center gap-2.5">
+            <span
+              className="h-[7px] w-[7px] rounded-full"
+              style={{ background: "var(--red)", boxShadow: "0 0 8px 1px var(--red)" }}
+            />
+            <span className="font-display text-sm font-bold tracking-[0.02em] text-brand">
+              SCAN ERROR
+            </span>
+          </div>
+          <p className="mt-2 font-mono text-[12.5px] text-muted-foreground">{error}</p>
+        </div>
+      ) : null}
+
+      <form onSubmit={handleManual} className="vecta-panel !rounded-2xl flex flex-col gap-2 px-[18px] py-4">
+        <label htmlFor="unified-scan-manual" className="vecta-label !mb-0">
           Manual entry
         </label>
         <div className="flex gap-2">
           <input
             id="unified-scan-manual"
-            className="flex-1 rounded-md border bg-background px-3 py-2 text-sm"
+            className="vecta-input flex-1"
             placeholder="Transaction reference"
             value={manual}
             onChange={(e) => setManual(e.target.value)}
@@ -112,7 +168,7 @@ export function UnifiedScanner() {
           <button
             type="submit"
             disabled={looking}
-            className="rounded-md border px-4 py-2 text-sm font-medium disabled:opacity-50"
+            className="h-[46px] shrink-0 rounded-[10px] bg-gradient-to-r from-primary to-[var(--violet)] px-5 font-sans text-[13px] font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             Find
           </button>

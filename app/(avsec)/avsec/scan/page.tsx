@@ -1,12 +1,20 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { UnifiedScanner } from "@/components/scan/UnifiedScanner";
+import type { OpsGroup } from "@/lib/icms/database.types";
 
 export const metadata: Metadata = { title: "Scan — VECTA" };
 export const dynamic = "force-dynamic";
 
 const ORG_WIDE_UNIFIED_ROLES = ["admin", "management", "enforcement"];
+
+const OPS_GROUP_LABELS: Record<OpsGroup, string> = {
+  operation_avsec: "Operation AVSEC",
+  ifc_avsec: "IFC AVSEC",
+  hub_avsec: "Hub AVSEC",
+};
 
 /**
  * Unified scan entry point, linked from the dashboard's Scan section for
@@ -33,13 +41,32 @@ export default async function UnifiedScanPage() {
   const orgWide = ORG_WIDE_UNIFIED_ROLES.includes(profile.unified_role ?? "");
   if (!orgWide && !profile.ops_group) redirect("/?error=no-ops-group");
 
+  const opsGroup = profile.ops_group as OpsGroup | null;
+  const scopeChip = orgWide ? "All Ops Groups" : opsGroup ? OPS_GROUP_LABELS[opsGroup] : null;
+
   return (
-    <main className="mx-auto max-w-lg space-y-4 p-4">
-      <h1 className="text-lg font-semibold">Scan</h1>
-      <p className="text-sm text-muted-foreground">
-        Scan a CaterLink QR code, or enter a transaction reference manually.
-      </p>
-      <UnifiedScanner />
+    <main className="dark min-h-screen bg-background">
+      <div className="flex items-center justify-between border-b border-border px-8 py-[18px]">
+        <div className="flex items-center gap-2">
+          <Link
+            href="/"
+            aria-label="Back"
+            className="flex h-11 w-11 items-center justify-center font-mono text-base text-muted-foreground transition-colors hover:text-foreground"
+          >
+            &larr;
+          </Link>
+          <span className="font-display text-base font-extrabold tracking-[0.06em]">SCAN</span>
+        </div>
+        <div className="flex items-center gap-4">
+          {scopeChip ? <span className="vecta-chip">{scopeChip}</span> : null}
+        </div>
+      </div>
+
+      <div className="flex flex-1 items-center justify-center p-9">
+        <div className="w-full max-w-[460px]">
+          <UnifiedScanner />
+        </div>
+      </div>
     </main>
   );
 }
