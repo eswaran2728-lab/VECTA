@@ -5,59 +5,92 @@
 @layer base {
   :root {
     color-scheme: light;
-    --background: 210 20% 98%;
-    --foreground: 224 71% 4%;
-    --card: 0 0% 100%;
-    --card-foreground: 224 71% 4%;
+    /* Bare "L C H" oklch component triplets (no oklch() wrapper, no baked
+       alpha) — tailwind.config.ts wraps most of these as
+       oklch(var(--x) / <alpha-value>), the same pattern the old
+       hsl(var(--x)) tokens used, so opacity modifiers (bg-primary/60 etc.)
+       keep working. Converted 1:1 from the previous HSL values. */
+    --background: 0.984 0.002 247.8;
+    --foreground: 0.128 0.027 261.6;
+    --card: 1 0 89.9;
+    --card-foreground: 0.128 0.027 261.6;
     /* Gold — buttons, active states, badges, checkmarks, nav icons. */
-    --primary: 46 65% 48%;
-    --primary-foreground: 224 71% 4%;
+    --primary: 0.735 0.138 90.7;
+    --primary-foreground: 0.128 0.027 261.6;
     /* Red — AirAsia brand accent (logos, hero/header touches). Also doubles
        as the destructive/danger color, a common airline-security pattern. */
-    --brand: 3 86% 54%;
-    --brand-foreground: 0 0% 100%;
-    --secondary: 220 14% 92%;
-    --secondary-foreground: 221 39% 11%;
-    --muted: 220 14% 94%;
-    --muted-foreground: 220 9% 40%;
-    --accent: 220 14% 92%;
-    --accent-foreground: 221 39% 11%;
-    --destructive: 3 86% 54%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 220 13% 87%;
-    --input: 220 13% 82%;
-    --ring: 46 65% 48%;
+    --brand: 0.616 0.226 28.9;
+    --brand-foreground: 1 0 89.9;
+    --secondary: 0.936 0.006 264.5;
+    --secondary-foreground: 0.21 0.032 264.8;
+    --muted: 0.952 0.004 264.5;
+    --muted-foreground: 0.499 0.021 264.4;
+    --accent: 0.936 0.006 264.5;
+    --accent-foreground: 0.21 0.032 264.8;
+    --destructive: 0.616 0.226 28.9;
+    --destructive-foreground: 1 0 89.9;
+    /* border/input carry their own baked alpha (full oklch() functions, not
+       bare components) — see the .dark block comment below for why. */
+    --border: oklch(0.895 0.008 264.5);
+    --input: oklch(0.854 0.012 264.5);
+    --ring: 0.735 0.138 90.7;
     --radius: 0.5rem;
   }
 
   .dark {
     color-scheme: dark;
-    /* VECTA "command center" palette — near-black, sharp, Inter-driven. */
-    --background: 210 25% 5%;
-    --foreground: 216 20% 94%;
-    --card: 212 22% 9%;
-    --card-foreground: 216 20% 94%;
-    /* Gold/amber — status accents, stripes, badges. */
-    --primary: 44 78% 60%;
-    --primary-foreground: 224 71% 4%;
-    /* Red — primary CTA gradient, AirAsia brand accent, destructive. */
-    --brand: 6 74% 50%;
-    --brand-foreground: 0 0% 100%;
-    --secondary: 214 18% 14%;
-    --secondary-foreground: 216 20% 94%;
-    --muted: 214 18% 13%;
-    --muted-foreground: 215 12% 59%;
-    --accent: 214 18% 14%;
-    --accent-foreground: 216 20% 94%;
-    --destructive: 6 74% 50%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 215 15% 18%;
-    --input: 210 25% 7%;
-    --ring: 44 78% 60%;
-    /* Success/live/cleared indicators (check-in gate, ops dashboard). */
-    --success: 150 45% 55%;
-    --success-foreground: 210 25% 5%;
-    --radius: 0.125rem;
+    /* VECTA "ops console" palette — deep indigo-black, glassmorphic panels,
+       cyan/violet accent. Exact oklch values extracted from the approved
+       FutLogin/FutDashboard/FutScan mockups' :root tokens (--bg, --glass,
+       --cyan, --violet, --red, --green), stored as bare "L C H" component
+       triplets so tailwind.config.ts's oklch(var(--x) / <alpha-value>)
+       wrapper keeps opacity modifiers (bg-primary/60 etc.) working. */
+    --background: 0.14 0.03 275;
+    --foreground: 0.95 0.01 240;
+    --card: 0.22 0.04 275;
+    --card-foreground: 0.95 0.01 240;
+    /* Cyan — new primary interactive accent (buttons, focus rings, active nav). */
+    --primary: 0.78 0.14 220;
+    --primary-foreground: 0.12 0.02 275;
+    /* Red — AirAsia brand accent, reserved strictly for alerts/reject/destructive. */
+    --brand: 0.6 0.2 25;
+    --brand-foreground: 1 0 0;
+    --secondary: 0.2 0.035 275;
+    --secondary-foreground: 0.95 0.01 240;
+    --muted: 0.18 0.03 275;
+    --muted-foreground: 0.64 0.02 250;
+    --accent: 0.2 0.035 275;
+    --accent-foreground: 0.95 0.01 240;
+    --destructive: 0.6 0.2 25;
+    --destructive-foreground: 1 0 0;
+    /* border/input are the mockups' translucent hairline/glass-fill colors
+       — they carry a fixed baked-in alpha (0.32 / 0.6) as their *resting*
+       look (every border in the design is meant to read as a faint cyan
+       hairline, not a solid one), so unlike the tokens above these are
+       full oklch() functions plugged straight through by tailwind.config
+       (no <alpha-value> — nothing in the codebase applies a border-border/NN
+       or bg-input/NN opacity modifier). */
+    --border: oklch(0.78 0.14 220 / 0.32);
+    --input: oklch(0.1 0.03 275 / 0.6);
+    --ring: 0.78 0.14 220;
+    /* Radar green — cleared/success/live indicators (check-in gate, ops dashboard). */
+    --success: 0.78 0.17 150;
+    --success-foreground: 0.12 0.02 275;
+    --radius: 1rem;
+
+    /* Extra raw tokens — full oklch() color functions (not bare component
+       triplets), deliberately not wired into Tailwind's color palette.
+       --cyan/--red/--green mirror --primary/--brand/--success exactly, but
+       as directly-usable var() values for inline styles, SVG stroke/fill,
+       and gradients in the three redesigned screens — anywhere a bare
+       tailwind.config token (needing the oklch(var(--x) / <alpha-value>)
+       wrapper) would be awkward. --glass/--violet have no Tailwind token
+       equivalent at all. */
+    --cyan: oklch(0.78 0.14 220);
+    --red: oklch(0.6 0.2 25);
+    --green: oklch(0.78 0.17 150);
+    --glass: oklch(0.26 0.045 275 / 0.55);
+    --violet: oklch(0.62 0.2 300);
   }
 
   * {
@@ -127,12 +160,16 @@
   }
 
   .animate-border-glow {
+    /* --cyan/--red are full oklch() color functions (unlike --primary/
+       --brand, which are bare "L C H" triplets for tailwind.config.ts's
+       <alpha-value> wrapper), so opacity is applied via color-mix() here
+       rather than nesting them inside another color() wrapper. */
     background: conic-gradient(
       from var(--border-angle),
-      hsl(var(--primary) / 0.6),
-      hsl(var(--brand) / 0.5),
+      color-mix(in oklab, var(--cyan) 60%, transparent),
+      color-mix(in oklab, var(--red) 50%, transparent),
       transparent 30%,
-      hsl(var(--primary) / 0.6)
+      color-mix(in oklab, var(--cyan) 60%, transparent)
     );
     animation: border-rotate 7s linear infinite;
   }
@@ -209,37 +246,57 @@
 }
 
 /* ------------------------------------------------------------
-   VECTA "command center" design system — sharp, dark, Inter,
-   uppercase-tracked labels. Reused across login/check-in/landing/
-   dashboard screens; see the applied Claude Design mockup this
+   VECTA "ops console" design system — glassmorphic panels
+   (translucent + backdrop-blur + cyan/violet glow border), Orbitron
+   display type, JetBrains Mono data readouts. Same .vecta-* class
+   names as before (drop-in replacement for existing usages); see
+   FutLogin/FutDashboard/FutScan.dc.html, the approved mockups this
    was translated from.
    ------------------------------------------------------------ */
 @layer components {
   .vecta-panel {
-    @apply relative bg-card border border-white/[0.09] px-10 py-11;
-  }
-  .vecta-panel::before {
-    content: "";
-    @apply absolute left-0 top-0 h-0.5 w-[22px] bg-primary;
+    @apply relative border border-border bg-[var(--glass)] px-8 py-9 backdrop-blur-xl;
+    border-radius: 18px;
+    box-shadow: 0 0 60px -18px oklch(0.78 0.14 220 / 0.35);
   }
   .vecta-eyebrow {
-    @apply font-sans text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70;
+    @apply font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground;
   }
   .vecta-label {
-    @apply mb-1.5 block font-sans text-[9.5px] font-bold uppercase tracking-[0.1em] text-muted-foreground;
+    @apply mb-1.5 block font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground;
   }
   .vecta-input {
-    @apply h-[46px] w-full border border-white/[0.12] bg-input px-3.5 font-sans text-sm font-semibold text-foreground/90 placeholder:text-muted-foreground/60 outline-none focus:border-primary/60;
+    @apply h-[46px] w-full border border-white/10 bg-input px-3.5 font-sans text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/15;
+    border-radius: 10px;
   }
   .vecta-btn-primary {
-    @apply flex h-[50px] w-full items-center justify-center bg-gradient-to-b from-brand to-brand/80 font-sans text-xs font-bold uppercase tracking-[0.12em] text-white transition-opacity hover:opacity-90 disabled:opacity-50;
+    @apply flex h-12 w-full items-center justify-center bg-gradient-to-r from-primary to-[var(--violet)] font-sans text-[13px] font-semibold tracking-[0.04em] text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50;
+    border-radius: 10px;
   }
   .vecta-status-dot {
-    @apply inline-block h-[5px] w-[5px] rounded-full bg-success;
+    @apply inline-block h-[6px] w-[6px] rounded-full bg-success shadow-[0_0_8px_1px_oklch(0.78_0.17_150_/_0.8)];
     animation: vecta-flicker 3s ease-in-out infinite;
   }
   .vecta-status {
-    @apply inline-flex items-center gap-1.5 font-sans text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground;
+    @apply inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground;
+  }
+  /* Outline pill badge — checkpoint/role/ops-group chips. */
+  .vecta-chip {
+    @apply inline-flex items-center rounded-full border border-primary px-3 py-[5px] font-mono text-[10px] uppercase tracking-[0.1em] text-primary;
+  }
+  /* Segmented pill-tab control (ops-group switcher). */
+  .vecta-pill-tabs {
+    @apply inline-flex gap-1 rounded-full border border-white/[0.08] bg-input p-1;
+  }
+  .vecta-pill {
+    @apply flex h-10 items-center rounded-full px-[18px] font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground transition-colors;
+  }
+  .vecta-pill.is-active {
+    @apply bg-gradient-to-r from-primary to-[var(--violet)] font-semibold text-primary-foreground;
+  }
+  /* Glass dashboard tile (Reports / Scan). */
+  .vecta-tile {
+    @apply flex-1 rounded-2xl border border-border bg-[var(--glass)] p-6 backdrop-blur-xl transition-colors hover:border-primary;
   }
 }
 

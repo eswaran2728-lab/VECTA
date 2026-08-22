@@ -1,22 +1,36 @@
 import type { Metadata, Viewport } from "next";
-import { IBM_Plex_Mono, Inter, Plus_Jakarta_Sans } from "next/font/google";
+import { JetBrains_Mono, Orbitron, Plus_Jakarta_Sans, Sora } from "next/font/google";
 import "./globals.css";
 
+// Plus Jakarta Sans stays as the general `font-heading` family — it's used
+// across the ~20 screens outside this redesign's scope (reports, admin,
+// incidents, duty, etc.) and isn't part of the three approved mockups.
 const heading = Plus_Jakarta_Sans({
   subsets: ["latin"],
   weight: ["600", "700", "800"],
   variable: "--font-heading",
   display: "swap",
 });
-const body = Inter({
+// Orbitron — the "ops console" display/heading face (VECTA wordmark,
+// section titles) from the approved FutLogin/FutDashboard/FutScan mockups.
+const display = Orbitron({
+  subsets: ["latin"],
+  weight: ["600", "700", "800"],
+  variable: "--font-display",
+  display: "swap",
+});
+// Sora replaces Inter as the base body font, matching the mockups.
+const body = Sora({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
   variable: "--font-body",
   display: "swap",
 });
-const mono = IBM_Plex_Mono({
+// JetBrains Mono replaces IBM Plex Mono for all data readouts (IDs,
+// timestamps, counts), matching the mockups.
+const mono = JetBrains_Mono({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500"],
   variable: "--font-mono",
   display: "swap",
 });
@@ -55,7 +69,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${heading.variable} ${body.variable} ${mono.variable}`}
+      className={`${heading.variable} ${display.variable} ${body.variable} ${mono.variable}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />

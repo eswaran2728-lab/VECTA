@@ -226,7 +226,7 @@ export default async function DashboardPage({
 
       {checkpointQueue ? (
         <Link href="/icms/scan" className="animate-scale-in block">
-          <Card className="animate-gradient-pan relative overflow-hidden border-none bg-[linear-gradient(110deg,hsl(var(--brand)),hsl(var(--primary)),hsl(var(--brand)))] text-white shadow-lg shadow-brand/20 transition-transform hover:-translate-y-0.5">
+          <Card className="animate-gradient-pan relative overflow-hidden border-none bg-[linear-gradient(110deg,oklch(var(--brand)),oklch(var(--primary)),oklch(var(--brand)))] text-white shadow-lg shadow-brand/20 transition-transform hover:-translate-y-0.5">
             <div
               aria-hidden
               className="animate-glow-pulse pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl"
