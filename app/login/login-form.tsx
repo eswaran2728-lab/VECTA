@@ -22,7 +22,7 @@ export function LoginForm() {
           name="email"
           type="email"
           autoComplete="email"
-          placeholder="you@example.com"
+          placeholder="you@airasia.com"
           required
           className="vecta-input"
         />
@@ -57,7 +57,7 @@ export function LoginForm() {
         </p>
       ) : null}
       <button type="submit" disabled={pending} className="vecta-btn-primary mt-1">
-        {pending ? "Signing in…" : "Login to VECTA"}
+        {pending ? "Signing in…" : "Sign in to VECTA"}
       </button>
     </form>
   );

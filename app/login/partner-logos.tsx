@@ -16,11 +16,11 @@ export function PartnerLogos() {
   if (!avsecOk && !airasiaOk) return null;
 
   return (
-    <div className="flex items-center justify-center gap-6 sm:gap-8">
+    <div className="flex items-center justify-center gap-[26px]">
       {avsecOk ? (
         <div className="animate-fade-in-up" style={{ animationDelay: "0ms" }}>
           <div
-            className="animate-float drop-shadow-[0_0_32px_rgba(212,175,55,0.5)]"
+            className="animate-float drop-shadow-[0_0_14px_oklch(0.78_0.14_220_/_0.4)]"
             style={{ animationDelay: "0ms" }}
           >
             <Image
@@ -29,16 +29,17 @@ export function PartnerLogos() {
               width={160}
               height={160}
               priority
-              className="h-28 w-28 object-contain sm:h-32 sm:w-32"
+              className="h-[52px] w-auto object-contain"
               onError={() => setAvsecOk(false)}
             />
           </div>
         </div>
       ) : null}
+      {avsecOk && airasiaOk ? <div className="h-[34px] w-px bg-border" /> : null}
       {airasiaOk ? (
         <div className="animate-fade-in-up" style={{ animationDelay: "150ms" }}>
           <div
-            className="animate-float drop-shadow-[0_0_32px_rgba(238,46,36,0.5)]"
+            className="animate-float"
             style={{ animationDelay: "600ms", animationDuration: "5.5s" }}
           >
             <Image
@@ -47,7 +48,7 @@ export function PartnerLogos() {
               width={240}
               height={240}
               priority
-              className="h-24 w-auto object-contain sm:h-28"
+              className="h-[30px] w-auto object-contain"
               onError={() => setAirasiaOk(false)}
             />
           </div>
