@@ -254,10 +254,10 @@
    was translated from.
    ------------------------------------------------------------ */
 @layer components {
+  /* Flat panel — solid card fill, plain 1px hairline border. No blur, no glow. */
   .vecta-panel {
-    @apply relative border border-border bg-[var(--glass)] px-8 py-9 backdrop-blur-xl;
+    @apply relative border border-border bg-card px-8 py-9;
     border-radius: 18px;
-    box-shadow: 0 0 60px -18px oklch(0.78 0.14 220 / 0.35);
   }
   .vecta-eyebrow {
     @apply font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground;
@@ -266,16 +266,15 @@
     @apply mb-1.5 block font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground;
   }
   .vecta-input {
-    @apply h-[46px] w-full border border-white/10 bg-input px-3.5 font-sans text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/15;
+    @apply h-[46px] w-full border border-border bg-input px-3.5 font-sans text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/15;
     border-radius: 10px;
   }
   .vecta-btn-primary {
-    @apply flex h-12 w-full items-center justify-center bg-gradient-to-r from-primary to-[var(--violet)] font-sans text-[13px] font-semibold tracking-[0.04em] text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50;
+    @apply flex h-12 w-full items-center justify-center bg-primary font-sans text-[13px] font-semibold tracking-[0.04em] text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50;
     border-radius: 10px;
   }
   .vecta-status-dot {
-    @apply inline-block h-[6px] w-[6px] rounded-full bg-success shadow-[0_0_8px_1px_oklch(0.78_0.17_150_/_0.8)];
-    animation: vecta-flicker 3s ease-in-out infinite;
+    @apply inline-block h-[6px] w-[6px] rounded-full bg-success;
   }
   .vecta-status {
     @apply inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground;
@@ -286,27 +285,17 @@
   }
   /* Segmented pill-tab control (ops-group switcher). */
   .vecta-pill-tabs {
-    @apply inline-flex gap-1 rounded-full border border-white/[0.08] bg-input p-1;
+    @apply inline-flex gap-1 rounded-full border border-border bg-input p-1;
   }
   .vecta-pill {
     @apply flex h-10 items-center rounded-full px-[18px] font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground transition-colors;
   }
   .vecta-pill.is-active {
-    @apply bg-gradient-to-r from-primary to-[var(--violet)] font-semibold text-primary-foreground;
+    @apply bg-primary font-semibold text-primary-foreground;
   }
-  /* Glass dashboard tile (Reports / Scan). */
+  /* Flat dashboard tile (Reports / Scan). */
   .vecta-tile {
-    @apply flex-1 rounded-2xl border border-border bg-[var(--glass)] p-6 backdrop-blur-xl transition-colors hover:border-primary;
-  }
-}
-
-@keyframes vecta-flicker {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
+    @apply flex-1 rounded-2xl border border-border bg-card p-6 transition-colors hover:border-primary;
   }
 }
 
