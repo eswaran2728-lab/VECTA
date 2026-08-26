@@ -2,13 +2,14 @@ import Link from "next/link";
 import { requireProfile, DUTY_ROLES, ENFORCEMENT_SEARCH_ROLES } from "@/lib/avsec/auth";
 import { signOut } from "@/lib/avsec/profile-actions";
 import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { BottomNav } from "@/components/avsec/layout/BottomNav";
+import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { ThemeOptions } from "@/components/avsec/layout/ThemeToggle";
 import { ROLE_LABELS, REPORT_TYPES, ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { initials } from "@/lib/avsec/utils";
 
 export default async function ProfilePage() {
   const profile = await requireProfile();
+  const orgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
 
   const isMonitor = profile.role !== "ASO";
   // Only team-scoped roles work a shift, so only they get a timesheet to look at.
@@ -128,7 +129,7 @@ export default async function ProfilePage() {
         </div>
       </div>
 
-      <BottomNav profile={profile} />
+      <TeamBottomNav opsGroup={profile.ops_group} orgWide={orgWide} />
     </main>
   );
 }

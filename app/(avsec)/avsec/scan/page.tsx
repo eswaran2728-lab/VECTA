@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { UnifiedScanner } from "@/components/scan/UnifiedScanner";
+import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import type { OpsGroup } from "@/lib/icms/database.types";
 
 export const metadata: Metadata = { title: "Scan — VECTA" };
@@ -45,7 +46,7 @@ export default async function UnifiedScanPage() {
   const scopeChip = orgWide ? "All Ops Groups" : opsGroup ? OPS_GROUP_LABELS[opsGroup] : null;
 
   return (
-    <main className="dark min-h-screen bg-background">
+    <main className="dark min-h-screen bg-background pb-28">
       <div className="flex items-center justify-between border-b border-border px-8 py-[18px]">
         <div className="flex items-center gap-2">
           <Link
@@ -67,6 +68,8 @@ export default async function UnifiedScanPage() {
           <UnifiedScanner />
         </div>
       </div>
+
+      <TeamBottomNav opsGroup={opsGroup} orgWide={orgWide} />
     </main>
   );
 }

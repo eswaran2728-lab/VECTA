@@ -1,14 +1,16 @@
 import { requireProfile } from "@/lib/avsec/auth";
 import { getOpenBayBoard } from "@/lib/avsec/reports/queries";
 import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { BottomNav } from "@/components/avsec/layout/BottomNav";
+import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { AddBayBoardForm } from "@/components/avsec/forms/AddBayBoardForm";
 import { formatDateTimeMY } from "@/lib/avsec/datetime";
 import { cn } from "@/lib/avsec/utils";
+import { ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 
 export default async function BayBoardPage() {
   const profile = await requireProfile();
   const entries = profile.station ? await getOpenBayBoard(profile.station) : [];
+  const orgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
 
   return (
     <main className="min-h-screen pb-32">
@@ -55,7 +57,7 @@ export default async function BayBoardPage() {
           })}
         </div>
       </div>
-      <BottomNav profile={profile} />
+      <TeamBottomNav opsGroup={profile.ops_group} orgWide={orgWide} />
     </main>
   );
 }

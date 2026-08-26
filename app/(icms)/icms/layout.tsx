@@ -25,6 +25,7 @@ import { InstallPrompt } from "@/components/icms/install-prompt";
 import { BrandMark } from "@/components/icms/brand-mark";
 import { AirAsiaMark } from "@/components/icms/airasia-mark";
 import { Button } from "@/components/icms/ui/button";
+import { IcmsMobileBottomNav } from "@/components/icms/mobile-bottom-nav";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const profile = await requireProfile();
@@ -172,29 +173,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 pb-24 md:pb-6">{children}</main>
 
-      {/* Bottom navigation for phones/tablets */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-card md:hidden print:hidden">
-        <div className="grid auto-cols-fr grid-flow-col">
-          {bottomNav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={
-                item.href === "/scan" || item.href === "/transactions/new"
-                  ? "flex flex-col items-center gap-1 py-2.5 text-[11px] font-bold text-primary"
-                  : "flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
-              }
-            >
-              <item.icon
-                className={
-                  item.href === "/scan" || item.href === "/transactions/new" ? "h-6 w-6" : "h-5 w-5"
-                }
-              />
-              {item.label.split(" ")[0]}
-            </Link>
-          ))}
-        </div>
-      </nav>
+      {/* Bottom navigation for phones/tablets — hides itself on /icms/transactions,
+          which renders the shared TeamBottomNav instead. */}
+      <IcmsMobileBottomNav items={bottomNav} />
     </div>
   );
 }
