@@ -39,6 +39,20 @@
 
   .dark {
     color-scheme: dark;
+    /* The `.dark` class is applied on a per-page <main> (not <html>/<body>),
+       so the light-mode `color` value that `body { @apply text-foreground }`
+       already resolved (using :root's --foreground) is what descendants
+       inherit — CSS inheritance passes a property's *computed* value, not a
+       live re-evaluation of the var() it referenced. Elements with their
+       own explicit text-*-foreground utility (e.g. .vecta-eyebrow's
+       text-muted-foreground) get a fresh, correctly-dark color because they
+       declare `color` themselves; elements relying on the inherited base
+       color did not, and rendered as near-invisible dark-on-dark text.
+       Re-asserting text-foreground here means the `.dark` scope root itself
+       recomputes `color` from the dark --foreground, so everything under it
+       inherits the right value with no reliance on ordering the tree changes
+       don't accidentally reintroduce. */
+    @apply text-foreground;
     /* VECTA "ops console" palette — deep indigo-black, glassmorphic panels,
        cyan/violet accent. Exact oklch values extracted from the approved
        FutLogin/FutDashboard/FutScan mockups' :root tokens (--bg, --glass,
