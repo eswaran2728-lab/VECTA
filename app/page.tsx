@@ -72,7 +72,6 @@ export default async function LandingPage({
   // by accounts that actually have an AVSEC profile row, or org-wide roles
   // (who see every team's reports regardless of origin).
   const showReports = Boolean(avsecProfile) || orgWide;
-  const reportsHref = avsecProfile?.role === "ASO" ? "/avsec/home" : "/avsec/dashboard";
 
   // Scan = the new unified scan entry point. Reachable by anyone carrying
   // an ops_group (either origin table) or an org-wide role.
@@ -163,6 +162,14 @@ export default async function LandingPage({
                 {avsecProfile?.team ? ` · Team ${avsecProfile.team}` : ""}
               </span>
               <StatusDot status={overallStatus} />
+              {!orgWide && avsecProfile ? (
+                <Link
+                  href="/avsec/duty"
+                  className="font-mono text-[11px] uppercase tracking-[0.08em] text-primary underline underline-offset-4"
+                >
+                  Duty Check-In / Check-Out &rarr;
+                </Link>
+              ) : null}
             </div>
             <div className="flex flex-wrap gap-6">
               <Metric label="Staff on Duty" value={snapshot.staffOnDuty} />
@@ -265,8 +272,8 @@ export default async function LandingPage({
               <div className="mb-4 flex items-center justify-between">
                 <p className="vecta-eyebrow">Reports</p>
                 {showReports && (
-                  <Link href={reportsHref} className="font-mono text-[11px] uppercase tracking-[0.1em] text-primary">
-                    Open Reports App &rarr;
+                  <Link href="/avsec/history" className="font-mono text-[11px] uppercase tracking-[0.1em] text-primary">
+                    My Submissions &rarr;
                   </Link>
                 )}
               </div>
