@@ -25,11 +25,11 @@ test("opsGroupForTransaction: finished plain AIRCRAFT route resolves to ifc_avse
   assert.equal(opsGroupForTransaction("INBOUND", "COMPLETED", "AIRCRAFT"), "ifc_avsec");
 });
 
-test("opsGroupForTransaction: finished MAINTENANCE route resolves to ifc_avsec", () => {
-  assert.equal(opsGroupForTransaction("OUTBOUND", "COMPLETED", "MAINTENANCE"), "ifc_avsec");
+test("opsGroupForTransaction: finished MAINTENANCE route resolves to operation_avsec (finalizes at Part C / Post 6, no Part D)", () => {
+  assert.equal(opsGroupForTransaction("OUTBOUND", "COMPLETED", "MAINTENANCE"), "operation_avsec");
 });
 
-test("opsGroupForTransaction: HUB and REDQ routes keep their unambiguous owners", () => {
+test("opsGroupForTransaction: HUB finalizes at Part Hub, REDQ finalizes at Part D (SRA Warehouse -- IFC)", () => {
   assert.equal(opsGroupForTransaction("OUTBOUND", "COMPLETED", "HUB"), "hub_avsec");
-  assert.equal(opsGroupForTransaction("OUTBOUND", "COMPLETED", "REDQ"), "operation_avsec");
+  assert.equal(opsGroupForTransaction("OUTBOUND", "COMPLETED", "REDQ"), "ifc_avsec");
 });

@@ -26,18 +26,20 @@ export function opsGroupForCheckpointRole(role: Role): OpsGroup | null {
  * it's currently waiting on (nextStepFor's role, mapped above) — this is
  * unambiguous, including at Receiver/Part D (see opsGroupForCheckpointRole).
  *
- * Once a transaction is COMPLETED/ESCALATED (no next step), a HUB-route
- * transaction is still unambiguous (hub_avsec is its only real checkpoint
- * besides Part B), and a REDQ-route transaction is attributed to
- * operation_avsec (its last active AVSEC checkpoint before the deprecated
- * receiver/Part D step). A finished plain AIRCRAFT- or MAINTENANCE-route
- * transaction has touched BOTH post2_avsec (ifc_avsec) and post6_avsec
- * (operation_avsec) checkpoints over its lifetime with no single
- * unambiguous owning group — per the project owner's decision, these
- * (and the in-progress Receiver/Part D case above) are now assigned to
- * ifc_avsec rather than left unmappable: IFC AVSEC staff can scan them,
- * Operation AVSEC staff cannot (org-wide roles bypass this check entirely,
- * unchanged).
+ * Once a transaction is COMPLETED/ESCALATED (no next step), ownership
+ * follows each route's actual FINALIZING checkpoint (lib/icms/workflow.ts),
+ * confirmed against the real operational flow diagram (Warehouse and
+ * SRA/FOB Warehouse are both IFC territory, same as Post 2 — not Operation,
+ * despite sitting physically downstream of Post 6/REDQ):
+ *   - HUB finalizes at Part Hub (hub_avsec) -> hub_avsec.
+ *   - MAINTENANCE finalizes at Part C (post6_avsec) -> operation_avsec —
+ *     GSE Workshop has no security checkpoint of its own, so the route
+ *     terminates at Post 6, unlike every other outbound route.
+ *   - AIRCRAFT, REDQ, and INBOUND (route is always "AIRCRAFT" on inbound)
+ *     all finalize at a receiver/post2_avsec checkpoint (Part D or the
+ *     final Part B) -> ifc_avsec, since that delivery point is SRA/FOB
+ *     Warehouse — IFC's, not Operation's, even on the REDQ route where the
+ *     transaction passed through Post 6 immediately beforehand.
  */
 export function opsGroupForTransaction(
   direction: Direction,
@@ -47,6 +49,6 @@ export function opsGroupForTransaction(
   const next = nextStepFor(direction, status, route);
   if (next) return opsGroupForCheckpointRole(next.role) ?? "ifc_avsec";
   if (route === "HUB") return "hub_avsec";
-  if (route === "REDQ") return "operation_avsec";
+  if (route === "MAINTENANCE") return "operation_avsec";
   return "ifc_avsec";
 }
