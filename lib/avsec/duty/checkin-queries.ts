@@ -27,7 +27,7 @@ export async function getTodayDutyRecord(profileId: string, shiftCode: string): 
   const { data } = await supabase
     .from("duty_records")
     .select(
-      "id, shift_code, check_in_at, check_in_inside_fence, check_in_accuracy_m, check_out_at, status, late_minutes, late_remark, early_out_minutes, early_out_remark",
+      "id, shift_code, check_in_at, check_in_inside_fence, check_in_accuracy_m, check_out_at, status, late_minutes, late_remark, early_out_minutes, early_out_remark, early_in_minutes, early_in_remark, late_out_minutes, late_out_remark",
     )
     .eq("profile_id", profileId)
     .eq("duty_date", todayISODateMY())

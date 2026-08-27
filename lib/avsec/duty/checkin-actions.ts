@@ -92,14 +92,23 @@ export async function submitDutyCheckIn(input: unknown): Promise<ActionResult> {
   }
 
   let lateMinutes = 0;
+  let earlyInMinutes = 0;
   const now = new Date();
+  let scheduledStart: Date | null = null;
   if (roster.start_time && roster.end_time && roster.shift_code !== "OFF") {
     const { start } = scheduledWindow(dutyDate, roster.start_time, roster.end_time);
+    scheduledStart = start;
     lateMinutes = computeLateMinutes(start, now);
+    // Reuses computeEarlyMinutes — its formula (scheduledPoint - actual) applies the same
+    // whether the scheduled point is shift-start or shift-end.
+    earlyInMinutes = computeEarlyMinutes(start, now);
   }
 
   if (lateMinutes > 0 && !values.late_remark.trim()) {
     return { ok: false, error: "A remark is required — you're checking in late." };
+  }
+  if (earlyInMinutes > 0 && !values.early_in_remark.trim()) {
+    return { ok: false, error: "A remark is required — you're checking in early." };
   }
 
   const { data, error } = await supabase
@@ -120,11 +129,47 @@ export async function submitDutyCheckIn(input: unknown): Promise<ActionResult> {
       status: lateMinutes > 0 ? "late" : "present",
       late_minutes: lateMinutes,
       late_remark: lateMinutes > 0 ? values.late_remark.trim() : null,
+      early_in_minutes: earlyInMinutes,
+      early_in_remark: earlyInMinutes > 0 ? values.early_in_remark.trim() : null,
     })
     .select("id")
     .single();
 
   if (error) return { ok: false, error: error.message };
+
+  // Checking in well ahead of the scheduled shift start is itself overtime, claimable
+  // right away rather than waiting for checkout — same threshold/behavior as the
+  // auto-OT block in submitDutyCheckOut() below: best-effort, never surfaces as a
+  // check-in error, and dedups on linked_duty_id so a retried/replayed check-in can't
+  // create a second request for the same duty record.
+  try {
+    if (scheduledStart && earlyInMinutes >= OT_THRESHOLD_MINUTES) {
+      const { data: existingOt } = await supabase
+        .from("overtime_requests")
+        .select("id")
+        .eq("linked_duty_id", data.id)
+        .maybeSingle();
+
+      if (!existingOt) {
+        const earlyHours = (earlyInMinutes / 60).toFixed(1);
+        await supabase.from("overtime_requests").insert({
+          profile_id: profile.id,
+          station: profile.station,
+          team: profile.team || null,
+          work_date: dutyDate,
+          shift_code: roster.shift_code,
+          start_at: now.toISOString(),
+          end_at: scheduledStart.toISOString(),
+          category: "adhoc",
+          reason: `Auto-recorded from check-in — checked in ${earlyHours}h early ahead of the scheduled shift.`,
+          linked_duty_id: data.id,
+        });
+        revalidatePath("/avsec/duty/overtime");
+      }
+    }
+  } catch {
+    // Swallowed — the check-in itself already succeeded above.
+  }
 
   revalidatePath("/avsec/duty");
   revalidatePath("/avsec/home");
@@ -182,14 +227,21 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
     .maybeSingle();
 
   let earlyMinutes = 0;
+  let lateOutMinutes = 0;
   const now = new Date();
   if (roster?.start_time && roster?.end_time) {
     const { end } = scheduledWindow(dutyDate, roster.start_time, roster.end_time);
     earlyMinutes = computeEarlyMinutes(end, now);
+    // Reuses computeLateMinutes — its formula (actual - scheduledPoint) applies the same
+    // whether the scheduled point is shift-start or shift-end.
+    lateOutMinutes = computeLateMinutes(end, now);
   }
 
   if (earlyMinutes > 0 && !values.early_out_remark.trim()) {
     return { ok: false, error: "A remark is required — you're leaving early." };
+  }
+  if (lateOutMinutes > 0 && !values.late_out_remark.trim()) {
+    return { ok: false, error: "A remark is required — you're checking out late." };
   }
 
   const totalMinutes = record.check_in_at
@@ -208,6 +260,8 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
       check_out_inside_fence: insideFence,
       early_out_minutes: earlyMinutes,
       early_out_remark: earlyMinutes > 0 ? values.early_out_remark.trim() : null,
+      late_out_minutes: lateOutMinutes,
+      late_out_remark: lateOutMinutes > 0 ? values.late_out_remark.trim() : null,
       total_minutes: totalMinutes,
       is_missing_checkout: false,
     })
@@ -240,6 +294,10 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
 
         if (!existingOt) {
           const overageHours = (overageMinutes / 60).toFixed(1);
+          const trimmedLateOutRemark = lateOutMinutes > 0 ? values.late_out_remark.trim() : "";
+          const reason = trimmedLateOutRemark
+            ? `Auto-recorded from check-out — worked ${overageHours}h beyond the scheduled shift. Officer's remark: ${trimmedLateOutRemark}`
+            : `Auto-recorded from check-out — worked ${overageHours}h beyond the scheduled shift.`;
           await supabase.from("overtime_requests").insert({
             profile_id: profile.id,
             station: profile.station,
@@ -249,7 +307,7 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
             start_at: scheduledEnd.toISOString(),
             end_at: now.toISOString(),
             category: hasScheduledShift ? "adhoc" : "off_day_work",
-            reason: `Auto-recorded from check-out — worked ${overageHours}h beyond the scheduled shift.`,
+            reason,
             linked_duty_id: record.id,
           });
           revalidatePath("/avsec/duty/overtime");

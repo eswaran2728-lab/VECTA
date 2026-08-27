@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.15"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
@@ -164,6 +164,160 @@ export type Database = {
         }
         Relationships: []
       }
+      cl_seals: {
+        Row: {
+          created_at: string
+          id: string
+          seal_color: string
+          seal_number: string
+          seal_type: string
+          transaction_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          seal_color: string
+          seal_number: string
+          seal_type: string
+          transaction_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          seal_color?: string
+          seal_number?: string
+          seal_type?: string
+          transaction_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cl_seals_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "cl_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cl_signoffs: {
+        Row: {
+          id: string
+          signature_url: string
+          signed_at: string
+          signer_id: string
+          signer_role: string
+          transaction_id: string
+        }
+        Insert: {
+          id?: string
+          signature_url: string
+          signed_at?: string
+          signer_id: string
+          signer_role: string
+          transaction_id: string
+        }
+        Update: {
+          id?: string
+          signature_url?: string
+          signed_at?: string
+          signer_id?: string
+          signer_role?: string
+          transaction_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cl_signoffs_signer_id_fkey"
+            columns: ["signer_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cl_signoffs_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: true
+            referencedRelation: "cl_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cl_transaction_counters: {
+        Row: {
+          counter: number
+          year: number
+        }
+        Insert: {
+          counter?: number
+          year: number
+        }
+        Update: {
+          counter?: number
+          year?: number
+        }
+        Relationships: []
+      }
+      cl_transactions: {
+        Row: {
+          cargo_types: string[]
+          completed_at: string | null
+          completed_form_url: string | null
+          created_at: string
+          created_by: string
+          driver_id: string | null
+          driver_name: string
+          id: string
+          qr_token: string | null
+          reference_number: string
+          route: string
+          status: string
+          updated_at: string
+          vehicle_number: string
+          vehicle_search_completed: boolean
+        }
+        Insert: {
+          cargo_types?: string[]
+          completed_at?: string | null
+          completed_form_url?: string | null
+          created_at?: string
+          created_by: string
+          driver_id?: string | null
+          driver_name: string
+          id?: string
+          qr_token?: string | null
+          reference_number?: string
+          route: string
+          status?: string
+          updated_at?: string
+          vehicle_number: string
+          vehicle_search_completed?: boolean
+        }
+        Update: {
+          cargo_types?: string[]
+          completed_at?: string | null
+          completed_form_url?: string | null
+          created_at?: string
+          created_by?: string
+          driver_id?: string | null
+          driver_name?: string
+          id?: string
+          qr_token?: string | null
+          reference_number?: string
+          route?: string
+          status?: string
+          updated_at?: string
+          vehicle_number?: string
+          vehicle_search_completed?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cl_transactions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cscs_settings: {
         Row: {
           key: string
@@ -279,6 +433,8 @@ export type Database = {
           check_out_lng: number | null
           created_at: string
           duty_date: string
+          early_in_minutes: number
+          early_in_remark: string | null
           early_out_minutes: number
           early_out_remark: string | null
           handover_notes: string | null
@@ -286,6 +442,8 @@ export type Database = {
           is_missing_checkout: boolean
           is_off_schedule: boolean
           late_minutes: number
+          late_out_minutes: number
+          late_out_remark: string | null
           late_remark: string | null
           post_assignment: string | null
           profile_id: string
@@ -311,6 +469,8 @@ export type Database = {
           check_out_lng?: number | null
           created_at?: string
           duty_date: string
+          early_in_minutes?: number
+          early_in_remark?: string | null
           early_out_minutes?: number
           early_out_remark?: string | null
           handover_notes?: string | null
@@ -318,6 +478,8 @@ export type Database = {
           is_missing_checkout?: boolean
           is_off_schedule?: boolean
           late_minutes?: number
+          late_out_minutes?: number
+          late_out_remark?: string | null
           late_remark?: string | null
           post_assignment?: string | null
           profile_id: string
@@ -343,6 +505,8 @@ export type Database = {
           check_out_lng?: number | null
           created_at?: string
           duty_date?: string
+          early_in_minutes?: number
+          early_in_remark?: string | null
           early_out_minutes?: number
           early_out_remark?: string | null
           handover_notes?: string | null
@@ -350,6 +514,8 @@ export type Database = {
           is_missing_checkout?: boolean
           is_off_schedule?: boolean
           late_minutes?: number
+          late_out_minutes?: number
+          late_out_remark?: string | null
           late_remark?: string | null
           post_assignment?: string | null
           profile_id?: string
@@ -3106,6 +3272,7 @@ export type Database = {
         Args: { p_report_id: string; p_report_type: string }
         Returns: boolean
       }
+      cl_next_reference_number: { Args: never; Returns: string }
       current_role_name: {
         Args: never
         Returns: Database["public"]["Enums"]["user_role"]

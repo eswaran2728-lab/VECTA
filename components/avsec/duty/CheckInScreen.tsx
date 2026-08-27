@@ -144,8 +144,14 @@ export function CheckInScreen({
   const now = useMemo(() => new Date(), [tick]);
 
   const predictedLate = scheduled && !checkedIn && !isOff ? computeLateMinutes(scheduled.start, now) : 0;
+  // Reuses computeEarlyMinutes against the scheduled *start* — same formula
+  // (scheduledPoint - actual), just applied the other side of the shift window.
+  const predictedEarlyIn = scheduled && !checkedIn && !isOff ? computeEarlyMinutes(scheduled.start, now) : 0;
   const predictedEarly = scheduled && checkedIn && !record?.check_out_at ? computeEarlyMinutes(scheduled.end, now) : 0;
-  const needsRemark = !checkedIn ? predictedLate > 0 : predictedEarly > 0;
+  // Reuses computeLateMinutes against the scheduled *end* — same formula
+  // (actual - scheduledPoint), just applied the other side of the shift window.
+  const predictedLateOut = scheduled && checkedIn && !record?.check_out_at ? computeLateMinutes(scheduled.end, now) : 0;
+  const needsRemark = !checkedIn ? predictedLate > 0 || predictedEarlyIn > 0 : predictedEarly > 0 || predictedLateOut > 0;
 
   // Both check-in and check-out require being inside one of the station's marked zones.
   // No zones defined at all means nothing to enforce.
@@ -191,6 +197,7 @@ export function CheckInScreen({
       lng: fresh.lng,
       accuracy_m: fresh.accuracy,
       late_remark: remark,
+      early_in_remark: remark,
       offline,
       client_timestamp: new Date().toISOString(),
     });
@@ -226,6 +233,7 @@ export function CheckInScreen({
       lat: fresh.lat,
       lng: fresh.lng,
       early_out_remark: remark,
+      late_out_remark: remark,
       offline,
       client_timestamp: new Date().toISOString(),
     });
@@ -285,9 +293,19 @@ export function CheckInScreen({
             LATE {record.late_minutes} MIN — {record.late_remark}
           </p>
         )}
+        {record.early_in_minutes > 0 && (
+          <p className="font-mono text-[10px] text-brand">
+            EARLY CHECK-IN {record.early_in_minutes} MIN — {record.early_in_remark}
+          </p>
+        )}
         {record.early_out_minutes > 0 && (
           <p className="font-mono text-[10px] text-brand">
             EARLY OUT {record.early_out_minutes} MIN — {record.early_out_remark}
+          </p>
+        )}
+        {record.late_out_minutes > 0 && (
+          <p className="font-mono text-[10px] text-brand">
+            LATE CHECKOUT {record.late_out_minutes} MIN — {record.late_out_remark}
           </p>
         )}
       </div>
@@ -341,7 +359,13 @@ export function CheckInScreen({
       {needsRemark && (
         <div className="vecta-panel space-y-2 !py-4">
           <p className="vecta-label">
-            {checkedIn ? "Leaving early — explanation required" : "Checking in late — explanation required"}
+            {checkedIn
+              ? predictedEarly > 0
+                ? "Leaving early — explanation required"
+                : "Checking out late — explanation required"
+              : predictedLate > 0
+                ? "Checking in late — explanation required"
+                : "Checking in early — explanation required"}
           </p>
           <textarea
             className="vecta-input h-auto py-2.5"

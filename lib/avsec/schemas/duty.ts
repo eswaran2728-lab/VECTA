@@ -11,6 +11,7 @@ export const dutyCheckInSchema = z.object({
   lng: z.number(),
   accuracy_m: z.number(),
   late_remark: z.string(),
+  early_in_remark: z.string(),
   offline: z.boolean(),
   client_timestamp: z.string(),
 });
@@ -20,6 +21,7 @@ export const dutyCheckOutSchema = z.object({
   lat: z.number(),
   lng: z.number(),
   early_out_remark: z.string(),
+  late_out_remark: z.string(),
   offline: z.boolean(),
   client_timestamp: z.string(),
 });
