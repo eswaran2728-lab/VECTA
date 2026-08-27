@@ -1,10 +1,11 @@
+import Link from "next/link";
 import { requireProfile } from "@/lib/avsec/auth";
 import { getShifts } from "@/lib/avsec/duty/roster-queries";
 import { getRosterForDate, getSuggestedOvertimeShifts } from "@/lib/avsec/duty/overtime-queries";
 import { submitOvertimeRequest } from "@/lib/avsec/duty/overtime-actions";
 import { OT_CATEGORIES } from "@/lib/avsec/schemas/duty";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { BottomNav } from "@/components/avsec/layout/BottomNav";
+import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
+import { ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { todayISODateMY, formatDateTimeMY } from "@/lib/avsec/datetime";
 
 const OT_PHRASES = ["Flight delay", "Manpower shortage", "Event coverage", "Ad-hoc operational requirement"];
@@ -20,6 +21,7 @@ export default async function NewOvertimeRequestPage({
 }) {
   const searchParams = await searchParamsPromise;
   const profile = await requireProfile();
+  const orgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
   const workDate = searchParams.date || todayISODateMY();
 
   const [shifts, roster, suggestions] = await Promise.all([
@@ -34,21 +36,37 @@ export default async function NewOvertimeRequestPage({
   const defaultCategory = roster?.shift_code === "OFF" ? "off_day_work" : "adhoc";
 
   return (
-    <main className="min-h-screen pb-32">
-      <AppHeader profile={profile} title="Request Overtime" backHref="/avsec/duty/overtime" />
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-        {searchParams.error && <div className="disclaimer-band">{searchParams.error}</div>}
+    <main className="dark min-h-screen bg-background pb-28">
+      <div className="flex items-center gap-3 border-b border-border px-6 py-[18px]">
+        <Link
+          href="/avsec/duty/overtime"
+          aria-label="Back"
+          className="flex h-11 w-11 items-center justify-center font-mono text-base text-muted-foreground transition-colors hover:text-foreground"
+        >
+          &larr;
+        </Link>
+        <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">
+          REQUEST OVERTIME
+        </span>
+      </div>
 
-        <form method="get" className="card p-4 space-y-3">
+      <div className="mx-auto max-w-2xl space-y-4 px-4 py-6">
+        {searchParams.error && (
+          <div className="vecta-panel border-brand/40 bg-brand/10 px-5 py-4 text-sm font-medium text-brand">
+            {searchParams.error}
+          </div>
+        )}
+
+        <form method="get" className="vecta-panel space-y-3 !py-4">
           <div>
-            <label className="field-label">Work date</label>
-            <input type="date" name="date" defaultValue={workDate} className="input-base" />
+            <label className="vecta-label">Work date</label>
+            <input type="date" name="date" defaultValue={workDate} className="vecta-input" />
           </div>
 
           {suggestions.length > 0 && (
             <div>
-              <label className="field-label">Link a completed shift (optional)</label>
-              <select name="linked" defaultValue={searchParams.linked ?? ""} className="input-base">
+              <label className="vecta-label">Link a completed shift (optional)</label>
+              <select name="linked" defaultValue={searchParams.linked ?? ""} className="vecta-input">
                 <option value="">— None, enter times manually —</option>
                 {suggestions.map((s) => (
                   <option key={s.duty_id} value={s.duty_id}>
@@ -59,46 +77,47 @@ export default async function NewOvertimeRequestPage({
             </div>
           )}
 
-          <button type="submit" className="btn-secondary">
+          <button
+            type="submit"
+            className="rounded-full border border-border px-4 py-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+          >
             Continue
           </button>
         </form>
 
-        <form action={submitOvertimeRequest} className="card p-4 space-y-3">
+        <form action={submitOvertimeRequest} className="vecta-panel space-y-3 !py-4">
           <input type="hidden" name="work_date" value={workDate} />
           <input type="hidden" name="linked_duty_id" value={linkedShift?.duty_id ?? ""} />
 
-          <p className="t-mono text-[10px]" style={{ color: "var(--soft)" }}>
-            OT date: {workDate}
-          </p>
+          <p className="font-mono text-[10px] text-muted-foreground">OT date: {workDate}</p>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="field-label">Start</label>
+              <label className="vecta-label">Start</label>
               <input
                 type="datetime-local"
                 name="start_at"
                 required
                 defaultValue={linkedShift ? toLocalInputValue(linkedShift.scheduled_end) : ""}
-                className="input-base"
+                className="vecta-input"
               />
             </div>
             <div>
-              <label className="field-label">End</label>
+              <label className="vecta-label">End</label>
               <input
                 type="datetime-local"
                 name="end_at"
                 required
                 defaultValue={linkedShift ? toLocalInputValue(linkedShift.check_out_at) : ""}
-                className="input-base"
+                className="vecta-input"
               />
             </div>
           </div>
 
           {shifts.length > 0 && (
             <div>
-              <label className="field-label">Shift (optional)</label>
-              <select name="shift_code" defaultValue={linkedShift?.shift_code ?? roster?.shift_code ?? ""} className="input-base">
+              <label className="vecta-label">Shift (optional)</label>
+              <select name="shift_code" defaultValue={linkedShift?.shift_code ?? roster?.shift_code ?? ""} className="vecta-input">
                 <option value="">—</option>
                 {shifts.map((s) => (
                   <option key={s.code} value={s.code}>
@@ -110,8 +129,8 @@ export default async function NewOvertimeRequestPage({
           )}
 
           <div>
-            <label className="field-label">Category</label>
-            <select name="category" defaultValue={defaultCategory} className="input-base">
+            <label className="vecta-label">Category</label>
+            <select name="category" defaultValue={defaultCategory} className="vecta-input">
               {OT_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
                   {c.replace(/_/g, " ")}
@@ -119,22 +138,25 @@ export default async function NewOvertimeRequestPage({
               ))}
             </select>
             {roster?.shift_code === "OFF" && (
-              <p className="field-hint">This date is a rostered OFF day — off_day_work suggested.</p>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                This date is a rostered OFF day — off_day_work suggested.
+              </p>
             )}
           </div>
 
           <div>
-            <label className="field-label">Reason</label>
-            <textarea name="reason" rows={3} required className="input-base" placeholder="Explain the overtime…" />
+            <label className="vecta-label">Reason</label>
+            <textarea name="reason" rows={3} required className="vecta-input h-auto py-2.5" placeholder="Explain the overtime…" />
             <RemarkQuickPhrasesField phrases={OT_PHRASES} />
           </div>
 
-          <button type="submit" className="btn-primary w-full">
+          <button type="submit" className="vecta-btn-primary w-full">
             Submit request
           </button>
         </form>
       </div>
-      <BottomNav profile={profile} />
+
+      <TeamBottomNav opsGroup={profile.ops_group} orgWide={orgWide} />
     </main>
   );
 }
@@ -144,8 +166,6 @@ export default async function NewOvertimeRequestPage({
 // interactive RemarkQuickPhrases used in client components like CheckInScreen.
 function RemarkQuickPhrasesField({ phrases }: { phrases: string[] }) {
   return (
-    <p className="t-mono text-[9.5px] mt-2" style={{ color: "var(--faint)" }}>
-      Suggestions: {phrases.join(" · ")}
-    </p>
+    <p className="mt-2 font-mono text-[9.5px] text-muted-foreground">Suggestions: {phrases.join(" · ")}</p>
   );
 }

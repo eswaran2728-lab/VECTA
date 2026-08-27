@@ -37,7 +37,9 @@ export default function ZonesMapView({ zones }: { zones: DutyZone[] }) {
       const ring = z.polygon?.coordinates?.[0];
       if (!ring) return;
       const latlngs = ring.map(([lng, lat]) => [lat, lng] as [number, number]);
-      const poly = L.polygon(latlngs, { color: "#FFD900", weight: 2, fillOpacity: 0.08 })
+      // #12cbf5 — the VECTA design system's cyan primary; kept as a literal hex since
+      // Leaflet writes it straight to an SVG attribute (CSS var() doesn't resolve there).
+      const poly = L.polygon(latlngs, { color: "#12cbf5", weight: 2, fillOpacity: 0.08 })
         .addTo(map)
         .bindTooltip(z.name, { permanent: false, direction: "center" });
       layersRef.current.push(poly);

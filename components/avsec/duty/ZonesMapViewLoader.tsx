@@ -9,10 +9,7 @@ import type { DutyZone } from "@/lib/avsec/duty/types";
 const ZonesMapView = dynamic(() => import("./ZonesMapView"), {
   ssr: false,
   loading: () => (
-    <div
-      className="h-[280px] flex items-center justify-center t-mono text-[10px]"
-      style={{ color: "var(--faint)", background: "var(--panel2)" }}
-    >
+    <div className="flex h-[280px] items-center justify-center bg-card font-mono text-[10px] text-muted-foreground">
       Loading map…
     </div>
   ),

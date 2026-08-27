@@ -2,8 +2,7 @@ import Link from "next/link";
 import { requireRole, DUTY_ROLES } from "@/lib/avsec/auth";
 import { getTimesheetRoster, getTimesheetDuty } from "@/lib/avsec/duty/timesheet-queries";
 import { scheduledWindow } from "@/lib/avsec/duty/lateness";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { BottomNav } from "@/components/avsec/layout/BottomNav";
+import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { DayTimeline } from "@/components/avsec/duty/DayTimeline";
 import { todayISODateMY, formatTimeMY } from "@/lib/avsec/datetime";
 
@@ -25,10 +24,10 @@ function dayLabel(dateStr: string): string {
   return d.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", timeZone: "UTC" });
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  present: "var(--green)",
-  late: "var(--red)",
-  absent: "var(--red)",
+const STATUS_CLASS: Record<string, string> = {
+  present: "border-l-success text-success",
+  late: "border-l-brand text-brand",
+  absent: "border-l-brand text-brand",
 };
 
 export default async function TimesheetPage({
@@ -55,17 +54,33 @@ export default async function TimesheetPage({
   const nextWeek = addDays(weekStart, 7);
 
   return (
-    <main className="min-h-screen pb-32">
-      <AppHeader profile={profile} title="My Timesheet" backHref="/avsec/profile" />
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
+    <main className="dark min-h-screen bg-background pb-28">
+      <div className="flex items-center gap-3 border-b border-border px-6 py-[18px]">
+        <Link
+          href="/avsec/duty"
+          aria-label="Back"
+          className="flex h-11 w-11 items-center justify-center font-mono text-base text-muted-foreground transition-colors hover:text-foreground"
+        >
+          &larr;
+        </Link>
+        <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">MY TIMESHEET</span>
+      </div>
+
+      <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
         <div className="flex items-center justify-between">
-          <Link href={`/avsec/duty/timesheet?week=${prevWeek}`} className="btn-quiet">
+          <Link
+            href={`/avsec/duty/timesheet?week=${prevWeek}`}
+            className="font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:text-foreground"
+          >
             ← Prev week
           </Link>
-          <span className="t-mono text-[11px]" style={{ color: "var(--soft)" }}>
+          <span className="font-mono text-[11px] text-muted-foreground">
             {dayLabel(weekStart)} – {dayLabel(weekEnd)}
           </span>
-          <Link href={`/avsec/duty/timesheet?week=${nextWeek}`} className="btn-quiet">
+          <Link
+            href={`/avsec/duty/timesheet?week=${nextWeek}`}
+            className="font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:text-foreground"
+          >
             Next week →
           </Link>
         </div>
@@ -94,30 +109,27 @@ export default async function TimesheetPage({
                       ? "PENDING"
                       : "UPCOMING";
 
-            const statusColor = duty
-              ? (STATUS_COLOR[duty.status] ?? "var(--faint)")
+            const statusClass = duty
+              ? (STATUS_CLASS[duty.status] ?? "border-l-border text-muted-foreground")
               : isOff || !roster
-                ? "var(--faint)"
+                ? "border-l-border text-muted-foreground"
                 : date < today
-                  ? "var(--red)"
-                  : "var(--faintest)";
+                  ? "border-l-brand text-brand"
+                  : "border-l-border text-muted-foreground/60";
 
             const card = (
-              <div className="card p-4 space-y-2.5" style={{ borderLeft: `3px solid ${statusColor}` }}>
+              <div className={`vecta-panel space-y-2.5 border-l-[3px] !py-4 ${statusClass}`}>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold text-[13px]" style={{ color: "var(--ink)" }}>
+                  <span className="text-[13px] font-semibold text-foreground">
                     {dayLabel(date)}
                     {date === today ? " · Today" : ""}
                   </span>
-                  <span
-                    className="t-mono text-[8.5px] font-bold px-2 py-0.5"
-                    style={{ letterSpacing: "0.08em", color: statusColor, border: `1px solid ${statusColor}` }}
-                  >
+                  <span className={`rounded-full border px-2 py-0.5 font-mono text-[8.5px] font-bold tracking-[0.08em] ${statusClass}`}>
                     {label}
                   </span>
                 </div>
 
-                <p className="t-mono text-[10.5px]" style={{ color: "var(--soft)" }}>
+                <p className="font-mono text-[10.5px] text-muted-foreground">
                   {roster && !isOff && roster.start_time && roster.end_time
                     ? `Scheduled ${roster.shift_code} · ${roster.start_time.slice(0, 5)}–${roster.end_time.slice(0, 5)}`
                     : isOff
@@ -126,7 +138,7 @@ export default async function TimesheetPage({
                 </p>
 
                 {duty && (
-                  <p className="text-[12.5px]" style={{ color: "var(--ink2)" }}>
+                  <p className="text-[12.5px] text-foreground/90">
                     {checkIn ? `In ${formatTimeMY(duty.check_in_at)}` : "—"}
                     {" · "}
                     {checkOut ? `Out ${formatTimeMY(duty.check_out_at)}` : checkIn ? "still on duty" : "—"}
@@ -143,12 +155,12 @@ export default async function TimesheetPage({
                 )}
 
                 {duty && duty.late_minutes > 0 && (
-                  <p className="t-mono text-[10px]" style={{ color: "var(--red)" }}>
+                  <p className="font-mono text-[10px] text-brand">
                     LATE {duty.late_minutes} MIN — {duty.late_remark}
                   </p>
                 )}
                 {duty && duty.early_out_minutes > 0 && (
-                  <p className="t-mono text-[10px]" style={{ color: "var(--red)" }}>
+                  <p className="font-mono text-[10px] text-brand">
                     EARLY OUT {duty.early_out_minutes} MIN — {duty.early_out_remark}
                   </p>
                 )}
@@ -165,7 +177,9 @@ export default async function TimesheetPage({
           })}
         </div>
       </div>
-      <BottomNav profile={profile} />
+
+      {/* DUTY_ROLES (ASO/SO/DSE) are never org-wide — see lib/avsec/auth.ts. */}
+      <TeamBottomNav opsGroup={profile.ops_group} orgWide={false} />
     </main>
   );
 }

@@ -52,7 +52,10 @@ export default function DutyMap({
       const ring = zone.polygon?.coordinates?.[0];
       if (!ring) continue;
       const latlngs = ring.map(([lng, lat]) => [lat, lng] as [number, number]);
-      const layer = L.polygon(latlngs, { color: "#FFD900", weight: 2, fillOpacity: 0.08 }).addTo(map);
+      // #12cbf5 — the VECTA design system's cyan primary (see app/globals.css --primary),
+      // used here as a literal hex since Leaflet writes it straight to an SVG attribute
+      // (CSS var() doesn't resolve there).
+      const layer = L.polygon(latlngs, { color: "#12cbf5", weight: 2, fillOpacity: 0.08 }).addTo(map);
       zoneLayersRef.current.push(layer);
     }
   }, [zones]);
@@ -65,17 +68,19 @@ export default function DutyMap({
     markerRef.current?.remove();
     accuracyRef.current?.remove();
 
+    // #56d57b — the design system's success/radar-green (--success), distinct from the
+    // zones' cyan outline so "you" reads apart from the zone boundary at a glance.
     markerRef.current = L.circleMarker([position.lat, position.lng], {
       radius: 8,
-      color: "#FFD900",
-      fillColor: "#FFD900",
+      color: "#56d57b",
+      fillColor: "#56d57b",
       fillOpacity: 1,
       weight: 2,
     }).addTo(map);
 
     accuracyRef.current = L.circle([position.lat, position.lng], {
       radius: position.accuracy,
-      color: "#7FA8FF",
+      color: "#56d57b",
       weight: 1,
       fillOpacity: 0.05,
     }).addTo(map);

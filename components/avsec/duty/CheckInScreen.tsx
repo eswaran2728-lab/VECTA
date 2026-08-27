@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { RemarkQuickPhrases } from "@/components/avsec/forms/fields";
 import { submitDutyCheckIn, submitDutyCheckOut } from "@/lib/avsec/duty/checkin-actions";
 import { useOfflineSubmit } from "@/lib/avsec/offline/useOfflineSubmit";
 import { scheduledWindow, computeLateMinutes, computeEarlyMinutes } from "@/lib/avsec/duty/lateness";
@@ -14,10 +13,7 @@ import type { DutyZone, TodayRoster, DutyRecordRow } from "@/lib/avsec/duty/type
 const DutyMap = dynamic(() => import("./DutyMap"), {
   ssr: false,
   loading: () => (
-    <div
-      className="h-[220px] flex items-center justify-center t-mono text-[10px]"
-      style={{ color: "var(--faint)", background: "var(--panel2)" }}
-    >
+    <div className="flex h-[220px] items-center justify-center bg-card font-mono text-[10px] text-muted-foreground">
       Loading map…
     </div>
   ),
@@ -37,6 +33,27 @@ const LATE_PHRASES = ["Traffic / transport delay", "Medical", "Approved by super
 function matchZone(position: { lat: number; lng: number } | null, zones: DutyZone[]): DutyZone | null {
   if (!position) return null;
   return zones.find((z) => pointInPolygon(position.lng, position.lat, z.polygon)) ?? null;
+}
+
+/** Tap-to-append quick phrases for the late/early-out remark box — a local, vecta-styled
+ * stand-in for the shared RemarkQuickPhrases component (components/avsec/forms/fields.tsx),
+ * which is still on the old theme and is shared by ~7 not-yet-restyled report forms. Same
+ * append behavior, kept local so restyling Duty doesn't touch that shared file. */
+function QuickPhrases({ value, onChange, phrases }: { value: string; onChange: (next: string) => void; phrases: string[] }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {phrases.map((text) => (
+        <button
+          key={text}
+          type="button"
+          onClick={() => onChange((value ? value.trim() + ". " : "") + text)}
+          className="rounded-full border border-dashed border-border px-2.5 py-1.5 font-mono text-[10px] font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+        >
+          + {text}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export function CheckInScreen({
@@ -225,19 +242,19 @@ export function CheckInScreen({
   }
 
   if (!roster) {
-    return <div className="disclaimer-band">No roster set for today — contact your supervisor.</div>;
+    return (
+      <div className="vecta-panel border-brand/40 bg-brand/10 px-5 py-4 text-sm font-medium text-brand">
+        No roster set for today — contact your supervisor.
+      </div>
+    );
   }
 
   if (isOff && !forceShow && !record) {
     return (
-      <div className="card p-5 space-y-3">
-        <p className="t-mono text-[10px] font-semibold" style={{ color: "var(--gold)" }}>
-          SCHEDULED
-        </p>
-        <p className="text-[15px] font-semibold" style={{ color: "var(--ink)" }}>
-          You&apos;re off today
-        </p>
-        <button type="button" className="btn-secondary w-full" onClick={() => setForceShow(true)}>
+      <div className="vecta-panel space-y-3">
+        <p className="vecta-eyebrow text-primary">Scheduled</p>
+        <p className="text-[15px] font-semibold text-foreground">You&apos;re off today</p>
+        <button type="button" className="vecta-btn-primary w-full !bg-secondary !text-foreground" onClick={() => setForceShow(true)}>
           Check in anyway (covering another team)
         </button>
       </div>
@@ -246,11 +263,9 @@ export function CheckInScreen({
 
   if (queuedKind) {
     return (
-      <div className="card p-5 space-y-2" style={{ borderLeft: "3px solid var(--blue)" }}>
-        <p className="t-mono text-[10px] font-semibold" style={{ color: "var(--blue)" }}>
-          QUEUED OFFLINE
-        </p>
-        <p className="text-[13px]" style={{ color: "var(--soft)" }}>
+      <div className="vecta-panel space-y-2 border-l-[3px] border-l-primary">
+        <p className="vecta-eyebrow text-primary">Queued offline</p>
+        <p className="text-[13px] text-muted-foreground">
           You&apos;re offline. This {queuedKind === "in" ? "check-in" : "check-out"} is saved on your device and
           will submit automatically once you&apos;re back online — no re-entry needed.
         </p>
@@ -260,20 +275,18 @@ export function CheckInScreen({
 
   if (record?.check_out_at) {
     return (
-      <div className="card p-5 space-y-2">
-        <p className="t-mono text-[10px] font-semibold" style={{ color: "var(--gold)" }}>
-          SHIFT COMPLETE
-        </p>
-        <p className="text-[13px]" style={{ color: "var(--soft)" }}>
+      <div className="vecta-panel space-y-2">
+        <p className="vecta-eyebrow text-success">Shift complete</p>
+        <p className="text-[13px] text-muted-foreground">
           Checked in {formatTimeMY(record.check_in_at)} · Checked out {formatTimeMY(record.check_out_at)}
         </p>
         {record.late_minutes > 0 && (
-          <p className="t-mono text-[10px]" style={{ color: "var(--red)" }}>
+          <p className="font-mono text-[10px] text-brand">
             LATE {record.late_minutes} MIN — {record.late_remark}
           </p>
         )}
         {record.early_out_minutes > 0 && (
-          <p className="t-mono text-[10px]" style={{ color: "var(--red)" }}>
+          <p className="font-mono text-[10px] text-brand">
             EARLY OUT {record.early_out_minutes} MIN — {record.early_out_remark}
           </p>
         )}
@@ -283,21 +296,19 @@ export function CheckInScreen({
 
   return (
     <div className="space-y-3">
-      <div className="card overflow-hidden">
+      <div className="vecta-panel overflow-hidden !p-0">
         <DutyMap position={position} zones={zones} />
       </div>
 
       {checkedIn && (
-        <div className="card p-4">
-          <p className="t-mono text-[10px] font-semibold" style={{ color: "var(--gold)" }}>
-            ON DUTY SINCE {formatTimeMY(record!.check_in_at)}
-          </p>
+        <div className="vecta-panel !py-4">
+          <p className="vecta-eyebrow text-success">On duty since {formatTimeMY(record!.check_in_at)}</p>
         </div>
       )}
 
-      <div className="card p-4 space-y-2">
+      <div className="vecta-panel space-y-2 !py-4">
         <div className="flex items-center justify-between gap-2">
-          <span className="t-mono text-[10px]" style={{ color: "var(--soft)" }}>
+          <span className="font-mono text-[10px] text-muted-foreground">
             {roster.shift_code}
             {roster.start_time && roster.end_time
               ? ` · ${roster.start_time.slice(0, 5)}–${roster.end_time.slice(0, 5)}`
@@ -305,51 +316,49 @@ export function CheckInScreen({
           </span>
           {zones.length > 0 && (
             <span
-              className="t-mono text-[9px] font-bold px-2 py-1 shrink-0"
-              style={{
-                color: insideFence === false ? "var(--red)" : "var(--green)",
-                border: `1px solid ${insideFence === false ? "var(--red)" : "var(--green)"}`,
-              }}
+              className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.06em] ${
+                insideFence === false ? "border-brand text-brand" : "border-success text-success"
+              }`}
             >
-              {insideFence === null ? "LOCATING…" : matchedZone ? `IN RANGE: ${matchedZone.name}` : "OUT OF RANGE"}
+              {insideFence === null ? "Locating…" : matchedZone ? `In range: ${matchedZone.name}` : "Out of range"}
             </span>
           )}
         </div>
-        {geoError && <p className="field-error">{geoError}</p>}
+        {geoError && <p className="font-mono text-[10px] text-brand">{geoError}</p>}
         {position && (
-          <p className="t-mono text-[9px]" style={{ color: "var(--faint)" }}>
+          <p className="font-mono text-[9px] text-muted-foreground">
             Accuracy ±{Math.round(position.accuracy)}m
             {position.accuracy > 100 ? " — low accuracy, still allowed" : ""}
           </p>
         )}
         {zoneBlocked && (
-          <p className="field-error">
+          <p className="font-mono text-[10px] text-brand">
             Move to a marked duty zone to {checkedIn ? "check out" : "check in"}.
           </p>
         )}
       </div>
 
       {needsRemark && (
-        <div className="card p-4 space-y-2">
-          <p className="field-label">
+        <div className="vecta-panel space-y-2 !py-4">
+          <p className="vecta-label">
             {checkedIn ? "Leaving early — explanation required" : "Checking in late — explanation required"}
           </p>
           <textarea
-            className="input-base"
+            className="vecta-input h-auto py-2.5"
             rows={2}
             value={remark}
             onChange={(e) => setRemark(e.target.value)}
             placeholder="Reason…"
           />
-          <RemarkQuickPhrases value={remark} onChange={setRemark} phrases={LATE_PHRASES} />
+          <QuickPhrases value={remark} onChange={setRemark} phrases={LATE_PHRASES} />
         </div>
       )}
 
-      {submitError && <p className="field-error">{submitError}</p>}
+      {submitError && <p className="font-mono text-[11px] text-brand">{submitError}</p>}
 
       <button
         type="button"
-        className="btn-primary w-full"
+        className="vecta-btn-primary w-full"
         disabled={submitting || locating || !position || zoneBlocked}
         onClick={checkedIn ? handleCheckOut : handleCheckIn}
       >

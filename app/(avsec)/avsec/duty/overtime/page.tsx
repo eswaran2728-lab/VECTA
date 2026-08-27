@@ -2,18 +2,18 @@ import Link from "next/link";
 import { requireProfile } from "@/lib/avsec/auth";
 import { getVisibleOvertimeRequests } from "@/lib/avsec/duty/overtime-queries";
 import { createClient } from "@/lib/supabase/server";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { BottomNav } from "@/components/avsec/layout/BottomNav";
+import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
+import { ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { formatDateMY } from "@/lib/avsec/datetime";
 
 const FILTERS = ["ALL", "PENDING", "ENDORSED", "APPROVED", "REJECTED"] as const;
 
-const STATUS_COLOR: Record<string, string> = {
-  pending: "var(--faint)",
-  endorsed: "var(--blue)",
-  approved: "var(--green)",
-  rejected: "var(--red)",
-  cancelled: "var(--faint)",
+const STATUS_CLASS: Record<string, string> = {
+  pending: "text-muted-foreground border-border",
+  endorsed: "text-primary border-primary",
+  approved: "text-success border-success",
+  rejected: "text-brand border-brand",
+  cancelled: "text-muted-foreground border-border",
 };
 
 export default async function OvertimeListPage({
@@ -23,6 +23,7 @@ export default async function OvertimeListPage({
 }) {
   const searchParams = await searchParamsPromise;
   const profile = await requireProfile();
+  const orgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
   const rows = await getVisibleOvertimeRequests();
 
   const active = FILTERS.includes(searchParams.status as (typeof FILTERS)[number])
@@ -39,27 +40,33 @@ export default async function OvertimeListPage({
   }
 
   return (
-    <main className="min-h-screen pb-32">
-      <AppHeader profile={profile} title="Overtime" backHref="/avsec/duty" />
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-        <Link href="/avsec/duty/overtime/new" className="btn-primary w-full block text-center">
+    <main className="dark min-h-screen bg-background pb-28">
+      <div className="flex items-center gap-3 border-b border-border px-6 py-[18px]">
+        <Link
+          href="/avsec/duty"
+          aria-label="Back"
+          className="flex h-11 w-11 items-center justify-center font-mono text-base text-muted-foreground transition-colors hover:text-foreground"
+        >
+          &larr;
+        </Link>
+        <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">OVERTIME</span>
+      </div>
+
+      <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
+        <Link href="/avsec/duty/overtime/new" className="vecta-btn-primary block w-full text-center">
           New request
         </Link>
 
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex flex-wrap gap-1.5">
           {FILTERS.map((f) => {
             const on = f === active;
             return (
               <Link
                 key={f}
-                href={f === "ALL" ? "/duty/overtime" : `/duty/overtime?status=${f}`}
-                className="t-mono text-[9.5px] font-semibold px-3 py-2"
-                style={{
-                  letterSpacing: "0.1em",
-                  border: `1px solid ${on ? "var(--gold-fill)" : "var(--line3)"}`,
-                  background: on ? "var(--gold-soft)" : "transparent",
-                  color: on ? "var(--gold)" : "var(--mid)",
-                }}
+                href={f === "ALL" ? "/avsec/duty/overtime" : `/avsec/duty/overtime?status=${f}`}
+                className={`rounded-full border px-3 py-2 font-mono text-[9.5px] font-semibold uppercase tracking-[0.1em] transition-colors ${
+                  on ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"
+                }`}
               >
                 {f}
               </Link>
@@ -68,38 +75,28 @@ export default async function OvertimeListPage({
         </div>
 
         {filtered.length === 0 && (
-          <p className="text-sm" style={{ color: "var(--soft)" }}>
-            No overtime requests found.
-          </p>
+          <p className="text-center text-sm text-muted-foreground">No overtime requests found.</p>
         )}
 
-        <div>
+        <div className="space-y-2">
           {filtered.map((r) => {
-            const color = STATUS_COLOR[r.status] ?? "var(--faint)";
+            const statusClass = STATUS_CLASS[r.status] ?? "text-muted-foreground border-border";
             const mine = r.profile_id === profile.id;
             return (
-              <Link
-                key={r.id}
-                href={`/avsec/duty/overtime/${r.id}`}
-                className="flex items-center gap-3 py-3"
-                style={{ borderBottom: "1px solid var(--line2)" }}
-              >
-                <span className="w-[3px] h-[38px] shrink-0" style={{ background: color }} />
+              <Link key={r.id} href={`/avsec/duty/overtime/${r.id}`} className="vecta-panel flex items-center gap-3 !py-4">
+                <span className={`h-[38px] w-[3px] shrink-0 rounded-full ${statusClass.split(" ")[0].replace("text-", "bg-")}`} />
                 <div className="min-w-0 flex-1">
-                  <p className="t-mono text-[9.5px]" style={{ color: "var(--faint)" }}>
+                  <p className="font-mono text-[9.5px] text-muted-foreground">
                     {formatDateMY(r.work_date + "T00:00:00+08:00")}
                   </p>
-                  <p className="font-semibold text-[13px] mt-[3px] truncate" style={{ color: "var(--ink2)" }}>
+                  <p className="mt-[3px] truncate text-[13px] font-semibold text-foreground">
                     {r.category.replace(/_/g, " ")} · {Number(r.hours).toFixed(2)}h
                   </p>
-                  <p className="t-mono text-[10.5px] mt-[3px] truncate" style={{ color: "var(--soft)" }}>
+                  <p className="mt-[3px] truncate font-mono text-[10.5px] text-muted-foreground">
                     {mine ? "by you" : `by ${nameById.get(r.profile_id) ?? "team member"}`}
                   </p>
                 </div>
-                <span
-                  className="t-mono text-[8.5px] font-semibold px-1.5 py-1 shrink-0"
-                  style={{ letterSpacing: "0.08em", color, border: `1px solid ${color}` }}
-                >
+                <span className={`shrink-0 rounded-full border px-1.5 py-1 font-mono text-[8.5px] font-semibold tracking-[0.08em] ${statusClass}`}>
                   {r.status.toUpperCase()}
                 </span>
               </Link>
@@ -107,7 +104,8 @@ export default async function OvertimeListPage({
           })}
         </div>
       </div>
-      <BottomNav profile={profile} />
+
+      <TeamBottomNav opsGroup={profile.ops_group} orgWide={orgWide} />
     </main>
   );
 }

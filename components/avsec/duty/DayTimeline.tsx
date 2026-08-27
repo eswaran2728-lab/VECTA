@@ -5,13 +5,13 @@ interface Props {
   checkOut: Date | null;
 }
 
-function Bar({ leftPct, widthPct, color }: { leftPct: number | null; widthPct: number | null; color: string }) {
+function Bar({ leftPct, widthPct, className }: { leftPct: number | null; widthPct: number | null; className: string }) {
   return (
-    <div className="relative h-2 flex-1" style={{ background: "var(--panel2)" }}>
+    <div className="relative h-2 flex-1 bg-muted">
       {leftPct !== null && widthPct !== null && (
         <div
-          className="absolute top-0 h-full"
-          style={{ left: `${leftPct}%`, width: `${Math.max(widthPct, 1.5)}%`, background: color }}
+          className={`absolute top-0 h-full ${className}`}
+          style={{ left: `${leftPct}%`, width: `${Math.max(widthPct, 1.5)}%` }}
         />
       )}
     </div>
@@ -39,16 +39,12 @@ export function DayTimeline({ scheduledStart, scheduledEnd, checkIn, checkOut }:
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-2">
-        <span className="t-mono text-[8px] w-12 shrink-0" style={{ color: "var(--faint)" }}>
-          PLANNED
-        </span>
-        <Bar leftPct={plannedLeft} widthPct={plannedWidth} color="var(--line3)" />
+        <span className="w-12 shrink-0 font-mono text-[8px] text-muted-foreground">PLANNED</span>
+        <Bar leftPct={plannedLeft} widthPct={plannedWidth} className="bg-border" />
       </div>
       <div className="flex items-center gap-2">
-        <span className="t-mono text-[8px] w-12 shrink-0" style={{ color: "var(--faint)" }}>
-          ACTUAL
-        </span>
-        <Bar leftPct={actualLeft} widthPct={actualWidth} color={checkOut ? "var(--gold-fill)" : "var(--green)"} />
+        <span className="w-12 shrink-0 font-mono text-[8px] text-muted-foreground">ACTUAL</span>
+        <Bar leftPct={actualLeft} widthPct={actualWidth} className={checkOut ? "bg-primary" : "bg-success"} />
       </div>
     </div>
   );

@@ -2,8 +2,7 @@ import Link from "next/link";
 import { requireRole, DUTY_ROLES } from "@/lib/avsec/auth";
 import { getTodayRoster, getTodayDutyRecord } from "@/lib/avsec/duty/checkin-queries";
 import { getZonesForStation } from "@/lib/avsec/duty/zone-queries";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { BottomNav } from "@/components/avsec/layout/BottomNav";
+import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { CheckInScreen } from "@/components/avsec/duty/CheckInScreen";
 
 export default async function DutyPage() {
@@ -19,25 +18,53 @@ export default async function DutyPage() {
   const zones = allZones.filter((z) => z.active);
 
   return (
-    <main className="min-h-screen pb-32">
-      <AppHeader profile={profile} />
-      <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">
-        <h1 className="t-display text-2xl">Duty Check-In</h1>
+    <main className="dark min-h-screen bg-background pb-28">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-6 py-[18px]">
+        <div className="flex min-w-0 items-center gap-2">
+          <Link
+            href="/"
+            aria-label="Back"
+            className="flex h-11 w-11 items-center justify-center font-mono text-base text-muted-foreground transition-colors hover:text-foreground"
+          >
+            &larr;
+          </Link>
+          <span className="truncate font-display text-base font-extrabold tracking-[0.06em] text-foreground">
+            DUTY CHECK-IN
+          </span>
+        </div>
+        <span className="vecta-chip shrink-0">
+          {profile.station ?? "—"}
+          {profile.team ? ` · ${profile.team}` : ""}
+        </span>
+      </div>
+
+      <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
         <CheckInScreen roster={roster} zones={zones} record={record} />
 
         <div className="flex items-center justify-between gap-2 pt-2">
-          <Link href="/avsec/duty/timesheet" className="btn-quiet">
+          <Link
+            href="/avsec/duty/timesheet"
+            className="rounded-full border border-border px-4 py-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+          >
             My Timesheet →
           </Link>
-          <Link href="/avsec/duty/overtime" className="btn-quiet">
+          <Link
+            href="/avsec/duty/overtime"
+            className="rounded-full border border-border px-4 py-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+          >
             Overtime →
           </Link>
         </div>
-        <Link href="/avsec/duty/zones" className="btn-quiet block text-center">
+        <Link
+          href="/avsec/duty/zones"
+          className="block rounded-full border border-border px-4 py-2.5 text-center font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+        >
           View Duty Zones →
         </Link>
       </div>
-      <BottomNav profile={profile} />
+
+      {/* DUTY_ROLES (ASO/SO/DSE) are never org-wide — see lib/avsec/auth.ts. */}
+      <TeamBottomNav opsGroup={profile.ops_group} orgWide={false} />
     </main>
   );
 }
