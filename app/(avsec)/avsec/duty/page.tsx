@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireRole, DUTY_ROLES } from "@/lib/avsec/auth";
+import { signOut } from "@/lib/avsec/profile-actions";
 import { getTodayRoster, getTodayDutyRecord } from "@/lib/avsec/duty/checkin-queries";
 import { getZonesForStation } from "@/lib/avsec/duty/zone-queries";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
@@ -32,10 +33,20 @@ export default async function DutyPage() {
             DUTY CHECK-IN
           </span>
         </div>
-        <span className="vecta-chip shrink-0">
-          {profile.station ?? "—"}
-          {profile.team ? ` · ${profile.team}` : ""}
-        </span>
+        <div className="flex shrink-0 items-center gap-3">
+          <span className="vecta-chip">
+            {profile.station ?? "—"}
+            {profile.team ? ` · ${profile.team}` : ""}
+          </span>
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-brand"
+            >
+              Sign out
+            </button>
+          </form>
+        </div>
       </div>
 
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">

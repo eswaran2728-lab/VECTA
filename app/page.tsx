@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { signOut } from "@/lib/avsec/profile-actions";
 import { opsGroupForTransaction } from "@/lib/icms/ops-group";
 import { getFilteredSubmissions } from "@/lib/avsec/dashboard/queries";
 import { getOpenBayBoard } from "@/lib/avsec/reports/queries";
@@ -142,6 +143,14 @@ export default async function LandingPage({
               Signed in as {profile.name}
             </span>
             {roleChip ? <span className="vecta-chip">{roleChip}</span> : null}
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-brand"
+              >
+                Sign out
+              </button>
+            </form>
           </div>
         </div>
 
