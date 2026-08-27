@@ -119,7 +119,19 @@ export async function updateSession(request: NextRequest) {
     const role = profile.unified_role as string | null;
     const seniorityExempt = role ? SENIORITY_EXEMPT_ROLES.includes(role) : false;
     const vendorExempt = role === VENDOR_EXEMPT_ROLE;
-    const exempt = seniorityExempt || vendorExempt;
+    // ICMS-origin checkpoint accounts (post2_avsec/post6_avsec/hub_avsec/
+    // redq_avsec — no row in public.profiles) have no way to ever satisfy
+    // this gate: check-in/duty_records/team_rosters are entirely AVSEC-side
+    // concepts keyed to a profiles row. Without this exemption, clicking
+    // into any gated route sent them to /avsec/duty, whose own
+    // requireProfile() (profiles-table only) found nothing and bounced them
+    // to /login, which — since they're still authenticated — immediately
+    // redirected back to "/", i.e. every click looped back to the
+    // dashboard. Same underlying reason as the vendor exemption: the
+    // AirAsia attendance/check-in concept doesn't apply to accounts that
+    // don't live in AVSEC's own tables.
+    const icmsOnlyExempt = !avsecProfile && Boolean(icmsProfile);
+    const exempt = seniorityExempt || vendorExempt || icmsOnlyExempt;
     const alreadyOnCheckin = path.startsWith("/avsec/duty");
 
     if (!exempt && !alreadyOnCheckin) {

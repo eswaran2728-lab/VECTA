@@ -4,142 +4,84 @@
 
 /* ============================================================
    Design tokens — AVSEC Security Operations
-   Dark-first: :root is the dark palette, light is opt-in via
-   prefers-color-scheme or an explicit [data-theme] on <html>.
+
+   Remapped onto VECTA's unified dark ops-console palette (cyan
+   primary, AirAsia red for alerts, radar green for success — same
+   oklch values as app/globals.css's .dark block) instead of the
+   original gold-on-black scheme. Every ~30 AVSEC pages/forms still
+   reference these token names directly (var(--ink), var(--gold),
+   .card, .btn-primary, etc.) rather than the newer .vecta-* classes,
+   so remapping the values here is what keeps the whole app looking
+   like one system without rewriting every one of those files.
+
+   The light-mode branches (prefers-color-scheme + explicit
+   [data-theme="light"]) are deliberately collapsed to the SAME dark
+   values — the app is dark-only by design now; a device/browser set
+   to light mode was previously flipping this section of the app to
+   a completely different cream palette while the rest of VECTA
+   stayed dark, which read as two different apps stitched together.
    ============================================================ */
 
 :root {
   color-scheme: dark;
 
-  --page: #0a0a0a;
-  --page-bg: radial-gradient(120% 90% at 50% 0%, #1a1a1a 0%, #070707 60%);
-  --surface: #050505;
-  --panel: #0e0e0e;
-  --panel2: #0b0b0b;
-  --input: #111111;
-  --view-header: linear-gradient(180deg, #141212, #0a0a0a);
-  --red-panel: #121010;
-  --hover-panel: #101010;
-  --hover-warm: #141210;
+  --page: oklch(0.14 0.03 275);
+  --page-bg: radial-gradient(120% 90% at 50% 0%, oklch(0.2 0.035 275) 0%, oklch(0.11 0.025 275) 60%);
+  --surface: oklch(0.11 0.025 275);
+  --panel: oklch(0.22 0.04 275);
+  --panel2: oklch(0.18 0.03 275);
+  --input: oklch(0.1 0.03 275);
+  --view-header: linear-gradient(180deg, oklch(0.2 0.035 275), oklch(0.14 0.03 275));
+  --red-panel: oklch(0.2 0.05 25);
+  --hover-panel: oklch(0.2 0.035 275);
+  --hover-warm: oklch(0.22 0.05 220);
 
-  --ink: #ffffff;
-  --ink2: #eaeaea;
-  --ink3: #c9c9c9;
-  --mid: #8f8f8f;
-  --soft: #6f6f6f;
-  --faint: #5f5f5f;
-  --faintest: #464646;
+  --ink: oklch(0.95 0.01 240);
+  --ink2: oklch(0.88 0.012 240);
+  --ink3: oklch(0.78 0.015 245);
+  --mid: oklch(0.7 0.02 250);
+  --soft: oklch(0.64 0.02 250);
+  --faint: oklch(0.54 0.02 255);
+  --faintest: oklch(0.42 0.02 260);
 
-  --line: #1c1c1c;
-  --line2: #171717;
-  --line3: #282828;
+  --line: oklch(0.78 0.14 220 / 0.2);
+  --line2: oklch(0.78 0.14 220 / 0.14);
+  --line3: oklch(0.78 0.14 220 / 0.32);
 
-  --gold: #ffd900;
-  --gold-fill: #ffd900;
-  --gold-fill-hi: #ffe23d;
-  --gold-soft: rgba(255, 217, 0, 0.12);
-  --gold-soft2: rgba(255, 217, 0, 0.14);
-  --gold-glow: rgba(255, 217, 0, 0.22);
-  --on-gold: #050505;
+  --gold: oklch(0.78 0.14 220);
+  --gold-fill: oklch(0.78 0.14 220);
+  --gold-fill-hi: oklch(0.85 0.12 220);
+  --gold-soft: oklch(0.78 0.14 220 / 0.14);
+  --gold-soft2: oklch(0.78 0.14 220 / 0.18);
+  --gold-glow: oklch(0.78 0.14 220 / 0.24);
+  --on-gold: oklch(0.12 0.02 275);
 
-  --red: #e30613;
-  --red-soft: rgba(227, 6, 19, 0.14);
-  --red-ink: #c78d8d;
-  --green: #37d67a;
-  --blue: #7fa8ff;
+  --red: oklch(0.6 0.2 25);
+  --red-soft: oklch(0.6 0.2 25 / 0.14);
+  --red-ink: oklch(0.75 0.1 25);
+  --green: oklch(0.78 0.17 150);
+  --blue: oklch(0.62 0.2 300);
 }
 
-/* System light — only when the user hasn't explicitly chosen dark. */
+/* Both light-mode branches intentionally collapsed to the dark palette
+   above — see the file header comment. Kept as empty, valid rule sets
+   (rather than deleted) so a future deliberate light-theme decision has
+   an obvious place to land, instead of silently reintroducing this bug. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    color-scheme: light;
-
-    --page: #efede6;
-    --page-bg: radial-gradient(120% 90% at 50% 0%, #ffffff 0%, #ebe8e1 60%);
-    --surface: #ffffff;
-    --panel: #ffffff;
-    --panel2: #faf9f5;
-    --input: #ffffff;
-    --view-header: linear-gradient(180deg, #fff7f5, #ffffff);
-    --red-panel: #fdf1f0;
-    --hover-panel: #f5f3ec;
-    --hover-warm: #fffae6;
-
-    --ink: #17160f;
-    --ink2: #26251f;
-    --ink3: #4a483f;
-    --mid: #6b6960;
-    --soft: #848278;
-    --faint: #9a988e;
-    --faintest: #b4b2a8;
-
-    --line: #e4e2dc;
-    --line2: #eae8e2;
-    --line3: #d5d2ca;
-
-    --gold: #8a6a00;
-    --gold-fill: #ffd900;
-    --gold-fill-hi: #ffe23d;
-    --gold-soft: rgba(255, 217, 0, 0.3);
-    --gold-soft2: rgba(255, 217, 0, 0.28);
-    --gold-glow: rgba(0, 0, 0, 0.12);
-    --on-gold: #050505;
-
-    --red: #c1000f;
-    --red-soft: rgba(193, 0, 15, 0.1);
-    --red-ink: #9b4a4a;
-    --green: #1e9e56;
-    --blue: #2f62c4;
+    color-scheme: dark;
   }
 }
 
-/* Explicit light choice always wins, regardless of system preference. */
 :root[data-theme="light"] {
-  color-scheme: light;
-
-  --page: #efede6;
-  --page-bg: radial-gradient(120% 90% at 50% 0%, #ffffff 0%, #ebe8e1 60%);
-  --surface: #ffffff;
-  --panel: #ffffff;
-  --panel2: #faf9f5;
-  --input: #ffffff;
-  --view-header: linear-gradient(180deg, #fff7f5, #ffffff);
-  --red-panel: #fdf1f0;
-  --hover-panel: #f5f3ec;
-  --hover-warm: #fffae6;
-
-  --ink: #17160f;
-  --ink2: #26251f;
-  --ink3: #4a483f;
-  --mid: #6b6960;
-  --soft: #848278;
-  --faint: #9a988e;
-  --faintest: #b4b2a8;
-
-  --line: #e4e2dc;
-  --line2: #eae8e2;
-  --line3: #d5d2ca;
-
-  --gold: #8a6a00;
-  --gold-fill: #ffd900;
-  --gold-fill-hi: #ffe23d;
-  --gold-soft: rgba(255, 217, 0, 0.3);
-  --gold-soft2: rgba(255, 217, 0, 0.28);
-  --gold-glow: rgba(0, 0, 0, 0.12);
-  --on-gold: #050505;
-
-  --red: #c1000f;
-  --red-soft: rgba(193, 0, 15, 0.1);
-  --red-ink: #9b4a4a;
-  --green: #1e9e56;
-  --blue: #2f62c4;
+  color-scheme: dark;
 }
 
 html,
 body {
   background: var(--page);
   color: var(--ink);
-  font-family: var(--font-barlow), system-ui, sans-serif;
+  font-family: var(--font-body), system-ui, sans-serif;
 }
 
 * {
@@ -182,7 +124,7 @@ body {
 
   /* Condensed uppercase display type — screen titles, page headings. */
   .t-display {
-    font-family: var(--font-barlow-condensed), system-ui, sans-serif;
+    font-family: var(--font-display), system-ui, sans-serif;
     @apply font-semibold uppercase;
     letter-spacing: 0.06em;
     color: var(--ink);
