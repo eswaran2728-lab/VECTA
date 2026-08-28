@@ -62,10 +62,30 @@ export function useOfflineSubmit(type: QueueItemType, submitFn: SubmitFn) {
           return { kind: "error", message: result.error };
         }
         return { kind: "error", message: "Unknown submission error" };
-      } catch {
-        // Network / fetch failure — queue for later sync rather than losing the report.
-        const localId = await enqueueSubmission(type, values, attachments);
-        return { kind: "queued", localId };
+      } catch (err) {
+        // Only a genuine network/fetch failure should silently fall back to the offline
+        // queue — anything else (e.g. a transient 503 from the Server Action transport
+        // after the mutation already committed server-side) must surface as a visible
+        // error instead of being requeued and possibly replayed into a duplicate
+        // submission later. `TypeError: Failed to fetch` (and friends) is the browser's
+        // fetch()-layer error for "request never reached/returned from the server" —
+        // Next's Server Action invocation goes through fetch under the hood.
+        const isNetworkFailure =
+          (typeof navigator !== "undefined" && !navigator.onLine) ||
+          (err instanceof TypeError && /fetch|network/i.test(err.message));
+
+        if (isNetworkFailure) {
+          const localId = await enqueueSubmission(type, values, attachments);
+          return { kind: "queued", localId };
+        }
+
+        return {
+          kind: "error",
+          message:
+            err instanceof Error
+              ? `Submission failed: ${err.message}. If this already went through, it will show as "on duty" — refresh before retrying.`
+              : "Submission failed unexpectedly. If this already went through, it will show as \"on duty\" — refresh before retrying.",
+        };
       } finally {
         setPending(false);
       }

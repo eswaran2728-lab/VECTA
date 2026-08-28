@@ -91,6 +91,23 @@ export async function submitDutyCheckIn(input: unknown): Promise<ActionResult> {
     };
   }
 
+  // Idempotency: if a retried/replayed submission (e.g. after a client-side network
+  // hiccup that made a successful response look like a failure) lands here again for a
+  // check-in that already went through, return the existing row instead of inserting a
+  // second one for the same profile+date.
+  const { data: existingRecord } = await supabase
+    .from("duty_records")
+    .select("id")
+    .eq("profile_id", profile.id)
+    .eq("duty_date", dutyDate)
+    .is("check_out_at", null)
+    .not("check_in_at", "is", null)
+    .maybeSingle();
+
+  if (existingRecord) {
+    return { ok: true, id: existingRecord.id };
+  }
+
   let lateMinutes = 0;
   let earlyInMinutes = 0;
   const now = new Date();
