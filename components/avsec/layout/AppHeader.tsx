@@ -15,7 +15,9 @@ export function AppHeader({
   title?: string;
   backHref?: string;
 }) {
-  const subtitle = `${profile.name} · ${profile.station}${profile.team ? ` · ${profile.team}` : ""}`;
+  // Org-wide roles (Enforcement/Management/Admin) have no station/team, so only append
+  // segments that are actually set — otherwise this rendered a literal "· null" for them.
+  const subtitle = [profile.name, profile.station, profile.team].filter(Boolean).join(" · ");
 
   return (
     <header

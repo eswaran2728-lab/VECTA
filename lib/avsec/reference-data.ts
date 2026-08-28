@@ -46,6 +46,16 @@ export const ORG_WIDE_ROLES = ["ENFORCEMENT", "MANAGEMENT", "ADMIN"] as const;
 
 // Mirrors the role_rank() SQL function — keep in sync. ASO < SO < DSE < ENFORCEMENT <
 // MANAGEMENT < ADMIN. Each role monitors reports from any strictly lower rank.
+//
+// Enforcement vs Management on the AVSEC side: MANAGEMENT ranks one above ENFORCEMENT
+// here only for report-monitoring breadth (Management additionally sees Enforcement's
+// own — nonexistent, since Enforcement files no reports — activity). In every other
+// respect (ORG_WIDE_ROLES membership, ENFORCEMENT_SEARCH_ROLES, DUTY_ROLES exclusion,
+// approval workflow, geofence exemption) the two roles are treated identically by
+// design — there is no functional AVSEC feature gated to one but not the other. This
+// mirrors the deliberate ICMS-side decision to give Management parity with Enforcement
+// (see supabase/migrations/management_icms_parity.sql) — do not introduce a distinction
+// between them here without an equally explicit decision recorded like this one.
 export const ROLE_RANK: Record<UserRole, number> = {
   ASO: 1,
   SO: 2,
