@@ -74,6 +74,11 @@ export function CheckInScreen({
   const [queuedKind, setQueuedKind] = useState<"in" | "out" | null>(null);
   const [tick, setTick] = useState(0);
   const [locating, setLocating] = useState(false);
+  // GPS-denial fallback: once geolocation has failed at least once, offer a manual
+  // zone picker instead of blocking the officer entirely. `manualZoneId` set means the
+  // officer is proceeding on their manual choice rather than a live GPS fix.
+  const [geoFailed, setGeoFailed] = useState(false);
+  const [manualZoneId, setManualZoneId] = useState<string>("");
 
   const { submit: submitCheckIn, pending: submittingIn } = useOfflineSubmit("duty_checkin", submitDutyCheckIn);
   const { submit: submitCheckOut, pending: submittingOut } = useOfflineSubmit("duty_checkout", submitDutyCheckOut);
@@ -119,7 +124,10 @@ export function CheckInScreen({
           }
         })
         .catch((err) => {
-          if (!cancelled) setGeoError(err instanceof Error ? err.message : "Couldn't get your location.");
+          if (!cancelled) {
+            setGeoError(err instanceof Error ? err.message : "Couldn't get your location.");
+            setGeoFailed(true);
+          }
         });
     };
     poll();
@@ -132,8 +140,10 @@ export function CheckInScreen({
     };
   }, [showFlow]);
 
-  const matchedZone = useMemo(() => matchZone(position, zones), [position, zones]);
-  const insideFence = !position ? null : zones.length === 0 ? null : !!matchedZone;
+  const manualZone = useMemo(() => zones.find((z) => z.id === manualZoneId) ?? null, [zones, manualZoneId]);
+  const gpsMatchedZone = useMemo(() => matchZone(position, zones), [position, zones]);
+  const matchedZone = manualZone ?? gpsMatchedZone;
+  const insideFence = manualZone ? true : !position ? null : zones.length === 0 ? null : !!gpsMatchedZone;
 
   const scheduled = useMemo(() => {
     if (!roster?.start_time || !roster?.end_time) return null;
@@ -162,6 +172,15 @@ export function CheckInScreen({
   // check-in-time reading for check-out is exactly how someone could check in inside the
   // zone, walk away, and still have check-out wrongly succeed.
   async function resolveCurrentPosition(): Promise<GeoPosition | null> {
+    // A manual zone selection stands in for GPS entirely — use the zone's own center as
+    // the recorded coordinate rather than requiring a fresh (and likely still-failing)
+    // GPS fix just to get a lat/lng to store.
+    if (manualZone) {
+      const manualPos = { lat: manualZone.center_lat, lng: manualZone.center_lng, accuracy: 0 };
+      setPosition(manualPos);
+      setGeoError(null);
+      return manualPos;
+    }
     setLocating(true);
     try {
       const fresh = await fetchFreshPosition();
@@ -170,6 +189,7 @@ export function CheckInScreen({
       return fresh;
     } catch (err) {
       setGeoError(err instanceof Error ? err.message : "Couldn't get your location.");
+      setGeoFailed(true);
       return null;
     } finally {
       setLocating(false);
@@ -183,7 +203,7 @@ export function CheckInScreen({
       setSubmitError("Couldn't confirm your current location — try again.");
       return;
     }
-    if (zones.length > 0 && !matchZone(fresh, zones)) {
+    if (!manualZone && zones.length > 0 && !matchZone(fresh, zones)) {
       setSubmitError("You must be within a marked duty zone to check in — move to one of the zones and try again.");
       return;
     }
@@ -200,6 +220,7 @@ export function CheckInScreen({
       early_in_remark: remark,
       offline,
       client_timestamp: new Date().toISOString(),
+      manual_zone_id: manualZone?.id ?? "",
     });
     if (outcome.kind === "error") {
       setSubmitError(outcome.message);
@@ -220,7 +241,7 @@ export function CheckInScreen({
       setSubmitError("Couldn't confirm your current location — try again.");
       return;
     }
-    if (zones.length > 0 && !matchZone(fresh, zones)) {
+    if (!manualZone && zones.length > 0 && !matchZone(fresh, zones)) {
       setSubmitError("You must be within a marked duty zone to check out — move to one of the zones and try again.");
       return;
     }
@@ -236,6 +257,7 @@ export function CheckInScreen({
       late_out_remark: remark,
       offline,
       client_timestamp: new Date().toISOString(),
+      manual_zone_id: manualZone?.id ?? "",
     });
     if (outcome.kind === "error") {
       setSubmitError(outcome.message);
@@ -343,6 +365,33 @@ export function CheckInScreen({
           )}
         </div>
         {geoError && <p className="font-mono text-[10px] text-brand">{geoError}</p>}
+        {geoFailed && !manualZone && zones.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="font-mono text-[10px] text-muted-foreground">
+              Location unavailable — select your zone manually instead:
+            </p>
+            <select
+              className="vecta-input"
+              value={manualZoneId}
+              onChange={(e) => setManualZoneId(e.target.value)}
+            >
+              <option value="">Select a zone…</option>
+              {zones.map((z) => (
+                <option key={z.id} value={z.id}>
+                  {z.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {manualZone && (
+          <p className="font-mono text-[10px] text-muted-foreground">
+            Zone selected manually: {manualZone.name}.{" "}
+            <button type="button" className="underline" onClick={() => setManualZoneId("")}>
+              Clear
+            </button>
+          </p>
+        )}
         {position && (
           <p className="font-mono text-[9px] text-muted-foreground">
             Accuracy ±{Math.round(position.accuracy)}m
@@ -383,7 +432,7 @@ export function CheckInScreen({
       <button
         type="button"
         className="vecta-btn-primary w-full"
-        disabled={submitting || locating || !position || zoneBlocked}
+        disabled={submitting || locating || (!position && !manualZone) || zoneBlocked}
         onClick={checkedIn ? handleCheckOut : handleCheckIn}
       >
         {submitting

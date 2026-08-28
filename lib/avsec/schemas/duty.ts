@@ -14,6 +14,11 @@ export const dutyCheckInSchema = z.object({
   early_in_remark: z.string(),
   offline: z.boolean(),
   client_timestamp: z.string(),
+  // Set when GPS failed/was denied/timed out and the officer picked their zone from the
+  // manual dropdown instead. `manual_zone_id` is then authoritative for zone matching —
+  // lat/lng are still whatever the device reported (or the zone's own center, see
+  // CheckInScreen) for record-keeping, but are not re-checked against the polygon.
+  manual_zone_id: z.string().trim().optional().default(""),
 });
 export type DutyCheckInInput = z.infer<typeof dutyCheckInSchema>;
 
@@ -24,6 +29,7 @@ export const dutyCheckOutSchema = z.object({
   late_out_remark: z.string(),
   offline: z.boolean(),
   client_timestamp: z.string(),
+  manual_zone_id: z.string().trim().optional().default(""),
 });
 export type DutyCheckOutInput = z.infer<typeof dutyCheckOutSchema>;
 

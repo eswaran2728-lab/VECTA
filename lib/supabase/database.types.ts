@@ -258,6 +258,9 @@ export type Database = {
       }
       cl_transactions: {
         Row: {
+          cancelled_at: string | null
+          cancelled_by: string | null
+          cancelled_reason: string | null
           cargo_types: string[]
           completed_at: string | null
           completed_form_url: string | null
@@ -275,6 +278,9 @@ export type Database = {
           vehicle_search_completed: boolean
         }
         Insert: {
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cancelled_reason?: string | null
           cargo_types?: string[]
           completed_at?: string | null
           completed_form_url?: string | null
@@ -292,6 +298,9 @@ export type Database = {
           vehicle_search_completed?: boolean
         }
         Update: {
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cancelled_reason?: string | null
           cargo_types?: string[]
           completed_at?: string | null
           completed_form_url?: string | null
@@ -309,6 +318,13 @@ export type Database = {
           vehicle_search_completed?: boolean
         }
         Relationships: [
+          {
+            foreignKeyName: "cl_transactions_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "cl_transactions_created_by_fkey"
             columns: ["created_by"]
@@ -426,11 +442,13 @@ export type Database = {
           check_in_inside_fence: boolean | null
           check_in_lat: number | null
           check_in_lng: number | null
+          check_in_manual_zone: boolean
           check_in_offline: boolean
           check_out_at: string | null
           check_out_inside_fence: boolean | null
           check_out_lat: number | null
           check_out_lng: number | null
+          check_out_manual_zone: boolean
           created_at: string
           duty_date: string
           early_in_minutes: number
@@ -462,11 +480,13 @@ export type Database = {
           check_in_inside_fence?: boolean | null
           check_in_lat?: number | null
           check_in_lng?: number | null
+          check_in_manual_zone?: boolean
           check_in_offline?: boolean
           check_out_at?: string | null
           check_out_inside_fence?: boolean | null
           check_out_lat?: number | null
           check_out_lng?: number | null
+          check_out_manual_zone?: boolean
           created_at?: string
           duty_date: string
           early_in_minutes?: number
@@ -498,11 +518,13 @@ export type Database = {
           check_in_inside_fence?: boolean | null
           check_in_lat?: number | null
           check_in_lng?: number | null
+          check_in_manual_zone?: boolean
           check_in_offline?: boolean
           check_out_at?: string | null
           check_out_inside_fence?: boolean | null
           check_out_lat?: number | null
           check_out_lng?: number | null
+          check_out_manual_zone?: boolean
           created_at?: string
           duty_date?: string
           early_in_minutes?: number
@@ -3271,6 +3293,10 @@ export type Database = {
       can_view_report: {
         Args: { p_report_id: string; p_report_type: string }
         Returns: boolean
+      }
+      cl_cancel_transaction: {
+        Args: { p_reason: string; p_transaction_id: string }
+        Returns: undefined
       }
       cl_next_reference_number: { Args: never; Returns: string }
       current_role_name: {
