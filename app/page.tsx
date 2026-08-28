@@ -441,7 +441,14 @@ async function getDashboardSnapshot(scopeGroup: OpsGroup | "all"): Promise<Dashb
       .select("status, direction, route")
       .not("status", "in", "(COMPLETED,ESCALATED)")
       .limit(500),
-    supabase.from("incidents").select("id", { count: "exact", head: true }).is("resolved_at", null),
+    // Joined to transactions so incidents can be scoped by ops_group the
+    // same way transactions are (incidents have no ops_group of their own —
+    // they hang off a transaction_id).
+    supabase
+      .from("incidents")
+      .select("id, transactions(status, direction, route)")
+      .is("resolved_at", null)
+      .limit(500),
     getOpenBayBoard(),
     ...AVSEC_REPORT_TYPES.map((t) =>
       supabase
@@ -463,8 +470,28 @@ async function getDashboardSnapshot(scopeGroup: OpsGroup | "all"): Promise<Dashb
       ? txRows.length
       : txRows.filter((r) => opsGroupForTransaction(r.direction, r.status, r.route) === scopeGroup).length;
 
-  const overdueBays = (bayRes ?? []).filter((b) => b.hoursOnGround >= 4).length;
-  const openIncidents = incidentsRes.count ?? 0;
+  // Bay board is a Hub AVSEC-only concept (aircraft on ground) — only count
+  // overdue bays toward a scoped group's alerts when that group IS hub_avsec
+  // (or when viewing the unscoped org-wide "all" total). This is what fixes
+  // the "01 ALERTS on the Hub AVSEC dashboard, empty activity feed" report:
+  // previously `alerts` counted overdue bays/incidents completely unscoped
+  // (identical regardless of scopeGroup), while the feed below never
+  // surfaced bay/incident events for ANY group — so the two could never
+  // agree for a scoped view. Both are now scoped consistently.
+  const overdueBays =
+    scopeGroup === "all" || scopeGroup === "hub_avsec"
+      ? (bayRes ?? []).filter((b) => b.hoursOnGround >= 4).length
+      : 0;
+  const incidentRows = (incidentsRes.data ?? []) as {
+    id: string;
+    transactions: { status: TransactionStatus; direction: Direction; route: TransactionRoute } | null;
+  }[];
+  const openIncidents =
+    scopeGroup === "all"
+      ? incidentRows.length
+      : incidentRows.filter(
+          (r) => r.transactions && opsGroupForTransaction(r.transactions.direction, r.transactions.status, r.transactions.route) === scopeGroup
+        ).length;
   const alerts = overdueBays + openIncidents;
 
   // Report submissions aren't tagged by ops_group (only station/team), so
@@ -492,7 +519,7 @@ async function getActivityFeed(scopeGroup: OpsGroup | "all"): Promise<ActivityRo
   const supabase = await createClient();
   const todayMY = todayISODateMY();
 
-  const [dutyRes, txRes, submissions] = await Promise.all([
+  const [dutyRes, txRes, submissions, incidentsRes] = await Promise.all([
     supabase
       .from("duty_records")
       .select("check_in_at, check_out_at, profiles(name, station, ops_group)")
@@ -506,6 +533,15 @@ async function getActivityFeed(scopeGroup: OpsGroup | "all"): Promise<ActivityRo
       .order("created_at", { ascending: false })
       .limit(20),
     getFilteredSubmissions({ dateFrom: todayMY, dateTo: todayMY }).catch(() => []),
+    // Same source as the "alerts" tile in getDashboardSnapshot — open
+    // incidents were previously counted in alerts but never shown here,
+    // which is what let a scoped dashboard show alerts with an empty feed.
+    supabase
+      .from("incidents")
+      .select("id, incident_type, created_at, transactions(status, direction, route, transaction_number)")
+      .is("resolved_at", null)
+      .order("created_at", { ascending: false })
+      .limit(20),
   ]);
 
   const rows: ActivityRow[] = [];
@@ -566,6 +602,26 @@ async function getActivityFeed(scopeGroup: OpsGroup | "all"): Promise<ActivityRo
       activity: `${REPORT_META[s.type].code} submitted — ${s.summary}`,
       location: [s.station, s.team].filter(Boolean).join(" · ") || "—",
       status: "SUBMITTED",
+    });
+  }
+
+  const incidentRows = (incidentsRes.data ?? []) as {
+    id: string;
+    incident_type: string;
+    created_at: string;
+    transactions: { status: TransactionStatus; direction: Direction; route: TransactionRoute; transaction_number: string } | null;
+  }[];
+  for (const inc of incidentRows) {
+    const group = inc.transactions
+      ? opsGroupForTransaction(inc.transactions.direction, inc.transactions.status, inc.transactions.route)
+      : null;
+    if (scopeGroup !== "all" && group !== scopeGroup) continue;
+    rows.push({
+      key: `incident-${inc.id}`,
+      time: inc.created_at,
+      activity: `Incident — ${inc.incident_type}${inc.transactions ? ` (${inc.transactions.transaction_number})` : ""}`,
+      location: group ? OPS_GROUP_LABELS[group] : "—",
+      status: "OPEN",
     });
   }
 
