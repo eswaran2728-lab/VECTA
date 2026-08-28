@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isCheckinGateExempt, isAdminPathForbidden } from "./middleware-gate-logic";
 
 // Unified role vocabulary (see supabase/migrations/unified_role_model and
 // the merge report): admin, management, enforcement, so, aso, dse, vendor.
@@ -8,15 +9,9 @@ import { NextResponse, type NextRequest } from "next/server";
 // role columns/enums are untouched, see that migration's header comment
 // for why a rename-in-place was too risky to do live.
 
-// Seniority-based exemptions: admin/management/enforcement are not
-// shift-based staff, so the check-in gate doesn't apply to them at all.
-const SENIORITY_EXEMPT_ROLES = ["admin", "management", "enforcement"];
-
-// Vendor is a SEPARATE exemption, kept apart from the seniority list on
-// purpose: vendors are third-party/external, not AirAsia staff, so the
-// AirAsia attendance/check-in concept doesn't apply to them at all — a
-// different reason than "senior enough to skip it".
-const VENDOR_EXEMPT_ROLE = "vendor";
+// Seniority/vendor check-in exemptions and the admin-path gate now live in
+// ./middleware-gate-logic (pure, framework-free — see that module and
+// tests/middleware-gate-logic.test.mts).
 
 // so / aso / dse are all subject to the check-in gate regardless of
 // duty_post/station — there is no station-based exemption.
@@ -117,8 +112,6 @@ export async function updateSession(request: NextRequest) {
     }
 
     const role = profile.unified_role as string | null;
-    const seniorityExempt = role ? SENIORITY_EXEMPT_ROLES.includes(role) : false;
-    const vendorExempt = role === VENDOR_EXEMPT_ROLE;
     // ICMS-origin checkpoint accounts (post2_avsec/post6_avsec/hub_avsec/
     // redq_avsec — no row in public.profiles) have no way to ever satisfy
     // this gate: check-in/duty_records/team_rosters are entirely AVSEC-side
@@ -131,8 +124,20 @@ export async function updateSession(request: NextRequest) {
     // AirAsia attendance/check-in concept doesn't apply to accounts that
     // don't live in AVSEC's own tables.
     const icmsOnlyExempt = !avsecProfile && Boolean(icmsProfile);
-    const exempt = seniorityExempt || vendorExempt || icmsOnlyExempt;
+    const exempt = isCheckinGateExempt(role) || icmsOnlyExempt;
     const alreadyOnCheckin = path.startsWith("/avsec/duty");
+
+    // Coarse edge-level defense-in-depth for the admin section: additive to,
+    // not a replacement for, RLS and requireRole(["ADMIN"]) in the page/
+    // action code. A non-admin unified_role hitting /avsec/admin/* is
+    // bounced straight back to "/" here, before any admin-only query runs.
+    if (isAdminPathForbidden(path, role)) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/";
+      url.search = "";
+      url.searchParams.set("error", "forbidden");
+      return NextResponse.redirect(url);
+    }
 
     if (!exempt && !alreadyOnCheckin) {
       const today = new Date().toISOString().slice(0, 10);
