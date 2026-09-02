@@ -1,19 +1,17 @@
 /**
- * CaterLink QR payload adapter — PLACEHOLDER.
+ * CaterLink QR payload adapter.
  *
- * CaterLink (the app that will eventually own vendor/warehouse movement,
- * replacing the retired warehouse_pic/receiver/vendor roles here) is being
- * built independently, and its QR payload format is not yet defined. This
- * function is the single, isolated seam for that format: everything
- * downstream (the ops_group scope check, the transaction lookup, the
- * clearance workflow) only ever calls this function and works off its
- * return value — when CaterLink's real spec ships, only this function
- * should need editing.
- *
- * Current placeholder behavior: treats the raw scanned string as a
- * transaction id/number directly, optionally unwrapping a simple JSON
- * envelope like {"transactionId": "..."} / {"id": "..."} / {"token": "..."}
- * if the raw text happens to be JSON.
+ * The real contract (confirmed against lib/icms/qr-token.ts and its callers
+ * in lib/icms/actions/transactions.ts / vendor-transactions.ts): a QR pass
+ * is the raw signed token string from generateQrToken() —
+ * "<CATERING|VENDOR>.<transactionId>.<expiry>.<hmac>" (or a legacy 3-part
+ * token, always CATERING) — printed/shown to the driver verbatim, with no
+ * JSON envelope. scanTransaction() in lib/icms/actions/scan.ts verifies it
+ * with verifyQrToken() before falling back to a bare id/transaction number
+ * for manually typed references. This function still unwraps a simple JSON
+ * envelope ({"transactionId"|"id"|"token": "..."}) as a defensive fallback
+ * in case a QR is generated some other way, but the primary path scanning
+ * an actual CaterLink-issued pass expects the raw token text.
  */
 export function parseCaterLinkQrPayload(raw: string): { transactionId: string } | null {
   const trimmed = raw.trim();

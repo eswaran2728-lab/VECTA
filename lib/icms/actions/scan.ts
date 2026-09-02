@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { parseCaterLinkQrPayload } from "@/lib/icms/qr-payload";
 import { opsGroupForTransaction } from "@/lib/icms/ops-group";
+import { verifyQrToken } from "@/lib/icms/qr-token";
 import type { Direction, OpsGroup, TransactionRoute, TransactionStatus } from "@/lib/icms/database.types";
 
 export interface ScanResult {
@@ -53,6 +54,19 @@ export async function scanTransaction(raw: string): Promise<ScanResult> {
   if (!payload) return { error: "Could not read this QR code." };
   const ref = payload.transactionId.trim();
 
+  // Signed QR pass (issued by createTransaction/createVendorTransaction's
+  // generateQrToken — this is the actual CaterLink-facing contract: a QR
+  // encodes this token verbatim, never a bare id/number). Checked before the
+  // legacy id/number lookup below, which stays only for manually typed
+  // references on VECTA's own transaction detail pages.
+  const tokenResult = verifyQrToken(ref);
+  if (tokenResult.ok) {
+    if (tokenResult.type === "VENDOR") {
+      return resolveVendorTransaction(supabase, tokenResult.transactionId, orgWide, userOpsGroup);
+    }
+    return resolveCateringTransaction(supabase, tokenResult.transactionId, orgWide, userOpsGroup);
+  }
+
   let lookup = supabase.from("transactions").select("id, status, direction, route, transaction_number");
   if (UUID_RE.test(ref)) {
     lookup = lookup.eq("id", ref);
@@ -65,14 +79,22 @@ export async function scanTransaction(raw: string): Promise<ScanResult> {
   const { data: tx } = await lookup.maybeSingle();
   if (!tx) return { error: "Transaction not found." };
 
-  const t = tx as {
+  return resolveCateringRow(tx as {
     id: string;
     status: TransactionStatus;
     direction: Direction;
     route: TransactionRoute;
     transaction_number: string;
-  };
+  }, orgWide, userOpsGroup);
+}
 
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
+
+function resolveCateringRow(
+  t: { id: string; status: TransactionStatus; direction: Direction; route: TransactionRoute; transaction_number: string },
+  orgWide: boolean,
+  userOpsGroup: OpsGroup | null
+): ScanResult {
   if (!orgWide) {
     const txOpsGroup = opsGroupForTransaction(t.direction, t.status, t.route);
     if (!txOpsGroup || txOpsGroup !== userOpsGroup) {
@@ -85,5 +107,61 @@ export async function scanTransaction(raw: string): Promise<ScanResult> {
     transactionId: t.id,
     transactionNumber: t.transaction_number,
     redirectPath: `/icms/transactions/${t.id}`,
+  };
+}
+
+/**
+ * A transaction whose QR pass was minted before its Part A record exists
+ * (CaterLink's own creation flow) is looked up by id here — never create a
+ * duplicate/parallel transaction row for a token that doesn't resolve.
+ */
+async function resolveCateringTransaction(
+  supabase: SupabaseClient,
+  transactionId: string,
+  orgWide: boolean,
+  userOpsGroup: OpsGroup | null
+): Promise<ScanResult> {
+  const { data: tx } = await supabase
+    .from("transactions")
+    .select("id, status, direction, route, transaction_number")
+    .eq("id", transactionId)
+    .maybeSingle();
+  if (!tx) return { error: "Transaction not found for this QR pass." };
+  return resolveCateringRow(
+    tx as { id: string; status: TransactionStatus; direction: Direction; route: TransactionRoute; transaction_number: string },
+    orgWide,
+    userOpsGroup
+  );
+}
+
+/**
+ * Vendor Supply transactions (vendor_transactions/vendor_part_a-c) have no
+ * direction/route of their own — the whole route is Post 2 -> Warehouse,
+ * IFC territory throughout (see the CaterLink route table: "Vendor supply
+ * ... Signs off ... AVSEC IFC"), so scope is fixed rather than derived from
+ * opsGroupForTransaction (which only knows the catering-flow tables).
+ */
+async function resolveVendorTransaction(
+  supabase: SupabaseClient,
+  transactionId: string,
+  orgWide: boolean,
+  userOpsGroup: OpsGroup | null
+): Promise<ScanResult> {
+  const { data: tx } = await supabase
+    .from("vendor_transactions")
+    .select("id, transaction_number")
+    .eq("id", transactionId)
+    .maybeSingle();
+  if (!tx) return { error: "Vendor transaction not found for this QR pass." };
+
+  if (!orgWide && userOpsGroup !== "ifc_avsec") {
+    return { error: "This transaction is not in your ops group." };
+  }
+
+  return {
+    error: null,
+    transactionId: tx.id,
+    transactionNumber: tx.transaction_number,
+    redirectPath: `/icms/vendor-transactions/${tx.id}`,
   };
 }
