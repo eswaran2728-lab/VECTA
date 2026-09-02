@@ -23,6 +23,10 @@ const PROFILE: NavTab = { href: "/avsec/profile", label: "Profile" };
 // Reports has no route of its own — org-wide roles get it from within the
 // unified dashboard's Reports section (see app/page.tsx).
 const REPORTS: NavTab = { href: "/?section=reports#reports", label: "Reports", match: ["/?section=reports"] };
+// Management/Enforcement/Admin don't work a checkpoint themselves, so Scan
+// is meaningless for them — Report Search (existing /avsec/reports/lookup
+// page, already restricted to exactly these roles) replaces it instead.
+const REPORT_SEARCH: NavTab = { href: "/avsec/reports/lookup", label: "Report Search" };
 
 /**
  * Team-scoped bottom navigation, shared across the 5 pages that make up the
@@ -43,8 +47,9 @@ export function TeamBottomNav({
   if (orgWide) {
     // Org-wide (admin/management/enforcement): no team-specific 3rd tab —
     // team filtering happens inside the Dashboard itself via the existing
-    // ops-query-param tab switcher.
-    tabs = [DASHBOARD, SCAN, REPORTS, PROFILE];
+    // ops-query-param tab switcher. Report Search replaces Scan (see
+    // REPORT_SEARCH above).
+    tabs = [DASHBOARD, REPORT_SEARCH, REPORTS, PROFILE];
   } else if (opsGroup === "ifc_avsec") {
     tabs = [DASHBOARD, SCAN, TRANSACTION_HISTORY, PROFILE];
   } else if (opsGroup === "operation_avsec") {

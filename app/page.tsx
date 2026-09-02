@@ -74,10 +74,12 @@ export default async function LandingPage({
   // (who see every team's reports regardless of origin).
   const showReports = Boolean(avsecProfile) || orgWide;
 
-  // Scan = the new unified scan entry point. Reachable by anyone carrying
-  // an ops_group (either origin table) or an org-wide role.
+  // Scan = the unified checkpoint scan entry point — not applicable to
+  // org-wide roles (Management/Enforcement/Admin never work a checkpoint
+  // themselves); they get Report Search instead, both here and in
+  // TeamBottomNav.
   const userOpsGroup = (profile.ops_group ?? null) as OpsGroup | null;
-  const showScan = Boolean(userOpsGroup) || orgWide;
+  const showScan = Boolean(userOpsGroup) && !orgWide;
 
   const showAdmin = role === "admin";
   const showIcmsReports = Boolean(
@@ -164,18 +166,28 @@ export default async function LandingPage({
           ) : null}
 
           <div className="flex flex-col gap-4 sm:flex-row">
-            {showScan && (
+            {showScan ? (
               <Link href="/avsec/scan" className="vecta-tile group">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-3.5" aria-hidden="true">
                   <path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" stroke="var(--violet)" strokeWidth="1.6" />
                   <rect x="9" y="9" width="6" height="6" stroke="var(--violet)" strokeWidth="1.6" />
                 </svg>
                 <h2 className="font-display text-xl font-bold tracking-[0.03em]">Scan</h2>
-                <p className="vecta-eyebrow mt-1">
-                  {orgWide ? "Scan any transaction · org-wide" : "Scan a transaction in your ops group"}
-                </p>
+                <p className="vecta-eyebrow mt-1">Scan a transaction in your ops group</p>
               </Link>
-            )}
+            ) : orgWide ? (
+              // Management/Enforcement/Admin don't work a checkpoint, so
+              // Scan doesn't apply to them — Report Search instead, same
+              // swap as the bottom nav (TeamBottomNav.tsx).
+              <Link href="/avsec/reports/lookup" className="vecta-tile group">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-3.5" aria-hidden="true">
+                  <circle cx="10.5" cy="10.5" r="6" stroke="var(--violet)" strokeWidth="1.6" />
+                  <path d="M15 15L20 20" stroke="var(--violet)" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+                <h2 className="font-display text-xl font-bold tracking-[0.03em]">Report Search</h2>
+                <p className="vecta-eyebrow mt-1">Look up any report · org-wide</p>
+              </Link>
+            ) : null}
             {quickAccess && (
               <Link href={quickAccess.href} className="vecta-tile group">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-3.5" aria-hidden="true">
