@@ -103,16 +103,27 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // PIC: Dashboard/New/Transactions/Incidents; checkpoint roles: Dashboard/
   // Scan/Transactions/Incidents; vendor: Dashboard/New Delivery/Transactions/
   // Incidents; admin: oversight only (no create/scan).
-  const bottomNav = nav.filter((item) =>
-    [
-      "/icms/dashboard",
-      "/icms/transactions/new",
-      "/icms/vendor-transactions/new",
-      "/icms/scan",
-      "/icms/transactions",
-      "/icms/incidents",
-    ].includes(item.href)
-  );
+  // Icons are rendered here (a Server Component) into elements, not passed
+  // as bare component references — IcmsMobileBottomNav is a Client
+  // Component, and a lucide-react icon component itself isn't serializable
+  // across that boundary ("Functions cannot be passed directly to Client
+  // Components"), only an already-rendered element is.
+  const bottomNav = nav
+    .filter((item) =>
+      [
+        "/icms/dashboard",
+        "/icms/transactions/new",
+        "/icms/vendor-transactions/new",
+        "/icms/scan",
+        "/icms/transactions",
+        "/icms/incidents",
+      ].includes(item.href)
+    )
+    .map(({ href, label, icon: Icon }) => ({
+      href,
+      label,
+      icon: <Icon className={href === "/scan" || href === "/transactions/new" ? "h-6 w-6" : "h-5 w-5"} />,
+    }));
 
   return (
     <div className="flex min-h-screen flex-col">

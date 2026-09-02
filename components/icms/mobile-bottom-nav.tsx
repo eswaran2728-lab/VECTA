@@ -2,12 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 interface BottomNavItem {
   href: string;
   label: string;
-  icon: LucideIcon;
+  // Pre-rendered by the server component (AppLayout), not a component
+  // reference — a lucide-react icon component itself can't be passed as a
+  // prop across the server/client boundary ("Functions cannot be passed
+  // directly to Client Components"); a rendered element can.
+  icon: ReactNode;
 }
 
 /**
@@ -34,9 +38,7 @@ export function IcmsMobileBottomNav({ items }: { items: BottomNavItem[] }) {
                 : "flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
             }
           >
-            <item.icon
-              className={item.href === "/scan" || item.href === "/transactions/new" ? "h-6 w-6" : "h-5 w-5"}
-            />
+            {item.icon}
             {item.label.split(" ")[0]}
           </Link>
         ))}
