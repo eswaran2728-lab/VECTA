@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/icms/auth";
+import { requireRole, requireCheckpointRole } from "@/lib/icms/auth";
 import { uploadDataUrl } from "@/lib/icms/storage";
 import { generateQrToken } from "@/lib/icms/qr-token";
 import { generateVendorCompletedFormPdf } from "@/lib/icms/completed-form-pdf-vendor";
@@ -86,7 +86,7 @@ export async function submitVendorPartB(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const profile = await requireRole(["post2_avsec"]);
+  const profile = await requireCheckpointRole("post2_avsec");
 
   const transactionId = str(formData, "transaction_id");
   const vehicleRegistrationNo = str(formData, "vehicle_registration_no").toUpperCase();

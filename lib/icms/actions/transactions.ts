@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireProfile, requireRole } from "@/lib/icms/auth";
+import { requireProfile, requireRole, requireCheckpointRole } from "@/lib/icms/auth";
 import { uploadDataUrl } from "@/lib/icms/storage";
 import { checkpointOrderError, getStep } from "@/lib/icms/workflow";
 import { generateQrToken } from "@/lib/icms/qr-token";
@@ -536,7 +536,7 @@ async function completeChecklistPart(
   part: "part_b" | "part_c",
   formData: FormData
 ): Promise<ActionState> {
-  const profile = await requireRole([part === "part_b" ? "post2_avsec" : "post6_avsec"]);
+  const profile = await requireCheckpointRole(part === "part_b" ? "post2_avsec" : "post6_avsec");
 
   const transactionId = str(formData, "transaction_id");
   const vehicleVerified = bool(formData, "vehicle_verified");
@@ -702,7 +702,7 @@ export async function completePartD(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const profile = await requireRole(["receiver"]);
+  const profile = await requireCheckpointRole("receiver");
 
   const transactionId = str(formData, "transaction_id");
   const deliveryLocation = str(formData, "delivery_location") as DeliveryLocation;
@@ -844,7 +844,7 @@ export async function completePartHub(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const profile = await requireRole(["hub_avsec"]);
+  const profile = await requireCheckpointRole("hub_avsec");
 
   const transactionId = str(formData, "transaction_id");
   const remarks = str(formData, "remarks");
@@ -917,7 +917,7 @@ export async function completePartRedq(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const profile = await requireRole(["redq_avsec"]);
+  const profile = await requireCheckpointRole("redq_avsec");
 
   const transactionId = str(formData, "transaction_id");
   const oldSealNumber = str(formData, "old_seal_number");

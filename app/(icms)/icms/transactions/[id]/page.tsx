@@ -13,6 +13,8 @@ import { WorkflowStepper } from "@/components/icms/workflow-stepper";
 import { Button } from "@/components/icms/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/icms/ui/card";
 import { getStep, nextStepFor, type CheckpointPart } from "@/lib/icms/workflow";
+import { opsGroupForCheckpointRole } from "@/lib/icms/ops-group";
+import type { OpsGroup } from "@/lib/icms/database.types";
 import { SegmentCountdown } from "@/components/icms/segment-countdown";
 import {
   CARGO_TYPE_LABELS,
@@ -93,6 +95,7 @@ function PendingPartCard({
   currentPart,
   responsibleRole,
   viewerRole,
+  viewerOpsGroup,
   deadline,
 }: {
   id: string;
@@ -101,11 +104,19 @@ function PendingPartCard({
   currentPart: CheckpointPart | null;
   responsibleRole: Role;
   viewerRole: Role;
+  /** Any AVSEC team member (aso/so/dse) whose ops_group covers this
+   *  checkpoint can act too, not just the literal checkpoint-role match —
+   *  see requireCheckpointRole() in lib/icms/auth.ts for the write-side
+   *  enforcement this mirrors. */
+  viewerOpsGroup: OpsGroup | null;
   /** SLA deadline for this segment (Upgrade 5), null when uncapped. */
   deadline?: string | null;
 }) {
   const isCurrent = currentPart === part;
-  const actionable = isCurrent && viewerRole === responsibleRole;
+  const actionable =
+    isCurrent &&
+    (viewerRole === responsibleRole ||
+      (viewerOpsGroup !== null && viewerOpsGroup === opsGroupForCheckpointRole(responsibleRole)));
   const slug = part.replace("_", "-");
 
   return (
@@ -207,7 +218,9 @@ export default async function TransactionDetailPage({
   // Which checkpoint can this user action right now? (direction- and route-aware)
   const nextStep = nextStepFor(transaction.direction, transaction.status, transaction.route);
   const nextAction =
-    nextStep && profile.role === nextStep.role
+    nextStep &&
+    (profile.role === nextStep.role ||
+      (profile.ops_group !== null && profile.ops_group === opsGroupForCheckpointRole(nextStep.role)))
       ? {
           href: `/transactions/${id}/${nextStep.slug}`,
           label: `Complete ${nextStep.shortLabel}`,
@@ -523,6 +536,7 @@ export default async function TransactionDetailPage({
               getStep(transaction.direction, "part_b", transaction.route)?.role ?? "post2_avsec"
             }
             viewerRole={profile.role}
+            viewerOpsGroup={profile.ops_group}
             deadline={segmentDeadline}
           />
         )}
@@ -557,6 +571,7 @@ export default async function TransactionDetailPage({
               currentPart={currentPart}
               responsibleRole="hub_avsec"
               viewerRole={profile.role}
+              viewerOpsGroup={profile.ops_group}
               deadline={segmentDeadline}
             />
           )
@@ -588,6 +603,7 @@ export default async function TransactionDetailPage({
                   currentPart={currentPart}
                   responsibleRole="redq_avsec"
                   viewerRole={profile.role}
+                  viewerOpsGroup={profile.ops_group}
                   deadline={segmentDeadline}
                 />
               )
@@ -622,6 +638,7 @@ export default async function TransactionDetailPage({
                   getStep(transaction.direction, "part_c", transaction.route)?.role ?? "post6_avsec"
                 }
                 viewerRole={profile.role}
+                viewerOpsGroup={profile.ops_group}
                 deadline={segmentDeadline}
               />
             )}
@@ -674,6 +691,7 @@ export default async function TransactionDetailPage({
             currentPart={currentPart}
             responsibleRole="receiver"
             viewerRole={profile.role}
+            viewerOpsGroup={profile.ops_group}
           />
         ) : profile.role === "supervisor" || profile.role === "enforcement" || profile.role === "management" ? (
           <Card className="border-dashed">
