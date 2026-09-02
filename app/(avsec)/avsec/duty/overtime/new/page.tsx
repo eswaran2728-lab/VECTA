@@ -4,7 +4,6 @@ import { getShifts } from "@/lib/avsec/duty/roster-queries";
 import { getRosterForDate, getSuggestedOvertimeShifts } from "@/lib/avsec/duty/overtime-queries";
 import { submitOvertimeRequest } from "@/lib/avsec/duty/overtime-actions";
 import { OT_CATEGORIES } from "@/lib/avsec/schemas/duty";
-import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { todayISODateMY, formatDateTimeMY } from "@/lib/avsec/datetime";
 
@@ -37,20 +36,10 @@ export default async function NewOvertimeRequestPage({
 
   return (
     <main className="min-h-screen bg-background pb-28">
-      <div className="flex items-center gap-3 border-b border-border px-6 py-[18px]">
-        <Link
-          href="/avsec/duty/overtime"
-          aria-label="Back"
-          className="flex h-11 w-11 items-center justify-center font-mono text-base text-muted-foreground transition-colors hover:text-foreground"
-        >
-          &larr;
-        </Link>
+      <div className="mx-auto max-w-2xl space-y-4 px-4 py-6">
         <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">
           REQUEST OVERTIME
         </span>
-      </div>
-
-      <div className="mx-auto max-w-2xl space-y-4 px-4 py-6">
         {searchParams.error && (
           <div className="vecta-panel border-brand/40 bg-brand/10 px-5 py-4 text-sm font-medium text-brand">
             {searchParams.error}
@@ -156,7 +145,6 @@ export default async function NewOvertimeRequestPage({
         </form>
       </div>
 
-      <TeamBottomNav opsGroup={profile.ops_group} orgWide={orgWide} />
     </main>
   );
 }

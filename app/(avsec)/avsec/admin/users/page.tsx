@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
 import { createClient } from "@/lib/supabase/server";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
 import { approveUser, rejectUser } from "@/lib/avsec/admin/actions";
 import { CreateAccountForm } from "@/components/avsec/admin/CreateAccountForm";
 import { UsersTable } from "@/components/avsec/admin/UsersTable";
@@ -25,7 +24,6 @@ export default async function AdminUsersPage({
 
   return (
     <main className="min-h-screen pb-16">
-      <AppHeader profile={profile} title="User Management" backHref="/avsec/dashboard" />
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
         <div className="flex items-start justify-between gap-3">
           <div>

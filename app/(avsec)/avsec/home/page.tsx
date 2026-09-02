@@ -3,8 +3,6 @@ import { requireRole } from "@/lib/avsec/auth";
 import { getOverdueAircraft, getMySubmissions } from "@/lib/avsec/reports/queries";
 import { getTodayRoster, getTodayDutyRecord } from "@/lib/avsec/duty/checkin-queries";
 import { REPORT_META, type ReportType } from "@/lib/avsec/reference-data";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { BottomNav } from "@/components/avsec/layout/BottomNav";
 import { formatTimeMY, nowTimeMY } from "@/lib/avsec/datetime";
 
 const REPORT_ORDER: ReportType[] = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013", "offload"];
@@ -40,7 +38,6 @@ export default async function HomePage() {
 
   return (
     <main className="min-h-screen pb-32">
-      <AppHeader profile={profile} />
 
       <div className="max-w-3xl mx-auto px-4 py-5 space-y-6">
         <div>
@@ -170,7 +167,6 @@ export default async function HomePage() {
           Bay Board
         </Link>
       </div>
-      <BottomNav profile={profile} />
     </main>
   );
 }

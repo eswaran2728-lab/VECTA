@@ -1,6 +1,5 @@
 import { requireRole } from "@/lib/avsec/auth";
 import { loadDraft } from "@/lib/avsec/reports/drafts";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
 import { Sec013Form } from "@/components/avsec/forms/Sec013Form";
 import { REPORT_META } from "@/lib/avsec/reference-data";
 
@@ -10,7 +9,6 @@ export default async function Sec013Page() {
 
   return (
     <main className="min-h-screen pb-16">
-      <AppHeader profile={profile} title={REPORT_META.sec013.name} backHref="/avsec/home" />
       <div className="max-w-2xl mx-auto px-4 py-6">
         <p className="form-code-badge mb-4">{REPORT_META.sec013.code}</p>
         <Sec013Form profile={profile} serverDraft={serverDraft as never} />

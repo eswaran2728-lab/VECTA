@@ -3,7 +3,6 @@ import { requireRole } from "@/lib/avsec/auth";
 import { STATIONS, ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { getAttendanceRows, applyAttendanceFlag, type AttendanceFlag, type AttendanceRow } from "@/lib/avsec/duty/attendance-queries";
 import { runAttendanceSweep } from "@/lib/avsec/duty/attendance-actions";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
 import { formatDateMY, formatTimeMY, todayISODateMY } from "@/lib/avsec/datetime";
 import { initials } from "@/lib/avsec/utils";
 
@@ -71,7 +70,6 @@ export default async function AttendanceReportPage({
 
   return (
     <main className="min-h-screen pb-16">
-      <AppHeader profile={profile} title="Attendance Report" backHref="/avsec/dashboard" />
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
         <div>
           <h1 className="t-display text-xl">Attendance Report</h1>

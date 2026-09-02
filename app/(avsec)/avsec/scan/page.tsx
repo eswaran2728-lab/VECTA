@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { UnifiedScanner } from "@/components/scan/UnifiedScanner";
-import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import type { OpsGroup } from "@/lib/icms/database.types";
 
 export const metadata: Metadata = { title: "Scan — VECTA" };
@@ -47,20 +45,9 @@ export default async function UnifiedScanPage() {
 
   return (
     <main className="min-h-screen bg-background pb-28">
-      <div className="flex items-center justify-between border-b border-border px-8 py-[18px]">
-        <div className="flex items-center gap-2">
-          <Link
-            href="/"
-            aria-label="Back"
-            className="flex h-11 w-11 items-center justify-center font-mono text-base text-muted-foreground transition-colors hover:text-foreground"
-          >
-            &larr;
-          </Link>
-          <span className="font-display text-base font-extrabold tracking-[0.06em]">SCAN</span>
-        </div>
-        <div className="flex items-center gap-4">
-          {scopeChip ? <span className="vecta-chip">{scopeChip}</span> : null}
-        </div>
+      <div className="flex items-center justify-between px-8 pt-6">
+        <span className="font-display text-base font-extrabold tracking-[0.06em]">SCAN</span>
+        {scopeChip ? <span className="vecta-chip">{scopeChip}</span> : null}
       </div>
 
       <div className="flex flex-1 items-center justify-center p-9">
@@ -69,7 +56,6 @@ export default async function UnifiedScanPage() {
         </div>
       </div>
 
-      <TeamBottomNav opsGroup={opsGroup} orgWide={orgWide} />
     </main>
   );
 }

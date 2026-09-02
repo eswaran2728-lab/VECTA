@@ -1,7 +1,6 @@
 import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
 import { getSheetSyncConfig, getSheetSyncCounts, getRecentFailedSyncs } from "@/lib/avsec/admin/sheetSyncQueries";
 import { updateSheetSyncConfig, retryFailedSyncs, triggerSheetSyncNow } from "@/lib/avsec/admin/sheetSyncActions";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
 import { formatDateTimeMY } from "@/lib/avsec/datetime";
 
 export default async function AdminSheetSyncPage({
@@ -19,7 +18,6 @@ export default async function AdminSheetSyncPage({
 
   return (
     <main className="min-h-screen pb-16">
-      <AppHeader profile={profile} title="Google Sheets Sync" backHref="/avsec/admin/users" />
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
         <div>
           <h1 className="t-display text-xl">Google Sheets Sync</h1>

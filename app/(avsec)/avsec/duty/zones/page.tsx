@@ -2,7 +2,6 @@ import Link from "next/link";
 import { requireProfile } from "@/lib/avsec/auth";
 import { STATIONS, ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { getZonesForStation } from "@/lib/avsec/duty/zone-queries";
-import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import ZonesMapViewLoader from "@/components/avsec/duty/ZonesMapViewLoader";
 
 export default async function DutyZonesViewPage({
@@ -20,18 +19,8 @@ export default async function DutyZonesViewPage({
 
   return (
     <main className="min-h-screen bg-background pb-28">
-      <div className="flex items-center gap-3 border-b border-border px-6 py-[18px]">
-        <Link
-          href="/avsec/duty"
-          aria-label="Back"
-          className="flex h-11 w-11 items-center justify-center font-mono text-base text-muted-foreground transition-colors hover:text-foreground"
-        >
-          &larr;
-        </Link>
-        <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">DUTY ZONES</span>
-      </div>
-
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
+        <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">DUTY ZONES</span>
         <p className="text-[13px] text-muted-foreground">
           Geofence areas the check-in screen tests against.
           {profile.role === "ADMIN" && (
@@ -84,7 +73,6 @@ export default async function DutyZonesViewPage({
         </div>
       </div>
 
-      <TeamBottomNav opsGroup={profile.ops_group} orgWide={orgWide} />
     </main>
   );
 }

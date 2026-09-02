@@ -2,7 +2,6 @@ import Link from "next/link";
 import { requireProfile } from "@/lib/avsec/auth";
 import { getVisibleOvertimeRequests } from "@/lib/avsec/duty/overtime-queries";
 import { createClient } from "@/lib/supabase/server";
-import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { formatDateMY } from "@/lib/avsec/datetime";
 
@@ -41,18 +40,8 @@ export default async function OvertimeListPage({
 
   return (
     <main className="min-h-screen bg-background pb-28">
-      <div className="flex items-center gap-3 border-b border-border px-6 py-[18px]">
-        <Link
-          href="/avsec/duty"
-          aria-label="Back"
-          className="flex h-11 w-11 items-center justify-center font-mono text-base text-muted-foreground transition-colors hover:text-foreground"
-        >
-          &larr;
-        </Link>
-        <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">OVERTIME</span>
-      </div>
-
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
+        <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">OVERTIME</span>
         <Link href="/avsec/duty/overtime/new" className="vecta-btn-primary block w-full text-center">
           New request
         </Link>
@@ -105,7 +94,6 @@ export default async function OvertimeListPage({
         </div>
       </div>
 
-      <TeamBottomNav opsGroup={profile.ops_group} orgWide={orgWide} />
     </main>
   );
 }

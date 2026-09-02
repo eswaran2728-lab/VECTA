@@ -9,7 +9,6 @@ import {
   type RosterCell as RosterCellRow,
 } from "@/lib/avsec/duty/roster-queries";
 import { addStationTeam, setTeamScheduleRange, deleteShift } from "@/lib/avsec/duty/roster-actions";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
 import { RosterCell } from "@/components/avsec/admin/RosterCell";
 import { CreateScheduleForm } from "@/components/avsec/admin/CreateScheduleForm";
 import { todayISODateMY } from "@/lib/avsec/datetime";
@@ -75,7 +74,6 @@ export default async function AdminRosterPage({
 
   return (
     <main className="min-h-screen pb-16">
-      <AppHeader profile={profile} title="Team Roster" backHref="/avsec/admin/users" />
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
         <div>
           <h1 className="t-display text-xl">Team Roster</h1>

@@ -3,7 +3,6 @@ import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
 import { STATIONS } from "@/lib/avsec/reference-data";
 import { getZonesForStation, getZoneById } from "@/lib/avsec/duty/zone-queries";
 import { upsertZone, toggleZoneActive } from "@/lib/avsec/duty/zone-actions";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
 import ZoneEditorLoader from "@/components/avsec/duty/ZoneEditorLoader";
 
 export default async function AdminZonesPage({
@@ -22,7 +21,6 @@ export default async function AdminZonesPage({
 
   return (
     <main className="min-h-screen pb-16">
-      <AppHeader profile={profile} title="Duty Zones" backHref="/avsec/admin/users" />
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
         <div>
           <h1 className="t-display text-xl">Duty Zones</h1>

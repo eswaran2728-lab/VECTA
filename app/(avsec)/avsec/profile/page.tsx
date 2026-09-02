@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { requireProfile, DUTY_ROLES, ENFORCEMENT_SEARCH_ROLES } from "@/lib/avsec/auth";
 import { signOut } from "@/lib/avsec/profile-actions";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { ThemeOptions } from "@/components/avsec/layout/ThemeToggle";
 import { ROLE_LABELS, REPORT_TYPES, ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { initials } from "@/lib/avsec/utils";
@@ -47,7 +45,6 @@ export default async function ProfilePage() {
 
   return (
     <main className="min-h-screen pb-32" style={{ background: "var(--page)" }}>
-      <AppHeader profile={profile} title="Profile" backHref="/avsec/home" />
 
       <div className="max-w-3xl mx-auto animate-slide">
         <div
@@ -129,7 +126,6 @@ export default async function ProfilePage() {
         </div>
       </div>
 
-      <TeamBottomNav opsGroup={profile.ops_group} orgWide={orgWide} />
     </main>
   );
 }

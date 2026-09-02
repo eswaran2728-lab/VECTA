@@ -1,7 +1,5 @@
 import { requireProfile } from "@/lib/avsec/auth";
 import { getOpenBayBoard } from "@/lib/avsec/reports/queries";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { AddBayBoardForm } from "@/components/avsec/forms/AddBayBoardForm";
 import { formatDateTimeMY } from "@/lib/avsec/datetime";
 import { cn } from "@/lib/avsec/utils";
@@ -14,7 +12,6 @@ export default async function BayBoardPage() {
 
   return (
     <main className="min-h-screen pb-32">
-      <AppHeader profile={profile} title="Bay Board" backHref="/avsec/home" />
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Aircraft on ground exceeding 4 hours without a completed AIRCRAFT SEARCH CHECKLIST SEC
@@ -57,7 +54,6 @@ export default async function BayBoardPage() {
           })}
         </div>
       </div>
-      <TeamBottomNav opsGroup={profile.ops_group} orgWide={orgWide} />
     </main>
   );
 }

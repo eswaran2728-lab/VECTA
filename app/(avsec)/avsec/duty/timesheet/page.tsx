@@ -2,7 +2,6 @@ import Link from "next/link";
 import { requireRole, DUTY_ROLES } from "@/lib/avsec/auth";
 import { getTimesheetRoster, getTimesheetDuty } from "@/lib/avsec/duty/timesheet-queries";
 import { scheduledWindow } from "@/lib/avsec/duty/lateness";
-import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { DayTimeline } from "@/components/avsec/duty/DayTimeline";
 import { todayISODateMY, formatTimeMY } from "@/lib/avsec/datetime";
 
@@ -55,18 +54,8 @@ export default async function TimesheetPage({
 
   return (
     <main className="min-h-screen bg-background pb-28">
-      <div className="flex items-center gap-3 border-b border-border px-6 py-[18px]">
-        <Link
-          href="/avsec/duty"
-          aria-label="Back"
-          className="flex h-11 w-11 items-center justify-center font-mono text-base text-muted-foreground transition-colors hover:text-foreground"
-        >
-          &larr;
-        </Link>
-        <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">MY TIMESHEET</span>
-      </div>
-
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
+        <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">MY TIMESHEET</span>
         <div className="flex items-center justify-between">
           <Link
             href={`/avsec/duty/timesheet?week=${prevWeek}`}
@@ -179,7 +168,6 @@ export default async function TimesheetPage({
       </div>
 
       {/* DUTY_ROLES (ASO/SO/DSE) are never org-wide — see lib/avsec/auth.ts. */}
-      <TeamBottomNav opsGroup={profile.ops_group} orgWide={false} />
     </main>
   );
 }

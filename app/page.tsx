@@ -8,6 +8,7 @@ import { getOpenBayBoard } from "@/lib/avsec/reports/queries";
 import { REPORT_TYPES as AVSEC_REPORT_TYPES, REPORT_META } from "@/lib/avsec/reference-data";
 import { StatusDot, type OpsStatus } from "@/components/layout/StatusDot";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
+import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { TransactionStageBar } from "@/components/layout/TransactionStageBar";
 import type { Direction, OpsGroup, TransactionRoute, TransactionStatus } from "@/lib/icms/database.types";
 
@@ -125,33 +126,7 @@ export default async function LandingPage({
   return (
     <main className="relative min-h-screen bg-background pb-28">
       <div className="relative z-10 flex min-h-screen flex-col">
-        <div className="flex items-center justify-between border-b border-border px-8 py-[18px]">
-          <div className="flex items-center gap-2.5">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M12 2 L21 6 V12 C21 17 17 21 12 22 C7 21 3 17 3 12 V6 Z"
-                stroke="var(--cyan)"
-                strokeWidth="1.6"
-              />
-            </svg>
-            <span className="font-display text-[17px] font-extrabold tracking-[0.06em]">VECTA</span>
-            <span className="vecta-eyebrow ml-1">{"// OPS.DASHBOARD"}</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="font-mono text-sm">
-              Signed in as {profile.name}
-            </span>
-            {roleChip ? <span className="vecta-chip">{roleChip}</span> : null}
-            <form action={signOut}>
-              <button
-                type="submit"
-                className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-brand"
-              >
-                Sign out
-              </button>
-            </form>
-          </div>
-        </div>
+        <UnifiedHeader name={profile.name} roleLabel={roleChip} signOutAction={signOut} />
 
         <div className="flex flex-col gap-6 px-8 py-8">
           {/* Operational status header */}

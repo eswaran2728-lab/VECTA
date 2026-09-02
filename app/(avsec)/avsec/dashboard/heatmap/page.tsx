@@ -6,8 +6,6 @@ import { getZonesForStation } from "@/lib/avsec/duty/zone-queries";
 import { getStationTeams, getShifts } from "@/lib/avsec/duty/roster-queries";
 import { scheduledWindow } from "@/lib/avsec/duty/lateness";
 import { calcOtHours } from "@/lib/avsec/duty/overtime";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { BottomNav } from "@/components/avsec/layout/BottomNav";
 import HeatMapLoader from "@/components/avsec/duty/HeatMapLoader";
 import { LiveRefresher } from "@/components/avsec/duty/LiveRefresher";
 import { todayISODateMY, formatTimeMY } from "@/lib/avsec/datetime";
@@ -127,7 +125,6 @@ export default async function HeatmapPage({
 
   return (
     <main className="min-h-screen pb-32">
-      <AppHeader profile={profile} title="Duty Heat Map" backHref="/avsec/dashboard" />
       {mode === "live" && <LiveRefresher />}
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
         <div className="flex gap-1.5">
@@ -292,7 +289,6 @@ export default async function HeatmapPage({
           ))}
         </div>
       </div>
-      <BottomNav profile={profile} />
     </main>
   );
 }

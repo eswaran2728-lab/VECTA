@@ -1,9 +1,7 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireProfile } from "@/lib/avsec/auth";
 import { getDutyRecordDetail } from "@/lib/avsec/duty/timesheet-queries";
 import { getDutyZone } from "@/lib/avsec/duty/checkin-queries";
-import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { formatDateMY, formatTimeMY } from "@/lib/avsec/datetime";
 
@@ -43,17 +41,6 @@ export default async function DutyViewPage({ params: paramsPromise }: { params: 
 
   return (
     <main className="min-h-screen bg-background pb-28">
-      <div className="flex items-center gap-3 border-b border-border px-6 py-[18px]">
-        <Link
-          href="/avsec/duty/timesheet"
-          aria-label="Back"
-          className="flex h-11 w-11 items-center justify-center font-mono text-base text-muted-foreground transition-colors hover:text-foreground"
-        >
-          &larr;
-        </Link>
-        <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">DUTY RECORD</span>
-      </div>
-
       <div className="border-b border-border bg-card px-4 py-5">
         <div className="mx-auto max-w-2xl">
           <div className="flex items-center justify-between gap-2">
@@ -160,7 +147,6 @@ export default async function DutyViewPage({ params: paramsPromise }: { params: 
         </section>
       </div>
 
-      <TeamBottomNav opsGroup={profile.ops_group} orgWide={orgWide} />
     </main>
   );
 }

@@ -6,8 +6,6 @@ import { acknowledgeReport } from "@/lib/avsec/acknowledgements/actions";
 import { getReportAttachments } from "@/lib/avsec/attachments/actions";
 import { createClient } from "@/lib/supabase/server";
 import { REPORT_META, REPORT_TYPES, ROLE_RANK, type ReportType, type UserRole } from "@/lib/avsec/reference-data";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { BottomNav } from "@/components/avsec/layout/BottomNav";
 import { Sec016View, Sec014View, Sec029View, Sec018View, Sec033View, Sec013View, OffloadView } from "@/components/avsec/reports/ReportView";
 import { AttachmentGallery } from "@/components/avsec/reports/AttachmentGallery";
 import { formatDateTimeMY, formatTimeMY } from "@/lib/avsec/datetime";
@@ -58,7 +56,6 @@ export default async function ReportViewPage({
 
   return (
     <main className="min-h-screen pb-32">
-      <AppHeader profile={profile} title={meta.name} backHref="/avsec/history" />
 
       <div style={{ background: "var(--view-header)", borderBottom: "1px solid var(--line)" }} className="px-4 py-5">
         <div className="max-w-2xl mx-auto">
@@ -159,7 +156,6 @@ export default async function ReportViewPage({
           </div>
         </section>
       </div>
-      <BottomNav profile={profile} />
     </main>
   );
 }

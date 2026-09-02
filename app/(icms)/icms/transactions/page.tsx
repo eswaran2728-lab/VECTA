@@ -21,7 +21,6 @@ import { STATUS_LABELS } from "@/lib/icms/constants";
 import { formatDateTime } from "@/lib/icms/utils";
 import type { Transaction, TransactionStatus } from "@/lib/icms/database.types";
 import { nextStepFor } from "@/lib/icms/workflow";
-import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 
 const ORG_WIDE_UNIFIED_ROLES = ["admin", "management", "enforcement"];
 
@@ -239,7 +238,6 @@ export default async function TransactionsPage({
       </Card>
 
       <div className="h-14" aria-hidden />
-      <TeamBottomNav opsGroup={profile.ops_group} orgWide={orgWide} />
     </div>
   );
 }

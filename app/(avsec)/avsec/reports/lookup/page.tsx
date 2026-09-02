@@ -3,8 +3,6 @@ import Link from "next/link";
 import { requireRole } from "@/lib/avsec/auth";
 import { searchByReportNoPrefix } from "@/lib/avsec/reports/queries";
 import { REPORT_META, ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { BottomNav } from "@/components/avsec/layout/BottomNav";
 import { formatDateTimeMY } from "@/lib/avsec/datetime";
 
 export default async function ReportLookupPage({
@@ -26,7 +24,6 @@ export default async function ReportLookupPage({
 
   return (
     <main className="min-h-screen pb-32">
-      <AppHeader profile={profile} title="Report Lookup" backHref="/avsec/home" />
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
         <p className="text-[13px]" style={{ color: "var(--soft)" }}>
           Paste or type a report number from a paper form — full or partial (e.g.{" "}
@@ -77,7 +74,6 @@ export default async function ReportLookupPage({
           </div>
         )}
       </div>
-      <BottomNav profile={profile} />
     </main>
   );
 }

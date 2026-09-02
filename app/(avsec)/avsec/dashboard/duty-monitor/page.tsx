@@ -3,8 +3,6 @@ import { requireRole } from "@/lib/avsec/auth";
 import { STATIONS, ORG_WIDE_ROLES, type UserRole } from "@/lib/avsec/reference-data";
 import { getDutyMonitorRows, type DutyMonitorRow } from "@/lib/avsec/duty/monitor-queries";
 import { getStationTeams } from "@/lib/avsec/duty/roster-queries";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { BottomNav } from "@/components/avsec/layout/BottomNav";
 import { LiveRefresher } from "@/components/avsec/duty/LiveRefresher";
 import { todayISODateMY, formatTimeMY } from "@/lib/avsec/datetime";
 
@@ -52,7 +50,6 @@ export default async function DutyMonitorPage({
 
   return (
     <main className="min-h-screen pb-32">
-      <AppHeader profile={profile} title="Check-In Monitoring" backHref="/avsec/dashboard" />
       {date === today && <LiveRefresher />}
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
         <div className="grid grid-cols-4 gap-2">
@@ -203,7 +200,6 @@ export default async function DutyMonitorPage({
           })}
         </div>
       </div>
-      <BottomNav profile={profile} />
     </main>
   );
 }

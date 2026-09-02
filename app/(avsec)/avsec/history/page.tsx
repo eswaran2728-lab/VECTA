@@ -3,8 +3,6 @@ import { requireProfile } from "@/lib/avsec/auth";
 import { getMySubmissions } from "@/lib/avsec/reports/queries";
 import { getAttachmentCounts } from "@/lib/avsec/attachments/actions";
 import { REPORT_META } from "@/lib/avsec/reference-data";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { BottomNav } from "@/components/avsec/layout/BottomNav";
 import { formatTimeMY } from "@/lib/avsec/datetime";
 import { cn } from "@/lib/avsec/utils";
 
@@ -28,7 +26,6 @@ export default async function HistoryPage({
 
   return (
     <main className="min-h-screen pb-32">
-      <AppHeader profile={profile} title="My submissions" backHref="/avsec/home" />
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
         <div className="flex gap-1.5 flex-wrap">
           {FILTERS.map((f) => {
@@ -98,7 +95,6 @@ export default async function HistoryPage({
           })}
         </div>
       </div>
-      <BottomNav profile={profile} />
     </main>
   );
 }

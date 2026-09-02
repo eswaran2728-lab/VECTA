@@ -1,11 +1,9 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireProfile } from "@/lib/avsec/auth";
 import { getOvertimeRequestById } from "@/lib/avsec/duty/overtime-queries";
 import { endorseOvertimeRequest, approveOvertimeRequest, rejectOvertimeRequest, withdrawOvertimeRequest } from "@/lib/avsec/duty/overtime-actions";
 import { createClient } from "@/lib/supabase/server";
 import { ORG_WIDE_ROLES, ROLE_RANK, type UserRole } from "@/lib/avsec/reference-data";
-import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { formatDateMY, formatDateTimeMY } from "@/lib/avsec/datetime";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -70,19 +68,6 @@ export default async function OvertimeDetailPage({
 
   return (
     <main className="min-h-screen bg-background pb-28">
-      <div className="flex items-center gap-3 border-b border-border px-6 py-[18px]">
-        <Link
-          href="/avsec/duty/overtime"
-          aria-label="Back"
-          className="flex h-11 w-11 items-center justify-center font-mono text-base text-muted-foreground transition-colors hover:text-foreground"
-        >
-          &larr;
-        </Link>
-        <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">
-          OVERTIME REQUEST
-        </span>
-      </div>
-
       <div className="border-b border-border bg-card px-4 py-5">
         <div className="mx-auto max-w-2xl">
           <div className="flex items-center justify-between gap-2">
@@ -231,7 +216,6 @@ export default async function OvertimeDetailPage({
         </section>
       </div>
 
-      <TeamBottomNav opsGroup={profile.ops_group} orgWide={orgWide} />
     </main>
   );
 }

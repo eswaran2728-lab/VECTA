@@ -10,8 +10,6 @@ import {
 import { getOpenBayBoard } from "@/lib/avsec/reports/queries";
 import { getAttachmentCounts } from "@/lib/avsec/attachments/actions";
 import { getDutyComplianceForDate } from "@/lib/avsec/duty/compliance-queries";
-import { AppHeader } from "@/components/avsec/layout/AppHeader";
-import { BottomNav } from "@/components/avsec/layout/BottomNav";
 import { formatDateTimeMY, todayISODateMY } from "@/lib/avsec/datetime";
 import { cn } from "@/lib/avsec/utils";
 import { searchDailyReportsByStaff, searchAircraftReportsByStaff } from "@/lib/avsec/search/queries";
@@ -67,7 +65,6 @@ export default async function DashboardPage({
 
   return (
     <main className="min-h-screen pb-32">
-      <AppHeader profile={profile} title="Dashboard" backHref={landingPathForRole(profile.role)} />
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
         {isOrgWideViewer && (
           <div className="grid grid-cols-2 gap-2">
@@ -368,7 +365,6 @@ export default async function DashboardPage({
           </div>
         </section>
       </div>
-      <BottomNav profile={profile} />
     </main>
   );
 }
