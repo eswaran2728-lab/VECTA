@@ -65,8 +65,15 @@ export async function updateSession(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
   const isGated = path.startsWith("/icms") || path.startsWith("/avsec");
+  // API routes authenticate themselves (requireRole()/auth.getUser() per
+  // route — see app/api/**) and some, like /api/icms/qr/mint, are meant to
+  // be called server-to-server with a Bearer token and no cookies at all.
+  // Without this exclusion every such call hit the cookie-based "no user"
+  // redirect below before its own route logic ever ran: the caller got a
+  // 200 with the /login page's HTML (a followed redirect), never JSON.
+  const isApi = path.startsWith("/api/");
 
-  if (!user && !isPublic) {
+  if (!user && !isPublic && !isApi) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", path);
