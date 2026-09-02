@@ -38,9 +38,12 @@ export default function AvsecLayout({ children }: { children: React.ReactNode })
     <div
       className={`avsec-scope ${barlow.variable} ${barlowCondensed.variable} ${plexMono.variable} min-h-screen antialiased`}
     >
+      {/* Light by default — only an explicit stored "dark" choice ever
+          switches this; OS prefers-color-scheme is not consulted, so a
+          device set to dark mode does not silently darken this section. */}
       <script
         dangerouslySetInnerHTML={{
-          __html: `(function(){var el=document.currentScript.parentElement;var p="system";try{p=localStorage.getItem("avsec-theme")||"system"}catch(e){}var t=p==="light"||p==="dark"?p:(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");el.setAttribute("data-theme",t)})()`,
+          __html: `(function(){var el=document.currentScript.parentElement;var p="light";try{p=localStorage.getItem("avsec-theme")||"light"}catch(e){}var t=p==="dark"?"dark":"light";el.setAttribute("data-theme",t)})()`,
         }}
       />
       <OfflineSyncProvider>

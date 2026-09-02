@@ -46,7 +46,7 @@ export default async function UnifiedScanPage() {
   const scopeChip = orgWide ? "All Ops Groups" : opsGroup ? OPS_GROUP_LABELS[opsGroup] : null;
 
   return (
-    <main className="dark min-h-screen bg-background pb-28">
+    <main className="min-h-screen bg-background pb-28">
       <div className="flex items-center justify-between border-b border-border px-8 py-[18px]">
         <div className="flex items-center gap-2">
           <Link

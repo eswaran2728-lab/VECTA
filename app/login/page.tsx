@@ -13,7 +13,7 @@ export default async function LoginPage({
   const params = await searchParams;
 
   return (
-    <main className="dark relative flex min-h-screen flex-col overflow-hidden bg-background px-5 py-5">
+    <main className="relative flex min-h-screen flex-col overflow-hidden bg-background px-5 py-5">
       {/* Radial cyan/violet glow wash, matching the mockup's .scene background. */}
       <div
         className="pointer-events-none absolute inset-0"

@@ -42,7 +42,7 @@ export default async function DutyViewPage({ params: paramsPromise }: { params: 
   const statusClass = record.status === "late" ? "bg-brand" : "bg-success";
 
   return (
-    <main className="dark min-h-screen bg-background pb-28">
+    <main className="min-h-screen bg-background pb-28">
       <div className="flex items-center gap-3 border-b border-border px-6 py-[18px]">
         <Link
           href="/avsec/duty/timesheet"

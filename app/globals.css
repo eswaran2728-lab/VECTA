@@ -35,6 +35,28 @@
     --input: oklch(0.854 0.012 264.5);
     --ring: 0.735 0.138 90.7;
     --radius: 0.5rem;
+    /* Radar green — cleared/success/live indicators. Only ever defined in
+       .dark before light became the default; added here too so bg-success/
+       text-success (Tailwind tokens, tailwind.config.ts) and the check-in
+       gate/ops dashboard that use them don't silently resolve to nothing
+       in light mode. */
+    --success: 0.55 0.15 150;
+    --success-foreground: 1 0 0;
+
+    /* Extra raw tokens (full oklch() functions, not bare component
+       triplets — see the .dark block's own comment) used directly via
+       var() in ~20 files across both AVSEC and the redesigned screens
+       (status pills, the scan viewfinder, SEC-016 smart-parse highlights).
+       Same reasoning as --success above: only ever defined in .dark
+       before, so light-mode readers of these files got an invalid/blank
+       color. Chosen for contrast against a white/near-white background,
+       not identical to the .dark block's brighter values (which are
+       tuned for a near-black background instead). */
+    --cyan: oklch(0.55 0.16 220);
+    --red: oklch(0.616 0.226 28.9);
+    --green: oklch(0.55 0.15 150);
+    --glass: oklch(0.98 0.004 264.5 / 0.7);
+    --violet: oklch(0.5 0.18 300);
   }
 
   .dark {

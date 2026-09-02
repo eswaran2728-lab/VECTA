@@ -6,8 +6,12 @@ type ThemePref = "light" | "dark" | "system";
 
 const STORAGE_KEY = "avsec-theme";
 
+// Always resolves to light — the app no longer follows OS
+// prefers-color-scheme (a device set to dark mode should not silently
+// darken it); "system" as a stored preference is treated the same as
+// "light" until a user makes an explicit choice.
 function systemTheme(): "light" | "dark" {
-  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  return "light";
 }
 
 // Always writes a concrete light/dark value — never leaves the attribute off for "system"
@@ -59,18 +63,10 @@ export function useThemePref() {
 /** Compact circle toggle shown in the app header — flips between light and dark. */
 export function ThemeToggle() {
   const { pref, choose } = useThemePref();
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
-    const resolve = () =>
-      setIsDark(
-        pref === "dark" ||
-          (pref === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches),
-      );
-    resolve();
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    mq.addEventListener("change", resolve);
-    return () => mq.removeEventListener("change", resolve);
+    setIsDark(pref === "dark");
   }, [pref]);
 
   return (

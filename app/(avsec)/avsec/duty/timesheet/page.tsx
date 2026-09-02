@@ -54,7 +54,7 @@ export default async function TimesheetPage({
   const nextWeek = addDays(weekStart, 7);
 
   return (
-    <main className="dark min-h-screen bg-background pb-28">
+    <main className="min-h-screen bg-background pb-28">
       <div className="flex items-center gap-3 border-b border-border px-6 py-[18px]">
         <Link
           href="/avsec/duty"

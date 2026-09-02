@@ -123,7 +123,7 @@ export default async function LandingPage({
   }
 
   return (
-    <main className="dark relative min-h-screen bg-background pb-28">
+    <main className="relative min-h-screen bg-background pb-28">
       <div className="relative z-10 flex min-h-screen flex-col">
         <div className="flex items-center justify-between border-b border-border px-8 py-[18px]">
           <div className="flex items-center gap-2.5">

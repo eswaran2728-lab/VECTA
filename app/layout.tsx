@@ -52,11 +52,13 @@ export const viewport: Viewport = {
   maximumScale: 1,
 };
 
+// Light by default — only an explicit stored choice (via the theme toggle)
+// ever switches to dark; OS prefers-color-scheme is no longer consulted,
+// so a device set to dark mode does not silently darken the app.
 const themeInit = `
 try {
   const stored = localStorage.getItem("cscs-theme");
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  if (stored === "dark" || (!stored && prefersDark)) {
+  if (stored === "dark") {
     document.documentElement.classList.add("dark");
   }
 } catch (e) {}

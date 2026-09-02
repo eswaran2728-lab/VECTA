@@ -5,77 +5,67 @@
 /* ============================================================
    Design tokens — AVSEC Security Operations
 
-   Remapped onto VECTA's unified dark ops-console palette (cyan
-   primary, AirAsia red for alerts, radar green for success — same
-   oklch values as app/globals.css's .dark block) instead of the
-   original gold-on-black scheme. Every ~30 AVSEC pages/forms still
-   reference these token names directly (var(--ink), var(--gold),
-   .card, .btn-primary, etc.) rather than the newer .vecta-* classes,
-   so remapping the values here is what keeps the whole app looking
-   like one system without rewriting every one of those files.
+   Light by default — same gold/red-on-white palette as the light
+   :root tokens in app/globals.css (--primary/--brand/--background/
+   --foreground), so this file's own token names (var(--ink),
+   var(--gold), .card, .btn-primary, etc., still used directly by
+   ~30 AVSEC pages/forms instead of the newer .vecta-* classes) read
+   as one consistent light system with the rest of the app rather
+   than a third, unrelated palette.
 
-   The light-mode branches (prefers-color-scheme + explicit
-   [data-theme="light"]) are deliberately collapsed to the SAME dark
-   values — the app is dark-only by design now; a device/browser set
-   to light mode was previously flipping this section of the app to
-   a completely different cream palette while the rest of VECTA
-   stayed dark, which read as two different apps stitched together.
+   `html.dark` (toggled by components/avsec/layout/ThemeToggle.tsx /
+   components/icms/theme-toggle.tsx) restores the previous dark
+   ops-console values as an explicit opt-in — light is the default,
+   nothing here follows OS prefers-color-scheme automatically.
    ============================================================ */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  --page: oklch(0.14 0.03 275);
-  --page-bg: radial-gradient(120% 90% at 50% 0%, oklch(0.2 0.035 275) 0%, oklch(0.11 0.025 275) 60%);
-  --surface: oklch(0.11 0.025 275);
-  --panel: oklch(0.22 0.04 275);
-  --panel2: oklch(0.18 0.03 275);
-  --input: oklch(0.1 0.03 275);
-  --view-header: linear-gradient(180deg, oklch(0.2 0.035 275), oklch(0.14 0.03 275));
-  --red-panel: oklch(0.2 0.05 25);
-  --hover-panel: oklch(0.2 0.035 275);
-  --hover-warm: oklch(0.22 0.05 220);
+  --page: oklch(0.984 0.002 247.8);
+  --page-bg: linear-gradient(180deg, oklch(0.996 0.002 247.8) 0%, oklch(0.965 0.004 247.8) 100%);
+  --surface: oklch(0.996 0.001 247.8);
+  --panel: oklch(1 0 89.9);
+  --panel2: oklch(0.96 0.004 264.5);
+  --input: oklch(0.97 0.004 264.5);
+  --view-header: linear-gradient(180deg, oklch(0.98 0.004 264.5), oklch(0.94 0.006 264.5));
+  --red-panel: oklch(0.93 0.05 25);
+  --hover-panel: oklch(0.95 0.006 264.5);
+  --hover-warm: oklch(0.94 0.05 90.7);
 
-  --ink: oklch(0.95 0.01 240);
-  --ink2: oklch(0.88 0.012 240);
-  --ink3: oklch(0.78 0.015 245);
-  --mid: oklch(0.7 0.02 250);
-  --soft: oklch(0.64 0.02 250);
-  --faint: oklch(0.54 0.02 255);
-  --faintest: oklch(0.42 0.02 260);
+  --ink: oklch(0.128 0.027 261.6);
+  --ink2: oklch(0.25 0.03 261.6);
+  --ink3: oklch(0.38 0.025 261.6);
+  --mid: oklch(0.5 0.02 264.4);
+  --soft: oklch(0.499 0.021 264.4);
+  --faint: oklch(0.6 0.015 264.4);
+  --faintest: oklch(0.72 0.01 264.4);
 
-  --line: oklch(0.78 0.14 220 / 0.2);
-  --line2: oklch(0.78 0.14 220 / 0.14);
-  --line3: oklch(0.78 0.14 220 / 0.32);
+  --line: oklch(0.735 0.138 90.7 / 0.35);
+  --line2: oklch(0.735 0.138 90.7 / 0.2);
+  --line3: oklch(0.735 0.138 90.7 / 0.5);
 
-  --gold: oklch(0.78 0.14 220);
-  --gold-fill: oklch(0.78 0.14 220);
-  --gold-fill-hi: oklch(0.85 0.12 220);
-  --gold-soft: oklch(0.78 0.14 220 / 0.14);
-  --gold-soft2: oklch(0.78 0.14 220 / 0.18);
-  --gold-glow: oklch(0.78 0.14 220 / 0.24);
-  --on-gold: oklch(0.12 0.02 275);
+  --gold: oklch(0.6 0.14 90.7);
+  --gold-fill: oklch(0.735 0.138 90.7);
+  --gold-fill-hi: oklch(0.68 0.15 90.7);
+  --gold-soft: oklch(0.735 0.138 90.7 / 0.14);
+  --gold-soft2: oklch(0.735 0.138 90.7 / 0.18);
+  --gold-glow: oklch(0.735 0.138 90.7 / 0.24);
+  --on-gold: oklch(0.128 0.027 261.6);
 
-  --red: oklch(0.6 0.2 25);
-  --red-soft: oklch(0.6 0.2 25 / 0.14);
-  --red-ink: oklch(0.75 0.1 25);
-  --green: oklch(0.78 0.17 150);
-  --blue: oklch(0.62 0.2 300);
+  --red: oklch(0.616 0.226 28.9);
+  --red-soft: oklch(0.616 0.226 28.9 / 0.14);
+  --red-ink: oklch(0.5 0.18 28.9);
+  --green: oklch(0.55 0.15 150);
+  --blue: oklch(0.5 0.18 300);
 }
 
-/* Both light-mode branches intentionally collapsed to the dark palette
-   above — see the file header comment. Kept as empty, valid rule sets
-   (rather than deleted) so a future deliberate light-theme decision has
-   an obvious place to land, instead of silently reintroducing this bug. */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    color-scheme: dark;
-  }
-}
-
-:root[data-theme="light"] {
-  color-scheme: dark;
-}
+/* Note: this file's :root[data-theme="dark"]/light branches used to be
+   dead code — the pre-paint script below sets data-theme on the
+   .avsec-scope wrapper div, never on :root/html, so no such selector here
+   ever matched; the OS prefers-color-scheme media query was the only
+   thing actually driving this file's look. That media query is removed
+   below, so :root above is now simply always the light palette. */
 
 html,
 body {

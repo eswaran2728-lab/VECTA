@@ -36,7 +36,7 @@ export default async function NewOvertimeRequestPage({
   const defaultCategory = roster?.shift_code === "OFF" ? "off_day_work" : "adhoc";
 
   return (
-    <main className="dark min-h-screen bg-background pb-28">
+    <main className="min-h-screen bg-background pb-28">
       <div className="flex items-center gap-3 border-b border-border px-6 py-[18px]">
         <Link
           href="/avsec/duty/overtime"

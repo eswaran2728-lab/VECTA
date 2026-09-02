@@ -19,7 +19,7 @@ export default async function DutyPage() {
   const zones = allZones.filter((z) => z.active);
 
   return (
-    <main className="dark min-h-screen bg-background pb-28">
+    <main className="min-h-screen bg-background pb-28">
       <div className="flex items-center justify-between gap-3 border-b border-border px-6 py-[18px]">
         <div className="flex min-w-0 items-center gap-2">
           <Link

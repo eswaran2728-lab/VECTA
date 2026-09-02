@@ -19,7 +19,7 @@ export default async function DutyZonesViewPage({
   const zones = allZones.filter((z) => (z as { active?: boolean }).active !== false);
 
   return (
-    <main className="dark min-h-screen bg-background pb-28">
+    <main className="min-h-screen bg-background pb-28">
       <div className="flex items-center gap-3 border-b border-border px-6 py-[18px]">
         <Link
           href="/avsec/duty"
