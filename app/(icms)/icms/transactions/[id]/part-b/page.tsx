@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { requireRole } from "@/lib/icms/auth";
+import { requireCheckpointRole } from "@/lib/icms/auth";
 import { getLang } from "@/lib/icms/actions/language";
 import { createClient } from "@/lib/supabase/server";
 import { getStep, partsDoneFromStatus, stepsFor } from "@/lib/icms/workflow";
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 
 export default async function PartBPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const profile = await requireRole(["post2_avsec"]);
+  const profile = await requireCheckpointRole("post2_avsec");
 
   if (!profile.name.trim() || !profile.staff_id.trim()) {
     return (

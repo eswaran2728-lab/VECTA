@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { requireRole } from "@/lib/icms/auth";
+import { requireCheckpointRole } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getStep, partsDoneFromStatus } from "@/lib/icms/workflow";
 import { DirectionBadge } from "@/components/icms/direction-badge";
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 export default async function PartHubPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const profile = await requireRole(["hub_avsec"]);
+  const profile = await requireCheckpointRole("hub_avsec");
 
   const supabase = await createClient();
   const { data: tx } = await supabase.from("transactions").select("*").eq("id", id).single();

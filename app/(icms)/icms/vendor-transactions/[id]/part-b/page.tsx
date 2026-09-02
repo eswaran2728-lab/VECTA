@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { requireRole } from "@/lib/icms/auth";
+import { requireCheckpointRole } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/icms/ui/card";
 import { VendorPartBForm } from "./vendor-part-b-form";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default async function VendorPartBPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const profile = await requireRole(["post2_avsec"]);
+  const profile = await requireCheckpointRole("post2_avsec");
 
   const supabase = await createClient();
   const { data: txRow } = await supabase.from("vendor_transactions").select("*").eq("id", id).single();
