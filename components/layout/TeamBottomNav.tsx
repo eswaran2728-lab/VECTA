@@ -50,10 +50,8 @@ export function TeamBottomNav({
   } else if (opsGroup === "operation_avsec") {
     tabs = [DASHBOARD, SCAN, BAY_BOARD, PROFILE];
   } else if (opsGroup === "hub_avsec") {
-    // ASSUMPTION — UNCONFIRMED: the project owner has not signed off on Hub
-    // AVSEC's 3rd tab. Defaulting Hub AVSEC to the same layout as Operation
-    // AVSEC (Bay Board) is a placeholder pending explicit confirmation —
-    // do not treat this as final. Flag prominently until confirmed.
+    // Confirmed by the project owner: Hub AVSEC keeps Bay Board as its 3rd
+    // tab, same as Operation AVSEC.
     tabs = [DASHBOARD, SCAN, BAY_BOARD, PROFILE];
   } else {
     // No ops_group and not org-wide (shouldn't normally happen for anyone
