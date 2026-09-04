@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/icms/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Role } from "@/lib/icms/database.types";
 import { CREATABLE_ROLES, DUTY_POST_BY_ROLE, OPS_GROUP_BY_DUTY_POST } from "@/lib/icms/constants";
+import { bestEffortSyncClaims } from "@/lib/auth/sync-claims";
 
 export interface UserActionState {
   error: string | null;
@@ -71,6 +72,7 @@ export async function createUser(
     return { error: `Profile could not be saved: ${profileError.message}`, success: null };
   }
 
+  await bestEffortSyncClaims(created.user.id);
   revalidatePath("/icms/admin/users");
   return { error: null, success: `Account created for ${name} (${email}).` };
 }
@@ -106,6 +108,7 @@ export async function updateUserRole(
     return { error: error.message, success: null };
   }
 
+  await bestEffortSyncClaims(userId);
   revalidatePath("/icms/admin/users");
   return { error: null, success: "Role updated." };
 }

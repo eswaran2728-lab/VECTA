@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { TriangleAlert, Clock3 } from "lucide-react";
 import { LoginForm } from "./login-form";
 import { PartnerLogos } from "./partner-logos";
+import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 
 export const metadata: Metadata = { title: "Sign in — VECTA" };
 
@@ -93,15 +94,15 @@ export default async function LoginPage({
             ) : null}
 
             {/*
-              No self-registration: accounts are created only by an
-              admin/management user via the Admin panel
-              (/avsec/admin/users, app/(icms)/icms/admin/users). Full SSO
-              via AirAsia's Google Workspace domain is planned as a future
-              replacement for Supabase email/password auth, but that's a
-              later migration — for now Supabase auth continues, just
-              without any self-service path to create an account.
+              No self-registration either way: accounts are created only
+              by an admin/management user via the Admin panel
+              (/avsec/admin/users, app/(icms)/icms/admin/users).
+              AUTH_PROVIDER selects which sign-in path renders — default
+              (unset/"supabase") keeps today's email/password form
+              unchanged; "firebase" (Phase 3+) swaps in Google Workspace
+              sign-in. See lib/auth/provider.ts.
             */}
-            <LoginForm />
+            {process.env.AUTH_PROVIDER === "firebase" ? <GoogleSignInButton /> : <LoginForm />}
 
             <div className="mt-[22px] flex items-center justify-center gap-2">
               <span className="vecta-status">

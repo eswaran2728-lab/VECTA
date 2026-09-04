@@ -21,6 +21,8 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
+    "firebase": "^12.18.0",
+    "firebase-admin": "^14.3.0",
     "html5-qrcode": "^2.3.8",
     "idb": "^8.0.0",
     "jspdf": "^2.5.2",

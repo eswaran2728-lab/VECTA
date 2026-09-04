@@ -14,6 +14,7 @@ import {
   type OpsGroup,
 } from "@/lib/avsec/reference-data";
 import { buildShadowUserRow } from "@/lib/icms/shadow-user";
+import { bestEffortSyncClaims } from "@/lib/auth/sync-claims";
 
 // Admin-created accounts skip the self-signup approval queue entirely (Admin vouches for
 // them directly), and are created already email-confirmed since there's no signup flow
@@ -123,6 +124,7 @@ export async function createStaffAccount(formData: FormData) {
     );
   }
 
+  await bestEffortSyncClaims(data.user!.id);
   revalidatePath("/avsec/admin/users");
 }
 
@@ -249,5 +251,6 @@ export async function updateUserAssignment(formData: FormData) {
     .from("profiles")
     .update({ station, team: isOrgWide ? "" : team, role, ops_group: opsGroup })
     .eq("id", profileId);
+  await bestEffortSyncClaims(profileId);
   revalidatePath("/avsec/admin/users");
 }

@@ -19,13 +19,26 @@ import { resolveMiddlewareUser } from "@/lib/auth/providers/supabase";
 // No self-registration: accounts are admin/management-created only, via
 // the Admin panel (/avsec/admin/users, app/(icms)/icms/admin/users) —
 // there is no public sign-up route, so /login is the only public path.
-// Full SSO via AirAsia's Google Workspace domain is planned as a future
-// replacement for Supabase email/password auth, but that's a later
-// migration — for now Supabase auth continues, just without any
-// self-service path to create an account.
 const PUBLIC_PATHS = ["/login"];
 
 export async function updateSession(request: NextRequest) {
+  // KNOWN LIMITATION (Phase 3): this middleware runs on the Edge runtime,
+  // but Firebase Admin SDK's session-cookie verification needs Node.js —
+  // it isn't Edge-compatible. Rather than attempt broken verification
+  // here, AUTH_PROVIDER=firebase skips this entire cookie-based gate and
+  // passes every request through untouched. This is NOT a security
+  // regression: every page/action's own requireProfile()/requireRole()
+  // (lib/icms/auth.ts, lib/avsec/auth.ts) and RLS remain the authoritative
+  // checks regardless of what middleware does — this file's checks
+  // (check-in gate, admin-path forbidding) are explicitly documented
+  // elsewhere as additive UX/defense-in-depth, not the real boundary. Fix
+  // before relying on the check-in gate under Firebase: verify the
+  // fb-id-token cookie statelessly with `jose` against Google's JWKS
+  // (Edge-compatible), rather than the Admin SDK's verifySessionCookie().
+  if (process.env.AUTH_PROVIDER === "firebase") {
+    return NextResponse.next({ request });
+  }
+
   const { user, response: supabaseResponse, client: supabase } = await resolveMiddlewareUser(
     request
   );

@@ -36,7 +36,7 @@ select
   p.station,
   nullif(p.staff_no, '') as staff_id,
   null::text as vendor_id,
-  p.status,
+  p.status::text as status,
   'profiles'::text as source_table
 from public.profiles p
 union all

@@ -1,0 +1,25 @@
+# Minimal declarative config for the Supabase CLI (`supabase test db`,
+# `supabase db push`, etc.). No supabase/config.toml existed before this
+# — a full `supabase init` covers far more than auth (local ports, storage,
+# edge functions...) and wasn't run here since only this one setting is
+# needed for the migration; run `supabase init` yourself if you start
+# using the CLI for more than tests.
+project_id = "vecta-prod"
+
+# Phase 3 (Firebase Auth via Google Workspace): registers Firebase as a
+# trusted third-party JWT issuer for this project, so a Firebase-issued ID
+# token — set as the accessToken on the Supabase client, see
+# lib/supabase/server.ts and lib/supabase/client.ts's AUTH_PROVIDER=
+# firebase branch — is accepted by PostgREST/Storage the same way a
+# Supabase-issued session JWT is today, and auth.jwt()/auth.uid() resolve
+# from it inside RLS (see supabase/migrations/claims_contract.sql).
+#
+# This file's setting is CLI/local-only. The same registration must also
+# be made in the Supabase Dashboard for the live project (Authentication
+# -> Sign In / Providers -> Third Party Auth -> Add provider -> Firebase,
+# paste the Firebase Project ID) — the dashboard is the one that actually
+# takes effect in production; this file just keeps local `supabase test
+# db` runs consistent with it.
+[auth.third_party.firebase]
+enabled = true
+project_id = "airasia-avsec-auth"
