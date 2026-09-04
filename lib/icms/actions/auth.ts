@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthProvider } from "@/lib/auth/provider";
 
 export interface AuthState {
   error: string | null;
@@ -16,21 +17,21 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
     return { error: "Email and password are required." };
   }
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { user, error } = await getAuthProvider().signIn(email, password);
 
-  if (error || !data.user) {
+  if (error || !user) {
     return { error: "Invalid email or password." };
   }
 
+  const supabase = await createClient();
   const { data: profile } = await supabase
     .from("users")
     .select("status")
-    .eq("id", data.user.id)
+    .eq("id", user.id)
     .single();
 
   if (profile?.status === "pending" || profile?.status === "rejected") {
-    await supabase.auth.signOut();
+    await getAuthProvider().signOut();
     redirect(`/login?error=${profile.status}`);
   }
 
@@ -39,8 +40,7 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
 }
 
 export async function signOut(): Promise<void> {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
+  await getAuthProvider().signOut();
   revalidatePath("/", "layout");
   redirect("/login");
 }

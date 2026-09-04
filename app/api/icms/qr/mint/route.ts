@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient as createSupabaseJsClient } from "@supabase/supabase-js";
+import { getBearerAuth } from "@/lib/auth/providers/supabase";
 import { generateQrToken, type QrTokenType } from "@/lib/icms/qr-token";
-import type { Database } from "@/lib/supabase/database.types";
 
 export const dynamic = "force-dynamic";
 
@@ -55,17 +54,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing bearer token." }, { status: 401 });
   }
 
-  const supabase = createSupabaseJsClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { global: { headers: { Authorization: `Bearer ${bearer}` } } }
-  );
-
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser(bearer);
-  if (authError || !user) {
+  const { user, client: supabase } = await getBearerAuth(bearer);
+  if (!user) {
     return NextResponse.json({ error: "Invalid or expired token." }, { status: 401 });
   }
 

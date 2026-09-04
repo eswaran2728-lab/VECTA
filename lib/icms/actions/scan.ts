@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/auth/guards";
 import { parseCaterLinkQrPayload } from "@/lib/icms/qr-payload";
 import { opsGroupForTransaction } from "@/lib/icms/ops-group";
 import { verifyQrToken } from "@/lib/icms/qr-token";
@@ -30,11 +31,9 @@ const NUMBER_RE = /^(ICMS|CSCS)-\d{4}-\d{6}$/i;
  * any transaction data is returned — never only hidden in the UI.
  */
 export async function scanTransaction(raw: string): Promise<ScanResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return { error: "Not signed in." };
+  const supabase = await createClient();
 
   const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
     supabase.from("profiles").select("unified_role, ops_group").eq("id", user.id).maybeSingle(),

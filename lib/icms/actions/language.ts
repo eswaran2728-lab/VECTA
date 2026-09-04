@@ -3,6 +3,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/auth/guards";
 import { isLang, type Lang } from "@/lib/icms/i18n";
 
 /** Read the current language: cookie first, then the user profile, then EN. */
@@ -11,11 +12,9 @@ export async function getLang(): Promise<Lang> {
   const fromCookie = store.get("cscs-lang")?.value;
   if (isLang(fromCookie)) return fromCookie;
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (user) {
+    const supabase = await createClient();
     const { data } = await supabase
       .from("users")
       .select("preferred_language")
@@ -35,11 +34,9 @@ export async function toggleLanguage(): Promise<void> {
   const store = await cookies();
   store.set("cscs-lang", next, { maxAge: 60 * 60 * 24 * 365, path: "/" });
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (user) {
+    const supabase = await createClient();
     await supabase.from("users").update({ preferred_language: next }).eq("id", user.id);
   }
   revalidatePath("/", "layout");

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/auth/guards";
 import { signOut } from "@/lib/avsec/profile-actions";
 import { opsGroupForTransaction } from "@/lib/icms/ops-group";
 import { getFilteredSubmissions } from "@/lib/avsec/dashboard/queries";
@@ -43,12 +44,9 @@ export default async function LandingPage({
   searchParams: Promise<{ ops?: string }>;
 }) {
   const { ops } = await searchParams;
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const user = await getAuthUser();
   if (!user) redirect("/login");
+  const supabase = await createClient();
 
   const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
     supabase

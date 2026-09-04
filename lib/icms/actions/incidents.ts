@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/auth/guards";
 import { INCIDENT_LIFECYCLE, lifecycleFor } from "@/lib/icms/constants";
 import type { IncidentStatus, IncidentType } from "@/lib/icms/database.types";
 
@@ -75,10 +76,8 @@ export async function resolveIncident(
 
 /** Mark all of the current user's notifications as read. */
 export async function markNotificationsRead(): Promise<void> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return;
+  const supabase = await createClient();
   await supabase.from("notifications").update({ is_read: true }).eq("user_id", user.id);
 }

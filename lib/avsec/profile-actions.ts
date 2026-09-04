@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/avsec/auth";
+import { getAuthProvider } from "@/lib/auth/provider";
 import { REQUESTABLE_ROLES, ORG_WIDE_ROLES, type UserRole } from "@/lib/avsec/reference-data";
 
 export async function updateProfile(formData: FormData) {
@@ -38,7 +39,6 @@ export async function updateProfile(formData: FormData) {
 }
 
 export async function signOut() {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
+  await getAuthProvider().signOut();
   redirect("/login");
 }

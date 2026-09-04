@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/auth/guards";
 import { UnifiedScanner } from "@/components/scan/UnifiedScanner";
 import type { OpsGroup } from "@/lib/icms/database.types";
 
@@ -24,11 +25,9 @@ const OPS_GROUP_LABELS: Record<OpsGroup, string> = {
  * the scanner at all.
  */
 export default async function UnifiedScanPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
+  const supabase = await createClient();
 
   const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
     supabase.from("profiles").select("unified_role, ops_group").eq("id", user.id).maybeSingle(),

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/auth/guards";
 import { verifyQrToken } from "@/lib/icms/qr-token";
 import { nextStepFor } from "@/lib/icms/workflow";
 import { vendorNextStepFor } from "@/lib/icms/workflow-vendor";
@@ -93,13 +94,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
+  const supabase = await createClient();
 
   const { data: profile } = await supabase.from("users").select("role").eq("id", user.id).single();
   const role = profile?.role as Role | undefined;
