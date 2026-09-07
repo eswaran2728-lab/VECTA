@@ -20,22 +20,20 @@ export const dynamic = "force-dynamic";
  * exist once Phase 4 ships) passed as `?secret=`, checked against
  * DEV_MIGRATE_SECRET. Looks up the target id itself from
  * public.user_claims by email — never accepts a caller-supplied uid.
+ *
+ * Accepts GET (email as a query param) as well as POST (email in a JSON
+ * body) — GET lets this be triggered with a plain browser navigation,
+ * avoiding CORS entirely for one-off manual use.
  */
-export async function POST(request: NextRequest) {
+async function migrate(request: NextRequest, email: string | undefined) {
   const secret = request.nextUrl.searchParams.get("secret");
   const expected = process.env.DEV_MIGRATE_SECRET;
   if (!expected || !secret || secret !== expected) {
     return NextResponse.json({ error: "Not authorized." }, { status: 401 });
   }
 
-  let body: { email?: string };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
-  }
-  const email = body.email?.trim().toLowerCase();
-  if (!email) {
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (!normalizedEmail) {
     return NextResponse.json({ error: "Missing email." }, { status: 400 });
   }
 
@@ -43,7 +41,7 @@ export async function POST(request: NextRequest) {
   const { data } = await supabase
     .from("user_claims" as never)
     .select("id")
-    .ilike("email", email)
+    .ilike("email", normalizedEmail)
     .maybeSingle();
   const row = data as { id: string } | null;
   if (!row) {
@@ -53,7 +51,7 @@ export async function POST(request: NextRequest) {
   const auth = getFirebaseAdminAuth();
 
   try {
-    const existing = await auth.getUserByEmail(email);
+    const existing = await auth.getUserByEmail(normalizedEmail);
     await auth.deleteUser(existing.uid);
   } catch {
     // No existing Firebase user for this email — nothing to delete, fine.
@@ -61,9 +59,23 @@ export async function POST(request: NextRequest) {
 
   const created = await auth.createUser({
     uid: row.id,
-    email,
+    email: normalizedEmail,
     emailVerified: true,
   });
 
   return NextResponse.json({ uid: created.uid, matchesSupabaseId: created.uid === row.id });
+}
+
+export async function GET(request: NextRequest) {
+  return migrate(request, request.nextUrl.searchParams.get("email") ?? undefined);
+}
+
+export async function POST(request: NextRequest) {
+  let body: { email?: string } = {};
+  try {
+    body = await request.json();
+  } catch {
+    // fall through with empty body -> "Missing email." below
+  }
+  return migrate(request, body.email);
 }
