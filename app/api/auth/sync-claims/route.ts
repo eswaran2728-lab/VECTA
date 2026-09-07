@@ -61,19 +61,21 @@ export async function POST(request: NextRequest) {
 
   // The client-side `hd` hint on the Google provider is a UX convenience,
   // not a security control — a user can bypass it. This is the real check.
+  //
+  // Temporarily OPTIONAL: leaving AVSEC_WORKSPACE_DOMAIN unset skips this
+  // check entirely, to allow testing sign-in with a non-Workspace Google
+  // account while the Workspace rollout is still being verified. This
+  // must be set before any real rollout — re-enable by setting the env
+  // var in Vercel, no code change needed.
   const workspaceDomain = process.env.AVSEC_WORKSPACE_DOMAIN;
-  if (!workspaceDomain) {
-    return withCors(
-      NextResponse.json({ error: "Server misconfigured: AVSEC_WORKSPACE_DOMAIN not set." }, { status: 500 }),
-      origin
-    );
-  }
-  const email = decoded.email ?? "";
-  if (!decoded.email_verified || !email.toLowerCase().endsWith(`@${workspaceDomain.toLowerCase()}`)) {
-    return withCors(
-      NextResponse.json({ error: `Only verified @${workspaceDomain} accounts may sign in.` }, { status: 403 }),
-      origin
-    );
+  if (workspaceDomain) {
+    const email = decoded.email ?? "";
+    if (!decoded.email_verified || !email.toLowerCase().endsWith(`@${workspaceDomain.toLowerCase()}`)) {
+      return withCors(
+        NextResponse.json({ error: `Only verified @${workspaceDomain} accounts may sign in.` }, { status: 403 }),
+        origin
+      );
+    }
   }
 
   const claims = await syncClaimsForUser(decoded.uid);
