@@ -54,6 +54,50 @@ export async function syncClaimsForUser(uid: string): Promise<Record<string, unk
 }
 
 /**
+ * Self-service variant for POST /api/auth/sync-claims, called right after
+ * a fresh Google sign-in. Firebase assigns its own uid on an organic
+ * sign-in, unrelated to the account's existing Supabase-era profiles/
+ * users.id (a Supabase auth.users UUID) — syncClaimsForUser()'s id-based
+ * lookup only matches once Phase 4's migrate-users.ts has pre-created the
+ * Firebase user with that same UUID as its uid. Until then, match by
+ * email instead (verified via the caller's own ID token, so this is safe)
+ * and set claims on the Firebase uid Firebase actually assigned.
+ */
+export async function syncClaimsForFirebaseSignIn(
+  firebaseUid: string,
+  email: string
+): Promise<Record<string, unknown> | null> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("user_claims" as never)
+    .select("*")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (!data) return null;
+
+  const row = data as {
+    app_role: string | null;
+    team: string | null;
+    station: string | null;
+    staff_id: string | null;
+    vendor_id: string | null;
+  };
+
+  const claims = {
+    role: "authenticated",
+    app_role: row.app_role,
+    team: row.team,
+    station: row.station,
+    staff_id: row.staff_id,
+    vendor_id: row.vendor_id,
+  };
+
+  await getFirebaseAdminAuth().setCustomUserClaims(firebaseUid, claims);
+  return claims;
+}
+
+/**
  * Fire-and-forget wrapper for admin actions that change a role
  * (lib/icms/actions/users.ts, lib/avsec/admin/actions.ts) — called after
  * every such change so an already-migrated user's Firebase claims never

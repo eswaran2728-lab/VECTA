@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFirebaseAdminAuth } from "@/lib/auth/providers/firebase-admin";
-import { syncClaimsForUser } from "@/lib/auth/sync-claims";
+import { syncClaimsForFirebaseSignIn } from "@/lib/auth/sync-claims";
 
 export const dynamic = "force-dynamic";
 
@@ -78,7 +78,11 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const claims = await syncClaimsForUser(decoded.uid);
+  if (!decoded.email) {
+    return withCors(NextResponse.json({ error: "Token has no email." }, { status: 400 }), origin);
+  }
+
+  const claims = await syncClaimsForFirebaseSignIn(decoded.uid, decoded.email);
   if (!claims) {
     return withCors(
       NextResponse.json(
