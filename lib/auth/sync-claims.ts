@@ -71,7 +71,7 @@ export async function syncClaimsForFirebaseSignIn(
   const { data } = await supabase
     .from("user_claims" as never)
     .select("*")
-    .eq("email", email)
+    .ilike("email", email)
     .maybeSingle();
 
   if (!data) return null;

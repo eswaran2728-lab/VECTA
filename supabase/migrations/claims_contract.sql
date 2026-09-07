@@ -61,7 +61,18 @@ select
   null::text as vendor_id,
   u.status,
   'users'::text as source_table
-from public.users u;
+from public.users u
+-- Every AVSEC-native account also gets an ICMS shadow row with the SAME
+-- id (lib/icms/shadow-user.ts's buildShadowUserRow, used by
+-- lib/avsec/admin/actions.ts's createStaffAccount) — without this
+-- exclusion, such an account's id/email appears TWICE in this view (once
+-- per source table), which breaks every .maybeSingle()/.single() lookup
+-- against it (lib/auth/claims.ts's getClaims(), lib/auth/sync-claims.ts's
+-- syncClaimsForUser()/syncClaimsForFirebaseSignIn()) for exactly the
+-- accounts most likely to be the ones testing this claims contract
+-- (admins). The profiles row is always the canonical one for a shadowed
+-- account, so exclude its users-side mirror here.
+where not exists (select 1 from public.profiles p where p.id = u.id);
 
 comment on view public.user_claims is
   'Phase 2 claims contract (AUTH-CONTRACT.md): normalises public.profiles '
