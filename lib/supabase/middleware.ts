@@ -87,6 +87,14 @@ export async function updateSession(request: NextRequest) {
     return redirectResponse;
   }
 
+  // Absorb and neutralize any stale POST /login requests from older cached clients
+  if (request.method === "POST" && path === "/login") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.search = "";
+    return NextResponse.redirect(url, { status: 303 });
+  }
+
   if (user && path === "/login") {
     if (request.nextUrl.searchParams.has("error")) {
       return supabaseResponse;

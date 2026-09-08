@@ -141,7 +141,15 @@ export function LoginForm() {
       </div>
 
       {/* Standard Email/Password Form */}
-      <form onSubmit={handleCredentialsSignIn} className="flex flex-col gap-3.5">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleCredentialsSignIn(e);
+        }}
+        action="#"
+        method="dialog"
+        className="flex flex-col gap-3.5"
+      >
         <div>
           <label htmlFor="email" className="vecta-label">
             Email
@@ -154,6 +162,12 @@ export function LoginForm() {
             placeholder="you@airasia.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleCredentialsSignIn(e);
+              }
+            }}
             required
             className="vecta-input"
           />
@@ -170,6 +184,12 @@ export function LoginForm() {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleCredentialsSignIn(e);
+                }
+              }}
               required
               className="vecta-input pr-10 tracking-[0.2em]"
             />
@@ -190,7 +210,8 @@ export function LoginForm() {
           </p>
         ) : null}
         <button
-          type="submit"
+          type="button"
+          onClick={handleCredentialsSignIn}
           disabled={isLoading || isGoogleLoading}
           style={{ touchAction: "manipulation" }}
           className="vecta-btn-primary mt-1 active:scale-[0.98] transition-transform duration-100 cursor-pointer"
