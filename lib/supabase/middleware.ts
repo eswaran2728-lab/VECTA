@@ -88,14 +88,40 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && path === "/login") {
+    if (request.nextUrl.searchParams.has("error")) {
+      return supabaseResponse;
+    }
+    const userEmail = (user.email ?? "").toLowerCase();
+    const isCaterLinkEmail =
+      userEmail.endsWith("@caterlink.internal") ||
+      userEmail.includes("driver") ||
+      userEmail.includes("warehouse") ||
+      userEmail.includes("vendor") ||
+      userEmail.includes("caterlink");
+
     const url = request.nextUrl.clone();
-    url.pathname = "/";
+    url.pathname = isCaterLinkEmail ? "/icms/transactions" : "/";
     url.search = "";
     return NextResponse.redirect(url);
   }
 
   // --- Role + check-in gate ---
   if (user && isGated) {
+    const userEmail = (user.email ?? "").toLowerCase();
+    const isCaterLinkUser =
+      userEmail.endsWith("@caterlink.internal") ||
+      userEmail.includes("driver") ||
+      userEmail.includes("warehouse") ||
+      userEmail.includes("vendor") ||
+      userEmail.includes("caterlink");
+
+    // Boundary Gate: Driver & CaterLink accounts trying to access AVSEC are redirected to CaterLink
+    if (isCaterLinkUser && path.startsWith("/avsec")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/icms/transactions";
+      return NextResponse.redirect(url);
+    }
+
     // Unified profile lives in whichever app's table the account was
     // created through — AVSEC's public.profiles or ICMS's public.users —
     // both now carry the same unified_role vocabulary in this shared project.
@@ -114,14 +140,14 @@ export async function updateSession(request: NextRequest) {
     const profile = avsecProfile ?? icmsProfile;
 
     const activeStatuses = ["approved", "active"];
-    if (!profile || !activeStatuses.includes(profile.status as string)) {
+    if (profile && profile.status && !activeStatuses.includes(profile.status as string)) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
-      url.searchParams.set("error", profile ? String(profile.status) : "no-profile");
+      url.searchParams.set("error", String(profile.status));
       return NextResponse.redirect(url);
     }
 
-    const role = profile.unified_role as string | null;
+    const role = (profile?.unified_role ?? (isCaterLinkUser ? "vendor" : null)) as string | null;
 
     // Boundary Gate: Driver & Vendor accounts are restricted from AVSEC reports and routed to CaterLink/ICMS
     if (role === "vendor" && path.startsWith("/avsec")) {
