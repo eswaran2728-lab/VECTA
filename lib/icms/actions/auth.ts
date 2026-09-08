@@ -47,15 +47,19 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
   revalidatePath("/", "layout");
 
   // Single Login Page Router:
-  // Drivers / Vendors -> Go straight to CaterLink ICMS Driver portal
-  // AVSEC -> Go straight to VECTA AVSEC operations
-  const isVendorRole =
+  // Check if account is a Driver / Vendor / Warehouse PIC account
+  const rawRole = (icmsProfile?.role ?? avsecProfile?.role) as string | null;
+  const isDriverOrVendor =
     profile?.unified_role === "vendor" ||
-    icmsProfile?.role === "vendor" ||
+    rawRole === "vendor" ||
+    rawRole === "driver_ifc" ||
+    rawRole === "driver_vendor" ||
+    rawRole === "warehouse_pic" ||
     email.endsWith("@caterlink.internal") ||
-    email.includes("driver");
+    email.includes("driver") ||
+    email.includes("warehouse");
 
-  if (isVendorRole && !avsecProfile) {
+  if (isDriverOrVendor && !avsecProfile) {
     redirect("/icms/transactions");
   }
 

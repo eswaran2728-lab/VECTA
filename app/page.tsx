@@ -67,13 +67,26 @@ export default async function LandingPage({
   if (!profile) redirect("/login?error=no-profile");
 
   const role = profile.unified_role as string | null;
+  const rawRole = (icmsProfile?.role ?? avsecProfile?.role) as string | null;
+  const userEmail = (user.email ?? "").toLowerCase();
 
-  // Single Login Portal: Drivers & Vendors route automatically into CaterLink / ICMS
-  if (role === "vendor") {
+  // Single Login Portal: Drivers, Vendors & Warehouse PIC route automatically into CaterLink / ICMS
+  const isDriverOrVendor =
+    role === "vendor" ||
+    rawRole === "vendor" ||
+    rawRole === "driver_ifc" ||
+    rawRole === "driver_vendor" ||
+    rawRole === "warehouse_pic" ||
+    userEmail.includes("caterlink") ||
+    userEmail.includes("driver") ||
+    userEmail.includes("warehouse");
+
+  if (isDriverOrVendor && !avsecProfile) {
     redirect("/icms/transactions");
   }
 
   const orgWide = role ? ORG_WIDE_ROLES.includes(role) : false;
+
 
 
   // Reports = the existing (unchanged) AVSEC reports app — only reachable
