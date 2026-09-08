@@ -41,7 +41,7 @@ export async function registerDriver(_prev: RegisterState, formData: FormData): 
       return { error: authError?.message ?? "Could not create account.", success: null };
     }
 
-    // Insert driver record into public.users table
+    // Insert driver record with 'pending' status requiring VECTA Admin approval
     const { error: profileError } = await supabase.from("users").upsert(
       {
         id: created.user.id,
@@ -50,7 +50,7 @@ export async function registerDriver(_prev: RegisterState, formData: FormData): 
         email,
         role: "vendor",
         unified_role: "vendor",
-        status: "active",
+        status: "pending", // Requires VECTA Admin approval
       },
       { onConflict: "id" }
     );
@@ -61,7 +61,8 @@ export async function registerDriver(_prev: RegisterState, formData: FormData): 
 
     return {
       error: null,
-      success: "Registration successful! You can now sign in with your email and password.",
+      success:
+        "Registration submitted successfully! Your driver account is now awaiting approval from a VECTA Administrator. You will be able to sign in once approved.",
     };
   } catch (err) {
     return {
