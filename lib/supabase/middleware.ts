@@ -168,8 +168,11 @@ export async function updateSession(request: NextRequest) {
     // AirAsia attendance/check-in concept doesn't apply to accounts that
     // don't live in AVSEC's own tables.
     const icmsOnlyExempt = !avsecProfile && Boolean(icmsProfile);
-    const exempt = isCheckinGateExempt(role) || icmsOnlyExempt;
-    const alreadyOnCheckin = path.startsWith("/avsec/duty");
+    const exempt = isCheckinGateExempt(role) || icmsOnlyExempt || isCaterLinkUser || path.startsWith("/icms");
+    const alreadyOnCheckin =
+      path.startsWith("/avsec/duty") ||
+      path.startsWith("/avsec/profile-setup") ||
+      path.startsWith("/avsec/pending-approval");
 
     // Coarse edge-level defense-in-depth for the admin section: additive to,
     // not a replacement for, RLS and requireRole(["ADMIN"]) in the page/
@@ -183,7 +186,7 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    if (!exempt && !alreadyOnCheckin) {
+    if (!exempt && !alreadyOnCheckin && path.startsWith("/avsec")) {
       const today = new Date().toISOString().slice(0, 10);
       const { data: dutyRecord, error } = await supabase
         .from("duty_records")
