@@ -63,7 +63,7 @@ export function InstallPrompt() {
     <div className="flex items-center gap-3 border-b bg-primary/10 px-4 py-2.5 text-sm print:hidden">
       <Download className="h-4 w-4 shrink-0 text-primary" />
       <span className="flex-1 text-foreground">
-        Install ICMS on this device for quicker access and offline support.
+        Install CaterLink on this device for quicker access and offline support.
       </span>
       <button
         type="button"

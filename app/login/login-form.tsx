@@ -1,12 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Eye, EyeOff, TriangleAlert, ShieldCheck, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 export function LoginForm() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -65,7 +63,11 @@ export function LoginForm() {
 
       // Check user role for routing
       const userEmail = (data.user.email ?? "").toLowerCase();
+      const meta = (data.user.user_metadata ?? {}) as Record<string, unknown>;
       const isCaterLinkUser =
+        meta.system_type === "caterlink" ||
+        meta.role === "vendor" ||
+        meta.driver_type !== undefined ||
         userEmail.endsWith("@caterlink.internal") ||
         userEmail.includes("caterlink") ||
         userEmail.includes("driver") ||
@@ -73,7 +75,7 @@ export function LoginForm() {
         userEmail.includes("vendor");
 
       if (isCaterLinkUser) {
-        window.location.href = "/icms/transactions";
+        window.location.href = "/caterlink/dashboard";
       } else {
         window.location.href = "/";
       }

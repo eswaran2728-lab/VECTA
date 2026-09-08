@@ -1,19 +1,68 @@
 "use client";
 
 import { useState } from "react";
-import { useActionState } from "react";
 import Link from "next/link";
-import { registerUser, type RegisterState } from "@/lib/icms/actions/registration";
-import { TriangleAlert, CheckCircle2, Shield, Truck, Phone, User, Mail, Lock, Building, Tag } from "lucide-react";
-
-const initialState: RegisterState = { error: null, success: null };
+import {
+  TriangleAlert,
+  CheckCircle2,
+  Shield,
+  Truck,
+  Phone,
+  User,
+  Mail,
+  Lock,
+  Building,
+  Tag,
+  Loader2,
+} from "lucide-react";
 
 export function RegisterForm() {
-  const [state, formAction, pending] = useActionState(registerUser, initialState);
   const [systemType, setSystemType] = useState<"avsec" | "caterlink">("avsec");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    const formData = new FormData(e.currentTarget);
+    const payload: Record<string, string> = {
+      system_type: systemType,
+    };
+
+    formData.forEach((value, key) => {
+      payload[key] = String(value);
+    });
+
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMsg(data.error ?? "Registration failed. Please check your details.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      setSuccessMsg(data.success ?? "Registration submitted successfully!");
+      setIsSubmitting(false);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Network error during registration.");
+      setIsSubmitting(false);
+    }
+  };
 
   return (
-    <form action={formAction} className="flex flex-col gap-4">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       {/* System Selection Tabs */}
       <div className="flex flex-col gap-1.5">
         <label className="vecta-label">Registering For</label>
@@ -21,7 +70,7 @@ export function RegisterForm() {
           <button
             type="button"
             onClick={() => setSystemType("avsec")}
-            className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 px-3 text-xs font-semibold transition-all duration-150 ${
+            className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 px-3 text-xs font-semibold transition-all duration-150 cursor-pointer ${
               systemType === "avsec"
                 ? "border-primary bg-primary/15 text-primary shadow-sm shadow-primary/20"
                 : "border-border/60 bg-surface/50 text-muted-foreground hover:bg-surface/80"
@@ -34,7 +83,7 @@ export function RegisterForm() {
           <button
             type="button"
             onClick={() => setSystemType("caterlink")}
-            className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 px-3 text-xs font-semibold transition-all duration-150 ${
+            className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 px-3 text-xs font-semibold transition-all duration-150 cursor-pointer ${
               systemType === "caterlink"
                 ? "border-amber-500 bg-amber-500/15 text-amber-400 shadow-sm shadow-amber-500/20"
                 : "border-border/60 bg-surface/50 text-muted-foreground hover:bg-surface/80"
@@ -44,7 +93,6 @@ export function RegisterForm() {
             <span>CATERLINK</span>
           </button>
         </div>
-        <input type="hidden" name="system_type" value={systemType} />
       </div>
 
       {/* Common Information */}
@@ -248,20 +296,20 @@ export function RegisterForm() {
         )}
       </div>
 
-      {state.error ? (
+      {errorMsg ? (
         <p role="alert" className="flex items-center gap-1.5 text-xs text-brand">
           <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
-          {state.error}
+          {errorMsg}
         </p>
       ) : null}
 
-      {state.success ? (
+      {successMsg ? (
         <div className="flex flex-col gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-300">
           <div className="flex items-center gap-1.5 font-semibold">
             <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
             <span>Registration Submitted!</span>
           </div>
-          <p className="leading-relaxed text-foreground/90">{state.success}</p>
+          <p className="leading-relaxed text-foreground/90">{successMsg}</p>
           <Link
             href="/login"
             className="mt-1 font-semibold text-primary underline underline-offset-4 hover:text-primary/80"
@@ -272,11 +320,18 @@ export function RegisterForm() {
       ) : (
         <button
           type="submit"
-          disabled={pending}
+          disabled={isSubmitting}
           style={{ touchAction: "manipulation" }}
-          className="vecta-btn-primary mt-2 active:scale-[0.98] transition-transform cursor-pointer"
+          className="vecta-btn-primary mt-2 active:scale-[0.98] transition-transform cursor-pointer flex items-center justify-center gap-2"
         >
-          {pending ? "Submitting Registration…" : "Submit Registration for Approval"}
+          {isSubmitting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin text-primary-foreground" />
+              <span>Submitting Registration…</span>
+            </>
+          ) : (
+            <span>Submit Registration for Approval</span>
+          )}
         </button>
       )}
     </form>

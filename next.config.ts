@@ -16,6 +16,34 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/**": ["./templates/forms/**/*.pdf"],
   },
+  async rewrites() {
+    return [
+      {
+        source: "/caterlink",
+        destination: "/icms/dashboard",
+      },
+      {
+        source: "/caterlink/dashboard",
+        destination: "/icms/dashboard",
+      },
+      {
+        source: "/caterlink/transactions",
+        destination: "/icms/transactions",
+      },
+      {
+        source: "/caterlink/transactions/:path*",
+        destination: "/icms/transactions/:path*",
+      },
+      {
+        source: "/caterlink/vendor-transactions",
+        destination: "/icms/vendor-transactions",
+      },
+      {
+        source: "/caterlink/vendor-transactions/:path*",
+        destination: "/icms/vendor-transactions/:path*",
+      },
+    ];
+  },
 };
 
 export default nextConfig;

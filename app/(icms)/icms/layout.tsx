@@ -32,57 +32,68 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const isPic = profile.role === "warehouse_pic";
   const isVendor = profile.role === "vendor";
-  // warehouse_pic scans too now, for Vendor Movement Part C — not a
-  // catering checkpoint of their own, but still needs the Scan nav item.
-  // hub_avsec/redq_avsec scan for their own Multi-Route checkpoints.
+  const isDriver = isPic || isVendor;
+
+  // Drivers do NOT scan checkpoints; only AVSEC officers and receivers scan
   const canScan = [
     "post2_avsec",
     "post6_avsec",
     "receiver",
-    "warehouse_pic",
     "hub_avsec",
     "redq_avsec",
   ].includes(profile.role);
 
-  // Desktop-only secondary nav — admin sub-pages (Users/Whitelists/Audit/
-  // Archive) and the create-transaction shortcuts have no other entry point
-  // in the app, so this stays even though the top header and bottom nav
-  // below are now the shared, unified ones (UnifiedHeader/TeamBottomNav) —
-  // this row is ICMS-specific content under the shared chrome, not a
-  // competing header of its own.
-  const nav = [
-    { href: "/icms/dashboard", label: "Dashboard", icon: LayoutDashboard, show: true },
-    { href: "/icms/transactions/new", label: "New", icon: PlusCircle, show: isPic },
-    {
-      href: "/icms/vendor-transactions/new",
-      label: "New Delivery",
-      icon: PlusCircle,
-      show: isVendor,
-    },
-    { href: "/icms/scan", label: "Scan", icon: ScanLine, show: canScan },
-    { href: "/icms/transactions", label: "Transactions", icon: ClipboardList, show: true },
-    { href: "/icms/incidents", label: "Incidents", icon: ShieldAlert, show: true },
-    {
-      href: "/icms/reports",
-      label: "Reports",
-      icon: FileBarChart,
-      show: profile.role === "supervisor" || profile.role === "enforcement" || profile.role === "management",
-    },
-    { href: "/icms/admin/users", label: "Users", icon: Users, show: profile.role === "supervisor" },
-    {
-      href: "/icms/admin/whitelists",
-      label: "Whitelists",
-      icon: ListChecks,
-      show: profile.role === "supervisor",
-    },
-    {
-      href: "/icms/admin/audit",
-      label: "Audit Log",
-      icon: ScrollText,
-      show: profile.role === "supervisor",
-    },
-    { href: "/icms/admin/archive", label: "Archive", icon: Archive, show: profile.role === "supervisor" },
-  ].filter((item) => item.show);
+  // For drivers, keep desktop navigation completely streamlined:
+  // Create New Transaction & My Dispatches only
+  const nav = isDriver
+    ? [
+        {
+          href: isVendor ? "/caterlink/vendor-transactions/new" : "/caterlink/transactions/new",
+          label: isVendor ? "+ New Delivery" : "+ New Transaction",
+          icon: PlusCircle,
+          show: true,
+        },
+        {
+          href: isVendor ? "/caterlink/vendor-transactions" : "/caterlink/transactions",
+          label: isVendor ? "My Deliveries" : "My Dispatches",
+          icon: ClipboardList,
+          show: true,
+        },
+        { href: "/caterlink/dashboard", label: "CaterLink Dashboard", icon: LayoutDashboard, show: true },
+      ]
+    : [
+        { href: "/icms/dashboard", label: "Dashboard", icon: LayoutDashboard, show: true },
+        { href: "/icms/transactions/new", label: "New", icon: PlusCircle, show: isPic },
+        {
+          href: "/icms/vendor-transactions/new",
+          label: "New Delivery",
+          icon: PlusCircle,
+          show: isVendor,
+        },
+        { href: "/icms/scan", label: "Scan", icon: ScanLine, show: canScan },
+        { href: "/icms/transactions", label: "Transactions", icon: ClipboardList, show: true },
+        { href: "/icms/incidents", label: "Incidents", icon: ShieldAlert, show: true },
+        {
+          href: "/icms/reports",
+          label: "Reports",
+          icon: FileBarChart,
+          show: profile.role === "supervisor" || profile.role === "enforcement" || profile.role === "management",
+        },
+        { href: "/icms/admin/users", label: "Users", icon: Users, show: profile.role === "supervisor" },
+        {
+          href: "/icms/admin/whitelists",
+          label: "Whitelists",
+          icon: ListChecks,
+          show: profile.role === "supervisor",
+        },
+        {
+          href: "/icms/admin/audit",
+          label: "Audit Log",
+          icon: ScrollText,
+          show: profile.role === "supervisor",
+        },
+        { href: "/icms/admin/archive", label: "Archive", icon: Archive, show: profile.role === "supervisor" },
+      ].filter((item) => item.show);
 
   const orgWide = ORG_WIDE_UNIFIED_ROLES.includes(profile.unified_role ?? "");
 
@@ -92,6 +103,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         name={profile.name}
         roleLabel={ROLE_LABELS[profile.role] ?? null}
         signOutAction={signOut}
+        brand={isDriver ? "CATERLINK" : "VECTA"}
+        homeHref={isDriver ? "/caterlink/dashboard" : "/"}
         extra={
           <>
             <PwaProvider />
@@ -115,11 +128,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         ))}
       </nav>
 
-      <InstallPrompt />
+      {!isDriver && <InstallPrompt />}
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">{children}</main>
 
-      <TeamBottomNav opsGroup={(profile.ops_group ?? null) as OpsGroup | null} orgWide={orgWide} />
+      <TeamBottomNav
+        opsGroup={(profile.ops_group ?? null) as OpsGroup | null}
+        orgWide={orgWide}
+        role={profile.role}
+      />
     </div>
   );
 }

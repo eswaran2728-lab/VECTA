@@ -28,23 +28,58 @@ const REPORTS: NavTab = { href: "/?section=reports#reports", label: "Reports", m
 // page, already restricted to exactly these roles) replaces it instead.
 const REPORT_SEARCH: NavTab = { href: "/avsec/reports/lookup", label: "Report Search" };
 
+const NEW_TRANSACTION: NavTab = {
+  href: "/caterlink/transactions/new",
+  label: "+ New",
+  match: ["/caterlink/transactions/new", "/icms/transactions/new"],
+};
+const NEW_DELIVERY: NavTab = {
+  href: "/caterlink/vendor-transactions/new",
+  label: "+ New",
+  match: ["/caterlink/vendor-transactions/new", "/icms/vendor-transactions/new"],
+};
+const MY_DISPATCHES: NavTab = {
+  href: "/caterlink/transactions",
+  label: "Dispatches",
+  match: ["/caterlink/transactions", "/icms/transactions"],
+};
+const MY_DELIVERIES: NavTab = {
+  href: "/caterlink/vendor-transactions",
+  label: "Deliveries",
+  match: ["/caterlink/vendor-transactions", "/icms/vendor-transactions"],
+};
+const DRIVER_HOME: NavTab = {
+  href: "/caterlink/dashboard",
+  label: "Home",
+  match: ["/caterlink/dashboard", "/caterlink", "/icms/dashboard"],
+};
+
 /**
- * Team-scoped bottom navigation, shared across the 5 pages that make up the
- * unified operational surface: the dashboard ("/"), Scan, Bay Board,
- * Transaction History, and Profile. Which tabs appear depends on the
- * viewer's ops_group (team) and whether their role is org-wide.
+ * Team-scoped bottom navigation, shared across the operational surfaces.
+ * For drivers (warehouse_pic, vendor), provides dedicated, minimal dispatch actions.
  */
 export function TeamBottomNav({
   opsGroup,
   orgWide,
+  role,
 }: {
   opsGroup: OpsGroup | null;
   orgWide: boolean;
+  role?: string | null;
 }) {
   const pathname = usePathname();
 
+  const isDriver =
+    role === "warehouse_pic" ||
+    role === "vendor" ||
+    (pathname.startsWith("/icms") && !opsGroup && !orgWide);
+
   let tabs: NavTab[];
-  if (orgWide) {
+  if (role === "vendor") {
+    tabs = [NEW_DELIVERY, MY_DELIVERIES, DRIVER_HOME];
+  } else if (isDriver) {
+    tabs = [NEW_TRANSACTION, MY_DISPATCHES, DRIVER_HOME];
+  } else if (orgWide) {
     // Org-wide (admin/management/enforcement): no team-specific 3rd tab —
     // team filtering happens inside the Dashboard itself via the existing
     // ops-query-param tab switcher. Report Search replaces Scan (see
@@ -59,8 +94,7 @@ export function TeamBottomNav({
     // tab, same as Operation AVSEC.
     tabs = [DASHBOARD, SCAN, BAY_BOARD, PROFILE];
   } else {
-    // No ops_group and not org-wide (shouldn't normally happen for anyone
-    // reaching these 5 pages) — fall back to the 3 tabs common to everyone.
+    // No ops_group and not org-wide — fall back to the 3 tabs common to everyone.
     tabs = [DASHBOARD, SCAN, PROFILE];
   }
 
@@ -72,7 +106,7 @@ export function TeamBottomNav({
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card"
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       aria-label="Primary"
     >

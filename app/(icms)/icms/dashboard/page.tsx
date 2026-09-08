@@ -16,9 +16,12 @@ import {
   CheckCircle2,
   AlertTriangle,
   TriangleAlert,
+  Truck,
+  PlusCircle,
 } from "lucide-react";
+import { StatusBadge } from "@/components/icms/status-badge";
 
-export const metadata: Metadata = { title: "Dashboard" };
+export const metadata: Metadata = { title: "CaterLink Dashboard" };
 export const dynamic = "force-dynamic";
 
 function startOfToday(): string {
@@ -35,6 +38,174 @@ export default async function DashboardPage({
   const profile = await requireProfile();
   const { error } = await searchParams;
   const supabase = await createClient();
+
+  const isDriver = profile.role === "warehouse_pic" || profile.role === "vendor";
+
+  // Dedicated, streamlined Driver View: NO complex analytics or charts.
+  // Focused entirely on: + Create New Transaction & Active QR Passes
+  if (isDriver) {
+    const isVendor = profile.role === "vendor";
+
+    const query = isVendor
+      ? supabase
+          .from("vendor_transactions")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(15)
+      : supabase
+          .from("transactions")
+          .select("*")
+          .eq("archived", false)
+          .order("created_at", { ascending: false })
+          .limit(15);
+
+    const { data: userTx } = await query;
+
+    interface DriverTxItem {
+      id: string;
+      transaction_number: string;
+      status: TransactionStatus;
+      vehicle_number?: string | null;
+      direction?: Direction | null;
+      flight_number?: string | null;
+    }
+
+    const activeList = ((userTx ?? []) as unknown as DriverTxItem[]).filter(
+      (t) => (t.status as string) !== "COMPLETED" && (t.status as string) !== "ESCALATED"
+    );
+
+    return (
+      <div className="mx-auto max-w-4xl space-y-6">
+        {/* CaterLink Dashboard Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/60 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-semibold uppercase tracking-wider text-amber-500">
+                {isVendor ? "CATERLINK · THIRD PARTY DRIVER" : "CATERLINK · IFC DRIVER"}
+              </span>
+            </div>
+            <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+              CaterLink Dashboard
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Signed in as <span className="font-semibold text-foreground">{profile.name}</span> (Staff ID:{" "}
+              <span className="font-mono text-foreground font-semibold">{profile.staff_id}</span>).
+            </p>
+          </div>
+        </div>
+
+        {/* Primary Hero Card: CREATE NEW TRANSACTION */}
+        <div className="relative overflow-hidden rounded-2xl border-2 border-primary/50 bg-gradient-to-br from-primary/15 via-card to-card p-6 shadow-xl shadow-primary/10">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
+            <div className="space-y-1.5 max-w-lg">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/20 px-3 py-1 font-mono text-xs font-semibold text-primary">
+                <Truck className="h-3.5 w-3.5" /> Departure Dispatch
+              </span>
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
+                {isVendor ? "Start New Delivery" : "Create New Transaction"}
+              </h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {isVendor
+                  ? "Record catering vendor delivery, driver NRIC, and seals. Generates a live QR pass for AVSEC security clearance."
+                  : "Start catering movement (Part A). Verify vehicle, assign security seals, and generate your live driver QR pass."}
+              </p>
+            </div>
+            <Link
+              href={isVendor ? "/caterlink/vendor-transactions/new" : "/caterlink/transactions/new"}
+              className="w-full sm:w-auto shrink-0"
+            >
+              <button
+                type="button"
+                className="vecta-btn-primary w-full sm:w-auto text-base px-6 py-4 font-bold flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-[0.98] transition-transform"
+              >
+                <PlusCircle className="h-5 w-5" />
+                <span>+ Create New Transaction</span>
+              </button>
+            </Link>
+          </div>
+        </div>
+
+        {/* Active In-Transit Movements & QR Pass */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold flex items-center gap-2">
+              <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              Active Movements &amp; Driver QR Passes
+            </h3>
+            <span className="font-mono text-xs text-muted-foreground">
+              {activeList.length} in transit
+            </span>
+          </div>
+
+          {activeList.length === 0 ? (
+            <Card className="border-dashed bg-surface/30 p-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                No active dispatches right now. Tap &ldquo;+ Create New Transaction&rdquo; above to start a new movement.
+              </p>
+            </Card>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {activeList.map((tx) => (
+                <Card
+                  key={tx.id}
+                  className="border-primary/30 bg-surface/60 shadow-sm hover:border-primary/60 transition-all"
+                >
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-xs font-bold text-primary">
+                        {tx.transaction_number}
+                      </span>
+                      <StatusBadge status={tx.status} />
+                    </div>
+
+                    <div className="text-xs space-y-1 text-muted-foreground">
+                      <p>
+                        <strong className="text-foreground">Vehicle:</strong> {tx.vehicle_number ?? "—"}
+                      </p>
+                      <p>
+                        <strong className="text-foreground">Direction:</strong> {tx.direction ?? "OUTBOUND"}
+                      </p>
+                      {tx.flight_number ? (
+                        <p>
+                          <strong className="text-foreground">Flight:</strong> {tx.flight_number}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="pt-2 border-t border-border/50">
+                      <Link
+                        href={
+                          isVendor
+                            ? `/caterlink/vendor-transactions/${tx.id}`
+                            : `/caterlink/transactions/${tx.id}`
+                        }
+                        className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary/15 hover:bg-primary/25 text-primary py-2.5 px-3 text-xs font-bold transition-colors cursor-pointer"
+                      >
+                        <QrCode className="h-4 w-4" />
+                        <span>Show Driver QR Pass</span>
+                      </Link>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Quick link to Dispatches list */}
+        <div className="pt-2 flex items-center justify-between text-xs text-muted-foreground">
+          <span>Need full dispatch history?</span>
+          <Link
+            href={isVendor ? "/caterlink/vendor-transactions" : "/caterlink/transactions"}
+            className="font-semibold text-primary underline underline-offset-4 hover:text-primary/80"
+          >
+            View All Dispatches ➔
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   const today = startOfToday();
 
   const chartWindow = new Date();

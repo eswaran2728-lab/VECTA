@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { isCheckinGateExempt, isAdminPathForbidden, isVectaRoleAllowed } from "./middleware-gate-logic";
+import { isCheckinGateExempt, isAdminPathForbidden } from "./middleware-gate-logic";
 
 
 // Unified role vocabulary (see supabase/migrations/unified_role_model and
@@ -67,7 +67,7 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
-  const isGated = path.startsWith("/icms") || path.startsWith("/avsec");
+  const isGated = path.startsWith("/icms") || path.startsWith("/avsec") || path.startsWith("/caterlink");
   // API routes authenticate themselves (requireRole()/auth.getUser() per
   // route — see app/api/**) and some, like /api/icms/qr/mint, are meant to
   // be called server-to-server with a Bearer token and no cookies at all.
@@ -100,7 +100,11 @@ export async function updateSession(request: NextRequest) {
       return supabaseResponse;
     }
     const userEmail = (user.email ?? "").toLowerCase();
+    const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
     const isCaterLinkEmail =
+      userMeta.system_type === "caterlink" ||
+      userMeta.role === "vendor" ||
+      userMeta.driver_type !== undefined ||
       userEmail.endsWith("@caterlink.internal") ||
       userEmail.includes("driver") ||
       userEmail.includes("warehouse") ||
@@ -108,7 +112,7 @@ export async function updateSession(request: NextRequest) {
       userEmail.includes("caterlink");
 
     const url = request.nextUrl.clone();
-    url.pathname = isCaterLinkEmail ? "/icms/transactions" : "/";
+    url.pathname = isCaterLinkEmail ? "/caterlink/dashboard" : "/";
     url.search = "";
     return NextResponse.redirect(url);
   }
@@ -116,17 +120,28 @@ export async function updateSession(request: NextRequest) {
   // --- Role + check-in gate ---
   if (user && isGated) {
     const userEmail = (user.email ?? "").toLowerCase();
+    const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
     const isCaterLinkUser =
+      userMeta.system_type === "caterlink" ||
+      userMeta.role === "vendor" ||
+      userMeta.driver_type !== undefined ||
       userEmail.endsWith("@caterlink.internal") ||
       userEmail.includes("driver") ||
       userEmail.includes("warehouse") ||
       userEmail.includes("vendor") ||
       userEmail.includes("caterlink");
 
+    // Seamless URL remapping: redirect drivers visiting /icms to /caterlink
+    if (isCaterLinkUser && path.startsWith("/icms")) {
+      const url = request.nextUrl.clone();
+      url.pathname = path.replace(/^\/icms/, "/caterlink");
+      return NextResponse.redirect(url);
+    }
+
     // Boundary Gate: Driver & CaterLink accounts trying to access AVSEC are redirected to CaterLink
     if (isCaterLinkUser && path.startsWith("/avsec")) {
       const url = request.nextUrl.clone();
-      url.pathname = "/icms/transactions";
+      url.pathname = "/caterlink/dashboard";
       return NextResponse.redirect(url);
     }
 
@@ -157,26 +172,18 @@ export async function updateSession(request: NextRequest) {
 
     const role = (profile?.unified_role ?? (isCaterLinkUser ? "vendor" : null)) as string | null;
 
-    // Boundary Gate: Driver & Vendor accounts are restricted from AVSEC reports and routed to CaterLink/ICMS
+    // Boundary Gate: Driver & Vendor accounts are restricted from AVSEC reports and routed to CaterLink
     if (role === "vendor" && path.startsWith("/avsec")) {
       const url = request.nextUrl.clone();
-      url.pathname = "/icms/transactions";
+      url.pathname = "/caterlink/dashboard";
       return NextResponse.redirect(url);
     }
 
-    // ICMS-origin checkpoint accounts (post2_avsec/post6_avsec/hub_avsec/
-    // redq_avsec — no row in public.profiles) have no way to ever satisfy
+    // ICMS/CaterLink checkpoint accounts have no way to ever satisfy
     // this gate: check-in/duty_records/team_rosters are entirely AVSEC-side
-    // concepts keyed to a profiles row. Without this exemption, clicking
-    // into any gated route sent them to /avsec/duty, whose own
-    // requireProfile() (profiles-table only) found nothing and bounced them
-    // to /login, which — since they're still authenticated — immediately
-    // redirected back to "/", i.e. every click looped back to the
-    // dashboard. Same underlying reason as the vendor exemption: the
-    // AirAsia attendance/check-in concept doesn't apply to accounts that
-    // don't live in AVSEC's own tables.
+    // concepts keyed to a profiles row.
     const icmsOnlyExempt = !avsecProfile && Boolean(icmsProfile);
-    const exempt = isCheckinGateExempt(role) || icmsOnlyExempt || isCaterLinkUser || path.startsWith("/icms");
+    const exempt = isCheckinGateExempt(role) || icmsOnlyExempt || isCaterLinkUser || path.startsWith("/icms") || path.startsWith("/caterlink");
     const alreadyOnCheckin =
       path.startsWith("/avsec/duty") ||
       path.startsWith("/avsec/profile-setup") ||

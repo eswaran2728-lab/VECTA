@@ -83,7 +83,7 @@ export default async function LandingPage({
     userEmail.includes("vendor");
 
   if (isCaterLinkUser) {
-    redirect("/icms/transactions");
+    redirect("/caterlink/dashboard");
   }
 
   const orgWide = role ? ORG_WIDE_ROLES.includes(role) : false;

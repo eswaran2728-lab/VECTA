@@ -14,9 +14,8 @@ import type {
 } from "./database.types";
 
 export const ROLE_LABELS: Record<Role, string> = {
-  // Covers both the in-flight catering warehouse and the SRA warehouse —
-  // the direction is chosen per transaction, not implied by the role.
-  warehouse_pic: "Warehouse PIC",
+  // Internal AirAsia Flight Catering (IFC) Driver & Dispatchers
+  warehouse_pic: "IFC Driver / Dispatch",
   post2_avsec: "AVSEC In-flight Post (Post 2)",
   post6_avsec: "AVSEC Airport Post (Post 6)",
   receiver: "SRA / Aircraft Receiver",
@@ -28,7 +27,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   enforcement: "Enforcement",
   // Vendor Movement Module (AA/SEC/F/019) — external vendor driver, own
   // separate workflow from the catering IFCSF one above.
-  vendor: "Vendor",
+  vendor: "Vendor Driver",
   // Multi-Route Restructure (Hub & REDQ) — confirms delivery for HUB-route
   // transactions, the terminal step (no Part C/D).
   hub_avsec: "Hub AVSEC",

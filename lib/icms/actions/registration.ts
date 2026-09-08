@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import type { UserRole, ProfileStatus } from "@/lib/avsec/reference-data";
 
 export interface RegisterState {
   error: string | null;
@@ -83,12 +84,12 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
           email,
           name,
           staff_no: staffId,
-          role: avsecRole as any,
+          role: avsecRole as UserRole,
           unified_role: unifiedRole,
           ops_group: opsGroup,
           team,
           station,
-          status: "pending" as any,
+          status: "pending" as ProfileStatus,
         },
         { onConflict: "id" }
       );
@@ -136,7 +137,7 @@ export async function approveStaff(_prev: ApprovalState, formData: FormData): Pr
     const supabase = await createClient();
     await Promise.all([
       supabase.from("users").update({ status: "active" }).eq("id", userId),
-      supabase.from("profiles").update({ status: "approved" as any }).eq("id", userId),
+      supabase.from("profiles").update({ status: "approved" as ProfileStatus }).eq("id", userId),
     ]);
 
     revalidatePath("/icms/admin/users");
@@ -155,7 +156,7 @@ export async function rejectStaff(_prev: ApprovalState, formData: FormData): Pro
     const supabase = await createClient();
     await Promise.all([
       supabase.from("users").update({ status: "rejected" }).eq("id", userId),
-      supabase.from("profiles").update({ status: "rejected" as any }).eq("id", userId),
+      supabase.from("profiles").update({ status: "rejected" as ProfileStatus }).eq("id", userId),
     ]);
 
     revalidatePath("/icms/admin/users");

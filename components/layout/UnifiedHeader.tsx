@@ -15,23 +15,42 @@ export function UnifiedHeader({
   roleLabel,
   signOutAction,
   extra,
+  brand = "VECTA",
+  homeHref = "/",
 }: {
   name: string;
   roleLabel: string | null;
   signOutAction: () => Promise<void>;
   extra?: React.ReactNode;
+  brand?: string;
+  homeHref?: string;
 }) {
+  const isCaterLink = brand === "CATERLINK";
+
   return (
     <div className="flex items-center justify-between gap-3 border-b border-border px-6 py-[18px]">
-      <Link href="/" className="flex shrink-0 items-center gap-2.5">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path
-            d="M12 2 L21 6 V12 C21 17 17 21 12 22 C7 21 3 17 3 12 V6 Z"
-            stroke="var(--cyan)"
-            strokeWidth="1.6"
-          />
-        </svg>
-        <span className="font-display text-[17px] font-extrabold tracking-[0.06em]">VECTA</span>
+      <Link href={homeHref} className="flex shrink-0 items-center gap-2.5">
+        {isCaterLink ? (
+          <>
+            <span className="flex h-5 w-5 items-center justify-center rounded bg-amber-500/20 text-amber-500 font-bold text-xs">
+              ⚡
+            </span>
+            <span className="font-display text-[17px] font-extrabold tracking-[0.06em] text-amber-500">
+              CATERLINK
+            </span>
+          </>
+        ) : (
+          <>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M12 2 L21 6 V12 C21 17 17 21 12 22 C7 21 3 17 3 12 V6 Z"
+                stroke="var(--cyan)"
+                strokeWidth="1.6"
+              />
+            </svg>
+            <span className="font-display text-[17px] font-extrabold tracking-[0.06em]">VECTA</span>
+          </>
+        )}
       </Link>
       <div className="flex min-w-0 items-center gap-3">
         {extra}
