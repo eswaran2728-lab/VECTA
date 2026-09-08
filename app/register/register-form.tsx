@@ -147,11 +147,12 @@ export function RegisterForm() {
                   AVSEC Rank / Role
                 </label>
                 <select id="avsec_role" name="avsec_role" className="vecta-input">
+                  <option value="DSE">DSE — Duty Security Executive</option>
                   <option value="SO">SO — Station Officer</option>
                   <option value="ASO">ASO — Airport Security Officer</option>
-                  <option value="DSE">DSE — Duty Security Executive</option>
                   <option value="MANAGEMENT">Management</option>
                 </select>
+
               </div>
 
               <div>
