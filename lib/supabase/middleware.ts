@@ -24,7 +24,8 @@ import { isCheckinGateExempt, isAdminPathForbidden, isVectaRoleAllowed } from ".
 // replacement for Supabase email/password auth, but that's a later
 // migration — for now Supabase auth continues, just without any
 // self-service path to create an account.
-const PUBLIC_PATHS = ["/login", "/auth/callback", "/auth", "/manifest.json", "/favicon.ico"];
+const PUBLIC_PATHS = ["/login", "/register", "/auth/callback", "/auth", "/manifest.json", "/favicon.ico"];
+
 
 
 export async function updateSession(request: NextRequest) {

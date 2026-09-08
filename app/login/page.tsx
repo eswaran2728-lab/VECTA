@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { TriangleAlert, Clock3 } from "lucide-react";
+
 import { LoginForm } from "./login-form";
 import { PartnerLogos } from "./partner-logos";
 
@@ -118,7 +120,19 @@ export default async function LoginPage({
             */}
             <LoginForm />
 
-            <div className="mt-[22px] flex items-center justify-center gap-2">
+            <div className="mt-4 pt-4 border-t border-border/40 text-center">
+              <p className="text-xs text-muted-foreground">
+                New Catering Driver / Vendor?{" "}
+                <Link
+                  href="/register"
+                  className="font-semibold text-primary underline underline-offset-4 hover:text-primary/80"
+                >
+                  Register driver account
+                </Link>
+              </p>
+            </div>
+
+            <div className="mt-[18px] flex items-center justify-center gap-2">
               <span className="vecta-status">
                 <span className="vecta-status-dot" />
                 System Nominal
@@ -127,8 +141,9 @@ export default async function LoginPage({
           </div>
 
           <p className="text-center font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70">
-            Accounts are provisioned by Admin &middot; No self-registration
+            AVSEC Accounts provisioned via SSO &middot; Driver Self-Registration Enabled
           </p>
+
         </div>
       </div>
     </main>

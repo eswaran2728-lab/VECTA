@@ -1,55 +1,61 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/icms/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-// Self-registration (registerStaff / app/(icms)/icms/register) has been
-// removed — accounts are admin/management-created only, via the Admin
-// panel (see app/(icms)/icms/admin/users and
-// components/avsec/admin/CreateAccountForm.tsx). Full SSO via AirAsia's
-// Google Workspace domain is planned as a future replacement for Supabase
-// email/password auth, but that's a later migration — approveStaff/
-// rejectStaff below are kept only to resolve any pre-existing 'pending'
-// rows from before self-registration was removed.
-
-export interface ApprovalState {
+export interface RegisterState {
   error: string | null;
+  success: string | null;
 }
 
-/** Admin approves a pending registration — flips status to active. */
-export async function approveStaff(
-  _prev: ApprovalState,
-  formData: FormData
-): Promise<ApprovalState> {
-  await requireRole(["supervisor"]);
-  const userId = String(formData.get("user_id") ?? "");
-  if (!userId) return { error: "Missing account reference." };
+export async function registerDriver(_prev: RegisterState, formData: FormData): Promise<RegisterState> {
+  const name = String(formData.get("name") ?? "").trim();
+  const staffId = String(formData.get("staff_id") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
 
-  const admin = createAdminClient();
-  const { error } = await admin.from("users").update({ status: "active" }).eq("id", userId);
-  if (error) return { error: error.message };
+  if (!name || !staffId || !email) {
+    return { error: "Name, Driver ID / NRIC, and email are required.", success: null };
+  }
+  if (password.length < 8) {
+    return { error: "Password must be at least 8 characters.", success: null };
+  }
 
-  revalidatePath("/icms/admin/users");
-  return { error: null };
-}
+  try {
+    const admin = createAdminClient();
 
-/**
- * Admin rejects a pending registration. The account is kept for history
- * (never deleted) and stays permanently blocked from sign-in.
- */
-export async function rejectStaff(
-  _prev: ApprovalState,
-  formData: FormData
-): Promise<ApprovalState> {
-  await requireRole(["supervisor"]);
-  const userId = String(formData.get("user_id") ?? "");
-  if (!userId) return { error: "Missing account reference." };
+    const { data: created, error: authError } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
 
-  const admin = createAdminClient();
-  const { error } = await admin.from("users").update({ status: "rejected" }).eq("id", userId);
-  if (error) return { error: error.message };
+    if (authError || !created.user) {
+      return { error: authError?.message ?? "Could not create account.", success: null };
+    }
 
-  revalidatePath("/icms/admin/users");
-  return { error: null };
+    const { error: profileError } = await admin.from("users").insert({
+      id: created.user.id,
+      name,
+      staff_id: staffId,
+      email,
+      role: "vendor",
+      unified_role: "vendor",
+      status: "active", // active so driver can start immediately
+    });
+
+    if (profileError) {
+      await admin.auth.admin.deleteUser(created.user.id);
+      return { error: `Registration error: ${profileError.message}`, success: null };
+    }
+
+    return {
+      error: null,
+      success: "Registration successful! You can now sign in with your credentials.",
+    };
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Failed to register driver account",
+      success: null,
+    };
+  }
 }
