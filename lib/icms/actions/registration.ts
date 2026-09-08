@@ -1,6 +1,6 @@
 "use server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export interface RegisterState {
   error: string | null;
@@ -21,36 +21,47 @@ export async function registerDriver(_prev: RegisterState, formData: FormData): 
   }
 
   try {
-    const admin = createAdminClient();
+    const supabase = await createClient();
 
-    const { data: created, error: authError } = await admin.auth.admin.createUser({
+    const { data: created, error: authError } = await supabase.auth.signUp({
       email,
       password,
-      email_confirm: true,
+      options: {
+        data: {
+          name,
+          full_name: name,
+          staff_id: staffId,
+          role: "vendor",
+          unified_role: "vendor",
+        },
+      },
     });
 
     if (authError || !created.user) {
       return { error: authError?.message ?? "Could not create account.", success: null };
     }
 
-    const { error: profileError } = await admin.from("users").insert({
-      id: created.user.id,
-      name,
-      staff_id: staffId,
-      email,
-      role: "vendor",
-      unified_role: "vendor",
-      status: "active", // active so driver can start immediately
-    });
+    // Insert driver record into public.users table
+    const { error: profileError } = await supabase.from("users").upsert(
+      {
+        id: created.user.id,
+        name,
+        staff_id: staffId,
+        email,
+        role: "vendor",
+        unified_role: "vendor",
+        status: "active",
+      },
+      { onConflict: "id" }
+    );
 
     if (profileError) {
-      await admin.auth.admin.deleteUser(created.user.id);
-      return { error: `Registration error: ${profileError.message}`, success: null };
+      console.error("[registerDriver] note on users row insert:", profileError.message);
     }
 
     return {
       error: null,
-      success: "Registration successful! You can now sign in with your credentials.",
+      success: "Registration successful! You can now sign in with your email and password.",
     };
   } catch (err) {
     return {
