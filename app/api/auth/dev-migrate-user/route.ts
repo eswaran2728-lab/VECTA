@@ -29,7 +29,20 @@ async function migrate(request: NextRequest, email: string | undefined) {
   const secret = request.nextUrl.searchParams.get("secret");
   const expected = process.env.DEV_MIGRATE_SECRET;
   if (!expected || !secret || secret !== expected) {
-    return NextResponse.json({ error: "Not authorized." }, { status: 401 });
+    // Disposable debug tool, deleted before Phase 4 — lengths only, never
+    // the actual values, to unblock a stuck env-var mismatch without
+    // exposing either secret in the response.
+    return NextResponse.json(
+      {
+        error: "Not authorized.",
+        debug: {
+          receivedSecretLength: secret?.length ?? 0,
+          expectedIsSet: Boolean(expected),
+          expectedLength: expected?.length ?? 0,
+        },
+      },
+      { status: 401 }
+    );
   }
 
   const normalizedEmail = email?.trim().toLowerCase();
