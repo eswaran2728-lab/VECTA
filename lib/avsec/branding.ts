@@ -1,7 +1,7 @@
 // Single source of truth for app name/branding, referenced from metadata, the login
 // screen, manifest.json generation points, and anywhere else the name is shown.
-export const APP_NAME = "AVSEC REPORTS";
-export const APP_DESCRIPTION = "AirAsia AVSEC digital security reporting platform";
+export const APP_NAME = "VECTA";
+export const APP_DESCRIPTION = "AirAsia VECTA Operational Continuity & Compliance Platform";
 
 // Raw hex values for the few places that can't reference Tailwind/CSS variables —
 // manifest.json theme_color, <meta name="theme-color">, @react-pdf/renderer styles.
