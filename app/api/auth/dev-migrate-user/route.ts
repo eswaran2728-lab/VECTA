@@ -73,14 +73,17 @@ async function migrate(request: NextRequest, email: string | undefined) {
   // that same providerData is what makes a future Google sign-in resolve
   // back to OUR forced (UUID-shaped) uid instead of minting another one.
   let googleProvider: { providerId: string; uid: string; email?: string; displayName?: string; photoURL?: string } | undefined;
+  let lookupDebug: unknown = null;
   try {
     const existing = await auth.getUserByEmail(normalizedEmail);
+    lookupDebug = { foundUid: existing.uid, providerData: existing.providerData };
     googleProvider = existing.providerData.find((p) => p.providerId === "google.com") as
       | { providerId: string; uid: string; email?: string; displayName?: string; photoURL?: string }
       | undefined;
     await auth.deleteUser(existing.uid);
-  } catch {
+  } catch (err) {
     // No existing Firebase user for this email — nothing to delete/capture.
+    lookupDebug = { lookupError: err instanceof Error ? err.message : String(err) };
   }
 
   if (googleProvider) {
@@ -128,6 +131,7 @@ async function migrate(request: NextRequest, email: string | undefined) {
     matchesSupabaseId: created.uid === row.id,
     linkedGoogleIdentity: false,
     note: "No prior Google sign-in found for this email — sign in once first, then re-run this route to link the real Google identity.",
+    lookupDebug,
   });
 }
 
