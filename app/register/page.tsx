@@ -32,7 +32,7 @@ export default function RegisterPage() {
                 ACCOUNT REGISTRATION
               </h1>
               <p className="font-mono text-[9.5px] tracking-[0.14em] text-muted-foreground">
-                AIRASIA AVSEC &middot; CATERLINK DRIVER MOVEMENT
+                VECTA (OPERATION &amp; IFC AVSEC) &middot; CATERLINK DRIVER MOVEMENT
               </p>
             </div>
 

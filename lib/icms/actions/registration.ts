@@ -118,7 +118,7 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
 
     return {
       error: null,
-      success: `Registration submitted successfully for ${systemType === "avsec" ? "AirAsia AVSEC (VECTA)" : "Catering Driver (CaterLink)"}! Your account is now pending approval from a VECTA Administrator. You will be able to sign in once approved.`,
+      success: `Registration submitted successfully for ${systemType === "avsec" ? "VECTA (AirAsia AVSEC)" : "CATERLINK (Catering Movement)"}! Your account is now pending approval from an Administrator. You will be able to sign in once approved.`,
     };
   } catch (err) {
     return {

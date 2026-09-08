@@ -28,7 +28,7 @@ export function RegisterForm() {
             }`}
           >
             <Shield className="h-4 w-4" />
-            <span>AirAsia AVSEC</span>
+            <span>VECTA (AVSEC)</span>
           </button>
 
           <button
@@ -41,7 +41,7 @@ export function RegisterForm() {
             }`}
           >
             <Truck className="h-4 w-4" />
-            <span>Catering Driver</span>
+            <span>CATERLINK</span>
           </button>
         </div>
         <input type="hidden" name="system_type" value={systemType} />
@@ -138,35 +138,35 @@ export function RegisterForm() {
           <div className="flex flex-col gap-3.5">
             <div className="flex items-center gap-2 text-xs font-semibold text-primary">
               <Shield className="h-3.5 w-3.5" />
-              <span>AVSEC Operational Assignment</span>
+              <span>VECTA Operational Hierarchy</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <label htmlFor="avsec_role" className="vecta-label">
-                  AVSEC Hierarchy & Role
+                <label htmlFor="ops_group" className="vecta-label">
+                  Department / Branch
                 </label>
-                <select id="avsec_role" name="avsec_role" className="vecta-input">
-                  <optgroup label="Shift Enforcement Roles (Teams Alpha, Bravo, Charlie, Delta)">
-                    <option value="DSE">DSE — Duty Security Executive</option>
-                    <option value="SO">SO — Station Officer</option>
-                    <option value="ASO">ASO — Airport Security Officer</option>
-                  </optgroup>
-                  <optgroup label="Command & Hierarchy Levels">
-                    <option value="ENFORCEMENT">ENFORCEMENT — Enforcement Division</option>
-                    <option value="MANAGEMENT">MANAGEMENT — AVSEC Management</option>
-                    <option value="ADMIN">ADMIN — System Administrator</option>
-                  </optgroup>
+                <select id="ops_group" name="ops_group" className="vecta-input">
+                  <option value="operation_avsec">OPERATION AVSEC</option>
+                  <option value="ifc_avsec">IFC AVSEC</option>
                 </select>
               </div>
 
               <div>
-                <label htmlFor="ops_group" className="vecta-label">
-                  Department
+                <label htmlFor="avsec_role" className="vecta-label">
+                  Hierarchy Rank / Level
                 </label>
-                <select id="ops_group" name="ops_group" className="vecta-input">
-                  <option value="operation_avsec">Operation AVSEC</option>
-                  <option value="ifc_avsec">IFC AVSEC</option>
+                <select id="avsec_role" name="avsec_role" className="vecta-input">
+                  <optgroup label="Shift Operational Ranks">
+                    <option value="DSE">DSE — Duty Security Executive</option>
+                    <option value="SO">SO — Station Officer</option>
+                    <option value="ASO">ASO — Airport Security Officer</option>
+                  </optgroup>
+                  <optgroup label="Command & Oversight (HQ)">
+                    <option value="ENFORCEMENT">ENFORCEMENT</option>
+                    <option value="MANAGEMENT">MANAGEMENT</option>
+                    <option value="ADMIN">ADMIN</option>
+                  </optgroup>
                 </select>
               </div>
             </div>
@@ -174,14 +174,14 @@ export function RegisterForm() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label htmlFor="team" className="vecta-label">
-                  Assigned Shift Team
+                  Shift Working Team
                 </label>
                 <select id="team" name="team" className="vecta-input">
-                  <option value="ALPHA">Team Alpha</option>
-                  <option value="BRAVO">Team Bravo</option>
-                  <option value="CHARLIE">Team Charlie</option>
-                  <option value="DELTA">Team Delta</option>
-                  <option value="HQ">HQ / Management (Non-Shift)</option>
+                  <option value="ALPHA">Team ALPHA</option>
+                  <option value="BRAVO">Team BRAVO</option>
+                  <option value="CHARLIE">Team CHARLIE</option>
+                  <option value="DELTA">Team DELTA</option>
+                  <option value="HQ">HQ / Command (Non-Shift)</option>
                 </select>
               </div>
 
@@ -203,17 +203,17 @@ export function RegisterForm() {
           <div className="flex flex-col gap-3.5">
             <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
               <Truck className="h-3.5 w-3.5" />
-              <span>Catering Driver Details</span>
+              <span>CATERLINK Driver Details</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label htmlFor="driver_type" className="vecta-label">
-                  Driver Type
+                  Driver Classification
                 </label>
                 <select id="driver_type" name="driver_type" className="vecta-input">
-                  <option value="driver_vendor">Third Party Driver (Vendor)</option>
-                  <option value="driver_ifc">IFC Driver (AirAsia Internal)</option>
+                  <option value="driver_ifc">IFC DRIVER (AirAsia Internal)</option>
+                  <option value="driver_vendor">THIRD PARTY DRIVER (Vendor)</option>
                 </select>
               </div>
 
@@ -226,7 +226,7 @@ export function RegisterForm() {
                   name="vehicle_plate"
                   type="text"
                   placeholder="e.g. WXX 1234"
-                  className="vecta-input"
+                  className="vecta-input uppercase"
                 />
               </div>
             </div>
