@@ -70,6 +70,20 @@ export default async function LoginPage({
               <PartnerLogos />
             </div>
 
+            {params.error === "caterlink-only" ? (
+              <div className="mb-4 flex items-start gap-2 border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
+                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  This account is registered for <strong>CaterLink Driver/Vendor</strong> access only. Please sign in through the CaterLink portal.
+                </span>
+              </div>
+            ) : null}
+            {params.error === "auth-code-error" ? (
+              <div className="mb-4 flex items-start gap-2 border border-brand/30 bg-brand/10 p-3 text-sm text-brand">
+                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>Google authentication failed or expired. Please try signing in again.</span>
+              </div>
+            ) : null}
             {params.error === "no-profile" ? (
               <div className="mb-4 flex items-start gap-2 border border-brand/30 bg-brand/10 p-3 text-sm text-brand">
                 <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -91,6 +105,7 @@ export default async function LoginPage({
                 <span>Your registration was not approved. Contact an admin for details.</span>
               </div>
             ) : null}
+
 
             {/*
               No self-registration: accounts are created only by an

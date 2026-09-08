@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isCheckinGateExempt, isAdminPathForbidden } from "../lib/supabase/middleware-gate-logic.ts";
+import { isCheckinGateExempt, isAdminPathForbidden, isVectaRoleAllowed } from "../lib/supabase/middleware-gate-logic.ts";
+
 
 // --- Check-in gate exemption (item 3/6 context, item 7 pure-logic coverage) ---
 test("isCheckinGateExempt: admin/management/enforcement are seniority-exempt", () => {
@@ -39,3 +40,17 @@ test("isAdminPathForbidden: non-admin paths are never forbidden by this check re
   assert.equal(isAdminPathForbidden("/avsec/dashboard", "so"), false);
   assert.equal(isAdminPathForbidden("/avsec/duty", null), false);
 });
+
+// --- VECTA vs CaterLink role boundary segregation ---
+test("isVectaRoleAllowed: AVSEC operation roles are allowed in VECTA", () => {
+  for (const role of ["admin", "management", "enforcement", "so", "aso", "dse"]) {
+    assert.equal(isVectaRoleAllowed(role), true, `role ${role} should have VECTA access`);
+  }
+});
+
+test("isVectaRoleAllowed: Vendor/Driver roles are not allowed in VECTA (segregated to CaterLink)", () => {
+  for (const role of ["vendor", "ifc_driver", "vendor_driver", null]) {
+    assert.equal(isVectaRoleAllowed(role), false, `role ${role} should be restricted from VECTA`);
+  }
+});
+

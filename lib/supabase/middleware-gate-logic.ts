@@ -19,8 +19,17 @@ export function isCheckinGateExempt(role: string | null): boolean {
   return seniorityExempt || vendorExempt;
 }
 
+// AVSEC roles permitted in VECTA (Operation AVSEC & IFC AVSEC)
+export const VECTA_ALLOWED_ROLES = ["admin", "management", "enforcement", "so", "aso", "dse"];
+
+export function isVectaRoleAllowed(role: string | null): boolean {
+  if (!role) return false;
+  return VECTA_ALLOWED_ROLES.includes(role);
+}
+
 // Coarse edge-level defense-in-depth for the admin section (item 6): additive to, never
 // a replacement for, RLS + requireRole(["ADMIN"]) in the actual page/action code.
 export function isAdminPathForbidden(path: string, role: string | null): boolean {
   return path.startsWith("/avsec/admin") && role !== "admin";
 }
+

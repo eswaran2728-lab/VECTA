@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { isCheckinGateExempt, isAdminPathForbidden } from "./middleware-gate-logic";
+import { isCheckinGateExempt, isAdminPathForbidden, isVectaRoleAllowed } from "./middleware-gate-logic";
+
 
 // Unified role vocabulary (see supabase/migrations/unified_role_model and
 // the merge report): admin, management, enforcement, so, aso, dse, vendor.
@@ -23,7 +24,8 @@ import { isCheckinGateExempt, isAdminPathForbidden } from "./middleware-gate-log
 // replacement for Supabase email/password auth, but that's a later
 // migration — for now Supabase auth continues, just without any
 // self-service path to create an account.
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = ["/login", "/auth/callback", "/auth", "/manifest.json", "/favicon.ico"];
+
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -119,6 +121,14 @@ export async function updateSession(request: NextRequest) {
     }
 
     const role = profile.unified_role as string | null;
+
+    // Boundary Gate: Driver & Vendor accounts belong strictly in CaterLink
+    if (!isVectaRoleAllowed(role)) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      url.searchParams.set("error", "caterlink-only");
+      return NextResponse.redirect(url);
+    }
     // ICMS-origin checkpoint accounts (post2_avsec/post6_avsec/hub_avsec/
     // redq_avsec — no row in public.profiles) have no way to ever satisfy
     // this gate: check-in/duty_records/team_rosters are entirely AVSEC-side
