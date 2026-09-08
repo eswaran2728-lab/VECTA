@@ -1,47 +1,86 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useActionState } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Eye, EyeOff, TriangleAlert, ShieldCheck, Loader2 } from "lucide-react";
-import { signIn, type AuthState } from "@/lib/icms/actions/auth";
 import { createClient } from "@/lib/supabase/client";
 
-const initialState: AuthState = { error: null };
-
 export function LoginForm() {
-  const [state, formAction, pending] = useActionState(signIn, initialState);
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const [googleError, setGoogleError] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
 
-  const handleGoogleSignIn = () => {
-    // Immediate UI feedback on touch / click (zero delay)
+  const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
-    setGoogleError(null);
+    setErrorMsg(null);
 
-    startTransition(async () => {
-      try {
-        const supabase = createClient();
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo: `${window.location.origin}/auth/callback`,
-            queryParams: {
-              access_type: "offline",
-              prompt: "consent",
-            },
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
           },
-        });
-        if (error) {
-          setGoogleError(error.message);
-          setIsGoogleLoading(false);
-        }
-      } catch (err) {
-        setGoogleError(err instanceof Error ? err.message : "Failed to initiate Google Sign-In");
+        },
+      });
+      if (error) {
+        setErrorMsg(error.message);
         setIsGoogleLoading(false);
       }
-    });
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to initiate Google Sign-In");
+      setIsGoogleLoading(false);
+    }
+  };
+
+  const handleCredentialsSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setErrorMsg("Please enter both email and password.");
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
+
+      if (error || !data.user) {
+        setErrorMsg(error?.message ?? "Invalid email or password.");
+        setIsLoading(false);
+        return;
+      }
+
+      // Check user role for routing
+      const userEmail = (data.user.email ?? "").toLowerCase();
+      const isCaterLinkUser =
+        userEmail.endsWith("@caterlink.internal") ||
+        userEmail.includes("caterlink") ||
+        userEmail.includes("driver") ||
+        userEmail.includes("warehouse") ||
+        userEmail.includes("vendor");
+
+      if (isCaterLinkUser) {
+        window.location.href = "/icms/transactions";
+      } else {
+        window.location.href = "/";
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to sign in. Please try again.");
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -51,7 +90,7 @@ export function LoginForm() {
         <button
           type="button"
           onClick={handleGoogleSignIn}
-          disabled={isGoogleLoading || pending}
+          disabled={isGoogleLoading || isLoading}
           style={{ touchAction: "manipulation" }}
           className="relative flex w-full select-none items-center justify-center gap-3 rounded-lg border border-border/80 bg-surface/90 px-4 py-3.5 text-sm font-semibold tracking-wide text-foreground shadow-sm transition-all duration-100 hover:border-primary/60 hover:bg-surface active:scale-[0.98] active:opacity-85 focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:pointer-events-none disabled:opacity-50 cursor-pointer"
         >
@@ -92,13 +131,6 @@ export function LoginForm() {
         </div>
       </div>
 
-      {googleError ? (
-        <p role="alert" className="flex items-center gap-1.5 text-xs text-brand">
-          <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
-          {googleError}
-        </p>
-      ) : null}
-
       {/* Divider */}
       <div className="my-1 flex items-center gap-3">
         <div className="h-px flex-1 bg-border/60" />
@@ -108,8 +140,8 @@ export function LoginForm() {
         <div className="h-px flex-1 bg-border/60" />
       </div>
 
-      {/* Standard Email/Password Form for fallback/admin */}
-      <form action={formAction} className="flex flex-col gap-3.5">
+      {/* Standard Email/Password Form */}
+      <form onSubmit={handleCredentialsSignIn} className="flex flex-col gap-3.5">
         <div>
           <label htmlFor="email" className="vecta-label">
             Email
@@ -120,6 +152,8 @@ export function LoginForm() {
             type="email"
             autoComplete="email"
             placeholder="you@airasia.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required
             className="vecta-input"
           />
@@ -134,6 +168,8 @@ export function LoginForm() {
               name="password"
               type={showPassword ? "text" : "password"}
               autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               required
               className="vecta-input pr-10 tracking-[0.2em]"
             />
@@ -147,19 +183,19 @@ export function LoginForm() {
             </button>
           </div>
         </div>
-        {state.error ? (
+        {errorMsg ? (
           <p role="alert" className="flex items-center gap-1.5 text-sm text-brand">
             <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
-            {state.error}
+            {errorMsg}
           </p>
         ) : null}
         <button
           type="submit"
-          disabled={pending || isGoogleLoading}
+          disabled={isLoading || isGoogleLoading}
           style={{ touchAction: "manipulation" }}
           className="vecta-btn-primary mt-1 active:scale-[0.98] transition-transform duration-100 cursor-pointer"
         >
-          {pending ? "Signing in…" : "Sign in with Credentials"}
+          {isLoading ? "Signing in…" : "Sign in with Credentials"}
         </button>
       </form>
     </div>
