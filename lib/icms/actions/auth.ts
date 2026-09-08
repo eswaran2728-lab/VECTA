@@ -47,19 +47,21 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
   revalidatePath("/", "layout");
 
   // Single Login Page Router:
-  // Check if account is a Driver / Vendor / Warehouse PIC account
+  // Check if account is a Driver / Vendor / Warehouse PIC / CaterLink account
   const rawRole = (icmsProfile?.role ?? avsecProfile?.role) as string | null;
-  const isDriverOrVendor =
+  const isCaterLinkUser =
     profile?.unified_role === "vendor" ||
     rawRole === "vendor" ||
     rawRole === "driver_ifc" ||
     rawRole === "driver_vendor" ||
     rawRole === "warehouse_pic" ||
     email.endsWith("@caterlink.internal") ||
+    email.includes("caterlink") ||
     email.includes("driver") ||
-    email.includes("warehouse");
+    email.includes("warehouse") ||
+    email.includes("vendor");
 
-  if (isDriverOrVendor && !avsecProfile) {
+  if (isCaterLinkUser) {
     redirect("/icms/transactions");
   }
 

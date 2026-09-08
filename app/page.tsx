@@ -70,8 +70,8 @@ export default async function LandingPage({
   const rawRole = (icmsProfile?.role ?? avsecProfile?.role) as string | null;
   const userEmail = (user.email ?? "").toLowerCase();
 
-  // Single Login Portal: Drivers, Vendors & Warehouse PIC route automatically into CaterLink / ICMS
-  const isDriverOrVendor =
+  // Single Login Portal: Drivers, Vendors, CaterLink & Warehouse PIC route automatically into CaterLink / ICMS
+  const isCaterLinkUser =
     role === "vendor" ||
     rawRole === "vendor" ||
     rawRole === "driver_ifc" ||
@@ -79,9 +79,10 @@ export default async function LandingPage({
     rawRole === "warehouse_pic" ||
     userEmail.includes("caterlink") ||
     userEmail.includes("driver") ||
-    userEmail.includes("warehouse");
+    userEmail.includes("warehouse") ||
+    userEmail.includes("vendor");
 
-  if (isDriverOrVendor && !avsecProfile) {
+  if (isCaterLinkUser) {
     redirect("/icms/transactions");
   }
 
