@@ -144,22 +144,20 @@ export function RegisterForm() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label htmlFor="avsec_role" className="vecta-label">
-                  AVSEC Rank / Role
+                  AVSEC Hierarchy & Role
                 </label>
                 <select id="avsec_role" name="avsec_role" className="vecta-input">
-                  <optgroup label="Operational Shift Roles (Team Alpha / Bravo / Charlie / Delta)">
+                  <optgroup label="Shift Enforcement Roles (Teams Alpha, Bravo, Charlie, Delta)">
                     <option value="DSE">DSE — Duty Security Executive</option>
                     <option value="SO">SO — Station Officer</option>
                     <option value="ASO">ASO — Airport Security Officer</option>
                   </optgroup>
-                  <optgroup label="Oversight & Management">
-                    <option value="ENFORCEMENT">ENFORCEMENT</option>
-                    <option value="MANAGEMENT">MANAGEMENT</option>
-                    <option value="ADMIN">ADMIN</option>
+                  <optgroup label="Command & Hierarchy Levels">
+                    <option value="ENFORCEMENT">ENFORCEMENT — Enforcement Division</option>
+                    <option value="MANAGEMENT">MANAGEMENT — AVSEC Management</option>
+                    <option value="ADMIN">ADMIN — System Administrator</option>
                   </optgroup>
                 </select>
-
-
               </div>
 
               <div>
@@ -169,7 +167,6 @@ export function RegisterForm() {
                 <select id="ops_group" name="ops_group" className="vecta-input">
                   <option value="operation_avsec">Operation AVSEC</option>
                   <option value="ifc_avsec">IFC AVSEC</option>
-                  <option value="hub_avsec">Hub AVSEC</option>
                 </select>
               </div>
             </div>
@@ -177,13 +174,14 @@ export function RegisterForm() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label htmlFor="team" className="vecta-label">
-                  Assigned Team
+                  Assigned Shift Team
                 </label>
                 <select id="team" name="team" className="vecta-input">
                   <option value="ALPHA">Team Alpha</option>
                   <option value="BRAVO">Team Bravo</option>
                   <option value="CHARLIE">Team Charlie</option>
                   <option value="DELTA">Team Delta</option>
+                  <option value="HQ">HQ / Management (Non-Shift)</option>
                 </select>
               </div>
 
