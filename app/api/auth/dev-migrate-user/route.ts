@@ -63,20 +63,72 @@ async function migrate(request: NextRequest, email: string | undefined) {
 
   const auth = getFirebaseAdminAuth();
 
+  // Capture the real Google federated identity (providerData) off any
+  // existing account for this email BEFORE deleting it. A plain
+  // auth.createUser({uid, email}) has no linked Google credential, so a
+  // later real Google sign-in doesn't recognize it as the same account —
+  // it silently creates a brand-new, separately-uid'd Firebase user
+  // instead (confirmed via debug-profile: the JWT sub after signing in
+  // was a fresh auto-generated id, not the forced uid). Re-importing with
+  // that same providerData is what makes a future Google sign-in resolve
+  // back to OUR forced (UUID-shaped) uid instead of minting another one.
+  let googleProvider: { providerId: string; uid: string; email?: string; displayName?: string; photoURL?: string } | undefined;
   try {
     const existing = await auth.getUserByEmail(normalizedEmail);
+    googleProvider = existing.providerData.find((p) => p.providerId === "google.com") as
+      | { providerId: string; uid: string; email?: string; displayName?: string; photoURL?: string }
+      | undefined;
     await auth.deleteUser(existing.uid);
   } catch {
-    // No existing Firebase user for this email — nothing to delete, fine.
+    // No existing Firebase user for this email — nothing to delete/capture.
   }
 
+  if (googleProvider) {
+    const importResult = await auth.importUsers([
+      {
+        uid: row.id,
+        email: normalizedEmail,
+        emailVerified: true,
+        providerData: [
+          {
+            providerId: "google.com",
+            uid: googleProvider.uid,
+            email: googleProvider.email ?? normalizedEmail,
+            displayName: googleProvider.displayName,
+            photoURL: googleProvider.photoURL,
+          },
+        ],
+      },
+    ]);
+    if (importResult.failureCount > 0) {
+      return NextResponse.json(
+        { error: "importUsers failed.", details: importResult.errors },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json({
+      uid: row.id,
+      matchesSupabaseId: true,
+      linkedGoogleIdentity: true,
+    });
+  }
+
+  // No prior Google sign-in captured yet — fall back to a bare account
+  // (same as before). The FIRST Google sign-in after this will still mint
+  // its own separate uid; re-run this route once more afterwards to link
+  // it properly, or just sign in first, then run this.
   const created = await auth.createUser({
     uid: row.id,
     email: normalizedEmail,
     emailVerified: true,
   });
 
-  return NextResponse.json({ uid: created.uid, matchesSupabaseId: created.uid === row.id });
+  return NextResponse.json({
+    uid: created.uid,
+    matchesSupabaseId: created.uid === row.id,
+    linkedGoogleIdentity: false,
+    note: "No prior Google sign-in found for this email — sign in once first, then re-run this route to link the real Google identity.",
+  });
 }
 
 export async function GET(request: NextRequest) {
