@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { TriangleAlert, Clock3 } from "lucide-react";
+
 
 import { LoginForm } from "./login-form";
 import { PartnerLogos } from "./partner-logos";
@@ -123,14 +123,15 @@ export default async function LoginPage({
             <div className="mt-4 pt-4 border-t border-border/40 text-center">
               <p className="text-xs text-muted-foreground">
                 New Catering Driver / Vendor?{" "}
-                <Link
+                <a
                   href="/register"
                   className="font-semibold text-primary underline underline-offset-4 hover:text-primary/80"
                 >
                   Register driver account
-                </Link>
+                </a>
               </p>
             </div>
+
 
             <div className="mt-[18px] flex items-center justify-center gap-2">
               <span className="vecta-status">
