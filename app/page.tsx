@@ -67,7 +67,14 @@ export default async function LandingPage({
   if (!profile) redirect("/login?error=no-profile");
 
   const role = profile.unified_role as string | null;
+
+  // Single Login Portal: Drivers & Vendors route automatically into CaterLink / ICMS
+  if (role === "vendor") {
+    redirect("/icms/transactions");
+  }
+
   const orgWide = role ? ORG_WIDE_ROLES.includes(role) : false;
+
 
   // Reports = the existing (unchanged) AVSEC reports app — only reachable
   // by accounts that actually have an AVSEC profile row, or org-wide roles

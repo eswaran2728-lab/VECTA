@@ -122,13 +122,13 @@ export async function updateSession(request: NextRequest) {
 
     const role = profile.unified_role as string | null;
 
-    // Boundary Gate: Driver & Vendor accounts belong strictly in CaterLink
-    if (!isVectaRoleAllowed(role)) {
+    // Boundary Gate: Driver & Vendor accounts are restricted from AVSEC reports and routed to CaterLink/ICMS
+    if (role === "vendor" && path.startsWith("/avsec")) {
       const url = request.nextUrl.clone();
-      url.pathname = "/login";
-      url.searchParams.set("error", "caterlink-only");
+      url.pathname = "/icms/transactions";
       return NextResponse.redirect(url);
     }
+
     // ICMS-origin checkpoint accounts (post2_avsec/post6_avsec/hub_avsec/
     // redq_avsec — no row in public.profiles) have no way to ever satisfy
     // this gate: check-in/duty_records/team_rosters are entirely AVSEC-side

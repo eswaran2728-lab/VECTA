@@ -3,7 +3,6 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { isVectaRoleAllowed } from "@/lib/supabase/middleware-gate-logic";
 
 export interface AuthState {
   error: string | null;
@@ -45,18 +44,21 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
     redirect(`/login?error=${profile.status}`);
   }
 
-  // Access Boundary Enforcement:
-  // CaterLink drivers and vendors are restricted from logging into VECTA
-  const isCaterlinkDomain = email.endsWith("@caterlink.internal") || email.includes("driver");
-  const isVendorRole = profile?.unified_role === "vendor" || icmsProfile?.role === "vendor";
-  const hasNoVectaRole = !isVectaRoleAllowed(profile?.unified_role ?? null);
+  revalidatePath("/", "layout");
 
-  if ((isCaterlinkDomain || isVendorRole || hasNoVectaRole) && !avsecProfile) {
-    await supabase.auth.signOut();
-    redirect("/login?error=caterlink-only");
+  // Single Login Page Router:
+  // Drivers / Vendors -> Go straight to CaterLink ICMS Driver portal
+  // AVSEC -> Go straight to VECTA AVSEC operations
+  const isVendorRole =
+    profile?.unified_role === "vendor" ||
+    icmsProfile?.role === "vendor" ||
+    email.endsWith("@caterlink.internal") ||
+    email.includes("driver");
+
+  if (isVendorRole && !avsecProfile) {
+    redirect("/icms/transactions");
   }
 
-  revalidatePath("/", "layout");
   redirect("/");
 }
 
