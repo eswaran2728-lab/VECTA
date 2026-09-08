@@ -120,10 +120,18 @@ function UserRow({ profile: p }: { profile: Profile }) {
           <input
             form={formId}
             name="team"
+            list="user-team-options"
             defaultValue={p.team ?? ""}
             placeholder="Team"
-            className="input-base py-2 min-h-0 text-sm w-24"
+            className="input-base py-2 min-h-0 text-sm w-24 uppercase"
           />
+          <datalist id="user-team-options">
+            <option value="ALPHA">Team Alpha</option>
+            <option value="BRAVO">Team Bravo</option>
+            <option value="CHARLIE">Team Charlie</option>
+            <option value="DELTA">Team Delta</option>
+            <option value="HQ">HQ</option>
+          </datalist>
         </div>
       </td>
       <td className="px-2 py-3">

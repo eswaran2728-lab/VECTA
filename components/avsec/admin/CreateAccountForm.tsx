@@ -97,10 +97,18 @@ export function CreateAccountForm() {
             <input
               id="team"
               name="team"
+              list="team-options"
               disabled={isOrgWide}
-              className="input-base"
-              placeholder={isOrgWide ? "Not required" : "e.g. Alpha"}
+              className="input-base uppercase"
+              placeholder={isOrgWide ? "Not required" : "e.g. ALPHA"}
             />
+            <datalist id="team-options">
+              <option value="ALPHA">Team Alpha</option>
+              <option value="BRAVO">Team Bravo</option>
+              <option value="CHARLIE">Team Charlie</option>
+              <option value="DELTA">Team Delta</option>
+              <option value="HQ">HQ / Management</option>
+            </datalist>
           </div>
         </div>
 
