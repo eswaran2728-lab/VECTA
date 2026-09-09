@@ -37,7 +37,7 @@ export function QrScanner() {
         return;
       }
       scannerRef.current?.stop().catch(() => undefined);
-      router.push(body.redirectPath ?? `/transactions/${body.transactionId}`);
+      router.push(body.redirectPath ?? `/icms/transactions/${body.transactionId}`);
     } catch {
       setError("Validation failed — check your connection and try again.");
       handledRef.current = false;

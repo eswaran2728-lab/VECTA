@@ -260,3 +260,70 @@ export function checkpointOrderError(
   }
   return null;
 }
+
+export interface CheckpointPartsRecord {
+  part_b?: { result?: string | null } | null;
+  part_c?: { result?: string | null } | null;
+  part_d?: { result?: string | null } | null;
+  part_hub?: { id?: string; result?: string | null } | null;
+  part_redq?: { id?: string; result?: string | null } | null;
+  part_d_skipped?: boolean | null;
+}
+
+/**
+ * Derives the restored TransactionStatus when an escalated transaction is un-escalated / released.
+ * Restores to the highest valid state machine stage reached based on completed checkpoint records.
+ */
+export function resolveEscalatedStatus(
+  direction: Direction,
+  route: TransactionRoute = "AIRCRAFT",
+  parts: CheckpointPartsRecord = {}
+): TransactionStatus {
+  // If result column exists, it must be 'PASS' (not 'ESCALATE'). If result is missing/undefined, default is true.
+  const isPass = (part?: { result?: string | null } | null) =>
+    Boolean(part && (part.result === "PASS" || part.result == null));
+
+  const bPassed = isPass(parts.part_b);
+  const cPassed = isPass(parts.part_c);
+  const dPassed = isPass(parts.part_d) || Boolean(parts.part_d_skipped);
+  const hubPassed = isPass(parts.part_hub);
+  const redqPassed = isPass(parts.part_redq);
+
+  if (direction === "INBOUND") {
+    // Inbound: A -> C (Airport Post) -> B (In-flight Post, FINAL)
+    if (bPassed) return "COMPLETED";
+    if (cPassed) return "AIRPORT_POST_APPROVED";
+    return "CREATED";
+  }
+
+  // Outbound:
+  if (route === "HUB") {
+    // Outbound Hub: A -> B -> Hub (FINAL)
+    if (hubPassed) return "COMPLETED";
+    if (bPassed) return "INFLIGHT_POST_APPROVED";
+    return "CREATED";
+  }
+
+  if (route === "MAINTENANCE") {
+    // Outbound Maintenance: A -> B -> C (FINAL)
+    if (cPassed) return "COMPLETED";
+    if (bPassed) return "INFLIGHT_POST_APPROVED";
+    return "CREATED";
+  }
+
+  if (route === "REDQ") {
+    // Outbound REDQ: A -> B -> REDQ -> C -> D (FINAL)
+    if (dPassed) return "COMPLETED";
+    if (cPassed) return "AIRPORT_POST_APPROVED";
+    if (redqPassed) return "REDQ_RESEALED";
+    if (bPassed) return "INFLIGHT_POST_APPROVED";
+    return "CREATED";
+  }
+
+  // Outbound Aircraft (default): A -> B -> C -> D (FINAL)
+  if (dPassed) return "COMPLETED";
+  if (cPassed) return "AIRPORT_POST_APPROVED";
+  if (bPassed) return "INFLIGHT_POST_APPROVED";
+  return "CREATED";
+}
+

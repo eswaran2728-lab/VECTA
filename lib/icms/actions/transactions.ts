@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile, requireRole, requireCheckpointRole } from "@/lib/icms/auth";
 import { uploadDataUrl } from "@/lib/icms/storage";
-import { checkpointOrderError, getStep } from "@/lib/icms/workflow";
+import { checkpointOrderError, getStep, resolveEscalatedStatus } from "@/lib/icms/workflow";
 import { generateQrToken } from "@/lib/icms/qr-token";
 import { generateCompletedFormPdf } from "@/lib/icms/completed-form-pdf";
 import { CARGO_TYPES } from "@/lib/icms/constants";
@@ -20,6 +20,7 @@ import type {
   SealType,
   Transaction,
   TransactionRoute,
+  TransactionStatus,
   UserProfile,
 } from "@/lib/icms/database.types";
 
@@ -1168,3 +1169,124 @@ export async function reportIncident(
   revalidatePath("/icms/dashboard");
   redirect(`/icms/transactions/${transactionId}?escalated=1`);
 }
+
+/**
+ * Admin, Management, or Enforcement releases/un-escalates an escalated transaction
+ * once all associated incidents are Resolved or Closed.
+ * Restores the transaction back to its active checkpoint progression stage.
+ */
+export async function unescalateTransaction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const profile = await requireRole(["supervisor", "enforcement", "management"]);
+
+  const transactionId = str(formData, "transaction_id");
+  const notes = str(formData, "notes");
+
+  if (!transactionId) return { error: "Missing transaction reference." };
+
+  const supabase = await createClient();
+
+  // Try the security-definer RPC function first
+  type RpcCaller = (
+    name: string,
+    params: Record<string, unknown>
+  ) => Promise<{ data: string | null; error: { message: string } | null }>;
+  const { data: rpcStatus, error: rpcError } = await (supabase.rpc as unknown as RpcCaller)(
+    "unescalate_transaction",
+    {
+      p_transaction_id: transactionId,
+      p_notes: notes || "Released after incident resolution",
+    }
+  );
+
+  let restoredStatus = rpcStatus as TransactionStatus | null;
+
+  if (rpcError) {
+    // Fallback: execute direct resolution if RPC is not deployed yet in the active database instance
+    const { data: tx, error: txError } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("id", transactionId)
+      .single();
+
+    if (txError || !tx) return { error: "Transaction not found." };
+    if (tx.status !== "ESCALATED") {
+      return { error: `Transaction is not escalated (current status: ${tx.status}).` };
+    }
+
+    // Check if any open/under-review incidents exist
+    const { data: incidents } = await supabase
+      .from("incidents")
+      .select("status")
+      .eq("transaction_id", transactionId);
+
+    const openIncidents = (incidents ?? []).filter(
+      (i) => i.status !== "RESOLVED" && i.status !== "CLOSED"
+    );
+    if (openIncidents.length > 0) {
+      return {
+        error: "Cannot release transaction while linked incidents are still open or under review.",
+      };
+    }
+
+    const [bRes, cRes, dRes, hubRes, redqRes] = await Promise.all([
+      supabase.from("part_b").select("result").eq("transaction_id", transactionId).maybeSingle(),
+      supabase.from("part_c").select("result").eq("transaction_id", transactionId).maybeSingle(),
+      supabase.from("part_d").select("result").eq("transaction_id", transactionId).maybeSingle(),
+      supabase.from("part_hub").select("id").eq("transaction_id", transactionId).maybeSingle(),
+      supabase.from("part_redq").select("id").eq("transaction_id", transactionId).maybeSingle(),
+    ]);
+
+    restoredStatus = resolveEscalatedStatus(
+      tx.direction as Direction,
+      tx.route as TransactionRoute,
+      {
+        part_b: bRes.data,
+        part_c: cRes.data,
+        part_d: dRes.data,
+        part_hub: hubRes.data,
+        part_redq: redqRes.data,
+        part_d_skipped: tx.part_d_skipped,
+      }
+    );
+
+    const isCompleted = restoredStatus === "COMPLETED";
+
+    const { error: updateError } = await supabase
+      .from("transactions")
+      .update({
+        status: restoredStatus,
+        escalation_reason: null,
+        status_entered_at: new Date().toISOString(),
+        completed_at: isCompleted ? tx.completed_at ?? new Date().toISOString() : null,
+      })
+      .eq("id", transactionId);
+
+    if (updateError) {
+      return { error: `Could not release transaction: ${updateError.message}` };
+    }
+
+    // Audit log
+    await supabase.from("audit_logs").insert({
+      transaction_id: transactionId,
+      action: "UNESCALATE",
+      performed_by: `${profile.name} (${profile.staff_id})`,
+      performed_by_id: profile.id,
+      old_values: { status: "ESCALATED", escalation_reason: tx.escalation_reason },
+      new_values: { status: restoredStatus, notes: notes || "Released after incident resolution" },
+    });
+  }
+
+  if (restoredStatus === "COMPLETED") {
+    await generateCompletedFormPdf(transactionId);
+  }
+
+  revalidatePath(`/icms/transactions/${transactionId}`);
+  revalidatePath("/icms/transactions");
+  revalidatePath("/icms/incidents");
+  revalidatePath("/icms/dashboard");
+  redirect(`/icms/transactions/${transactionId}`);
+}
+

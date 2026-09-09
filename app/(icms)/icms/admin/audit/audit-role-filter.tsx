@@ -13,7 +13,7 @@ export function AuditRoleFilter({ role }: { role: Role | "" }) {
     <div className="flex items-center gap-2">
       <Select
         value={role}
-        onChange={(e) => router.push(e.target.value ? `/admin/audit?role=${e.target.value}` : "/admin/audit")}
+        onChange={(e) => router.push(e.target.value ? `/icms/admin/audit?role=${e.target.value}` : "/icms/admin/audit")}
         className="h-9 w-auto text-sm"
       >
         <option value="">All roles</option>

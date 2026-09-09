@@ -20,11 +20,14 @@ import {
   CARGO_TYPE_LABELS,
   DELIVERY_LOCATION_LABELS,
   HUB_DESTINATION_LABELS,
+  INCIDENT_STATUS_COLORS,
+  INCIDENT_STATUS_LABELS,
   INCIDENT_TYPE_LABELS,
   ROUTE_LABELS,
 } from "@/lib/icms/constants";
 import { formatDateTime } from "@/lib/icms/utils";
 import { Badge } from "@/components/icms/ui/badge";
+import { UnescalateButton } from "@/components/icms/unescalate-button";
 import {
   SEAL_COLOR_BADGES,
   SEAL_COLOR_LABELS,
@@ -222,7 +225,7 @@ export default async function TransactionDetailPage({
     (profile.role === nextStep.role ||
       (profile.ops_group !== null && profile.ops_group === opsGroupForCheckpointRole(nextStep.role)))
       ? {
-          href: `/transactions/${id}/${nextStep.slug}`,
+          href: `/icms/transactions/${id}/${nextStep.slug}`,
           label: `Complete ${nextStep.shortLabel}`,
         }
       : null;
@@ -263,6 +266,17 @@ export default async function TransactionDetailPage({
     transaction.status === "AIRPORT_POST_APPROVED" &&
     !partD &&
     (profile.role === "receiver" || profile.role === "supervisor");
+
+  // Admin / Enforcement release action for escalated transactions
+  const canAdminEscalation =
+    profile.role === "supervisor" ||
+    profile.role === "enforcement" ||
+    profile.role === "management";
+  const isEscalated = transaction.status === "ESCALATED";
+  const hasOpenIncidents = incidents.some(
+    (i) => i.status !== "RESOLVED" && i.status !== "CLOSED"
+  );
+  const canUnescalate = isEscalated && canAdminEscalation;
 
   const banner = flags.created
     ? "Transaction created. Print or show the QR pass at Post 2."
@@ -305,6 +319,18 @@ export default async function TransactionDetailPage({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {canUnescalate ? (
+            <UnescalateButton
+              transactionId={id}
+              transactionNumber={transaction.transaction_number}
+              disabled={hasOpenIncidents}
+              disabledReason={
+                hasOpenIncidents
+                  ? "Resolve or close all open incidents before releasing."
+                  : undefined
+              }
+            />
+          ) : null}
           {nextAction ? (
             <Link href={nextAction.href}>
               <Button size="lg">{nextAction.label}</Button>
@@ -718,17 +744,67 @@ export default async function TransactionDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {isEscalated && canAdminEscalation && !hasOpenIncidents ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-300 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-950/40">
+                <div>
+                  <p className="font-semibold text-emerald-900 dark:text-emerald-100">
+                    All linked incidents have been resolved / closed.
+                  </p>
+                  <p className="text-sm text-emerald-700 dark:text-emerald-300">
+                    You can now release this transaction so checkpoint verification and delivery can resume.
+                  </p>
+                </div>
+                <UnescalateButton
+                  transactionId={id}
+                  transactionNumber={transaction.transaction_number}
+                  size="default"
+                />
+              </div>
+            ) : isEscalated && canAdminEscalation && hasOpenIncidents ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/40">
+                <div>
+                  <p className="font-semibold text-amber-900 dark:text-amber-100">
+                    Action required to un-escalate
+                  </p>
+                  <p className="text-sm text-amber-700 dark:text-amber-300">
+                    Resolve or close the open incident(s) below to enable transaction release.
+                  </p>
+                </div>
+                <Link href="/icms/incidents">
+                  <Button size="sm" variant="outline">
+                    Go to Incident Management
+                  </Button>
+                </Link>
+              </div>
+            ) : null}
+
             {incidents.map((incident, i) => (
-              <div key={incident.id} className="rounded-md border p-3">
+              <div key={incident.id} className="rounded-md border p-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-semibold">
-                    {INCIDENT_TYPE_LABELS[incident.incident_type]}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      {INCIDENT_TYPE_LABELS[incident.incident_type]}
+                    </span>
+                    <Badge className={INCIDENT_STATUS_COLORS[incident.status]}>
+                      {INCIDENT_STATUS_LABELS[incident.status]}
+                    </Badge>
+                  </div>
                   <span className="text-xs text-muted-foreground">
                     {formatDateTime(incident.created_at)} · {incident.reported_by}
                   </span>
                 </div>
-                <p className="mt-1 text-sm">{incident.description}</p>
+                <p className="text-sm">{incident.description}</p>
+                {incident.resolution_notes ? (
+                  <div className="rounded bg-muted/60 p-2 text-xs">
+                    <span className="font-semibold text-muted-foreground">Resolution notes: </span>
+                    <span className="text-foreground">“{incident.resolution_notes}”</span>
+                    {incident.resolved_at ? (
+                      <span className="ml-1 text-muted-foreground">
+                        ({formatDateTime(incident.resolved_at)})
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
                 {incidentPhotos[i] ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img

@@ -5,6 +5,7 @@ import {
   getStep,
   nextStepFor,
   partsDoneFromStatus,
+  resolveEscalatedStatus,
 } from "../lib/icms/workflow.ts";
 
 test("nextStepFor: outbound sequence is A -> B(post2) -> C(post6) -> D(receiver)", () => {
@@ -67,3 +68,133 @@ test("partsDoneFromStatus: escalated yields all-false regardless of direction", 
     part_redq: false,
   });
 });
+
+test("resolveEscalatedStatus: outbound AIRCRAFT route resumes correctly at each stage", () => {
+  // Escalated right after Part A
+  assert.equal(resolveEscalatedStatus("OUTBOUND", "AIRCRAFT", {}), "CREATED");
+
+  // Part B was recorded as ESCALATE -> returns CREATED
+  assert.equal(
+    resolveEscalatedStatus("OUTBOUND", "AIRCRAFT", {
+      part_b: { result: "ESCALATE" },
+    }),
+    "CREATED"
+  );
+
+  // Part B passed -> returns INFLIGHT_POST_APPROVED
+  assert.equal(
+    resolveEscalatedStatus("OUTBOUND", "AIRCRAFT", {
+      part_b: { result: "PASS" },
+    }),
+    "INFLIGHT_POST_APPROVED"
+  );
+
+  // Part B passed, Part C passed -> returns AIRPORT_POST_APPROVED
+  assert.equal(
+    resolveEscalatedStatus("OUTBOUND", "AIRCRAFT", {
+      part_b: { result: "PASS" },
+      part_c: { result: "PASS" },
+    }),
+    "AIRPORT_POST_APPROVED"
+  );
+
+  // Part B passed, Part C passed, Part D passed -> returns COMPLETED
+  assert.equal(
+    resolveEscalatedStatus("OUTBOUND", "AIRCRAFT", {
+      part_b: { result: "PASS" },
+      part_c: { result: "PASS" },
+      part_d: { result: "PASS" },
+    }),
+    "COMPLETED"
+  );
+
+  // Part B passed, Part C passed, Part D skipped -> returns COMPLETED
+  assert.equal(
+    resolveEscalatedStatus("OUTBOUND", "AIRCRAFT", {
+      part_b: { result: "PASS" },
+      part_c: { result: "PASS" },
+      part_d_skipped: true,
+    }),
+    "COMPLETED"
+  );
+});
+
+test("resolveEscalatedStatus: outbound HUB and MAINTENANCE routes resume correctly", () => {
+  // HUB: A -> B -> Hub (final)
+  assert.equal(resolveEscalatedStatus("OUTBOUND", "HUB", {}), "CREATED");
+  assert.equal(
+    resolveEscalatedStatus("OUTBOUND", "HUB", { part_b: { result: "PASS" } }),
+    "INFLIGHT_POST_APPROVED"
+  );
+  assert.equal(
+    resolveEscalatedStatus("OUTBOUND", "HUB", {
+      part_b: { result: "PASS" },
+      part_hub: { result: "PASS" },
+    }),
+    "COMPLETED"
+  );
+
+  // MAINTENANCE: A -> B -> C (final)
+  assert.equal(resolveEscalatedStatus("OUTBOUND", "MAINTENANCE", {}), "CREATED");
+  assert.equal(
+    resolveEscalatedStatus("OUTBOUND", "MAINTENANCE", { part_b: { result: "PASS" } }),
+    "INFLIGHT_POST_APPROVED"
+  );
+  assert.equal(
+    resolveEscalatedStatus("OUTBOUND", "MAINTENANCE", {
+      part_b: { result: "PASS" },
+      part_c: { result: "PASS" },
+    }),
+    "COMPLETED"
+  );
+});
+
+test("resolveEscalatedStatus: outbound REDQ route resumes correctly", () => {
+  // REDQ: A -> B -> REDQ -> C -> D
+  assert.equal(resolveEscalatedStatus("OUTBOUND", "REDQ", {}), "CREATED");
+  assert.equal(
+    resolveEscalatedStatus("OUTBOUND", "REDQ", { part_b: { result: "PASS" } }),
+    "INFLIGHT_POST_APPROVED"
+  );
+  assert.equal(
+    resolveEscalatedStatus("OUTBOUND", "REDQ", {
+      part_b: { result: "PASS" },
+      part_redq: { result: "PASS" },
+    }),
+    "REDQ_RESEALED"
+  );
+  assert.equal(
+    resolveEscalatedStatus("OUTBOUND", "REDQ", {
+      part_b: { result: "PASS" },
+      part_redq: { result: "PASS" },
+      part_c: { result: "PASS" },
+    }),
+    "AIRPORT_POST_APPROVED"
+  );
+  assert.equal(
+    resolveEscalatedStatus("OUTBOUND", "REDQ", {
+      part_b: { result: "PASS" },
+      part_redq: { result: "PASS" },
+      part_c: { result: "PASS" },
+      part_d: { result: "PASS" },
+    }),
+    "COMPLETED"
+  );
+});
+
+test("resolveEscalatedStatus: inbound route resumes correctly", () => {
+  // INBOUND: A -> C (Airport Post) -> B (In-flight Post, final)
+  assert.equal(resolveEscalatedStatus("INBOUND", "AIRCRAFT", {}), "CREATED");
+  assert.equal(
+    resolveEscalatedStatus("INBOUND", "AIRCRAFT", { part_c: { result: "PASS" } }),
+    "AIRPORT_POST_APPROVED"
+  );
+  assert.equal(
+    resolveEscalatedStatus("INBOUND", "AIRCRAFT", {
+      part_c: { result: "PASS" },
+      part_b: { result: "PASS" },
+    }),
+    "COMPLETED"
+  );
+});
+
