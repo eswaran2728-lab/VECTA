@@ -537,10 +537,24 @@ export function PartAForm({
           <SignatureField onChange={setSignature} />
           <input type="hidden" name="signature" value={signature ?? ""} />
 
+          {/* Validation Checklist / Help */}
+          {!searchDone || !signature || !sealsReady || cargoTypes.length === 0 || !hubDestinationReady ? (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+              <p className="font-semibold mb-1">Required before submission:</p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {cargoTypes.length === 0 ? <li>Select at least one Cargo Type</li> : null}
+                {!sealsReady ? <li>Enter seal number and select seal colour for all seals</li> : null}
+                {!searchDone ? <li>Check "Vehicle search completed"</li> : null}
+                {!signature ? <li>Provide PIC signature</li> : null}
+                {movement === "HUB" && !hubDestination ? <li>Select a Hub Destination</li> : null}
+              </ul>
+            </div>
+          ) : null}
+
           {state.error ? (
-            <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
+            <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive">
               {state.error.replace(/^(EXPIRED_PASS|WHITELIST_VIOLATION):\s*/, "")}
-            </p>
+            </div>
           ) : null}
 
           {expiredBlocked ? (
@@ -557,17 +571,29 @@ export function PartAForm({
                 type="submit"
                 size="xl"
                 className="w-full"
-                disabled={
-                  pending ||
-                  !searchDone ||
-                  !signature ||
-                  !sealsReady ||
-                  cargoTypes.length === 0 ||
-                  anyUnlisted ||
-                  driverNameMismatch ||
-                  !escortComplete ||
-                  !hubDestinationReady
-                }
+                disabled={pending}
+                onClick={(e) => {
+                  if (
+                    !searchDone ||
+                    !signature ||
+                    !sealsReady ||
+                    cargoTypes.length === 0 ||
+                    anyUnlisted ||
+                    driverNameMismatch ||
+                    !escortComplete ||
+                    !hubDestinationReady
+                  ) {
+                    if (!searchDone) alert("Please complete and check 'Vehicle search completed'.");
+                    else if (!signature) alert("Please sign the signature field before submitting.");
+                    else if (!sealsReady) alert("Please fill in seal number and select seal colour.");
+                    else if (cargoTypes.length === 0) alert("Please select at least one cargo type.");
+                    else if (!hubDestinationReady) alert("Please select a Hub destination.");
+                    else if (anyUnlisted) alert("Vehicle or driver is not on the active whitelist.");
+                    else if (driverNameMismatch) alert("Driver name does not match the whitelist.");
+                    else if (!escortComplete) alert("Please complete all escort details or leave them blank.");
+                    e.preventDefault();
+                  }
+                }}
               >
                 {pending ? "Creating…" : "Create Transaction & Generate QR"}
               </Button>

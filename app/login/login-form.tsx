@@ -1,8 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Eye, EyeOff, TriangleAlert, ShieldCheck, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+
+function sanitizeNext(next: string | null): string | null {
+  if (!next) return null;
+  const trimmed = next.trim();
+  if (
+    trimmed.startsWith("/") &&
+    !trimmed.startsWith("//") &&
+    !trimmed.startsWith("/\\") &&
+    !trimmed.includes(":")
+  ) {
+    return trimmed;
+  }
+  return null;
+}
 
 export function LoginForm() {
   const [email, setEmail] = useState("");
@@ -11,6 +26,16 @@ export function LoginForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
+
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutSeconds((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutSeconds]);
 
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
@@ -40,6 +65,8 @@ export function LoginForm() {
 
   const handleCredentialsSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (lockoutSeconds > 0) return;
+
     if (!email || !password) {
       setErrorMsg("Please enter both email and password.");
       return;
@@ -56,10 +83,24 @@ export function LoginForm() {
       });
 
       if (error || !data.user) {
-        setErrorMsg(error?.message ?? "Invalid email or password.");
+        const nextAttempts = failedAttempts + 1;
+        setFailedAttempts(nextAttempts);
+
+        // Security: Brute-force backoff after 5 attempts
+        if (nextAttempts >= 5) {
+          setLockoutSeconds(30);
+          setErrorMsg("Too many failed login attempts. Please wait 30 seconds before retrying.");
+        } else {
+          // Security: Unified error message prevents user enumeration
+          setErrorMsg("Invalid email or password.");
+        }
         setIsLoading(false);
         return;
       }
+
+      // Check safe next redirect
+      const urlParams = new URLSearchParams(window.location.search);
+      const safeNext = sanitizeNext(urlParams.get("next"));
 
       // Check user role for routing
       const userEmail = (data.user.email ?? "").toLowerCase();
@@ -74,13 +115,15 @@ export function LoginForm() {
         userEmail.includes("warehouse") ||
         userEmail.includes("vendor");
 
-      if (isCaterLinkUser) {
+      if (safeNext) {
+        window.location.href = safeNext;
+      } else if (isCaterLinkUser) {
         window.location.href = "/caterlink/dashboard";
       } else {
         window.location.href = "/";
       }
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Failed to sign in. Please try again.");
+      setErrorMsg("Invalid email or password.");
       setIsLoading(false);
     }
   };
@@ -175,9 +218,17 @@ export function LoginForm() {
           />
         </div>
         <div>
-          <label htmlFor="password" className="vecta-label">
-            Password
-          </label>
+          <div className="flex items-center justify-between">
+            <label htmlFor="password" className="vecta-label">
+              Password
+            </label>
+            <Link
+              href="/forgot-password"
+              className="text-xs text-primary underline-offset-4 hover:underline"
+            >
+              Forgot password?
+            </Link>
+          </div>
           <div className="relative">
             <input
               id="password"
@@ -214,11 +265,15 @@ export function LoginForm() {
         <button
           type="button"
           onClick={handleCredentialsSignIn}
-          disabled={isLoading || isGoogleLoading}
+          disabled={isLoading || isGoogleLoading || lockoutSeconds > 0}
           style={{ touchAction: "manipulation" }}
           className="vecta-btn-primary mt-1 active:scale-[0.98] transition-transform duration-100 cursor-pointer"
         >
-          {isLoading ? "Signing in…" : "Sign in with Credentials"}
+          {lockoutSeconds > 0
+            ? `Locked (${lockoutSeconds}s)`
+            : isLoading
+            ? "Signing in…"
+            : "Sign in with Credentials"}
         </button>
       </form>
     </div>

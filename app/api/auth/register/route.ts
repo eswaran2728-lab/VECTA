@@ -23,9 +23,16 @@ export async function POST(request: Request) {
     const vendorCompany = String(body.vendor_company ?? "").trim();
     const vehiclePlate = String(body.vehicle_plate ?? "").trim().toUpperCase();
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!name || !staffId || !email) {
       return NextResponse.json(
         { error: "Full Name, Staff/Driver ID, and Email are required." },
+        { status: 400 }
+      );
+    }
+    if (!emailRegex.test(email)) {
+      return NextResponse.json(
+        { error: "Please provide a valid email address." },
         { status: 400 }
       );
     }
@@ -42,12 +49,29 @@ export async function POST(request: Request) {
       );
     }
 
+    // Security hardening: Public self-registration only permits operational shift ranks
+    const allowedOperationalRoles = ["DSE", "SO", "ASO"];
+    const safeAvsecRole = allowedOperationalRoles.includes(avsecRole) ? avsecRole : "SO";
+
     const supabase = await createClient();
+
+    // Explicit duplicate check in database profiles & users
+    const [profileMatch, userMatch] = await Promise.all([
+      supabase.from("profiles").select("id").eq("email", email).maybeSingle(),
+      supabase.from("users").select("id").eq("email", email).maybeSingle(),
+    ]);
+
+    if (profileMatch.data || userMatch.data) {
+      return NextResponse.json(
+        { error: "This email is already registered — contact your admin or try signing in instead." },
+        { status: 400 }
+      );
+    }
 
     const unifiedRole =
       systemType === "caterlink"
         ? "vendor"
-        : (avsecRole.toLowerCase() as "admin" | "management" | "enforcement" | "so" | "aso" | "dse" | "vendor");
+        : (safeAvsecRole.toLowerCase() as "so" | "aso" | "dse" | "vendor");
 
     const { data: created, error: authError } = await supabase.auth.signUp({
       email,
@@ -59,7 +83,7 @@ export async function POST(request: Request) {
           staff_id: staffId,
           phone,
           system_type: systemType,
-          role: systemType === "caterlink" ? "vendor" : avsecRole,
+          role: systemType === "caterlink" ? "vendor" : safeAvsecRole,
           unified_role: unifiedRole,
           ops_group: opsGroup,
           team,
@@ -71,7 +95,23 @@ export async function POST(request: Request) {
       },
     });
 
-    if (authError || !created.user) {
+    if (
+      authError ||
+      !created.user ||
+      (created.user.identities && created.user.identities.length === 0)
+    ) {
+      const errMsg = authError?.message?.toLowerCase() ?? "";
+      if (
+        errMsg.includes("already registered") ||
+        errMsg.includes("already in use") ||
+        errMsg.includes("user already") ||
+        (created.user && created.user.identities && created.user.identities.length === 0)
+      ) {
+        return NextResponse.json(
+          { error: "This email is already registered — contact your admin or try signing in instead." },
+          { status: 400 }
+        );
+      }
       return NextResponse.json(
         { error: authError?.message ?? "Could not create account." },
         { status: 400 }

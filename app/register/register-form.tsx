@@ -205,16 +205,9 @@ export function RegisterForm() {
                   Hierarchy Rank / Level
                 </label>
                 <select id="avsec_role" name="avsec_role" className="vecta-input">
-                  <optgroup label="Shift Operational Ranks">
-                    <option value="DSE">DSE — Duty Security Executive</option>
-                    <option value="SO">SO — Station Officer</option>
-                    <option value="ASO">ASO — Airport Security Officer</option>
-                  </optgroup>
-                  <optgroup label="Command & Oversight (HQ)">
-                    <option value="ENFORCEMENT">ENFORCEMENT</option>
-                    <option value="MANAGEMENT">MANAGEMENT</option>
-                    <option value="ADMIN">ADMIN</option>
-                  </optgroup>
+                  <option value="SO">SO — Station Officer</option>
+                  <option value="ASO">ASO — Airport Security Officer</option>
+                  <option value="DSE">DSE — Duty Security Executive</option>
                 </select>
               </div>
             </div>
@@ -297,10 +290,10 @@ export function RegisterForm() {
       </div>
 
       {errorMsg ? (
-        <p role="alert" className="flex items-center gap-1.5 text-xs text-brand">
-          <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
-          {errorMsg}
-        </p>
+        <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/15 p-3 text-xs font-medium text-red-300">
+          <TriangleAlert className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />
+          <span>{errorMsg}</span>
+        </div>
       ) : null}
 
       {successMsg ? (

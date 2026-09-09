@@ -23,8 +23,30 @@ import { isCheckinGateExempt, isAdminPathForbidden } from "./middleware-gate-log
 // Full SSO via AirAsia's Google Workspace domain is planned as a future
 // replacement for Supabase email/password auth, but that's a later
 // migration — for now Supabase auth continues, just without any
-// self-service path to create an account.
-const PUBLIC_PATHS = ["/login", "/register", "/auth/callback", "/auth", "/manifest.json", "/favicon.ico"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+  "/auth/callback",
+  "/auth",
+  "/manifest.json",
+  "/favicon.ico",
+];
+
+export function sanitizeNextPath(next: string | null): string | null {
+  if (!next) return null;
+  const trimmed = next.trim();
+  if (
+    trimmed.startsWith("/") &&
+    !trimmed.startsWith("//") &&
+    !trimmed.startsWith("/\\") &&
+    !trimmed.includes(":")
+  ) {
+    return trimmed;
+  }
+  return null;
+}
 
 
 
