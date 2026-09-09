@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Lock, Eye, EyeOff, CheckCircle2, TriangleAlert, Loader2, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -13,23 +13,6 @@ export default function ResetPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [sessionChecked, setSessionChecked] = useState(false);
-  const [hasSession, setHasSession] = useState(false);
-
-  useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const supabase = createClient();
-        const { data: { session } } = await supabase.auth.getSession();
-        setHasSession(Boolean(session));
-      } catch {
-        setHasSession(false);
-      } finally {
-        setSessionChecked(true);
-      }
-    };
-    checkSession();
-  }, []);
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();

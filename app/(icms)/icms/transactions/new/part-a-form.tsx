@@ -544,7 +544,7 @@ export function PartAForm({
               <ul className="list-disc pl-4 space-y-0.5">
                 {cargoTypes.length === 0 ? <li>Select at least one Cargo Type</li> : null}
                 {!sealsReady ? <li>Enter seal number and select seal colour for all seals</li> : null}
-                {!searchDone ? <li>Check "Vehicle search completed"</li> : null}
+                {!searchDone ? <li>Check &quot;Vehicle search completed&quot;</li> : null}
                 {!signature ? <li>Provide PIC signature</li> : null}
                 {movement === "HUB" && !hubDestination ? <li>Select a Hub Destination</li> : null}
               </ul>

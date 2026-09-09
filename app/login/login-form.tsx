@@ -122,7 +122,7 @@ export function LoginForm() {
       } else {
         window.location.href = "/";
       }
-    } catch (err) {
+    } catch {
       setErrorMsg("Invalid email or password.");
       setIsLoading(false);
     }
