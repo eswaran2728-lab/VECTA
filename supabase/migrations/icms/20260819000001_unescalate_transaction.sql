@@ -78,7 +78,7 @@ declare
   v_redq_pass boolean := false;
   v_restored_status text;
 begin
-  if v_role not in ('supervisor', 'enforcement', 'management') then
+  if auth.uid() is not null and (v_role is null or v_role not in ('supervisor', 'enforcement', 'management')) then
     raise exception 'ICMS: only supervisor, enforcement, or management may release escalated transactions';
   end if;
 
@@ -226,4 +226,4 @@ end;
 $$;
 
 revoke execute on function public.unescalate_transaction(uuid, text) from public, anon;
-grant execute on function public.unescalate_transaction(uuid, text) to authenticated;
+grant execute on function public.unescalate_transaction(uuid, text) to authenticated, service_role;

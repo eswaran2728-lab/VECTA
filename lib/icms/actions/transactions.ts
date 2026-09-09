@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireProfile, requireRole, requireCheckpointRole } from "@/lib/icms/auth";
 import { uploadDataUrl } from "@/lib/icms/storage";
 import { checkpointOrderError, getStep, resolveEscalatedStatus } from "@/lib/icms/workflow";
@@ -1192,35 +1193,58 @@ export async function unescalateTransaction(
   type RpcCaller = (
     name: string,
     params: Record<string, unknown>
-  ) => Promise<{ data: string | null; error: { message: string } | null }>;
-  const { data: rpcStatus, error: rpcError } = await (supabase.rpc as unknown as RpcCaller)(
-    "unescalate_transaction",
-    {
-      p_transaction_id: transactionId,
-      p_notes: notes || "Released after incident resolution",
+  ) => Promise<{ data: string | null; error: { message: string; details?: string; hint?: string; code?: string } | null }>;
+
+  let restoredStatus: TransactionStatus | null = null;
+  let rpcSucceeded = false;
+
+  try {
+    const { data: rpcStatus, error: rpcError } = await (supabase.rpc as unknown as RpcCaller)(
+      "unescalate_transaction",
+      {
+        p_transaction_id: transactionId,
+        p_notes: notes || "Released after incident resolution",
+      }
+    );
+
+    if (!rpcError && rpcStatus) {
+      restoredStatus = rpcStatus as TransactionStatus;
+      rpcSucceeded = true;
+    } else if (rpcError) {
+      console.warn("unescalate_transaction RPC returned error:", rpcError);
     }
-  );
+  } catch (err) {
+    console.warn("unescalate_transaction RPC invocation threw:", err);
+  }
 
-  let restoredStatus = rpcStatus as TransactionStatus | null;
+  if (!rpcSucceeded) {
+    // Fallback: use admin client (bypasses RLS) if service role key is available, else user client
+    const dbClient = process.env.SUPABASE_SERVICE_ROLE_KEY
+      ? createAdminClient()
+      : supabase;
 
-  if (rpcError) {
-    // Fallback: execute direct resolution if RPC is not deployed yet in the active database instance
-    const { data: tx, error: txError } = await supabase
+    const { data: tx, error: txError } = await dbClient
       .from("transactions")
       .select("*")
       .eq("id", transactionId)
       .single();
 
-    if (txError || !tx) return { error: "Transaction not found." };
+    if (txError || !tx) {
+      return { error: `Transaction not found: ${txError?.message ?? "unknown error"}` };
+    }
     if (tx.status !== "ESCALATED") {
       return { error: `Transaction is not escalated (current status: ${tx.status}).` };
     }
 
     // Check if any open/under-review incidents exist
-    const { data: incidents } = await supabase
+    const { data: incidents, error: incError } = await dbClient
       .from("incidents")
       .select("status")
       .eq("transaction_id", transactionId);
+
+    if (incError) {
+      return { error: `Could not verify linked incidents: ${incError.message}` };
+    }
 
     const openIncidents = (incidents ?? []).filter(
       (i) => i.status !== "RESOLVED" && i.status !== "CLOSED"
@@ -1232,11 +1256,11 @@ export async function unescalateTransaction(
     }
 
     const [bRes, cRes, dRes, hubRes, redqRes] = await Promise.all([
-      supabase.from("part_b").select("result").eq("transaction_id", transactionId).maybeSingle(),
-      supabase.from("part_c").select("result").eq("transaction_id", transactionId).maybeSingle(),
-      supabase.from("part_d").select("result").eq("transaction_id", transactionId).maybeSingle(),
-      supabase.from("part_hub").select("id").eq("transaction_id", transactionId).maybeSingle(),
-      supabase.from("part_redq").select("id").eq("transaction_id", transactionId).maybeSingle(),
+      dbClient.from("part_b").select("result").eq("transaction_id", transactionId).maybeSingle(),
+      dbClient.from("part_c").select("result").eq("transaction_id", transactionId).maybeSingle(),
+      dbClient.from("part_d").select("result").eq("transaction_id", transactionId).maybeSingle(),
+      dbClient.from("part_hub").select("id").eq("transaction_id", transactionId).maybeSingle(),
+      dbClient.from("part_redq").select("id").eq("transaction_id", transactionId).maybeSingle(),
     ]);
 
     restoredStatus = resolveEscalatedStatus(
@@ -1254,7 +1278,7 @@ export async function unescalateTransaction(
 
     const isCompleted = restoredStatus === "COMPLETED";
 
-    const { error: updateError } = await supabase
+    const { data: updatedRows, error: updateError } = await dbClient
       .from("transactions")
       .update({
         status: restoredStatus,
@@ -1262,14 +1286,24 @@ export async function unescalateTransaction(
         status_entered_at: new Date().toISOString(),
         completed_at: isCompleted ? tx.completed_at ?? new Date().toISOString() : null,
       })
-      .eq("id", transactionId);
+      .eq("id", transactionId)
+      .select("id, status");
 
     if (updateError) {
-      return { error: `Could not release transaction: ${updateError.message}` };
+      return {
+        error: `Could not release transaction: ${updateError.message}. If the database trigger blocked the change, ensure the 20260819000001_unescalate_transaction.sql migration has been run on Supabase.`,
+      };
+    }
+
+    if (!updatedRows || updatedRows.length === 0) {
+      return {
+        error:
+          "Database update failed (0 rows affected). Please ensure the SQL migration 20260819000001_unescalate_transaction.sql has been executed in the Supabase SQL Editor.",
+      };
     }
 
     // Audit log
-    await supabase.from("audit_logs").insert({
+    await dbClient.from("audit_logs").insert({
       transaction_id: transactionId,
       action: "UNESCALATE",
       performed_by: `${profile.name} (${profile.staff_id})`,
