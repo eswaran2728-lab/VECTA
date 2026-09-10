@@ -52,17 +52,23 @@ values
 on conflict (station, team) do update set active = true;
 
 -- 3. Ensure active Duty Zones exist for KUL - MAA
-insert into public.duty_zones (id, station, name, active, polygon)
+insert into public.duty_zones (id, station, code, name, center_lat, center_lng, radius_m, active, polygon)
 values (
   'd0000000-0000-4000-8000-000000000001',
   'KUL - MAA',
+  'KLIA_MAIN_ZONE',
   'KLIA Main & CaterLink Security Zone',
+  2.7433,
+  101.6981,
+  1500,
   true,
   '{"type":"Polygon","coordinates":[[[101.68,2.73],[101.72,2.73],[101.72,2.76],[101.68,2.76],[101.68,2.73]]]}'::jsonb
 )
-on conflict (id) do update set
-  station = excluded.station,
+on conflict (station, code) do update set
   name = excluded.name,
+  center_lat = excluded.center_lat,
+  center_lng = excluded.center_lng,
+  radius_m = excluded.radius_m,
   active = true;
 
 -- 4. Populate team_rosters for every station and team for rolling dates (today - 7 to today + 30)
