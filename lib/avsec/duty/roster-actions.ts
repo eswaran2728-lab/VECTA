@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
 
 function backTo(station: string, week: string) {
-  return `/admin/roster?station=${encodeURIComponent(station)}&week=${week}`;
+  return `/avsec/admin/roster?station=${encodeURIComponent(station)}&week=${week}`;
 }
 
 export async function upsertRosterCell(formData: FormData) {
