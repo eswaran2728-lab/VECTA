@@ -137,7 +137,6 @@ begin
       staff_no,
       coalesce(station, 'KUL - MAA') as station,
       coalesce(team, 'ALPHA') as team,
-      role::text as role,
       ops_group
     from public.profiles
     where role in ('ASO', 'SO', 'DSE')
@@ -148,7 +147,6 @@ begin
       profile_id,
       station,
       team,
-      role,
       duty_date,
       shift_code,
       zone_id,
@@ -166,7 +164,6 @@ begin
       p.id,
       p.station,
       p.team,
-      p.role,
       v_today,
       'M1',
       v_zone_id,
