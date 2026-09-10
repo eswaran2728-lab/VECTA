@@ -93,7 +93,7 @@ export const OPS_GROUP_REQUIRED_ROLES = ["ASO", "SO", "DSE"] as const;
 export const PROFILE_STATUSES = ["pending", "approved", "rejected", "deactivated"] as const;
 export type ProfileStatus = (typeof PROFILE_STATUSES)[number];
 
-export const REPORT_TYPES = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013", "offload"] as const;
+export const REPORT_TYPES = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013"] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];
 
 // SEC 013 Section 2 "Duty Area" options.
@@ -114,7 +114,7 @@ export const SEC013_CERTIFICATION_TEXT =
 // describe report metadata — callers that pass REPORT_META[type].table into
 // supabase.from() cast it to the literal table-name union at the call site.
 export const REPORT_META: Record<
-  ReportType,
+  ReportType | "offload",
   { name: string; code: string; table: string; route: string }
 > = {
   sec016: {

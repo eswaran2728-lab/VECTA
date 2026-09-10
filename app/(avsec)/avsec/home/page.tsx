@@ -5,11 +5,10 @@ import { getTodayRoster, getTodayDutyRecord } from "@/lib/avsec/duty/checkin-que
 import { REPORT_META, type ReportType } from "@/lib/avsec/reference-data";
 import { formatTimeMY, nowTimeMY } from "@/lib/avsec/datetime";
 
-const REPORT_ORDER: ReportType[] = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013", "offload"];
+const REPORT_ORDER: ReportType[] = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013"];
 const RED_ACCENT: Partial<Record<ReportType, true>> = { sec029: true, sec033: true };
 
 function shortLabel(type: ReportType) {
-  if (type === "offload") return "OFL";
   return type.slice(0, 3).toUpperCase() + " " + type.slice(3);
 }
 
