@@ -2,9 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/avsec/auth";
-import type { ReportType } from "@/lib/avsec/reference-data";
 
-export async function saveDraft(reportType: ReportType, data: unknown): Promise<{ ok: boolean; error?: string }> {
+export async function saveDraft(reportType: string, data: unknown): Promise<{ ok: boolean; error?: string }> {
   const profile = await getCurrentProfile();
   if (!profile) return { ok: false, error: "Not authenticated" };
 
@@ -20,7 +19,7 @@ export async function saveDraft(reportType: ReportType, data: unknown): Promise<
   return { ok: true };
 }
 
-export async function loadDraft(reportType: ReportType): Promise<unknown | null> {
+export async function loadDraft(reportType: string): Promise<unknown | null> {
   const profile = await getCurrentProfile();
   if (!profile) return null;
 
@@ -35,7 +34,7 @@ export async function loadDraft(reportType: ReportType): Promise<unknown | null>
   return (data?.data as unknown) ?? null;
 }
 
-export async function clearDraft(reportType: ReportType): Promise<void> {
+export async function clearDraft(reportType: string): Promise<void> {
   const profile = await getCurrentProfile();
   if (!profile) return;
 

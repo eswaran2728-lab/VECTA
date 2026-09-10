@@ -10,8 +10,7 @@ import { Sec029Pdf } from "@/lib/avsec/export/pdf/Sec029Pdf";
 import { Sec018Pdf } from "@/lib/avsec/export/pdf/Sec018Pdf";
 import { Sec033Pdf } from "@/lib/avsec/export/pdf/Sec033Pdf";
 import { Sec013Pdf } from "@/lib/avsec/export/pdf/Sec013Pdf";
-import { OffloadPdf } from "@/lib/avsec/export/pdf/OffloadPdf";
-import type { Sec016Row, Sec014Row, Sec029Row, Sec018Row, Sec033Row, Sec013Row, OffloadRow } from "@/lib/avsec/types";
+import type { Sec016Row, Sec014Row, Sec029Row, Sec018Row, Sec033Row, Sec013Row } from "@/lib/avsec/types";
 
 export async function GET(
   _request: Request,
@@ -52,9 +51,6 @@ export async function GET(
       break;
     case "sec013":
       buffer = await renderToBuffer(<Sec013Pdf report={report as unknown as Sec013Row} qrDataUrl={qrDataUrl} />);
-      break;
-    case "offload":
-      buffer = await renderToBuffer(<OffloadPdf report={report as unknown as OffloadRow} qrDataUrl={qrDataUrl} />);
       break;
   }
 

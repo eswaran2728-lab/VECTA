@@ -6,10 +6,10 @@ import { acknowledgeReport } from "@/lib/avsec/acknowledgements/actions";
 import { getReportAttachments } from "@/lib/avsec/attachments/actions";
 import { createClient } from "@/lib/supabase/server";
 import { REPORT_META, REPORT_TYPES, ROLE_RANK, type ReportType, type UserRole } from "@/lib/avsec/reference-data";
-import { Sec016View, Sec014View, Sec029View, Sec018View, Sec033View, Sec013View, OffloadView } from "@/components/avsec/reports/ReportView";
+import { Sec016View, Sec014View, Sec029View, Sec018View, Sec033View, Sec013View } from "@/components/avsec/reports/ReportView";
 import { AttachmentGallery } from "@/components/avsec/reports/AttachmentGallery";
 import { formatDateTimeMY, formatTimeMY } from "@/lib/avsec/datetime";
-import type { Sec016Row, Sec014Row, Sec029Row, Sec018Row, Sec033Row, Sec013Row, OffloadRow } from "@/lib/avsec/types";
+import type { Sec016Row, Sec014Row, Sec029Row, Sec018Row, Sec033Row, Sec013Row } from "@/lib/avsec/types";
 
 export default async function ReportViewPage({
   params: paramsPromise,
@@ -110,7 +110,6 @@ export default async function ReportViewPage({
         {type === "sec018" && <Sec018View report={report as unknown as Sec018Row} />}
         {type === "sec033" && <Sec033View report={report as unknown as Sec033Row} />}
         {type === "sec013" && <Sec013View report={report as unknown as Sec013Row} />}
-        {type === "offload" && <OffloadView report={report as unknown as OffloadRow} />}
 
         <AttachmentGallery attachments={attachments} />
 

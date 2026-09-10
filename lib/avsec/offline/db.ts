@@ -8,7 +8,7 @@ const STORE = "queue";
 // The report types plus the two duty check-in/out actions, plus a standalone
 // "attachment" retry item — everything that can be queued offline and replayed later
 // shares this one IndexedDB store and sync badge.
-export type QueueItemType = ReportType | "duty_checkin" | "duty_checkout" | "attachment";
+export type QueueItemType = ReportType | "offload" | "duty_checkin" | "duty_checkout" | "attachment";
 
 // A compressed image or PDF blob queued alongside an offline report submission. Uploaded
 // only after the report itself has synced and returned a real report id — never before.

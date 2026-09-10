@@ -108,9 +108,6 @@ function toListItem(type: ReportType, row: Record<string, unknown>): ReportListI
     case "sec013":
       summary = `Profiling duty · ${row.remark ? String(row.remark).slice(0, 60) : ""}`;
       break;
-    case "offload":
-      summary = `Flight ${row.flight_no} → ${row.destination} · ${row.total_bags} bag(s)`;
-      break;
   }
   return {
     id: String(row.id),
@@ -170,14 +167,6 @@ export async function getReportById(type: ReportType, id: string) {
       .eq("report_id", id)
       .order("entry_no");
     return { ...data, profiling_duties: profilingDuties ?? [] };
-  }
-  if (type === "offload") {
-    const { data: items } = await supabase
-      .from("offload_items")
-      .select("*")
-      .eq("report_id", id)
-      .order("entry_no");
-    return { ...data, items: items ?? [] };
   }
   return data;
 }

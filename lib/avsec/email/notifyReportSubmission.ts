@@ -15,7 +15,7 @@ export async function notifyReportSubmission({
   submittedByStaffNo,
   fields,
 }: {
-  reportType: ReportType;
+  reportType: ReportType | "offload";
   submittedAt: string;
   submittedByName: string;
   submittedByStaffNo: string;

@@ -1,16 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ReportType } from "@/lib/avsec/reference-data";
 import { saveDraft } from "@/lib/avsec/reports/drafts";
 
 const AUTOSAVE_DELAY_MS = 1200;
 
-function localKey(type: ReportType) {
+function localKey(type: string) {
   return `avsec-ops:draft:${type}`;
 }
 
-export function readLocalDraft<T>(type: ReportType): T | null {
+export function readLocalDraft<T>(type: string): T | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(localKey(type));
@@ -20,7 +19,7 @@ export function readLocalDraft<T>(type: ReportType): T | null {
   }
 }
 
-export function clearLocalDraft(type: ReportType) {
+export function clearLocalDraft(type: string) {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(localKey(type));
 }
@@ -29,7 +28,7 @@ export function clearLocalDraft(type: ReportType) {
  * Debounced draft autosave: writes to localStorage immediately (survives offline/reload),
  * and best-effort mirrors to the server draft table when online.
  */
-export function useDraftAutosave<T>(type: ReportType, values: T, enabled = true) {
+export function useDraftAutosave<T>(type: string, values: T, enabled = true) {
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
