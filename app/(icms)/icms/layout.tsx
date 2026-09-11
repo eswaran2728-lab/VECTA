@@ -21,6 +21,7 @@ import { PwaProvider } from "@/components/icms/pwa-provider";
 import { InstallPrompt } from "@/components/icms/install-prompt";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
+import { AppSidebar } from "@/components/layout/AppSidebar";
 import type { OpsGroup } from "@/lib/icms/database.types";
 
 const ORG_WIDE_UNIFIED_ROLES = ["admin", "management", "enforcement"];
@@ -97,44 +98,43 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const orgWide = ORG_WIDE_UNIFIED_ROLES.includes(profile.unified_role ?? "");
 
   return (
-    <div className="flex min-h-screen flex-col pb-24">
-      <UnifiedHeader
+    <div className="min-h-screen bg-background text-foreground antialiased">
+      <AppSidebar
         name={profile.name}
-        roleLabel={ROLE_LABELS[profile.role] ?? null}
-        signOutAction={signOut}
-        brand="VECTA"
-        homeHref={isDriver ? "/icms/dashboard" : "/"}
-        extra={
-          <>
-            <PwaProvider />
-            <LanguageToggle lang={lang} />
-            <NotificationsBell userId={profile.id} />
-          </>
-        }
-      />
-
-      <nav className="hidden items-center gap-1 border-b border-border px-6 py-2 md:flex">
-        {nav.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <item.icon className="h-4 w-4" />
-            {item.label}
-          </Link>
-        ))}
-      </nav>
-
-      {!isDriver && <InstallPrompt />}
-
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">{children}</main>
-
-      <TeamBottomNav
-        opsGroup={(profile.ops_group ?? null) as OpsGroup | null}
-        orgWide={orgWide}
         role={profile.role}
+        roleLabel={ROLE_LABELS[profile.role] ?? null}
+        opsGroup={(profile.ops_group ?? null) as OpsGroup | null}
+        signOutAction={signOut}
       />
+
+      <div className="flex min-h-screen flex-col pb-24 lg:pb-8 lg:pl-64">
+        <div className="lg:hidden">
+          <UnifiedHeader
+            name={profile.name}
+            roleLabel={ROLE_LABELS[profile.role] ?? null}
+            signOutAction={signOut}
+            brand="VECTA"
+            homeHref={isDriver ? "/icms/dashboard" : "/"}
+            extra={
+              <>
+                <PwaProvider />
+                <LanguageToggle lang={lang} />
+                <NotificationsBell userId={profile.id} />
+              </>
+            }
+          />
+        </div>
+
+        {!isDriver && <InstallPrompt />}
+
+        <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">{children}</main>
+
+        <TeamBottomNav
+          opsGroup={(profile.ops_group ?? null) as OpsGroup | null}
+          orgWide={orgWide}
+          role={profile.role}
+        />
+      </div>
     </div>
   );
 }

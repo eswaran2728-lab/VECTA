@@ -9,6 +9,7 @@ import { REPORT_TYPES as AVSEC_REPORT_TYPES, REPORT_META } from "@/lib/avsec/ref
 import { StatusDot, type OpsStatus } from "@/components/layout/StatusDot";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
+import { AppSidebar } from "@/components/layout/AppSidebar";
 import { TransactionStageBar } from "@/components/layout/TransactionStageBar";
 import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries";
 import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
@@ -187,241 +188,263 @@ export default async function LandingPage({
   }
 
   return (
-    <main className="relative min-h-screen bg-background pb-28">
-      <div className="relative z-10 flex min-h-screen flex-col">
-        <UnifiedHeader name={profile.name} roleLabel={roleChip} signOutAction={signOut} />
+    <main className="relative min-h-screen bg-background pb-28 lg:pb-8">
+      {/* Desktop Persistent Left Sidebar */}
+      <AppSidebar
+        name={profile.name}
+        role={role}
+        roleLabel={roleChip}
+        opsGroup={userOpsGroup}
+        station={avsecProfile?.station ?? null}
+        team={avsecProfile?.team ?? null}
+        signOutAction={signOut}
+      />
 
-        <div className="flex flex-col gap-6 px-8 py-8">
+      <div className="relative z-10 flex min-h-screen flex-col lg:pl-64">
+        {/* Mobile Header (Hidden on Desktop since AppSidebar has brand and user card) */}
+        <div className="lg:hidden">
+          <UnifiedHeader name={profile.name} roleLabel={roleChip} signOutAction={signOut} />
+        </div>
+
+        <div className="flex flex-col gap-6 px-4 py-6 sm:px-8 sm:py-8">
           {/* Management Announcements Section */}
           <AnnouncementBanner announcements={announcements} />
 
-          {/* Operational status header */}
-          <div className="vecta-panel flex flex-wrap items-center justify-between gap-4 px-6 py-5">
-            <div className="flex flex-col gap-1.5">
-              <span className="font-display text-lg font-bold tracking-[0.02em]">
-                {avsecProfile?.station ?? (orgWide ? "All Stations" : OPS_GROUP_LABELS[userOpsGroup ?? "ifc_avsec"])}
-                {avsecProfile?.team ? ` · Team ${avsecProfile.team}` : ""}
-              </span>
-              <StatusDot status={overallStatus} />
-              {!orgWide && avsecProfile ? (
-                <Link
-                  href="/avsec/duty"
-                  className="font-mono text-[11px] uppercase tracking-[0.08em] text-primary underline underline-offset-4"
-                >
-                  Duty Check-In / Check-Out &rarr;
-                </Link>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap gap-6">
-              <Metric label="Staff on Duty" value={snapshot.staffOnDuty} />
-              <Metric label="Active Transactions" value={snapshot.activeTransactions} />
-              <Metric label="Reports Today" value={snapshot.reportsToday} />
-              <Metric label="Alerts" value={snapshot.alerts} alert={snapshot.alerts > 0} />
-            </div>
-          </div>
-
-          {orgWide ? (
-            <div className="vecta-pill-tabs w-fit">
-              <TabPill label="All Ops Groups" active={activeTab === "all"} href="/" />
-              {OPS_GROUPS.map((g) => (
-                <TabPill key={g} label={OPS_GROUP_LABELS[g]} active={activeTab === g} href={`/?ops=${g}`} />
-              ))}
-            </div>
-          ) : null}
-
-          <div className="flex flex-col gap-4 sm:flex-row">
-            {showScan ? (
-              <Link href="/avsec/scan" className="vecta-tile group">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-3.5" aria-hidden="true">
-                  <path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" stroke="var(--violet)" strokeWidth="1.6" />
-                  <rect x="9" y="9" width="6" height="6" stroke="var(--violet)" strokeWidth="1.6" />
-                </svg>
-                <h2 className="font-display text-xl font-bold tracking-[0.03em]">Scan</h2>
-                <p className="vecta-eyebrow mt-1">Scan a transaction in your ops group</p>
-              </Link>
-            ) : orgWide ? (
-              // Management/Enforcement/Admin don't work a checkpoint, so
-              // Scan doesn't apply to them — Report Search instead, same
-              // swap as the bottom nav (TeamBottomNav.tsx).
-              <Link href="/avsec/reports/lookup" className="vecta-tile group">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-3.5" aria-hidden="true">
-                  <circle cx="10.5" cy="10.5" r="6" stroke="var(--violet)" strokeWidth="1.6" />
-                  <path d="M15 15L20 20" stroke="var(--violet)" strokeWidth="1.6" strokeLinecap="round" />
-                </svg>
-                <h2 className="font-display text-xl font-bold tracking-[0.03em]">Report Search</h2>
-                <p className="vecta-eyebrow mt-1">Look up any report · org-wide</p>
-              </Link>
-            ) : null}
-            {quickAccess && (
-              <Link href={quickAccess.href} className="vecta-tile group">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-3.5" aria-hidden="true">
-                  <path d="M4 19h16M6 19V9l6-4 6 4v10" stroke="var(--cyan)" strokeWidth="1.6" />
-                </svg>
-                <h2 className="font-display text-xl font-bold tracking-[0.03em]">{quickAccess.label}</h2>
-                <p className="vecta-eyebrow mt-1 font-mono text-[13px] normal-case tracking-normal text-foreground">
-                  {quickAccess.count} {quickAccess.unit}
-                </p>
-              </Link>
-            )}
-            {showAdmin && (
-              <>
-                <Link href="/avsec/admin/users" className="vecta-tile group">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-3.5" aria-hidden="true">
-                    <circle cx="12" cy="8" r="3.4" stroke="var(--cyan)" strokeWidth="1.6" />
-                    <path d="M5 20c0-3.6 3-6 7-6s7 2.4 7 6" stroke="var(--cyan)" strokeWidth="1.6" />
-                  </svg>
-                  <h2 className="font-display text-xl font-bold tracking-[0.03em]">Admin</h2>
-                  <p className="vecta-eyebrow mt-1">Users, whitelists, audit</p>
-                </Link>
-                <Link href="/avsec/management/feedback" className="vecta-tile group">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-3.5" aria-hidden="true">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  <h2 className="font-display text-xl font-bold tracking-[0.03em]">Feedback Inbox</h2>
-                  <p className="vecta-eyebrow mt-1">Anonymous staff feedback</p>
-                </Link>
-                <Link href="/avsec/management/announcements" className="vecta-tile group">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-3.5" aria-hidden="true">
-                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  <h2 className="font-display text-xl font-bold tracking-[0.03em]">Announcements</h2>
-                  <p className="vecta-eyebrow mt-1">Broadcast to staff & teams</p>
-                </Link>
-              </>
-            )}
-            {!showAdmin && (
-              <Link href="/avsec/feedback" className="vecta-tile group">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-3.5" aria-hidden="true">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <h2 className="font-display text-xl font-bold tracking-[0.03em]">Staff Feedback</h2>
-                <p className="vecta-eyebrow mt-1">Submit anonymous feedback</p>
-              </Link>
-            )}
-          </div>
-
-          {orgWide && opsSummary ? (
-            <div className="vecta-panel px-6 py-[22px]">
-              <p className="vecta-eyebrow mb-4">
-                {activeTab === "all"
-                  ? "Open Transactions — All Ops Groups"
-                  : `Open Transactions — ${OPS_GROUP_LABELS[activeTab]}`}
-              </p>
-              {opsSummary.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No open transactions right now.</p>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  {opsSummary.map((row) => {
-                    const clear = row.count === 0;
-                    return (
-                      <div key={row.group} className="flex items-center gap-3.5">
-                        <span
-                          className="h-[6px] w-[6px] shrink-0 rounded-full"
-                          style={{ background: clear ? "var(--green)" : "var(--cyan)" }}
-                        />
-                        <span className="w-[150px] shrink-0 text-sm">{OPS_GROUP_LABELS[row.group]}</span>
-                        <div className="h-[6px] flex-1 rounded-full bg-input">
-                          <div
-                            className="h-full rounded-full"
-                            style={{
-                              width: `${Math.max(clear ? 4 : 0, (row.count / maxCount) * 100)}%`,
-                              background: clear ? "var(--green)" : "var(--cyan)",
-                            }}
-                          />
-                        </div>
-                        <span className="w-[34px] shrink-0 text-right font-mono text-[15px] font-medium">
-                          {String(row.count).padStart(2, "0")}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ) : null}
-
-          {/* Reports section — merged AVSEC (6 SEC0xx + offload) and ICMS
-              report entry points into one surface. Same reports, same
-              submission/review logic; purely surfaced from one place. */}
-          {(showReports || showIcmsReports) && (
-            <section id="reports" className="vecta-panel px-6 py-[22px] scroll-mt-24">
-              <div className="mb-4 flex items-center justify-between">
-                <p className="vecta-eyebrow">Reports</p>
-                {showReports && (
-                  <Link href="/avsec/history" className="font-mono text-[11px] uppercase tracking-[0.1em] text-primary">
-                    My Submissions &rarr;
-                  </Link>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                {showReports &&
-                  permittedAvsecReports.map((t) => (
+          {/* Desktop 2-Column Responsive Layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Main Operations Stream (8 Columns on Desktop) */}
+            <div className="lg:col-span-8 space-y-6">
+              {/* Operational status header */}
+              <div className="vecta-panel flex flex-wrap items-center justify-between gap-4 px-6 py-5">
+                <div className="flex flex-col gap-1.5">
+                  <span className="font-display text-lg font-bold tracking-[0.02em]">
+                    {avsecProfile?.station ?? (orgWide ? "All Stations" : OPS_GROUP_LABELS[userOpsGroup ?? "ifc_avsec"])}
+                    {avsecProfile?.team ? ` · Team ${avsecProfile.team}` : ""}
+                  </span>
+                  <StatusDot status={overallStatus} />
+                  {!orgWide && avsecProfile ? (
                     <Link
-                      key={t}
-                      href={`/avsec/reports/${t}`}
-                      className="rounded-xl border border-border bg-card px-3.5 py-3 transition-colors hover:border-primary"
+                      href="/avsec/duty"
+                      className="font-mono text-[11px] uppercase tracking-[0.08em] text-primary underline underline-offset-4"
                     >
-                      <p className="font-mono text-[10px] text-muted-foreground">{REPORT_META[t].code}</p>
-                      <p className="mt-1 text-[13px] font-semibold leading-snug">{REPORT_META[t].name}</p>
+                      Duty Check-In / Check-Out &rarr;
                     </Link>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-6">
+                  <Metric label="Staff on Duty" value={snapshot.staffOnDuty} />
+                  <Metric label="Active Transactions" value={snapshot.activeTransactions} />
+                  <Metric label="Reports Today" value={snapshot.reportsToday} />
+                  <Metric label="Alerts" value={snapshot.alerts} alert={snapshot.alerts > 0} />
+                </div>
+              </div>
+
+              {orgWide ? (
+                <div className="vecta-pill-tabs w-fit">
+                  <TabPill label="All Ops Groups" active={activeTab === "all"} href="/" />
+                  {OPS_GROUPS.map((g) => (
+                    <TabPill key={g} label={OPS_GROUP_LABELS[g]} active={activeTab === g} href={`/?ops=${g}`} />
                   ))}
-                {showIcmsReports && (
-                  <Link
-                    href="/icms/reports"
-                    className="rounded-xl border border-border bg-card px-3.5 py-3 transition-colors hover:border-primary"
-                  >
-                    <p className="font-mono text-[10px] text-muted-foreground">ICMS</p>
-                    <p className="mt-1 text-[13px] font-semibold leading-snug">
-                      Transaction &amp; Incident Reports
+                </div>
+              ) : null}
+
+              {orgWide && opsSummary ? (
+                <div className="vecta-panel px-6 py-[22px]">
+                  <p className="vecta-eyebrow mb-4">
+                    {activeTab === "all"
+                      ? "Open Transactions — All Ops Groups"
+                      : `Open Transactions — ${OPS_GROUP_LABELS[activeTab]}`}
+                  </p>
+                  {opsSummary.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No open transactions right now.</p>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {opsSummary.map((row) => {
+                        const clear = row.count === 0;
+                        return (
+                          <div key={row.group} className="flex items-center gap-3.5">
+                            <span
+                              className="h-[6px] w-[6px] shrink-0 rounded-full"
+                              style={{ background: clear ? "var(--green)" : "var(--cyan)" }}
+                            />
+                            <span className="w-[150px] shrink-0 text-sm">{OPS_GROUP_LABELS[row.group]}</span>
+                            <div className="h-[6px] flex-1 rounded-full bg-input">
+                              <div
+                                className="h-full rounded-full"
+                                style={{
+                                  width: `${Math.max(clear ? 4 : 0, (row.count / maxCount) * 100)}%`,
+                                  background: clear ? "var(--green)" : "var(--cyan)",
+                                }}
+                              />
+                            </div>
+                            <span className="w-[34px] shrink-0 text-right font-mono text-[15px] font-medium">
+                              {String(row.count).padStart(2, "0")}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {/* Recent activity feed — read-only merge of duty check-in/out,
+                  transaction, and report-submission events. */}
+              <section className="vecta-panel px-6 py-[22px]">
+                <p className="vecta-eyebrow mb-4">Live Activity Stream</p>
+                {activity.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No recent activity to show.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                          <th className="pb-2 pr-3 font-mono font-medium">Time</th>
+                          <th className="pb-2 pr-3 font-mono font-medium">Activity</th>
+                          <th className="pb-2 pr-3 font-mono font-medium">Location</th>
+                          <th className="pb-2 font-mono font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activity.map((row) => (
+                          <tr key={row.key} className="border-b border-border/60 last:border-none hover:bg-muted/20 transition-colors">
+                            <td className="whitespace-nowrap py-2.5 pr-3 font-mono text-[12px] text-muted-foreground">
+                              {formatClock(row.time)}
+                            </td>
+                            <td className="py-2.5 pr-3 text-[13px]">{row.activity}</td>
+                            <td className="py-2.5 pr-3 text-[13px] text-muted-foreground">{row.location}</td>
+                            <td className="py-2.5">
+                              {row.transactionStatus ? (
+                                <TransactionStageBar status={row.transactionStatus} />
+                              ) : (
+                                <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                                  {row.status}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            </div>
+
+            {/* Quick Actions & Security Reports Hub (4 Columns on Desktop) */}
+            <div className="lg:col-span-4 space-y-6">
+              {/* Quick Action Tiles */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
+                {showScan ? (
+                  <Link href="/avsec/scan" className="vecta-tile group">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
+                      <path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" stroke="var(--violet)" strokeWidth="1.6" />
+                      <rect x="9" y="9" width="6" height="6" stroke="var(--violet)" strokeWidth="1.6" />
+                    </svg>
+                    <h2 className="font-display text-lg font-bold tracking-[0.03em]">Scan Checkpoint</h2>
+                    <p className="vecta-eyebrow mt-0.5">Scan a transaction in your ops group</p>
+                  </Link>
+                ) : orgWide ? (
+                  <Link href="/avsec/reports/lookup" className="vecta-tile group">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
+                      <circle cx="10.5" cy="10.5" r="6" stroke="var(--violet)" strokeWidth="1.6" />
+                      <path d="M15 15L20 20" stroke="var(--violet)" strokeWidth="1.6" strokeLinecap="round" />
+                    </svg>
+                    <h2 className="font-display text-lg font-bold tracking-[0.03em]">Report Search</h2>
+                    <p className="vecta-eyebrow mt-0.5">Look up any report · org-wide</p>
+                  </Link>
+                ) : null}
+
+                {quickAccess && (
+                  <Link href={quickAccess.href} className="vecta-tile group">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
+                      <path d="M4 19h16M6 19V9l6-4 6 4v10" stroke="var(--cyan)" strokeWidth="1.6" />
+                    </svg>
+                    <h2 className="font-display text-lg font-bold tracking-[0.03em]">{quickAccess.label}</h2>
+                    <p className="vecta-eyebrow mt-0.5 font-mono text-[13px] normal-case tracking-normal text-foreground">
+                      {quickAccess.count} {quickAccess.unit}
                     </p>
                   </Link>
                 )}
-              </div>
-            </section>
-          )}
 
-          {/* Recent activity feed — read-only merge of duty check-in/out,
-              transaction, and report-submission events. */}
-          <section className="vecta-panel px-6 py-[22px]">
-            <p className="vecta-eyebrow mb-4">Recent Activity</p>
-            {activity.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No recent activity to show.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] border-collapse text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-                      <th className="pb-2 pr-3 font-mono font-medium">Time</th>
-                      <th className="pb-2 pr-3 font-mono font-medium">Activity</th>
-                      <th className="pb-2 pr-3 font-mono font-medium">Location</th>
-                      <th className="pb-2 font-mono font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activity.map((row) => (
-                      <tr key={row.key} className="border-b border-border/60 last:border-none">
-                        <td className="whitespace-nowrap py-2.5 pr-3 font-mono text-[12px] text-muted-foreground">
-                          {formatClock(row.time)}
-                        </td>
-                        <td className="py-2.5 pr-3 text-[13px]">{row.activity}</td>
-                        <td className="py-2.5 pr-3 text-[13px] text-muted-foreground">{row.location}</td>
-                        <td className="py-2.5">
-                          {row.transactionStatus ? (
-                            <TransactionStageBar status={row.transactionStatus} />
-                          ) : (
-                            <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-                              {row.status}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {showAdmin && (
+                  <>
+                    <Link href="/avsec/admin/attendance-monitor" className="vecta-tile group">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
+                        <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" stroke="var(--cyan)" strokeWidth="1.6" />
+                        <rect x="9" y="3" width="6" height="4" rx="2" stroke="var(--cyan)" strokeWidth="1.6" />
+                        <path d="M9 14l2 2 4-4" stroke="var(--cyan)" strokeWidth="1.6" />
+                      </svg>
+                      <h2 className="font-display text-lg font-bold tracking-[0.03em]">Attendance Monitor</h2>
+                      <p className="vecta-eyebrow mt-0.5">Live duty, leave & auto-OT</p>
+                    </Link>
+                    <Link href="/avsec/management/feedback" className="vecta-tile group">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      <h2 className="font-display text-lg font-bold tracking-[0.03em]">Feedback Inbox</h2>
+                      <p className="vecta-eyebrow mt-0.5">Anonymous staff feedback</p>
+                    </Link>
+                    <Link href="/avsec/management/announcements" className="vecta-tile group">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      <h2 className="font-display text-lg font-bold tracking-[0.03em]">Announcements</h2>
+                      <p className="vecta-eyebrow mt-0.5">Broadcast to staff & teams</p>
+                    </Link>
+                  </>
+                )}
+                {!showAdmin && (
+                  <Link href="/avsec/feedback" className="vecta-tile group">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <h2 className="font-display text-lg font-bold tracking-[0.03em]">Staff Feedback</h2>
+                    <p className="vecta-eyebrow mt-0.5">Submit anonymous feedback</p>
+                  </Link>
+                )}
               </div>
-            )}
-          </section>
+
+              {/* Reports section */}
+              {(showReports || showIcmsReports) && (
+                <section id="reports" className="vecta-panel px-5 py-5 scroll-mt-24">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="vecta-eyebrow">File Reports</p>
+                    {showReports && (
+                      <Link href="/avsec/history" className="font-mono text-[10px] uppercase tracking-[0.1em] text-primary hover:underline">
+                        History &rarr;
+                      </Link>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {showReports &&
+                      permittedAvsecReports.map((t) => (
+                        <Link
+                          key={t}
+                          href={`/avsec/reports/${t}`}
+                          className="rounded-lg border border-border bg-card p-2.5 transition-colors hover:border-primary"
+                        >
+                          <p className="font-mono text-[9px] text-muted-foreground">{REPORT_META[t].code}</p>
+                          <p className="mt-0.5 text-xs font-semibold leading-tight line-clamp-1">{REPORT_META[t].name}</p>
+                        </Link>
+                      ))}
+                    {showIcmsReports && (
+                      <Link
+                        href="/icms/reports"
+                        className="rounded-lg border border-border bg-card p-2.5 transition-colors hover:border-primary col-span-2"
+                      >
+                        <p className="font-mono text-[9px] text-muted-foreground">ICMS</p>
+                        <p className="mt-0.5 text-xs font-semibold leading-tight">
+                          Transaction &amp; Incident Reports
+                        </p>
+                      </Link>
+                    )}
+                  </div>
+                </section>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

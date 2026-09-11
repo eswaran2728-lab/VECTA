@@ -9,6 +9,7 @@ import { signOut as authSignOut } from "@/lib/avsec/profile-actions";
 import { ORG_WIDE_ROLES, ROLE_LABELS } from "@/lib/avsec/reference-data";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
+import { AppSidebar } from "@/components/layout/AppSidebar";
 
 export const metadata: Metadata = {
   title: APP_NAME,
@@ -36,13 +37,26 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
       <OfflineSyncProvider>
         <ServiceWorkerRegister />
         <OfflineStatusBadge />
-        <div className={showChrome ? "pb-24" : undefined}>
+        {showChrome && profile ? (
+          <AppSidebar
+            name={profile.name}
+            role={profile.role}
+            roleLabel={ROLE_LABELS[profile.role] ?? null}
+            opsGroup={profile.ops_group}
+            station={profile.station}
+            team={profile.team}
+            signOutAction={authSignOut}
+          />
+        ) : null}
+        <div className={showChrome ? "pb-24 lg:pb-8 lg:pl-64" : undefined}>
           {showChrome && profile ? (
-            <UnifiedHeader
-              name={profile.name}
-              roleLabel={ROLE_LABELS[profile.role] ?? null}
-              signOutAction={authSignOut}
-            />
+            <div className="lg:hidden">
+              <UnifiedHeader
+                name={profile.name}
+                roleLabel={ROLE_LABELS[profile.role] ?? null}
+                signOutAction={authSignOut}
+              />
+            </div>
           ) : null}
           {children}
         </div>

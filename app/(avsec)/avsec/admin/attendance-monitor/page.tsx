@@ -5,8 +5,6 @@ import {
   getMergedAttendanceData,
   type PeriodType,
 } from "@/lib/avsec/duty/merged-attendance-queries";
-import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
-import { signOut } from "@/lib/avsec/profile-actions";
 import { formatDateMY, formatTimeMY, todayISODateMY } from "@/lib/avsec/datetime";
 import {
   Users,
@@ -80,13 +78,6 @@ export default async function AttendanceMonitorPage({
 
   return (
     <main className="min-h-screen bg-background pb-28">
-      <UnifiedHeader
-        name={profile.name}
-        roleLabel={ROLE_LABELS[profile.role]}
-        signOutAction={signOut}
-        homeHref="/avsec/dashboard"
-      />
-
       <div className="mx-auto max-w-7xl px-4 py-6 space-y-6">
         {/* Page Title & Navigation */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
