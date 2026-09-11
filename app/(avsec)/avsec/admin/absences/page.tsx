@@ -312,8 +312,33 @@ export default async function AdminLeaveAuditPage({
                     const typeLabel = LEAVE_TYPE_LABELS[n.leave_type] || n.leave_type;
                     const typeIcon = LEAVE_TYPE_ICONS[n.leave_type] || "🌴";
 
+                    // Concurrency calculation for Annual Leave
+                    const isAnnual = n.leave_type === "annual";
+                    const overlappingApprovedCount = isAnnual
+                      ? new Set(
+                          notices
+                            .filter(
+                              (r) =>
+                                r.leave_type === "annual" &&
+                                r.approval_status === "approved" &&
+                                r.team === n.team &&
+                                r.station === n.station &&
+                                r.user_id !== n.user_id &&
+                                r.start_date <= n.end_date &&
+                                r.end_date >= n.start_date
+                            )
+                            .map((r) => r.user_id)
+                        ).size
+                      : 0;
+                    const isEscalated = isAnnual && isPending && overlappingApprovedCount >= 3;
+
                     return (
-                      <tr key={n.id} className="hover:bg-muted/30">
+                      <tr
+                        key={n.id}
+                        className={`hover:bg-muted/30 ${
+                          isEscalated ? "bg-purple-500/[0.04]" : ""
+                        }`}
+                      >
                         <td className="py-3">
                           <div className="font-sans font-semibold text-foreground">
                             {n.start_date === n.end_date
@@ -334,17 +359,23 @@ export default async function AdminLeaveAuditPage({
                           </span>
                         </td>
                         <td className="py-3">
-                          <span
-                            className={`font-mono text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                              isApproved
-                                ? "bg-success/20 text-success border border-success/30"
-                                : isRejected
-                                  ? "bg-brand/20 text-brand border border-brand/30"
-                                  : "bg-warning/20 text-warning border border-warning/30"
-                            }`}
-                          >
-                            {isApproved ? "✓ Approved" : isRejected ? "✕ Rejected" : "⏳ Pending"}
-                          </span>
+                          {isEscalated ? (
+                            <span className="font-mono text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-purple-500/20 text-purple-400 border border-purple-500/30 whitespace-nowrap">
+                              ⚡ Escalated — Team Cap Exceeded ({overlappingApprovedCount}/3)
+                            </span>
+                          ) : (
+                            <span
+                              className={`font-mono text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                                isApproved
+                                  ? "bg-success/20 text-success border border-success/30"
+                                  : isRejected
+                                    ? "bg-brand/20 text-brand border border-brand/30"
+                                    : "bg-warning/20 text-warning border border-warning/30"
+                              }`}
+                            >
+                              {isApproved ? "✓ Approved" : isRejected ? "✕ Rejected" : "⏳ Pending"}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3">
                           {n.gap_minutes !== null && n.status ? (

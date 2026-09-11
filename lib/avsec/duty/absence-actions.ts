@@ -211,10 +211,10 @@ export async function reviewLeaveApplication(input: {
 
   const supabase = createAdminClient();
 
-  // Fetch application to verify station scope for DSE
+  // Fetch application to verify station scope for DSE and check concurrency cap
   const { data: notice, error: fetchErr } = await supabase
     .from("absence_notices")
-    .select("id, station, team, user_id, staff_name, leave_type")
+    .select("id, station, team, user_id, staff_name, leave_type, start_date, end_date")
     .eq("id", input.noticeId)
     .single();
 
@@ -224,6 +224,40 @@ export async function reviewLeaveApplication(input: {
 
   if (isDSE && !isOrgWide && notice.station && notice.station !== profile.station) {
     return { error: "Unauthorized: You can only review leave applications within your station.", success: false };
+  }
+
+  // Check Annual Leave concurrency cap (max 3 approved overlapping per team for DSE)
+  if (input.action === "approve" && notice.leave_type === "annual" && !isOrgWide) {
+    let query = supabase
+      .from("absence_notices")
+      .select("user_id")
+      .eq("leave_type", "annual")
+      .eq("approval_status", "approved")
+      .lte("start_date", notice.end_date)
+      .gte("end_date", notice.start_date);
+
+    if (notice.station) {
+      query = query.eq("station", notice.station);
+    }
+    if (notice.team) {
+      query = query.eq("team", notice.team);
+    }
+
+    const { data: overlappingApproved } = await query;
+
+    const distinctUsers = new Set<string>();
+    for (const row of overlappingApproved || []) {
+      if (row.user_id !== notice.user_id) {
+        distinctUsers.add(row.user_id);
+      }
+    }
+
+    if (distinctUsers.size >= 3) {
+      return {
+        error: `Team Annual Leave concurrency cap reached (${distinctUsers.size}/3 approved for overlapping dates). Approving this 4th application is escalated and requires Management approval.`,
+        success: false,
+      };
+    }
   }
 
   const newStatus: LeaveApprovalStatus = input.action === "approve" ? "approved" : "rejected";

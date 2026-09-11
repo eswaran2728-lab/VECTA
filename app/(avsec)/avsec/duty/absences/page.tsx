@@ -110,15 +110,37 @@ export default async function StaffLeavePortalPage() {
                   const typeLabel = LEAVE_TYPE_LABELS[item.leave_type] || item.leave_type;
                   const typeIcon = LEAVE_TYPE_ICONS[item.leave_type] || "🌴";
 
+                  // Concurrency calculation for Annual Leave
+                  const isAnnual = item.leave_type === "annual";
+                  const overlappingApprovedCount = isAnnual
+                    ? new Set(
+                        teamRecords
+                          .filter(
+                            (r) =>
+                              r.leave_type === "annual" &&
+                              r.approval_status === "approved" &&
+                              r.team === item.team &&
+                              r.station === item.station &&
+                              r.user_id !== item.user_id &&
+                              r.start_date <= item.end_date &&
+                              r.end_date >= item.start_date
+                          )
+                          .map((r) => r.user_id)
+                      ).size
+                    : 0;
+                  const isEscalated = isAnnual && isPending && overlappingApprovedCount >= 3;
+
                   return (
                     <div
                       key={item.id}
                       className={`card p-4 border-l-4 transition-all ${
-                        isPending
-                          ? "border-l-warning bg-warning/5"
-                          : isApproved
-                            ? "border-l-success bg-success/5"
-                            : "border-l-brand bg-brand/5"
+                        isEscalated
+                          ? "border-l-purple-500 bg-purple-500/5"
+                          : isPending
+                            ? "border-l-warning bg-warning/5"
+                            : isApproved
+                              ? "border-l-success bg-success/5"
+                              : "border-l-brand bg-brand/5"
                       }`}
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/40 pb-2">
@@ -134,23 +156,29 @@ export default async function StaffLeavePortalPage() {
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          {/* Approval Status Badge */}
-                          <span
-                            className={`font-mono text-xs px-2.5 py-0.5 rounded font-bold uppercase ${
-                              isApproved
-                                ? "bg-success/20 text-success border border-success/30"
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* Escalation or Approval Status Badge */}
+                          {isEscalated ? (
+                            <span className="font-mono text-xs px-2.5 py-0.5 rounded font-bold uppercase bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                              ⚡ Escalated to Management ({overlappingApprovedCount}/3 Cap)
+                            </span>
+                          ) : (
+                            <span
+                              className={`font-mono text-xs px-2.5 py-0.5 rounded font-bold uppercase ${
+                                isApproved
+                                  ? "bg-success/20 text-success border border-success/30"
+                                  : item.approval_status === "rejected"
+                                    ? "bg-brand/20 text-brand border border-brand/30"
+                                    : "bg-warning/20 text-warning border border-warning/30"
+                              }`}
+                            >
+                              {item.approval_status === "approved"
+                                ? "✓ Approved"
                                 : item.approval_status === "rejected"
-                                  ? "bg-brand/20 text-brand border border-brand/30"
-                                  : "bg-warning/20 text-warning border border-warning/30"
-                            }`}
-                          >
-                            {item.approval_status === "approved"
-                              ? "✓ Approved"
-                              : item.approval_status === "rejected"
-                                ? "✕ Rejected"
-                                : "⏳ Pending DSE"}
-                          </span>
+                                  ? "✕ Rejected"
+                                  : "⏳ Pending DSE"}
+                            </span>
+                          )}
 
                           {/* Compliance Badge if same-day */}
                           {item.status && item.gap_minutes !== null && (

@@ -223,3 +223,45 @@ export async function getAbsenceSummaryStats(options?: {
     staffStats,
   };
 }
+
+/**
+ * Calculates how many distinct staff members in the same station + team
+ * already have APPROVED Annual Leave overlapping [startDate, endDate].
+ */
+export async function getConcurrentApprovedAnnualLeaveCount(
+  station: string | null,
+  team: string | null,
+  startDate: string,
+  endDate: string,
+  excludeUserId?: string
+): Promise<number> {
+  const supabase = await createClient();
+  let query = supabase
+    .from("absence_notices")
+    .select("user_id, start_date, end_date")
+    .eq("leave_type", "annual")
+    .eq("approval_status", "approved")
+    .lte("start_date", endDate)
+    .gte("end_date", startDate);
+
+  if (station) {
+    query = query.eq("station", station);
+  }
+  if (team) {
+    query = query.eq("team", team);
+  }
+
+  const { data, error } = await query;
+  if (error || !data) {
+    console.error("[getConcurrentApprovedAnnualLeaveCount] Error:", error);
+    return 0;
+  }
+
+  const distinctUsers = new Set<string>();
+  for (const row of data) {
+    if (excludeUserId && row.user_id === excludeUserId) continue;
+    distinctUsers.add(row.user_id);
+  }
+
+  return distinctUsers.size;
+}

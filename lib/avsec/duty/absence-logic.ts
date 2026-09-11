@@ -62,10 +62,27 @@ export interface AbsenceCalculationResult {
 export const COMPLIANT_NOTICE_MINUTES = 180;
 
 /**
+ * Maximum concurrent approved Annual Leave applications allowed per team before Management escalation.
+ */
+export const MAX_CONCURRENT_ANNUAL_LEAVE = 3;
+
+/**
  * Checks if a leave application is for today (same-day notice).
  */
 export function isSameDayLeave(startDate: string, todayDate: string): boolean {
   return startDate === todayDate;
+}
+
+/**
+ * Checks if two date ranges [startA, endA] and [startB, endB] overlap (inclusive).
+ */
+export function checkDatesOverlap(
+  startA: string,
+  endA: string,
+  startB: string,
+  endB: string
+): boolean {
+  return startA <= endB && endA >= startB;
 }
 
 /**
