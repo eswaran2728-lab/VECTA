@@ -1,9 +1,17 @@
 import Link from "next/link";
 import { requireRole, MANAGEMENT_ROLES } from "@/lib/avsec/auth";
-import { STATIONS, OPS_GROUPS } from "@/lib/avsec/reference-data";
+import { STATIONS } from "@/lib/avsec/reference-data";
 import { getAbsenceNotices, getAbsenceSummaryStats } from "@/lib/avsec/duty/absence-queries";
-import { formatAbsenceGap } from "@/lib/avsec/duty/absence-logic";
+import {
+  formatAbsenceGap,
+  LEAVE_TYPES,
+  LEAVE_TYPE_LABELS,
+  LEAVE_TYPE_ICONS,
+  type LeaveType,
+  type LeaveApprovalStatus,
+} from "@/lib/avsec/duty/absence-logic";
 import { formatDateTimeMY, formatDateMY, todayISODateMY } from "@/lib/avsec/datetime";
+import { LeaveReviewControls } from "@/components/avsec/duty/LeaveReviewControls";
 
 function daysAgo(dateStr: string, days: number): string {
   const d = new Date(dateStr + "T00:00:00Z");
@@ -11,7 +19,7 @@ function daysAgo(dateStr: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export default async function AdminAbsencesPage({
+export default async function AdminLeaveAuditPage({
   searchParams: searchParamsPromise,
 }: {
   searchParams: Promise<{
@@ -20,6 +28,8 @@ export default async function AdminAbsencesPage({
     station?: string;
     team?: string;
     opsGroup?: string;
+    leaveType?: string;
+    approvalStatus?: string;
     status?: string;
   }>;
 }) {
@@ -32,6 +42,8 @@ export default async function AdminAbsencesPage({
   const station = searchParams.station || "";
   const team = searchParams.team || "";
   const opsGroup = searchParams.opsGroup || "";
+  const leaveTypeFilter = (searchParams.leaveType as LeaveType | "all") || "all";
+  const approvalStatusFilter = (searchParams.approvalStatus as LeaveApprovalStatus | "all") || "all";
   const statusFilter = (searchParams.status as "green" | "red" | "all") || "all";
 
   const [notices, stats] = await Promise.all([
@@ -39,6 +51,8 @@ export default async function AdminAbsencesPage({
       station: station || undefined,
       team: team || undefined,
       opsGroup: opsGroup || undefined,
+      leaveType: leaveTypeFilter,
+      approvalStatus: approvalStatusFilter,
       status: statusFilter,
       dateFrom,
       dateTo,
@@ -47,6 +61,8 @@ export default async function AdminAbsencesPage({
       station: station || undefined,
       team: team || undefined,
       opsGroup: opsGroup || undefined,
+      leaveType: leaveTypeFilter,
+      approvalStatus: approvalStatusFilter,
       dateFrom,
       dateTo,
     }),
@@ -58,21 +74,23 @@ export default async function AdminAbsencesPage({
   if (station) baseQs.set("station", station);
   if (team) baseQs.set("team", team);
   if (opsGroup) baseQs.set("opsGroup", opsGroup);
+  if (leaveTypeFilter !== "all") baseQs.set("leaveType", leaveTypeFilter);
+  if (approvalStatusFilter !== "all") baseQs.set("approvalStatus", approvalStatusFilter);
 
   return (
     <main className="min-h-screen bg-background pb-28">
-      <div className="mx-auto max-w-5xl space-y-6 px-4 py-6">
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
               <span className="font-display text-lg font-extrabold tracking-[0.06em] text-foreground">
-                ABSENCE LATE-NOTICE AUDIT LOG
+                LEAVE & ABSENCE AUDIT DASHBOARD
               </span>
-              <span className="vecta-chip">Management Log</span>
+              <span className="vecta-chip">Management Org-Wide</span>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              System-captured advance notice timestamps for staff performance evaluations.
+              Comprehensive log of staff leave applications, DSE approvals, and same-day notice timing.
             </p>
           </div>
           <div className="flex gap-2">
@@ -83,35 +101,47 @@ export default async function AdminAbsencesPage({
         </div>
 
         {/* KPI Aggregate Metric Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="vecta-tile !p-3.5 space-y-1 border-l-4 border-l-primary">
-            <span className="vecta-eyebrow text-primary">TOTAL ABSENCES</span>
-            <div className="font-display text-2xl font-bold text-foreground">{stats.totalCount}</div>
-            <span className="font-mono text-[10px] text-muted-foreground">Recorded in period</span>
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+          <div className="vecta-tile !p-3 space-y-1 border-l-4 border-l-primary">
+            <span className="vecta-eyebrow text-primary">TOTAL LEAVE</span>
+            <div className="font-display text-xl font-bold text-foreground">{stats.totalCount}</div>
+            <span className="font-mono text-[9px] text-muted-foreground">In period</span>
           </div>
 
-          <div className="vecta-tile !p-3.5 space-y-1 border-l-4 border-l-success">
-            <span className="vecta-eyebrow text-success">COMPLIANT (≥3H)</span>
-            <div className="font-display text-2xl font-bold text-success">{stats.greenCount}</div>
-            <span className="font-mono text-[10px] text-muted-foreground">Timely notice given</span>
+          <div className="vecta-tile !p-3 space-y-1 border-l-4 border-l-warning">
+            <span className="vecta-eyebrow text-warning">PENDING DSE</span>
+            <div className="font-display text-xl font-bold text-warning">{stats.pendingApprovalCount}</div>
+            <span className="font-mono text-[9px] text-muted-foreground">Awaiting review</span>
           </div>
 
-          <div className="vecta-tile !p-3.5 space-y-1 border-l-4 border-l-brand">
-            <span className="vecta-eyebrow text-brand">LATE NOTICE (&lt;3H)</span>
-            <div className="font-display text-2xl font-bold text-brand">{stats.redCount}</div>
-            <span className="font-mono text-[10px] text-muted-foreground">Short notice / after shift</span>
+          <div className="vecta-tile !p-3 space-y-1 border-l-4 border-l-success">
+            <span className="vecta-eyebrow text-success">APPROVED</span>
+            <div className="font-display text-xl font-bold text-success">{stats.approvedCount}</div>
+            <span className="font-mono text-[9px] text-muted-foreground">By supervisors</span>
           </div>
 
-          <div className="vecta-tile !p-3.5 space-y-1 border-l-4 border-l-warning">
-            <span className="vecta-eyebrow text-warning">LATE NOTICE RATE</span>
-            <div className="font-display text-2xl font-bold text-foreground">{stats.lateRatePercent}%</div>
-            <span className="font-mono text-[10px] text-muted-foreground">Of total absence notices</span>
+          <div className="vecta-tile !p-3 space-y-1 border-l-4 border-l-brand">
+            <span className="vecta-eyebrow text-brand">REJECTED</span>
+            <div className="font-display text-xl font-bold text-brand">{stats.rejectedCount}</div>
+            <span className="font-mono text-[9px] text-muted-foreground">Applications</span>
+          </div>
+
+          <div className="vecta-tile !p-3 space-y-1 border-l-4 border-l-emerald-500">
+            <span className="vecta-eyebrow text-emerald-500">COMPLIANT (≥3H)</span>
+            <div className="font-display text-xl font-bold text-emerald-500">{stats.greenCount}</div>
+            <span className="font-mono text-[9px] text-muted-foreground">Same-day notice</span>
+          </div>
+
+          <div className="vecta-tile !p-3 space-y-1 border-l-4 border-l-rose-500">
+            <span className="vecta-eyebrow text-rose-500">LATE NOTICE (&lt;3H)</span>
+            <div className="font-display text-xl font-bold text-rose-500">{stats.redCount}</div>
+            <span className="font-mono text-[9px] text-muted-foreground">Short notice / late</span>
           </div>
         </div>
 
         {/* Filter Controls */}
         <form method="get" className="vecta-panel space-y-3 !py-4">
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-6 gap-2.5">
             <div>
               <label className="vecta-label">From Date</label>
               <input type="date" name="dateFrom" defaultValue={dateFrom} className="vecta-input" />
@@ -121,23 +151,32 @@ export default async function AdminAbsencesPage({
               <input type="date" name="dateTo" defaultValue={dateTo} className="vecta-input" />
             </div>
             <div>
+              <label className="vecta-label">Leave Type</label>
+              <select name="leaveType" defaultValue={leaveTypeFilter} className="vecta-input">
+                <option value="all">All Types</option>
+                {LEAVE_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {LEAVE_TYPE_ICONS[t]} {LEAVE_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="vecta-label">Approval Status</label>
+              <select name="approvalStatus" defaultValue={approvalStatusFilter} className="vecta-input">
+                <option value="all">All Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
+            <div>
               <label className="vecta-label">Station</label>
               <select name="station" defaultValue={station} className="vecta-input">
                 <option value="">All Stations</option>
                 {STATIONS.map((s) => (
                   <option key={s} value={s}>
                     {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="vecta-label">Branch / Ops Group</label>
-              <select name="opsGroup" defaultValue={opsGroup} className="vecta-input">
-                <option value="">All Branches</option>
-                {OPS_GROUPS.map((g) => (
-                  <option key={g} value={g}>
-                    {g === "operation_avsec" ? "Operation AVSEC" : g === "ifc_avsec" ? "IFC AVSEC" : "Hub AVSEC"}
                   </option>
                 ))}
               </select>
@@ -154,12 +193,12 @@ export default async function AdminAbsencesPage({
         </form>
 
         {/* Status Filter Tabs */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {(
             [
               { value: "all", label: "All Notices", count: stats.totalCount },
-              { value: "green", label: "🟢 Compliant (≥2h)", count: stats.greenCount },
-              { value: "red", label: "🔴 Late Notice (<2h / After Shift)", count: stats.redCount },
+              { value: "green", label: "🟢 Compliant (≥3h)", count: stats.greenCount },
+              { value: "red", label: "🔴 Late Notice (<3h / After Shift)", count: stats.redCount },
             ] as const
           ).map((t) => {
             const active = statusFilter === t.value;
@@ -202,15 +241,17 @@ export default async function AdminAbsencesPage({
                     <th className="pb-2">Staff ID</th>
                     <th className="pb-2">Role</th>
                     <th className="pb-2">Station / Team</th>
-                    <th className="pb-2 text-center">Total Absences</th>
-                    <th className="pb-2 text-center text-success">Compliant (≥2h)</th>
+                    <th className="pb-2 text-center">Total Applications</th>
+                    <th className="pb-2 text-center text-success">Compliant (≥3h)</th>
                     <th className="pb-2 text-center text-brand">Late Notices</th>
+                    <th className="pb-2 text-center text-warning">Pending</th>
                     <th className="pb-2 text-right">Late %</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
                   {stats.staffStats.map((s) => {
-                    const latePct = Math.round((s.redCount / s.totalAbsences) * 100);
+                    const totalTimed = s.redCount + s.greenCount;
+                    const latePct = totalTimed > 0 ? Math.round((s.redCount / totalTimed) * 100) : 0;
                     return (
                       <tr key={s.userId} className="hover:bg-muted/30">
                         <td className="py-2.5 font-sans font-semibold text-foreground">{s.staffName}</td>
@@ -224,6 +265,7 @@ export default async function AdminAbsencesPage({
                         <td className="py-2.5 text-center font-bold text-foreground">{s.totalAbsences}</td>
                         <td className="py-2.5 text-center font-bold text-success">{s.greenCount}</td>
                         <td className="py-2.5 text-center font-bold text-brand">{s.redCount}</td>
+                        <td className="py-2.5 text-center font-bold text-warning">{s.pendingCount}</td>
                         <td className="py-2.5 text-right font-bold">
                           <span className={latePct > 0 ? "text-brand" : "text-success"}>{latePct}%</span>
                         </td>
@@ -236,62 +278,110 @@ export default async function AdminAbsencesPage({
           </div>
         )}
 
-        {/* Detailed Chronological Absence Log */}
+        {/* Detailed Chronological Leave & Absence Log */}
         <div className="vecta-panel space-y-3 !p-4">
           <div className="flex items-center justify-between">
             <span className="font-display text-sm font-bold text-foreground tracking-wide uppercase">
-              Chronological Notice Records ({notices.length})
+              Chronological Leave Applications ({notices.length})
             </span>
           </div>
 
           {notices.length === 0 ? (
             <p className="py-8 text-center text-xs text-muted-foreground">
-              No absence notices recorded matching the selected criteria.
+              No leave applications recorded matching the selected criteria.
             </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left font-mono text-xs">
                 <thead>
                   <tr className="border-b border-border text-[10px] uppercase text-muted-foreground">
-                    <th className="pb-2">Date / Shift</th>
+                    <th className="pb-2">Date Range</th>
                     <th className="pb-2">Officer</th>
-                    <th className="pb-2">Notice Timing & Status</th>
-                    <th className="pb-2">Informed Timestamp</th>
-                    <th className="pb-2">Shift Start</th>
-                    <th className="pb-2">Remarks</th>
+                    <th className="pb-2">Leave Type</th>
+                    <th className="pb-2">Approval Status</th>
+                    <th className="pb-2">Notice Timing</th>
+                    <th className="pb-2">Submitted</th>
+                    <th className="pb-2">Remarks & Review</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
-                  {notices.map((n) => (
-                    <tr key={n.id} className="hover:bg-muted/30">
-                      <td className="py-3">
-                        <div className="font-sans font-semibold text-foreground">{formatDateMY(n.duty_date)}</div>
-                        <div className="text-[10px] text-muted-foreground">{n.shift_code ?? "DUTY"}</div>
-                      </td>
-                      <td className="py-3">
-                        <div className="font-sans font-semibold text-foreground">{n.staff_name}</div>
-                        <div className="text-[10px] text-muted-foreground">
-                          {n.role} · {n.station ?? ""} {n.team ? `(${n.team})` : ""}
-                        </div>
-                      </td>
-                      <td className="py-3">
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                            n.status === "green"
-                              ? "bg-success/20 text-success border border-success/40"
-                              : "bg-brand/20 text-brand border border-brand/40"
-                          }`}
-                        >
-                          {n.status === "green" ? "🟢" : "🔴"} {formatAbsenceGap(n.gap_minutes)}
-                        </span>
-                      </td>
-                      <td className="py-3 text-muted-foreground">{formatDateTimeMY(n.submitted_at)}</td>
-                      <td className="py-3 text-muted-foreground">{formatDateTimeMY(n.shift_start_time)}</td>
-                      <td className="py-3 font-sans text-xs text-foreground max-w-xs break-words">
-                        &ldquo;{n.remarks}&rdquo;
-                      </td>
-                    </tr>
-                  ))}
+                  {notices.map((n) => {
+                    const isApproved = n.approval_status === "approved";
+                    const isRejected = n.approval_status === "rejected";
+                    const isPending = n.approval_status === "pending";
+                    const typeLabel = LEAVE_TYPE_LABELS[n.leave_type] || n.leave_type;
+                    const typeIcon = LEAVE_TYPE_ICONS[n.leave_type] || "🌴";
+
+                    return (
+                      <tr key={n.id} className="hover:bg-muted/30">
+                        <td className="py-3">
+                          <div className="font-sans font-semibold text-foreground">
+                            {n.start_date === n.end_date
+                              ? formatDateMY(n.start_date)
+                              : `${formatDateMY(n.start_date)} → ${formatDateMY(n.end_date)}`}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">{n.shift_code ?? "DUTY"}</div>
+                        </td>
+                        <td className="py-3">
+                          <div className="font-sans font-semibold text-foreground">{n.staff_name}</div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {n.role} · {n.station ?? ""} {n.team ? `(${n.team})` : ""}
+                          </div>
+                        </td>
+                        <td className="py-3">
+                          <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-secondary text-foreground">
+                            {typeIcon} {typeLabel}
+                          </span>
+                        </td>
+                        <td className="py-3">
+                          <span
+                            className={`font-mono text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                              isApproved
+                                ? "bg-success/20 text-success border border-success/30"
+                                : isRejected
+                                  ? "bg-brand/20 text-brand border border-brand/30"
+                                  : "bg-warning/20 text-warning border border-warning/30"
+                            }`}
+                          >
+                            {isApproved ? "✓ Approved" : isRejected ? "✕ Rejected" : "⏳ Pending"}
+                          </span>
+                        </td>
+                        <td className="py-3">
+                          {n.gap_minutes !== null && n.status ? (
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                n.status === "green"
+                                  ? "bg-success/20 text-success border border-success/40"
+                                  : "bg-brand/20 text-brand border border-brand/40"
+                              }`}
+                            >
+                              {n.status === "green" ? "🟢" : "🔴"} {formatAbsenceGap(n.gap_minutes)}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground text-[10px]">Advance Notice</span>
+                          )}
+                        </td>
+                        <td className="py-3 text-muted-foreground">{formatDateTimeMY(n.submitted_at)}</td>
+                        <td className="py-3 font-sans text-xs text-foreground max-w-xs break-words space-y-1">
+                          <div>&ldquo;{n.remarks}&rdquo;</div>
+                          {n.review_notes && (
+                            <div className="text-[11px] font-mono text-muted-foreground">
+                              <strong>Review:</strong> {n.review_notes}
+                            </div>
+                          )}
+                          {isPending && (
+                            <div className="pt-1">
+                              <LeaveReviewControls
+                                noticeId={n.id}
+                                staffName={n.staff_name}
+                                leaveTypeLabel={typeLabel}
+                              />
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

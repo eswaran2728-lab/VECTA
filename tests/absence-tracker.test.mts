@@ -4,7 +4,37 @@ import {
   calculateAbsenceGap,
   formatAbsenceGap,
   COMPLIANT_NOTICE_MINUTES,
+  LEAVE_TYPES,
+  LEAVE_TYPE_LABELS,
+  isSameDayLeave,
+  type LeaveType,
 } from "../lib/avsec/duty/absence-logic.ts";
+
+test("LEAVE_TYPES: covers all 9 required leave types", () => {
+  const expected: LeaveType[] = [
+    "absent",
+    "mc",
+    "emergency",
+    "annual",
+    "compassionate",
+    "hospitalization",
+    "maternity_paternity",
+    "unpaid",
+    "representative",
+  ];
+
+  assert.equal(LEAVE_TYPES.length, 9);
+  for (const t of expected) {
+    assert.ok(LEAVE_TYPES.includes(t), `Missing leave type: ${t}`);
+    assert.ok(LEAVE_TYPE_LABELS[t], `Missing label for leave type: ${t}`);
+  }
+});
+
+test("isSameDayLeave: true only when start date matches today date", () => {
+  assert.equal(isSameDayLeave("2026-09-12", "2026-09-12"), true);
+  assert.equal(isSameDayLeave("2026-09-13", "2026-09-12"), false);
+  assert.equal(isSameDayLeave("2026-10-01", "2026-09-12"), false);
+});
 
 test("calculateAbsenceGap: compliant notice >= 3 hours (180 minutes) yields green status", () => {
   // Shift starts at 08:00 (480 mins from midnight)
@@ -80,26 +110,14 @@ test("calculateAbsenceGap: after shift start (negative gap) is accepted and yiel
 });
 
 test("formatAbsenceGap: formats human-readable strings according to spec", () => {
-  // Spec examples:
-  // "Requested 3h 10m before shift" (green)
   assert.equal(formatAbsenceGap(190), "Requested 3h 10m before shift");
   assert.equal(formatAbsenceGap(180), "Requested 3h before shift");
-
-  // "Requested 45m before shift" (red)
   assert.equal(formatAbsenceGap(45), "Requested 45m before shift");
-
-  // "Requested 1h 20m after shift start" (red)
   assert.equal(formatAbsenceGap(-80), "Requested 1h 20m after shift start");
-
-  // Exact hours
   assert.equal(formatAbsenceGap(120), "Requested 2h before shift");
   assert.equal(formatAbsenceGap(60), "Requested 1h before shift");
-
-  // Single minute
   assert.equal(formatAbsenceGap(1), "Requested 1m before shift");
   assert.equal(formatAbsenceGap(-1), "Requested 1m after shift start");
-
-  // Exact 0
   assert.equal(formatAbsenceGap(0), "Requested at exact shift start");
 });
 

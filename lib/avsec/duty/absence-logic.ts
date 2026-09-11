@@ -1,5 +1,54 @@
 export type AbsenceStatus = "green" | "red";
 
+export type LeaveType =
+  | "absent"
+  | "mc"
+  | "emergency"
+  | "annual"
+  | "compassionate"
+  | "hospitalization"
+  | "maternity_paternity"
+  | "unpaid"
+  | "representative";
+
+export type LeaveApprovalStatus = "pending" | "approved" | "rejected";
+
+export const LEAVE_TYPES: readonly LeaveType[] = [
+  "absent",
+  "mc",
+  "emergency",
+  "annual",
+  "compassionate",
+  "hospitalization",
+  "maternity_paternity",
+  "unpaid",
+  "representative",
+] as const;
+
+export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
+  absent: "Absent / Uninformed",
+  mc: "MC (Medical Leave)",
+  emergency: "Emergency Leave",
+  annual: "Annual Leave",
+  compassionate: "Compassionate / Bereavement Leave",
+  hospitalization: "Hospitalization Leave",
+  maternity_paternity: "Maternity / Paternity Leave",
+  unpaid: "Unpaid Leave",
+  representative: "Representative Leave",
+};
+
+export const LEAVE_TYPE_ICONS: Record<LeaveType, string> = {
+  absent: "🚨",
+  mc: "🏥",
+  emergency: "⚡",
+  annual: "🌴",
+  compassionate: "🕯️",
+  hospitalization: "🩺",
+  maternity_paternity: "🍼",
+  unpaid: "⏸️",
+  representative: "💼",
+};
+
 export interface AbsenceCalculationResult {
   gapMinutes: number;
   status: AbsenceStatus;
@@ -11,6 +60,13 @@ export interface AbsenceCalculationResult {
  * Minimum advance notice required for compliant (green) absence reporting: 3 hours (180 minutes).
  */
 export const COMPLIANT_NOTICE_MINUTES = 180;
+
+/**
+ * Checks if a leave application is for today (same-day notice).
+ */
+export function isSameDayLeave(startDate: string, todayDate: string): boolean {
+  return startDate === todayDate;
+}
 
 /**
  * Formats the gap between submission time and shift start into human-readable text.

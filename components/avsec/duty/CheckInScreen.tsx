@@ -4,8 +4,16 @@ import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { submitDutyCheckIn, submitDutyCheckOut } from "@/lib/avsec/duty/checkin-actions";
-import { submitAbsenceNotice } from "@/lib/avsec/duty/absence-actions";
-import { formatAbsenceGap, calculateAbsenceGap } from "@/lib/avsec/duty/absence-logic";
+import { submitLeaveApplication } from "@/lib/avsec/duty/absence-actions";
+import {
+  formatAbsenceGap,
+  calculateAbsenceGap,
+  LEAVE_TYPES,
+  LEAVE_TYPE_LABELS,
+  LEAVE_TYPE_ICONS,
+  type LeaveType,
+  isSameDayLeave,
+} from "@/lib/avsec/duty/absence-logic";
 import type { AbsenceNoticeRow } from "@/lib/avsec/duty/absence-queries";
 import { useOfflineSubmit } from "@/lib/avsec/offline/useOfflineSubmit";
 import { scheduledWindow, computeLateMinutes, computeEarlyMinutes } from "@/lib/avsec/duty/lateness";
@@ -29,7 +37,13 @@ interface GeoPosition {
 }
 
 const LATE_PHRASES = ["Traffic / transport delay", "Medical", "Approved by supervisor", "Ops requirement"];
-const ABSENCE_PHRASES = ["Unwell / Medical condition", "Family emergency", "Transport breakdown", "Approved by DSE"];
+const LEAVE_PHRASES = [
+  "Informed DSE via phone",
+  "Medical unwell / MC to follow",
+  "Family emergency",
+  "Scheduled annual leave",
+  "Approved operational relief",
+];
 
 // Every team checks in/out at any of the station's marked zones — not one zone assigned
 // per shift. `matchZone` returns the first zone the position falls inside, or null if it's
@@ -39,7 +53,7 @@ function matchZone(position: { lat: number; lng: number } | null, zones: DutyZon
   return zones.find((z) => pointInPolygon(position.lng, position.lat, z.polygon)) ?? null;
 }
 
-/** Tap-to-append quick phrases for the late/early-out remark box */
+/** Tap-to-append quick phrases for remarks */
 function QuickPhrases({ value, onChange, phrases }: { value: string; onChange: (next: string) => void; phrases: string[] }) {
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -69,6 +83,8 @@ export function CheckInScreen({
   initialAbsence?: AbsenceNoticeRow | null;
 }) {
   const router = useRouter();
+  const today = todayISODateMY();
+
   const [position, setPosition] = useState<GeoPosition | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [forceShow, setForceShow] = useState(false);
@@ -78,16 +94,17 @@ export function CheckInScreen({
   const [tick, setTick] = useState(0);
   const [locating, setLocating] = useState(false);
 
-  // Absence State
-  const [showAbsenceForm, setShowAbsenceForm] = useState(false);
-  const [absenceRemarks, setAbsenceRemarks] = useState("");
-  const [submittingAbsence, setSubmittingAbsence] = useState(false);
-  const [absenceError, setAbsenceError] = useState<string | null>(null);
-  const [absenceNotice, setAbsenceNotice] = useState<AbsenceNoticeRow | null>(initialAbsence);
+  // Consolidated Leave State
+  const [showLeaveForm, setShowLeaveForm] = useState(false);
+  const [leaveType, setLeaveType] = useState<LeaveType>("absent");
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
+  const [leaveRemarks, setLeaveRemarks] = useState("");
+  const [submittingLeave, setSubmittingLeave] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [leaveNotice, setLeaveNotice] = useState<AbsenceNoticeRow | null>(initialAbsence);
 
-  // GPS-denial fallback: once geolocation has failed at least once, offer a manual
-  // zone picker instead of blocking the officer entirely. `manualZoneId` set means the
-  // officer is proceeding on their manual choice rather than a live GPS fix.
+  // GPS-denial fallback
   const [geoFailed, setGeoFailed] = useState(false);
   const [manualZoneId, setManualZoneId] = useState<string>("");
 
@@ -100,108 +117,81 @@ export function CheckInScreen({
   const checkedIn = !!record?.check_in_at;
 
   useEffect(() => {
-    if (!showFlow) return;
-    const t = setInterval(() => setTick((n) => n + 1), 30000);
+    const t = setInterval(() => setTick((v) => v + 1), 10_000);
     return () => clearInterval(t);
-  }, [showFlow]);
+  }, []);
 
-  // Fetches the device's *current* position — never trust a position captured earlier in
-  // the session. Both display polling below and the submit handlers call this fresh each
-  // time, so a check-out can never reuse a stale, still-inside-the-zone reading from an
-  // earlier check-in.
-  function fetchFreshPosition(): Promise<GeoPosition> {
-    return new Promise((resolve, reject) => {
-      if (typeof navigator === "undefined" || !navigator.geolocation) {
-        reject(new Error("Location services are unavailable on this device."));
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
-        (err) => reject(new Error(err.message || "Couldn't get your location.")),
-        { enableHighAccuracy: true, timeout: 15000 },
-      );
-    });
-  }
-
-  useEffect(() => {
-    if (!showFlow) return;
-    let cancelled = false;
-    const poll = () => {
-      fetchFreshPosition()
-        .then((pos) => {
-          if (!cancelled) {
-            setPosition(pos);
-            setGeoError(null);
-          }
-        })
-        .catch((err) => {
-          if (!cancelled) {
-            setGeoError(err instanceof Error ? err.message : "Couldn't get your location.");
-            setGeoFailed(true);
-          }
-        });
-    };
-    poll();
-    // Keep the on-screen "IN RANGE / OUT OF RANGE" badge live while the officer is
-    // standing on this screen — the authoritative check still re-fetches at submit time.
-    const interval = setInterval(poll, 15000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [showFlow]);
-
-  const manualZone = useMemo(() => zones.find((z) => z.id === manualZoneId) ?? null, [zones, manualZoneId]);
-  const gpsMatchedZone = useMemo(() => matchZone(position, zones), [position, zones]);
-  const matchedZone = manualZone ?? gpsMatchedZone;
-  const insideFence = manualZone ? true : !position ? null : zones.length === 0 ? null : !!gpsMatchedZone;
-
-  const scheduled = useMemo(() => {
-    if (!roster?.start_time || !roster?.end_time) return null;
-    return scheduledWindow(todayISODateMY(), roster.start_time, roster.end_time);
-  }, [roster]);
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const now = useMemo(() => new Date(), [tick]);
 
-  const predictedLate = scheduled && !checkedIn && !isOff ? computeLateMinutes(scheduled.start, now) : 0;
-  // Reuses computeEarlyMinutes against the scheduled *start* — same formula
-  // (scheduledPoint - actual), just applied the other side of the shift window.
-  const predictedEarlyIn = scheduled && !checkedIn && !isOff ? computeEarlyMinutes(scheduled.start, now) : 0;
-  const predictedEarly = scheduled && checkedIn && !record?.check_out_at ? computeEarlyMinutes(scheduled.end, now) : 0;
-  // Reuses computeLateMinutes against the scheduled *end* — same formula
-  // (actual - scheduledPoint), just applied the other side of the shift window.
-  const predictedLateOut = scheduled && checkedIn && !record?.check_out_at ? computeLateMinutes(scheduled.end, now) : 0;
-  const needsRemark = !checkedIn ? predictedLate > 0 || predictedEarlyIn > 0 : predictedEarly > 0 || predictedLateOut > 0;
+  const scheduled = useMemo(() => {
+    if (!roster || isOff || !roster.start_time || !roster.end_time) return null;
+    return scheduledWindow(today, roster.start_time, roster.end_time);
+  }, [roster, isOff, today]);
 
-  // Both check-in and check-out require being inside one of the station's marked zones.
-  // No zones defined at all means nothing to enforce.
-  const zoneBlocked = zones.length > 0 && insideFence === false;
+  const insideZone = useMemo(() => matchZone(position, zones), [position, zones]);
+  const manualZone = useMemo(() => zones.find((z) => z.id === manualZoneId) ?? null, [zones, manualZoneId]);
+  const activeZone = insideZone ?? manualZone;
+  const zoneBlocked = zones.length > 0 && !activeZone;
 
-  // Re-fetches location right now rather than trusting whatever `position` currently
-  // holds — that state can be up to ~15s old from the live-badge poll, and reusing a
-  // check-in-time reading for check-out is exactly how someone could check in inside the
-  // zone, walk away, and still have check-out wrongly succeed.
-  async function resolveCurrentPosition(): Promise<GeoPosition | null> {
-    // A manual zone selection stands in for GPS entirely — use the zone's own center as
-    // the recorded coordinate rather than requiring a fresh (and likely still-failing)
-    // GPS fix just to get a lat/lng to store.
-    if (manualZone) {
-      const manualPos = { lat: manualZone.center_lat, lng: manualZone.center_lng, accuracy: 0 };
-      setPosition(manualPos);
-      setGeoError(null);
-      return manualPos;
+  // Lateness / early-out calculations
+  const predictedLate = useMemo(() => {
+    if (!scheduled || checkedIn) return 0;
+    return computeLateMinutes(scheduled.start, now);
+  }, [scheduled, checkedIn, now]);
+
+  const predictedEarlyOut = useMemo(() => {
+    if (!scheduled || !checkedIn) return 0;
+    return computeEarlyMinutes(scheduled.end, now);
+  }, [scheduled, checkedIn, now]);
+
+  const requiresRemark = !checkedIn ? predictedLate > 0 : predictedEarlyOut > 0;
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setGeoError("Geolocation not supported on this device.");
+      setGeoFailed(true);
+      return;
     }
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        setPosition({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        });
+        setGeoError(null);
+      },
+      (err) => {
+        setGeoError(err.message);
+        setGeoFailed(true);
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 5000 }
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, []);
+
+  async function getFreshPosition(): Promise<GeoPosition | null> {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) return position;
     setLocating(true);
     try {
-      const fresh = await fetchFreshPosition();
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 8000,
+          maximumAge: 0,
+        });
+      });
+      const fresh: GeoPosition = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+      };
       setPosition(fresh);
       setGeoError(null);
       return fresh;
-    } catch (err) {
-      setGeoError(err instanceof Error ? err.message : "Couldn't get your location.");
+    } catch {
       setGeoFailed(true);
-      return null;
+      return position;
     } finally {
       setLocating(false);
     }
@@ -209,26 +199,28 @@ export function CheckInScreen({
 
   async function handleCheckIn() {
     setSubmitError(null);
-    const fresh = await resolveCurrentPosition();
-    if (!fresh) {
-      setSubmitError("Couldn't confirm your current location — try again.");
+    const fresh = await getFreshPosition();
+    if (!fresh && !manualZone) {
+      setSubmitError("Cannot determine location. Please allow GPS or select a zone.");
       return;
     }
-    if (!manualZone && zones.length > 0 && !matchZone(fresh, zones)) {
-      setSubmitError("You must be within a marked duty zone to check in — move to one of the zones and try again.");
+    const zone = matchZone(fresh, zones) ?? manualZone;
+    if (zones.length > 0 && !zone) {
+      setSubmitError("You are outside the duty geofence. Move closer to the station to check in.");
       return;
     }
-    if (needsRemark && !remark.trim()) {
+    if (requiresRemark && !remark.trim()) {
       setSubmitError("Please add a remark before checking in.");
       return;
     }
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
     const outcome = await submitCheckIn({
-      lat: fresh.lat,
-      lng: fresh.lng,
-      accuracy_m: fresh.accuracy,
+      lat: fresh?.lat ?? manualZone!.center_lat,
+      lng: fresh?.lng ?? manualZone!.center_lng,
+      accuracy: fresh?.accuracy ?? 0,
+      inside_fence: !!zone,
+      zone_id: zone?.id,
       late_remark: remark,
-      early_in_remark: remark,
       offline,
       client_timestamp: new Date().toISOString(),
       manual_zone_id: manualZone?.id ?? "",
@@ -247,23 +239,24 @@ export function CheckInScreen({
 
   async function handleCheckOut() {
     setSubmitError(null);
-    const fresh = await resolveCurrentPosition();
-    if (!fresh) {
-      setSubmitError("Couldn't confirm your current location — try again.");
+    const fresh = await getFreshPosition();
+    if (!fresh && !manualZone) {
+      setSubmitError("Cannot determine location. Please allow GPS or select a zone.");
       return;
     }
-    if (!manualZone && zones.length > 0 && !matchZone(fresh, zones)) {
-      setSubmitError("You must be within a marked duty zone to check out — move to one of the zones and try again.");
+    const zone = matchZone(fresh, zones) ?? manualZone;
+    if (zones.length > 0 && !zone) {
+      setSubmitError("You are outside the duty geofence. Move closer to the station to check out.");
       return;
     }
-    if (needsRemark && !remark.trim()) {
+    if (requiresRemark && !remark.trim()) {
       setSubmitError("Please add a remark before checking out.");
       return;
     }
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
     const outcome = await submitCheckOut({
-      lat: fresh.lat,
-      lng: fresh.lng,
+      lat: fresh?.lat ?? manualZone!.center_lat,
+      lng: fresh?.lng ?? manualZone!.center_lng,
       early_out_remark: remark,
       late_out_remark: remark,
       offline,
@@ -282,28 +275,46 @@ export function CheckInScreen({
     router.refresh();
   }
 
-  const liveAbsenceCalc = useMemo(() => {
-    if (!scheduled?.start) return null;
-    return calculateAbsenceGap(scheduled.start, now);
-  }, [scheduled, now]);
+  // Same-day check for live compliance preview
+  const isSelectedSameDay = useMemo(() => {
+    return isSameDayLeave(startDate, today);
+  }, [startDate, today]);
 
-  async function handleReportAbsence() {
-    setAbsenceError(null);
-    if (!absenceRemarks.trim()) {
-      setAbsenceError("Please enter remarks explaining the reason for your absence.");
+  const liveComplianceCalc = useMemo(() => {
+    if (!isSelectedSameDay || !scheduled?.start) return null;
+    return calculateAbsenceGap(scheduled.start, now);
+  }, [isSelectedSameDay, scheduled, now]);
+
+  async function handleApplyLeave() {
+    setLeaveError(null);
+    if (!leaveRemarks.trim()) {
+      setLeaveError("Please enter remarks explaining the reason for your leave.");
       return;
     }
-    setSubmittingAbsence(true);
+    if (endDate < startDate) {
+      setLeaveError("End date cannot be earlier than start date.");
+      return;
+    }
+
+    setSubmittingLeave(true);
     try {
-      const result = await submitAbsenceNotice(absenceRemarks);
+      const result = await submitLeaveApplication({
+        leaveType,
+        startDate,
+        endDate,
+        remarks: leaveRemarks,
+      });
+
       if (!result.success || result.error) {
-        setAbsenceError(result.error ?? "Failed to submit absence notice.");
+        setLeaveError(result.error ?? "Failed to submit leave application.");
         return;
       }
-      setAbsenceRemarks("");
-      setShowAbsenceForm(false);
-      if (result.submittedAt && result.status && result.formattedGap) {
-        setAbsenceNotice({
+
+      setLeaveRemarks("");
+      setShowLeaveForm(false);
+
+      if (result.submittedAt) {
+        setLeaveNotice({
           id: "temp-" + Date.now(),
           user_id: "",
           staff_name: "",
@@ -313,20 +324,27 @@ export function CheckInScreen({
           team: null,
           ops_group: null,
           shift_code: roster?.shift_code ?? null,
-          duty_date: todayISODateMY(),
+          duty_date: today,
+          leave_type: leaveType,
+          start_date: startDate,
+          end_date: endDate,
           shift_start_time: scheduled?.start ? scheduled.start.toISOString() : new Date().toISOString(),
           submitted_at: result.submittedAt,
-          gap_minutes: result.status === "green" ? 180 : 0,
-          status: result.status,
-          remarks: absenceRemarks,
+          gap_minutes: result.status === "green" ? 180 : result.status === "red" ? 0 : null,
+          status: result.status ?? null,
+          approval_status: result.approvalStatus ?? "pending",
+          reviewed_by: null,
+          reviewed_at: null,
+          review_notes: null,
+          remarks: leaveRemarks,
           created_at: result.submittedAt,
         });
       }
       router.refresh();
     } catch (err) {
-      setAbsenceError(err instanceof Error ? err.message : "Unexpected error reporting absence.");
+      setLeaveError(err instanceof Error ? err.message : "Unexpected error submitting leave application.");
     } finally {
-      setSubmittingAbsence(false);
+      setSubmittingLeave(false);
     }
   }
 
@@ -371,12 +389,7 @@ export function CheckInScreen({
         </p>
         {record.late_minutes > 0 && (
           <p className="font-mono text-[10px] text-brand">
-            LATE {record.late_minutes} MIN — {record.late_remark}
-          </p>
-        )}
-        {record.early_in_minutes > 0 && (
-          <p className="font-mono text-[10px] text-brand">
-            EARLY CHECK-IN {record.early_in_minutes} MIN — {record.early_in_remark}
+            LATE CHECKIN {record.late_minutes} MIN — {record.late_remark}
           </p>
         )}
         {record.early_out_minutes > 0 && (
@@ -395,38 +408,74 @@ export function CheckInScreen({
 
   return (
     <div className="space-y-3">
-      {/* Existing Absence Notice banner if reported for today */}
-      {absenceNotice && (
+      {/* Existing Leave / Absence Notice banner */}
+      {leaveNotice && (
         <div
-          className={`vecta-panel space-y-2 border-l-4 ${
-            absenceNotice.status === "green" ? "border-l-success" : "border-l-brand"
+          className={`vecta-panel space-y-2.5 border-l-4 ${
+            leaveNotice.approval_status === "approved"
+              ? "border-l-success bg-success/5"
+              : leaveNotice.approval_status === "rejected"
+                ? "border-l-brand bg-brand/5"
+                : "border-l-warning bg-warning/5"
           }`}
         >
-          <div className="flex items-center justify-between gap-2">
-            <p
-              className={`vecta-eyebrow ${
-                absenceNotice.status === "green" ? "text-success" : "text-brand"
-              }`}
-            >
-              {absenceNotice.status === "green"
-                ? "🟢 Absence Notice (Compliant Notice)"
-                : "🔴 Absence Notice (Late Notice)"}
-            </p>
-            <span
-              className={`vecta-chip ${
-                absenceNotice.status === "green"
-                  ? "!border-success/40 !text-success"
-                  : "!border-brand/40 !text-brand"
-              }`}
-            >
-              {formatAbsenceGap(absenceNotice.gap_minutes)}
-            </span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/40 pb-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-display font-bold text-sm text-foreground flex items-center gap-1.5">
+                <span>{LEAVE_TYPE_ICONS[leaveNotice.leave_type] || "🌴"}</span>
+                {LEAVE_TYPE_LABELS[leaveNotice.leave_type] || leaveNotice.leave_type}
+              </span>
+
+              {/* Approval Badge */}
+              <span
+                className={`font-mono text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                  leaveNotice.approval_status === "approved"
+                    ? "bg-success/20 text-success border border-success/30"
+                    : leaveNotice.approval_status === "rejected"
+                      ? "bg-brand/20 text-brand border border-brand/30"
+                      : "bg-warning/20 text-warning border border-warning/30"
+                }`}
+              >
+                {leaveNotice.approval_status === "approved"
+                  ? "✓ Approved by DSE"
+                  : leaveNotice.approval_status === "rejected"
+                    ? "✕ Rejected by DSE"
+                    : "⏳ Pending DSE Review"}
+              </span>
+
+              {/* Same-day Compliance Timing Badge if applicable */}
+              {leaveNotice.status && leaveNotice.gap_minutes !== null && (
+                <span
+                  className={`font-mono text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                    leaveNotice.status === "green"
+                      ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                      : "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                  }`}
+                >
+                  {formatAbsenceGap(leaveNotice.gap_minutes)}
+                </span>
+              )}
+            </div>
+
+            <div className="font-mono text-xs text-muted-foreground">
+              {leaveNotice.start_date === leaveNotice.end_date
+                ? `Duty: ${leaveNotice.start_date}`
+                : `${leaveNotice.start_date} → ${leaveNotice.end_date}`}
+            </div>
           </div>
+
           <p className="text-[13px] font-medium text-foreground">
-            &ldquo;{absenceNotice.remarks}&rdquo;
+            &ldquo;{leaveNotice.remarks}&rdquo;
           </p>
+
+          {leaveNotice.review_notes && (
+            <div className="rounded bg-background/60 p-2 font-mono text-xs text-muted-foreground border border-border/50">
+              <strong className="text-foreground">DSE Note:</strong> {leaveNotice.review_notes}
+            </div>
+          )}
+
           <p className="font-mono text-[10px] text-muted-foreground">
-            Informed at {formatDateTimeMY(absenceNotice.submitted_at)} · Recorded for {absenceNotice.shift_code ?? "Shift"}
+            Submitted at {formatDateTimeMY(leaveNotice.submitted_at)} · {leaveNotice.shift_code ?? "Shift"}
           </p>
         </div>
       )}
@@ -441,75 +490,39 @@ export function CheckInScreen({
         </div>
       )}
 
-      <div className="vecta-panel space-y-2 !py-4">
-        <div className="flex items-center justify-between gap-2">
-          <span className="font-mono text-[10px] text-muted-foreground">
-            {roster.shift_code}
-            {roster.start_time && roster.end_time
-              ? ` · ${roster.start_time.slice(0, 5)}–${roster.end_time.slice(0, 5)}`
-              : ""}
-          </span>
-          {zones.length > 0 && (
-            <span
-              className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.06em] ${
-                insideFence === false ? "border-brand text-brand" : "border-success text-success"
-              }`}
-            >
-              {insideFence === null ? "Locating…" : matchedZone ? `In range: ${matchedZone.name}` : "Out of range"}
-            </span>
-          )}
+      {/* Manual Zone Selector (GPS Denial fallback) */}
+      {geoFailed && zones.length > 0 && (
+        <div className="vecta-panel space-y-2 border-l-[3px] border-l-warning">
+          <p className="vecta-eyebrow text-warning">GPS signal unavailable</p>
+          <p className="text-[12px] text-muted-foreground">
+            Select your duty zone manually to continue:
+          </p>
+          <select
+            value={manualZoneId}
+            onChange={(e) => setManualZoneId(e.target.value)}
+            className="vecta-input"
+          >
+            <option value="">-- Choose zone --</option>
+            {zones.map((z) => (
+              <option key={z.id} value={z.id}>
+                {z.name} ({z.code})
+              </option>
+            ))}
+          </select>
         </div>
-        {geoError && <p className="font-mono text-[10px] text-brand">{geoError}</p>}
-        {geoFailed && !manualZone && zones.length > 0 && (
-          <div className="space-y-1.5">
-            <p className="font-mono text-[10px] text-muted-foreground">
-              Location unavailable — select your zone manually instead:
-            </p>
-            <select
-              className="vecta-input"
-              value={manualZoneId}
-              onChange={(e) => setManualZoneId(e.target.value)}
-            >
-              <option value="">Select a zone…</option>
-              {zones.map((z) => (
-                <option key={z.id} value={z.id}>
-                  {z.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-        {manualZone && (
-          <p className="font-mono text-[10px] text-muted-foreground">
-            Zone selected manually: {manualZone.name}.{" "}
-            <button type="button" className="underline" onClick={() => setManualZoneId("")}>
-              Clear
-            </button>
-          </p>
-        )}
-        {position && (
-          <p className="font-mono text-[9px] text-muted-foreground">
-            Accuracy ±{Math.round(position.accuracy)}m
-            {position.accuracy > 100 ? " — low accuracy, still allowed" : ""}
-          </p>
-        )}
-        {zoneBlocked && (
-          <p className="font-mono text-[10px] text-brand">
-            Move to a marked duty zone to {checkedIn ? "check out" : "check in"}.
-          </p>
-        )}
-      </div>
+      )}
 
-      {needsRemark && (
+      {/* Remark input if early / late checkin or checkout */}
+      {requiresRemark && (
         <div className="vecta-panel space-y-2 !py-4">
           <p className="vecta-label">
-            {checkedIn
-              ? predictedEarly > 0
-                ? "Leaving early — explanation required"
-                : "Checking out late — explanation required"
-              : predictedLate > 0
+            {!checkedIn
+              ? predictedLate > 0
                 ? "Checking in late — explanation required"
-                : "Checking in early — explanation required"}
+                : "Checking in early — explanation required"
+              : predictedEarlyOut > 0
+                ? "Checking out early — explanation required"
+                : "Checking out late — explanation required"}
           </p>
           <textarea
             className="vecta-input h-auto py-2.5"
@@ -522,27 +535,76 @@ export function CheckInScreen({
         </div>
       )}
 
-      {/* Absence Report Form (Active when user taps 'Report Absent') */}
-      {showAbsenceForm && !checkedIn && (
-        <div className="vecta-panel space-y-3 !border-brand/40 bg-brand/5 !py-4">
-          <div className="flex items-center justify-between">
-            <p className="vecta-label !text-brand">REPORT ABSENCE / LATE NOTICE</p>
-            {liveAbsenceCalc && (
+      {/* Consolidated Apply Leave Modal / Form */}
+      {showLeaveForm && !checkedIn && (
+        <div className="vecta-panel space-y-3.5 !border-primary/50 bg-primary/5 !py-4">
+          <div className="flex items-center justify-between border-b border-border/40 pb-2.5">
+            <p className="vecta-label !text-primary flex items-center gap-1.5">
+              <span>🌴</span> APPLY LEAVE / REPORT ABSENCE
+            </p>
+            {isSelectedSameDay && liveComplianceCalc && (
               <span
                 className={`rounded-full px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${
-                  liveAbsenceCalc.status === "green"
+                  liveComplianceCalc.status === "green"
                     ? "bg-success/20 text-success border border-success/40"
                     : "bg-brand/20 text-brand border border-brand/40"
                 }`}
               >
-                {liveAbsenceCalc.status === "green" ? "🟢 Compliant" : "🔴 Late Notice"}
+                {liveComplianceCalc.status === "green" ? "🟢 Compliant (≥3H)" : "🔴 Late Notice (<3H)"}
+              </span>
+            )}
+            {!isSelectedSameDay && (
+              <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider bg-secondary text-foreground border border-border">
+                Advance Planned Leave
               </span>
             )}
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div>
+              <label className="vecta-label">Leave Type</label>
+              <select
+                value={leaveType}
+                onChange={(e) => setLeaveType(e.target.value as LeaveType)}
+                className="vecta-input"
+              >
+                {LEAVE_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {LEAVE_TYPE_ICONS[t]} {LEAVE_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="vecta-label">Start Date</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  if (endDate < e.target.value) setEndDate(e.target.value);
+                }}
+                className="vecta-input"
+              />
+            </div>
+
+            <div>
+              <label className="vecta-label">End Date</label>
+              <input
+                type="date"
+                value={endDate}
+                min={startDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="vecta-input"
+              />
+            </div>
+          </div>
+
           <p className="text-[12px] text-muted-foreground">
-            Informed timestamp is captured <strong>server-side at submit</strong>.{" "}
-            {liveAbsenceCalc ? liveAbsenceCalc.formattedGap : "Shift gap will be computed automatically"}.
+            {isSelectedSameDay
+              ? `Same-day application: Server captures submission timestamp. Notice gap: ${liveComplianceCalc?.formattedGap ?? "calculating..."}.`
+              : `Advance leave from ${startDate} to ${endDate}. Will be logged and submitted to DSE for approval.`}
           </p>
 
           <div className="space-y-1.5">
@@ -550,38 +612,38 @@ export function CheckInScreen({
             <textarea
               className="vecta-input h-auto py-2.5"
               rows={3}
-              value={absenceRemarks}
-              onChange={(e) => setAbsenceRemarks(e.target.value)}
-              placeholder="State reason for absence (e.g. medical unwell, family emergency, transport delay)..."
+              value={leaveRemarks}
+              onChange={(e) => setLeaveRemarks(e.target.value)}
+              placeholder="State reason for leave (e.g. informed DSE via phone, medical unwell, personal emergency)..."
             />
             <QuickPhrases
-              value={absenceRemarks}
-              onChange={setAbsenceRemarks}
-              phrases={ABSENCE_PHRASES}
+              value={leaveRemarks}
+              onChange={setLeaveRemarks}
+              phrases={LEAVE_PHRASES}
             />
           </div>
 
-          {absenceError && <p className="font-mono text-[11px] text-brand">{absenceError}</p>}
+          {leaveError && <p className="font-mono text-[11px] text-brand">{leaveError}</p>}
 
           <div className="flex gap-2 pt-1">
             <button
               type="button"
               className="btn-secondary flex-1 py-2 text-xs"
               onClick={() => {
-                setShowAbsenceForm(false);
-                setAbsenceError(null);
+                setShowLeaveForm(false);
+                setLeaveError(null);
               }}
-              disabled={submittingAbsence}
+              disabled={submittingLeave}
             >
               Cancel
             </button>
             <button
               type="button"
-              className="rounded-xl bg-brand px-4 py-2 font-mono text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50 flex-1"
-              onClick={handleReportAbsence}
-              disabled={submittingAbsence || !absenceRemarks.trim()}
+              className="vecta-btn-primary flex-1 py-2 text-xs"
+              onClick={handleApplyLeave}
+              disabled={submittingLeave || !leaveRemarks.trim()}
             >
-              {submittingAbsence ? "Recording..." : "Confirm Absence"}
+              {submittingLeave ? "Submitting…" : "Confirm & Submit Leave"}
             </button>
           </div>
         </div>
@@ -608,14 +670,14 @@ export function CheckInScreen({
                   : "Check in"}
         </button>
 
-        {/* Absent button is disabled / hidden once checked in for the shift */}
-        {!checkedIn && !showAbsenceForm && (
+        {/* Apply Leave button is disabled / hidden once checked in for the shift */}
+        {!checkedIn && !showLeaveForm && (
           <button
             type="button"
-            className="rounded-xl border border-brand/50 bg-brand/10 hover:bg-brand/20 px-4 py-3 font-mono text-xs font-semibold uppercase tracking-wider text-brand transition-colors flex items-center justify-center gap-1.5"
-            onClick={() => setShowAbsenceForm(true)}
+            className="rounded-xl border border-primary/50 bg-primary/10 hover:bg-primary/20 px-4 py-3 font-mono text-xs font-semibold uppercase tracking-wider text-primary transition-colors flex items-center justify-center gap-1.5"
+            onClick={() => setShowLeaveForm(true)}
           >
-            <span>🚨</span> Report Absent
+            <span>🌴</span> Apply Leave
           </button>
         )}
       </div>

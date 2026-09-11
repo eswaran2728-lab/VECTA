@@ -22,12 +22,12 @@ export default async function ProfilePage() {
       ? [{ label: "Enforcement Search", href: "/avsec/enforcement/search" }]
       : []),
     ...(worksAShift ? [{ label: "My Timesheet", href: "/avsec/duty/timesheet" }] : []),
-    { label: "My Absence Notices", href: "/avsec/duty/absences" },
+    { label: "Leave & Absence Records", href: "/avsec/duty/absences" },
     ...(isMonitor ? [{ label: "Dashboard", href: "/avsec/dashboard" }] : []),
     ...((ORG_WIDE_ROLES as readonly string[]).includes(profile.role)
       ? [
           { label: "Attendance Report", href: "/avsec/admin/attendance-report" },
-          { label: "Absence Tracker (Audit)", href: "/avsec/admin/absences" },
+          { label: "Leave & Absence Audit", href: "/avsec/admin/absences" },
           { label: "Overtime Records", href: "/avsec/duty/overtime" },
         ]
       : []),

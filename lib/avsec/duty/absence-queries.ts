@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { todayISODateMY } from "@/lib/avsec/datetime";
-import type { AbsenceStatus } from "./absence-logic";
+import type { AbsenceStatus, LeaveType, LeaveApprovalStatus } from "./absence-logic";
 
 export interface AbsenceNoticeRow {
   id: string;
@@ -14,10 +14,17 @@ export interface AbsenceNoticeRow {
   ops_group: string | null;
   shift_code: string | null;
   duty_date: string;
+  leave_type: LeaveType;
+  start_date: string;
+  end_date: string;
   shift_start_time: string;
   submitted_at: string;
-  gap_minutes: number;
-  status: AbsenceStatus;
+  gap_minutes: number | null;
+  status: AbsenceStatus | null;
+  approval_status: LeaveApprovalStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_notes: string | null;
   remarks: string;
   created_at: string;
 }
@@ -27,6 +34,9 @@ export interface AbsenceSummaryStats {
   greenCount: number;
   redCount: number;
   lateRatePercent: number;
+  pendingApprovalCount: number;
+  approvedCount: number;
+  rejectedCount: number;
   staffStats: Array<{
     userId: string;
     staffName: string;
@@ -38,11 +48,12 @@ export interface AbsenceSummaryStats {
     totalAbsences: number;
     redCount: number;
     greenCount: number;
+    pendingCount: number;
   }>;
 }
 
 /**
- * Returns today's absence notice for a given user if already submitted.
+ * Returns today's absence/leave notice for a given user if already submitted.
  */
 export async function getTodayAbsenceNotice(
   profileId: string
@@ -54,7 +65,7 @@ export async function getTodayAbsenceNotice(
     .from("absence_notices")
     .select("*")
     .eq("user_id", profileId)
-    .eq("duty_date", today)
+    .or(`duty_date.eq.${today},and(start_date.lte.${today},end_date.gte.${today})`)
     .order("submitted_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -63,12 +74,14 @@ export async function getTodayAbsenceNotice(
 }
 
 /**
- * Queries absence notices with optional filters for Management and DSE.
+ * Queries absence/leave notices with optional filters for Management and DSE.
  */
 export async function getAbsenceNotices(options?: {
   station?: string;
   team?: string;
   opsGroup?: string;
+  leaveType?: LeaveType | "all";
+  approvalStatus?: LeaveApprovalStatus | "all";
   status?: "green" | "red" | "all";
   dateFrom?: string;
   dateTo?: string;
@@ -93,14 +106,20 @@ export async function getAbsenceNotices(options?: {
   if (options?.opsGroup && options.opsGroup !== "all") {
     query = query.eq("ops_group", options.opsGroup);
   }
+  if (options?.leaveType && options.leaveType !== "all") {
+    query = query.eq("leave_type", options.leaveType);
+  }
+  if (options?.approvalStatus && options.approvalStatus !== "all") {
+    query = query.eq("approval_status", options.approvalStatus);
+  }
   if (options?.status && options.status !== "all") {
     query = query.eq("status", options.status);
   }
   if (options?.dateFrom) {
-    query = query.gte("duty_date", options.dateFrom);
+    query = query.gte("start_date", options.dateFrom);
   }
   if (options?.dateTo) {
-    query = query.lte("duty_date", options.dateTo);
+    query = query.lte("end_date", options.dateTo);
   }
   if (options?.limit) {
     query = query.limit(options.limit);
@@ -118,12 +137,14 @@ export async function getAbsenceNotices(options?: {
 }
 
 /**
- * Computes aggregate summary metrics across absence records for performance evaluation.
+ * Computes aggregate summary metrics across leave/absence records for performance evaluation.
  */
 export async function getAbsenceSummaryStats(options?: {
   station?: string;
   team?: string;
   opsGroup?: string;
+  leaveType?: LeaveType | "all";
+  approvalStatus?: LeaveApprovalStatus | "all";
   dateFrom?: string;
   dateTo?: string;
 }): Promise<AbsenceSummaryStats> {
@@ -136,7 +157,14 @@ export async function getAbsenceSummaryStats(options?: {
   const totalCount = notices.length;
   const greenCount = notices.filter((n) => n.status === "green").length;
   const redCount = notices.filter((n) => n.status === "red").length;
-  const lateRatePercent = totalCount > 0 ? Math.round((redCount / totalCount) * 100) : 0;
+  const lateRatePercent =
+    greenCount + redCount > 0
+      ? Math.round((redCount / (greenCount + redCount)) * 100)
+      : 0;
+
+  const pendingApprovalCount = notices.filter((n) => n.approval_status === "pending").length;
+  const approvedCount = notices.filter((n) => n.approval_status === "approved").length;
+  const rejectedCount = notices.filter((n) => n.approval_status === "rejected").length;
 
   // Aggregate by staff member for performance evaluation
   const staffMap = new Map<
@@ -152,6 +180,7 @@ export async function getAbsenceSummaryStats(options?: {
       totalAbsences: number;
       redCount: number;
       greenCount: number;
+      pendingCount: number;
     }
   >();
 
@@ -169,12 +198,14 @@ export async function getAbsenceSummaryStats(options?: {
         totalAbsences: 0,
         redCount: 0,
         greenCount: 0,
+        pendingCount: 0,
       };
       staffMap.set(n.user_id, entry);
     }
     entry.totalAbsences += 1;
     if (n.status === "red") entry.redCount += 1;
     if (n.status === "green") entry.greenCount += 1;
+    if (n.approval_status === "pending") entry.pendingCount += 1;
   }
 
   const staffStats = Array.from(staffMap.values()).sort(
@@ -186,6 +217,9 @@ export async function getAbsenceSummaryStats(options?: {
     greenCount,
     redCount,
     lateRatePercent,
+    pendingApprovalCount,
+    approvedCount,
+    rejectedCount,
     staffStats,
   };
 }

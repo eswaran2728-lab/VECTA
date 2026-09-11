@@ -57,10 +57,26 @@ export type Database = {
           ops_group: string | null
           shift_code: string | null
           duty_date: string
+          leave_type:
+            | "absent"
+            | "mc"
+            | "emergency"
+            | "annual"
+            | "compassionate"
+            | "hospitalization"
+            | "maternity_paternity"
+            | "unpaid"
+            | "representative"
+          start_date: string
+          end_date: string
           shift_start_time: string
           submitted_at: string
-          gap_minutes: number
-          status: "green" | "red"
+          gap_minutes: number | null
+          status: "green" | "red" | null
+          approval_status: "pending" | "approved" | "rejected"
+          reviewed_by: string | null
+          reviewed_at: string | null
+          review_notes: string | null
           remarks: string
           created_at: string
         }
@@ -75,11 +91,27 @@ export type Database = {
           team?: string | null
           ops_group?: string | null
           shift_code?: string | null
-          duty_date: string
+          duty_date?: string
+          leave_type?:
+            | "absent"
+            | "mc"
+            | "emergency"
+            | "annual"
+            | "compassionate"
+            | "hospitalization"
+            | "maternity_paternity"
+            | "unpaid"
+            | "representative"
+          start_date?: string
+          end_date?: string
           shift_start_time: string
           submitted_at?: string
-          gap_minutes: number
-          status: "green" | "red"
+          gap_minutes?: number | null
+          status?: "green" | "red" | null
+          approval_status?: "pending" | "approved" | "rejected"
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          review_notes?: string | null
           remarks: string
           created_at?: string
         }
@@ -95,10 +127,26 @@ export type Database = {
           ops_group?: string | null
           shift_code?: string | null
           duty_date?: string
+          leave_type?:
+            | "absent"
+            | "mc"
+            | "emergency"
+            | "annual"
+            | "compassionate"
+            | "hospitalization"
+            | "maternity_paternity"
+            | "unpaid"
+            | "representative"
+          start_date?: string
+          end_date?: string
           shift_start_time?: string
           submitted_at?: string
-          gap_minutes?: number
-          status?: "green" | "red"
+          gap_minutes?: number | null
+          status?: "green" | "red" | null
+          approval_status?: "pending" | "approved" | "rejected"
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          review_notes?: string | null
           remarks?: string
           created_at?: string
         }
