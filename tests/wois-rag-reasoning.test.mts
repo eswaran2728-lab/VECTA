@@ -116,3 +116,38 @@ test("W.O.I.S Missing Company Policy: Unknown administrative question yields REQ
   assert.equal(res.confidence_tag, "REQUIRES_SOP");
   assert.ok(res.body.includes("not currently available in the W.O.I.S operational knowledge base"));
 });
+
+test("W.O.I.S General Aviation KB: FOD definition lookup returns GENERAL KNOWLEDGE with caveat", async () => {
+  const res = await executeWoisQuery("what does FOD stand for?");
+  
+  assert.equal(res.confidence_tag, "GENERAL_KNOWLEDGE");
+  assert.equal(res.source_type, "regulatory");
+  assert.ok(res.body.includes("Foreign Object Debris") || res.body.includes("FOD"));
+  assert.ok(res.body.includes("General Aviation Knowledge Base"));
+  assert.ok(res.body.includes("verify against current AirAsia policy/SOP"));
+  assert.ok(res.sources.length > 0);
+  assert.equal(res.sources[0].documentTitle, "General Aviation Knowledge Base");
+});
+
+test("W.O.I.S General Aviation KB: 19 ICAO Annexes lookup returns GENERAL KNOWLEDGE with overview", async () => {
+  const res = await executeWoisQuery("what are the 19 ICAO annexes in aviation?");
+  
+  assert.equal(res.confidence_tag, "GENERAL_KNOWLEDGE");
+  assert.equal(res.source_type, "regulatory");
+  assert.ok(res.body.includes("Annex 17") || res.body.includes("Aviation Security") || res.body.includes("SARPs"));
+  assert.ok(res.body.includes("General Aviation Knowledge Base"));
+  assert.ok(res.body.includes("verify against current AirAsia policy/SOP"));
+  assert.ok(res.sources.length > 0);
+  assert.equal(res.sources[0].documentTitle, "General Aviation Knowledge Base");
+});
+
+test("W.O.I.S General Aviation KB: GSE Ground Power Unit (GPU) lookup returns GENERAL KNOWLEDGE", async () => {
+  const res = await executeWoisQuery("what is a GPU in ground support equipment?");
+  
+  assert.equal(res.confidence_tag, "GENERAL_KNOWLEDGE");
+  assert.equal(res.source_type, "regulatory");
+  assert.ok(res.body.includes("Ground Power Unit") || res.body.includes("electrical power"));
+  assert.ok(res.body.includes("General Aviation Knowledge Base"));
+  assert.ok(res.sources.length > 0);
+  assert.equal(res.sources[0].documentTitle, "General Aviation Knowledge Base");
+});

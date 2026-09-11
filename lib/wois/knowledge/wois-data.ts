@@ -20,6 +20,7 @@ export interface KnowledgeDocumentSeed {
     content: string;
     keywords: string[];
     roleScope?: string[];
+    metadata?: Record<string, unknown>;
   }[];
 }
 
@@ -455,6 +456,199 @@ Exact thresholds and enforcement vary by country/airport authority — this list
         section_title: "Aviation Regulatory Bodies (ICAO, IATA, CAAM, FAA, EASA)",
         content: "Overview of regulatory bodies: ICAO (UN body setting global Annex 17 security and Annex 18 dangerous goods standards adopted into national law); IATA (airline industry body publishing operational manuals like DGR often adopted as airline working standard); CAAM (Civil Aviation Authority of Malaysia, enforces ICAO standards domestically and sets national requirements); FAA & EASA (US and European regional aviation regulators).",
         keywords: ["regulatory bodies", "icao", "iata", "caam", "faa", "easa", "annex 17", "annex 18", "civil aviation authority of malaysia"],
+      },
+    ],
+  },
+  {
+    id: "doc-general-aviation-kb",
+    title: "General Aviation Knowledge Base",
+    source_type: "regulatory",
+    version: "2026.1",
+    is_official: false,
+    metadata: {
+      is_official: false,
+      summary_type: "comprehensive_aviation_kb",
+      modules_count: 19,
+      note: "Comprehensive industry-standard aviation knowledge base (conceptual reference, not official AirAsia policy)",
+    },
+    content: `# General Aviation Knowledge Base (Comprehensive Reference)
+
+## 1. Aviation Fundamentals
+Standardized terminology (ATC, ATIS, AVSEC, DGR, GSE, FOD, ULD, ETA, ETD, RWY, TWY, APRON). Aircraft types (Jet vs Propeller, Fixed-wing vs Rotorcraft). Flight phases (Preparation, Boarding, Pushback, Taxi, Takeoff, Climb, Cruise, Descent, Approach, Landing, Turnaround). Four forces of flight (Lift, Weight, Thrust, Drag). Aircraft axes (Roll/Ailerons, Pitch/Elevators, Yaw/Rudder).
+
+## 2. Airport Operations
+Landside vs Airside zones. Terminal operations, Apron operations, Runway incursions, Taxiways, Stands, Airport markings and lighting.
+
+## 3. Aircraft Knowledge
+Structures (Fuselage, Wings, Empennage, Landing Gear). Flight controls (Primary and Secondary). Engines, Landing gear, Cargo compartments, Fuel systems, Narrow-body vs Wide-body, Passenger vs Freighter.
+
+## 4. Flight Operations
+Flight planning, Pushback, Taxi, Takeoff, Climb, Cruise, Descent, Approach, Landing, Parking, Turnaround operations.
+
+## 5. AVSEC (Aviation Security)
+Access control, Screening (passenger, baggage, personnel, vehicle, cargo), Restricted areas, Security ID verification, Personnel & Vehicle security, Aircraft security, Catering security, Cargo security, Baggage reconciliation, Patrol, Incident reporting, Security response (Detect -> Assess -> Control -> Notify -> Escalate -> Document), Chain of custody.
+
+## 6. Ground Operations
+Ground handling, Ramp safety, GSE, Turnaround, Marshalling signals, Towing, Refueling safety, Servicing.
+
+## 7. GSE Knowledge
+GPU, ASU, Belt Loader, Pushback Tug, Tow Tractor, Catering High-Loader, Passenger Stairs, Water Truck, Lavatory Truck, Baggage Tractor, Cargo Loader.
+
+## 8. Catering Operations
+Catering vehicles, High-lift trucks, Food carts, Tamper-evident seals, Vehicle inspection, Driver verification, Loading, Delivery, Catering chain of custody, Security checkpoints.
+
+## 9. Cargo Operations
+Cargo acceptance, Cargo screening, Secure cargo status, ULD pallets/containers, Cargo loading, Documentation (AWB), Transfer operations.
+
+## 10. Dangerous Goods
+DGR principles, 9 Hazard Classes, Labels/markings, Lithium battery carry rules, Handling, Storage, Transport, Emergency response.
+
+## 11. Ramp Safety
+FOD (Foreign Object Debris), Jet blast, Propeller hazards, Engine intake suction danger zones, Vehicle movements, Clearances, PPE requirements, Safe approach distances.
+
+## 12. Emergency Management
+Aircraft emergency, Fire response, Security incidents, Bomb threats, Suspicious items, Unauthorized persons/vehicles, Medical emergencies, Evacuation, Escalation levels.
+
+## 13. Aviation Regulations & Organizations
+ICAO, IATA, CAAM, FAA, EASA, SARPs, SMS frameworks.
+
+## 14. ICAO Annexes (Annex 1 to 19)
+Complete overview of Annex 1 to 19 (including Annex 17 AVSEC, Annex 18 Dangerous Goods, Annex 19 Safety Management).
+
+## 15. Aviation Terminology & Acronyms
+Glossary of abbreviations (ETA, ETD, STD, STA, ATC, ATIS, NOTAM, AOC, AVSEC, DGR, GSE, FOD, ULD, GPU, PPE, RWY, TWY, APRON, AGL, AMSL).
+
+## 16. Human Factors
+Situational awareness (Perception -> Understanding -> Prediction), Fatigue risk management, Communication, Teamwork, Decision-making, Error management, Distraction, Stress, Safety culture.
+
+## 17. Safety Management Systems (SMS)
+Hazard identification, Risk assessment (Likelihood x Severity), Hierarchy of controls, Safety reporting, Indicators, Corrective & Preventive actions, Root-cause analysis, SMS cycle.
+
+## 18. Security Intelligence (Conceptual)
+Threat identification, Suspicious behaviour observation, Anomaly detection (route deviations, permit lapses), Seal discrepancies, Pattern recognition, Incident correlation.
+
+## 19. Airport Vehicles
+Vehicle identification, Authorized drivers, Permits, Vehicle inspections, Escort requirements, Airside driving rules.`,
+    chunks: [
+      {
+        section_title: "1.0 General Aviation Fundamentals & Terminology",
+        content: "Aviation uses standardized terminology to reduce ambiguity. Key standard terms: Aircraft (machine capable of flight), Airport (facility supporting aircraft operations), Aerodrome (defined area for aircraft movement), Flight (aircraft operation from departure to destination), ATC (Air Traffic Control), ATIS (Automatic Terminal Information Service), AVSEC (Aviation Security), DGR (Dangerous Goods Regulations), GSE (Ground Support Equipment), FOD (Foreign Object Debris/Damage), ULD (Unit Load Device), ETA (Estimated Time of Arrival), ETD (Estimated Time of Departure), RWY (Runway), TWY (Taxiway), APRON (Aircraft parking/servicing area). Communication prioritizes clarity, standardization, and brevity.",
+        keywords: ["aviation terminology", "aviation fundamentals", "acronyms", "atc", "atis", "avsec", "gse", "fod", "uld", "eta", "etd", "rwy", "twy", "apron", "standard terms", "what does fod stand for"],
+        metadata: { section: "Fundamentals" },
+      },
+      {
+        section_title: "1.2 Aircraft Types, Aerodynamics & Four Forces of Flight",
+        content: "Aircraft classifications: By propulsion (Jet: turbofan, turbojet e.g. A320, 737, A350, 787; Propeller: turboprop e.g. ATR 72, Dash 8), configuration (fixed-wing, rotorcraft), purpose (passenger, cargo, military, training). Flight phases: Preparation, Boarding, Pushback, Engine start, Taxi, Takeoff, Climb, Cruise, Descent, Approach, Landing, Parking, Turnaround. Four forces: Lift (upward), Weight (gravity), Thrust (forward engines), Drag (opposing movement); in steady level flight Lift ≈ Weight and Thrust ≈ Drag. Aircraft axes: Longitudinal (Roll/Ailerons), Lateral (Pitch/Elevators), Vertical (Yaw/Rudder).",
+        keywords: ["aircraft types", "four forces of flight", "lift", "thrust", "drag", "weight", "flight phases", "aerodynamics", "turbofan", "narrow body", "wide body", "pitch roll yaw"],
+        metadata: { section: "Fundamentals" },
+      },
+      {
+        section_title: "2.0 Airport Operations & Airside vs Landside Zones",
+        content: "Landside: Public terminal areas, car parks, roads. Airside: Aprons, taxiways, runways, stands, baggage/cargo areas; strictly access-controlled due to safety/security risk. Apron operations: High-risk zone for parking, passenger/baggage/cargo loading, catering, fueling, ground power, pushback. Runway: Takeoff/landing zone; runway incursions are critical safety events. Taxiways: Movement routes between runways, aprons, and stands. Airport markings and signs identify holding positions, centerlines, vehicle lanes, and safety boundaries — always follow approved local procedures.",
+        keywords: ["airport operations", "landside vs airside", "airside", "landside", "apron operations", "runway", "taxiway", "aircraft stands", "airport markings", "airport signs", "runway incursion"],
+        metadata: { section: "Airport Operations" },
+      },
+      {
+        section_title: "3.0 Aircraft Structures, Controls & Systems",
+        content: "Aircraft structures: Fuselage (flight deck, cabin, cargo, systems), Wings (lift generation), Empennage (tail assembly: horizontal/vertical stabilizers, rudder, elevator), Landing gear (nose/main gear, wheels, brakes, steering). Flight controls: Primary (Ailerons for roll, Elevators for pitch, Rudder for yaw); Secondary (Flaps, Slats, Spoilers, Trim). Engines: Turbofan common; hazards include intake suction, jet blast exhaust, hot surfaces, noise. Doors/Exits: Passenger, emergency with evacuation slides, cargo, and service doors (never operate without authorization). Cargo compartments: Netting, locks, smoke detection, and fire suppression systems.",
+        keywords: ["aircraft structures", "fuselage", "empennage", "flight controls", "aircraft engines", "landing gear", "aircraft doors", "cargo compartments", "aircraft identification", "freighter"],
+        metadata: { section: "Aircraft Knowledge" },
+      },
+      {
+        section_title: "4.0 Flight Operations & Turnaround Sequence",
+        content: "Flight operations encompass flight planning (route, weather, fuel, NOTAMs, weight/balance), pushback (tug connection, clearance, pushback, disconnect), taxiing, takeoff (most critical phase), climb, cruise, descent, approach, landing, and parking. Turnaround operations involve disembarkation, cabin cleaning, catering loading/unloading, baggage/cargo offloading/loading, refueling, water/lavatory servicing, security checks, and boarding. Objective: Safe, secure, on-time, and correctly documented.",
+        keywords: ["flight operations", "flight planning", "pushback procedure", "taxiing", "takeoff phase", "climb", "cruise", "descent", "approach", "landing", "turnaround operations"],
+        metadata: { section: "Flight Operations" },
+      },
+      {
+        section_title: "5.0 Aviation Security (AVSEC) Core Principles",
+        content: "Aviation Security (AVSEC) core controls: 1. Access Control: Identity/access cards, permits, biometric gates, escorts. 2. Security Screening: Screening of passengers, cabin baggage, hold baggage, personnel, vehicles, and cargo per approved security programmes. 3. Security Identification: Verify identity, authorization, validity, and zone (never rely on appearance or familiarity). 4. Aircraft Security: Searches, monitoring doors, protecting sterility. 5. Incident Reporting: Factual reporting answering WHO/WHAT/WHEN/WHERE/HOW/ACTION TAKEN/NOTIFIED without unsupported speculation. 6. Security Response: Detect -> Assess -> Control -> Notify -> Escalate -> Document. 7. Chain of Custody: Documented accountability over items across every handover.",
+        keywords: ["avsec", "aviation security", "access control", "security screening", "restricted areas", "security identification", "personnel security", "vehicle security", "aircraft security", "patrol operations", "incident reporting", "unauthorized access", "chain of custody"],
+        metadata: { section: "AVSEC" },
+      },
+      {
+        section_title: "6.0 Ground Operations & Ramp Safety Controls",
+        content: "Ground handling coordinates passenger, baggage, cargo, catering, cleaning, fueling, towing, and servicing. Ramp safety requires high situational awareness regarding moving aircraft, GSE, vehicles, jet blast, engine intake suction, fuel vapors, and weather. Marshalling uses standardized hand signals to guide aircraft. Refueling mandates strict fire prevention, static grounding, no ignition sources, and trained personnel. Aircraft servicing involves ground power (GPU), potable water, lavatory waste handling, and air conditioning.",
+        keywords: ["ground operations", "ground handling", "ramp safety", "marshalling", "towing", "refueling safety", "aircraft servicing", "situational awareness", "ground power"],
+        metadata: { section: "Ground Operations" },
+      },
+      {
+        section_title: "7.0 Ground Support Equipment (GSE) Types & Roles",
+        content: "Common GSE equipment and functions: GPU (Ground Power Unit - provides electrical power to parked aircraft), ASU (Air Start Unit - high-pressure pneumatic air to start engines), Belt Loader (conveyor moving loose baggage/cargo into holds), Pushback Tug (moves aircraft from gate/stand), Tow Tractor (tows aircraft and equipment), Catering High-Loader (elevated scissor-lift body reaching galley service doors), Passenger Boarding Stairs (mobile stairs), Potable Water Truck (sanitary drinking water servicing), Lavatory Service Truck (waste evacuation and blue chemical flushing), Baggage Tractor (tows baggage dollies), Main Deck Cargo Loader (hydraulic platform for ULD containers/pallets).",
+        keywords: ["gse", "ground support equipment", "gpu", "asu", "belt loader", "pushback tug", "tow tractor", "catering high loader", "passenger stairs", "water truck", "lavatory truck", "cargo loader"],
+        metadata: { section: "GSE" },
+      },
+      {
+        section_title: "8.0 Catering Operations & Security Chain of Custody",
+        content: "Catering operations involve preparing, packing, transporting, and loading inflight meals, beverages, and service carts. Security controls: Authorized catering facility -> Secure loading & sealing -> Driver identity & vehicle security verification -> Checkpoint inspection -> Ramp escort/transport -> Aircraft galley delivery. Tamper-evident seals must be verified against dispatch manifests (seal number, condition, intact verification). Any seal discrepancy (e.g. manifest seal #45821 vs observed #45827) constitutes an unauthorized access risk requiring investigation. Checkpoint handovers create immutable chain-of-custody audit logs.",
+        keywords: ["catering operations", "catering security", "high lift vehicle", "food carts", "tamper evident seals", "seal discrepancies", "catering chain of custody", "catering checkpoints", "vecta icms catering"],
+        metadata: { section: "Catering Operations" },
+      },
+      {
+        section_title: "9.0 Cargo Operations & ULD Consolidation",
+        content: "Cargo operations include acceptance (verification of Air Waybill, packaging, weight/dimensions, security status, and DG declarations), security screening (X-ray, ETD, physical search), consolidation into Unit Load Devices (ULD pallets and containers like AKE/LD3), hold loading per weight/balance load sheet, and secure transfers. Secure cargo status must be maintained unbroken across supply chain warehouses, vehicles, and interline transfers.",
+        keywords: ["cargo operations", "cargo acceptance", "cargo screening", "secure cargo", "uld", "unit load device", "cargo manifest", "air waybill", "cargo transfer"],
+        metadata: { section: "Cargo Operations" },
+      },
+      {
+        section_title: "10.0 Dangerous Goods (DGR) & Lithium Battery Handling",
+        content: "Dangerous Goods (IATA DGR / ICAO TI): 9 hazard classes (1 Explosives, 2 Gases, 3 Flammable Liquids, 4 Flammable Solids, 5 Oxidizers/Organic Peroxides, 6 Toxics/Infectious, 7 Radioactive, 8 Corrosives, 9 Miscellaneous including lithium batteries and dry ice). Lithium batteries present thermal runaway fire risks: loose batteries and power banks are CARRY-ON ONLY. Wh limits: <=100Wh allowed without operator approval; 100-160Wh requires airline approval (max 2 spares); >160Wh forbidden on passenger aircraft. Emergency response: Protect people first -> Isolate hazard -> Notify authority/DSE -> Follow emergency checklist -> Document.",
+        keywords: ["dangerous goods", "dgr", "9 dg classes", "lithium batteries", "power bank", "dg labels", "un numbers", "dg storage", "dg emergency response", "un declared dg"],
+        metadata: { section: "Dangerous Goods" },
+      },
+      {
+        section_title: "11.0 Ramp Safety, FOD Prevention & Engine Hazards",
+        content: "Ramp Safety hazards and controls: 1. FOD (Foreign Object Debris): Screws, bolts, plastic, luggage tags, tools causing engine or tire destruction; FOD prevention requires constant vigilance and clean ramps. 2. Engine Intake Suction: Powerful vacuum capable of ingesting personnel/equipment; danger zone distances depend on aircraft engine type and idle/takeoff thrust. 3. Jet Blast: Extreme exhaust pressure capable of overturning vehicles and projecting debris. 4. Propeller Hazards: High-speed spinning blades virtually invisible. 5. PPE: High-visibility vest, steel-toe safety footwear, hearing protection, safety glasses.",
+        keywords: ["ramp safety", "fod", "foreign object debris", "jet blast", "propeller hazard", "engine intake suction", "safe approach distance", "ppe", "high vis vest", "hearing protection"],
+        metadata: { section: "Ramp Safety" },
+      },
+      {
+        section_title: "12.0 Aviation Emergency Management & Incident Escalation",
+        content: "Emergency management procedures: 1. Fire: Raise alarm -> Protect life -> Isolate area -> Coordinate with Airport Fire and Rescue Services (AFRS). 2. Suspicious Item: Do NOT touch, move, or open -> Isolate area -> Evacuate immediate vicinity -> Notify Security Officer/Police. 3. Bomb Threat: Follow approved emergency checklist, notify authorities, avoid handling, follow incident command. 4. Incident Escalation Levels (conceptual framework): Level 1 (Minor operational irregularity), Level 2 (Operationally significant), Level 3 (Major safety/security breach), Level 4 (Crisis/disaster). Emergency communication: State What happened, Where, When, Who is affected, and Immediate danger.",
+        keywords: ["emergency management", "aircraft emergency", "fire response", "bomb threat", "suspicious package", "unauthorized person", "medical emergency", "evacuation", "emergency communications", "incident escalation levels"],
+        metadata: { section: "Emergency Management" },
+      },
+      {
+        section_title: "13.0 Aviation Regulatory Bodies & SMS Frameworks",
+        content: "International and national regulatory architecture: 1. ICAO (International Civil Aviation Organization): UN specialized agency establishing global Standards and Recommended Practices (SARPs). 2. IATA (International Air Transport Association): Airline trade association producing global operational and commercial standards (e.g. IATA DGR, Airport Handling Manual). 3. CAAM (Civil Aviation Authority of Malaysia): National regulator enforcing aviation safety, licensing, and security regulations in Malaysia. 4. FAA (US) & EASA (Europe): Major regional/national aviation authorities. 5. SMS (Safety Management System): Framework of policy, safety risk management, safety assurance, and safety promotion.",
+        keywords: ["aviation regulatory bodies", "icao", "iata", "caam", "faa", "easa", "sarps", "sms", "safety management system"],
+        metadata: { section: "Regulations" },
+      },
+      {
+        section_title: "14.0 ICAO Annexes (Annex 1 to 19 Overview)",
+        content: "The 19 Annexes to the Chicago Convention (ICAO): Annex 1 Personnel Licensing, Annex 2 Rules of the Air, Annex 3 Meteorological Service, Annex 4 Aeronautical Charts, Annex 5 Units of Measurement, Annex 6 Operation of Aircraft, Annex 7 Aircraft Nationality/Registration Marks, Annex 8 Airworthiness, Annex 9 Facilitation, Annex 10 Aeronautical Telecommunications, Annex 11 Air Traffic Services, Annex 12 Search and Rescue, Annex 13 Aircraft Accident/Incident Investigation, Annex 14 Aerodromes, Annex 15 Aeronautical Information Services, Annex 16 Environmental Protection, Annex 17 Aviation Security (AVSEC - safeguarding civil aviation against unlawful acts), Annex 18 Safe Transport of Dangerous Goods by Air, Annex 19 Safety Management (SMS).",
+        keywords: ["icao annexes", "annex 1 to 19", "19 annexes", "annex 17", "annex 18", "annex 19", "annex 14", "annex 6", "chicago convention", "sarps"],
+        metadata: { section: "ICAO Annexes" },
+      },
+      {
+        section_title: "15.0 Aviation Terminology & Acronyms Glossary",
+        content: "Comprehensive Glossary of Aviation Acronyms: ETA (Estimated Time of Arrival), ETD (Estimated Time of Departure), STD (Scheduled Time of Departure), STA (Scheduled Time of Arrival), ATC (Air Traffic Control), ATIS (Automatic Terminal Information Service), NOTAM (Notice to Airmen / Notice to Air Missions), AOC (Air Operator Certificate), AVSEC (Aviation Security), DGR (Dangerous Goods Regulations), GSE (Ground Support Equipment), FOD (Foreign Object Debris/Damage), ULD (Unit Load Device), GPU (Ground Power Unit), PPE (Personal Protective Equipment), RWY (Runway), TWY (Taxiway), APRON (Ramp/Aircraft Parking Area), AGL (Above Ground Level), AMSL (Above Mean Sea Level).",
+        keywords: ["aviation glossary", "aviation acronyms", "std", "sta", "aoc", "notam", "agl", "amsl", "rwy", "twy", "apron", "gpu", "ppe", "fod meaning", "what is eta", "what is etd"],
+        metadata: { section: "Terminology" },
+      },
+      {
+        section_title: "16.0 Human Factors in Aviation Operations",
+        content: "Human Factors principles: 1. Situational Awareness: 3-tier model: Perception (what is happening) -> Comprehension (understanding operational impact) -> Projection (anticipating future state). 2. Fatigue Risk: Fatigue impairs reaction time, memory, and vigilance; managed through roster rest limits and reporting. 3. Communication: Must be clear, concise, standardized, and closed-loop (read-back). 4. Error Management: Distinguishes slips, lapses, mistakes, and violations; proactive safety culture asks 'why did the system allow the error' rather than blaming individuals.",
+        keywords: ["human factors", "situational awareness", "fatigue risk management", "communication", "teamwork", "decision making", "error management", "distraction", "stress", "safety culture"],
+        metadata: { section: "Human Factors" },
+      },
+      {
+        section_title: "17.0 Safety Management Systems (SMS) & Risk Assessment",
+        content: "Safety Management System (SMS) fundamentals: 1. Hazard Identification: Recognizing conditions with potential to cause injury or damage. 2. Risk Assessment: Evaluating Likelihood × Severity to determine risk level. 3. Hierarchy of Controls: Elimination -> Engineering Controls -> Administrative Controls -> Training/Procedures -> PPE. 4. Safety Reporting: Reporting near-misses, hazards, and deviations without fear of punitive reprisal. 5. Root Cause Analysis: Applying '5 Whys' to uncover systemic process defects. 6. Continuous SMS Cycle: Identify -> Assess -> Control -> Monitor -> Improve.",
+        keywords: ["sms", "safety management system", "hazard identification", "risk assessment", "risk matrix", "risk mitigation", "safety reporting", "corrective actions", "preventive actions", "root cause analysis"],
+        metadata: { section: "Safety Management" },
+      },
+      {
+        section_title: "18.0 Security Intelligence & Anomaly Detection (Conceptual)",
+        content: "Security Intelligence & Anomaly Detection (Conceptual Reference): 1. Observable Threat Indicators: Objective behavioural cues (unauthorized access attempts, credential mismatches, route deviations, resistance to mandatory screening). 2. Access & Vehicle Anomalies: Tailgating, expired permits, zone violations, uninspected vehicles. 3. Seal & Data Discrepancies: Manifest seal numbers differing from physical seals indicate potential breach or unauthorized access. 4. Pattern Recognition & Incident Correlation: Linking recurring minor discrepancies across shifts, vehicles, or bays to identify systemic security vulnerabilities.",
+        keywords: ["security intelligence", "threat identification", "suspicious behaviour", "anomaly detection", "access anomalies", "vehicle anomalies", "seal discrepancies", "documentation discrepancies", "pattern recognition", "incident correlation"],
+        metadata: { section: "Security Intelligence" },
+      },
+      {
+        section_title: "19.0 Airport Vehicles & Airside Driving Regulations",
+        content: "Airport Vehicles & Airside Driving Standards: 1. Vehicle Identification: Apron permit, company livery, beacon lights, registration. 2. Driver Authorization: Valid Airside Driving Permit (ADP) and background check. 3. Airside Driving Rules: Aircraft always have absolute right-of-way; vehicles must adhere strictly to designated apron roadways and speed limits; maintain safe clearance from aircraft wings, engines, and taxiing aircraft; vehicle inspections must check cab, cargo body, undercarriage, and equipment.",
+        keywords: ["airport vehicles", "vehicle identification", "authorized drivers", "vehicle permits", "vehicle inspection", "escort requirements", "airside driving rules", "airside speed limit", "aircraft right of way"],
+        metadata: { section: "Airport Vehicles" },
       },
     ],
   },

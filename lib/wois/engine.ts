@@ -377,15 +377,20 @@ function handleOperationalResponse(
 
   const isOfficialSop = match.source_type === "sop" && match.is_official !== false;
   const tag: WoisConfidenceTag = isOfficialSop ? "VERIFIED" : "GENERAL_KNOWLEDGE";
+  const disclaimerText =
+    match.docTitle === "General Aviation Knowledge Base"
+      ? "General aviation knowledge base — verify against current AirAsia policy/SOP for anything operationally consequential"
+      : "General aviation reference (industry-standard, not official AirAsia policy) — verify with your SOP/DSE";
+
   const caveat =
     tag === "GENERAL_KNOWLEDGE"
-      ? "\n*Note: General aviation reference (industry-standard, not official AirAsia policy) — verify with your SOP/DSE.*"
+      ? `\n*Note: ${disclaimerText}.*`
       : "";
 
   const pageLabel = match.chunk.page_number ? ` · Page ${match.chunk.page_number}` : "";
   const sourceSuffix =
     tag === "GENERAL_KNOWLEDGE"
-      ? " — General aviation reference (industry-standard, not official AirAsia policy) — verify with your SOP/DSE"
+      ? ` — ${disclaimerText}`
       : "";
 
   const body = `**Assessment**: Inquiries regarding ${match.chunk.section_title.toLowerCase()} and operational compliance.
