@@ -397,4 +397,72 @@ export interface ManagementAnnouncementView extends AnnouncementRow {
   }[];
 }
 
+// W.O.I.S AI Types
+export type WoisConfidenceTag =
+  | "VERIFIED"
+  | "GENERAL_KNOWLEDGE"
+  | "REQUIRES_SOP"
+  | "UNCERTAIN"
+  | "ESCALATE";
+
+export type WoisSourceType = "sop" | "regulatory" | "app_help" | "general";
+
+export interface WoisSourceCitation {
+  documentTitle: string;
+  sectionTitle: string;
+  sourceType: WoisSourceType;
+  excerpt?: string;
+}
+
+export interface WoisDocument {
+  id: string;
+  org_id: string | null;
+  title: string;
+  source_type: WoisSourceType;
+  version: string;
+  content: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WoisChunk {
+  id: string;
+  document_id: string;
+  chunk_index: number;
+  section_title: string;
+  content: string;
+  source_type: WoisSourceType;
+  metadata?: Record<string, unknown>;
+}
+
+export interface WoisConversation {
+  id: string;
+  org_id: string | null;
+  user_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WoisMessage {
+  id: string;
+  conversation_id: string;
+  sender: "user" | "assistant";
+  body: string;
+  confidence_tag?: WoisConfidenceTag;
+  source_type?: WoisSourceType;
+  sources?: WoisSourceCitation[];
+  created_at: string;
+}
+
+export interface WoisEngineResponse {
+  body: string;
+  confidence_tag: WoisConfidenceTag;
+  source_type: WoisSourceType;
+  sources: WoisSourceCitation[];
+  is_full_document?: boolean;
+}
+
+
 

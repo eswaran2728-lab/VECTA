@@ -64,6 +64,8 @@ try {
 } catch (e) {}
 `;
 
+import { WoisFloatingTrigger } from "@/components/wois/WoisFloatingTrigger";
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -76,7 +78,10 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <WoisFloatingTrigger />
+      </body>
     </html>
   );
 }

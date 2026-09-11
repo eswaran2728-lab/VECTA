@@ -248,6 +248,135 @@ export type Database = {
         }
         Relationships: []
       }
+      kb_documents: {
+        Row: {
+          id: string
+          org_id: string | null
+          title: string
+          source_type: "sop" | "regulatory" | "app_help"
+          version: string
+          content: string
+          metadata: Json
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string | null
+          title: string
+          source_type: "sop" | "regulatory" | "app_help"
+          version?: string
+          content: string
+          metadata?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string | null
+          title?: string
+          source_type?: "sop" | "regulatory" | "app_help"
+          version?: string
+          content?: string
+          metadata?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      kb_chunks: {
+        Row: {
+          id: string
+          document_id: string
+          chunk_index: number
+          section_title: string
+          content: string
+          source_type: "sop" | "regulatory" | "app_help"
+          metadata: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          document_id: string
+          chunk_index: number
+          section_title: string
+          content: string
+          source_type: "sop" | "regulatory" | "app_help"
+          metadata?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          document_id?: string
+          chunk_index?: number
+          section_title?: string
+          content?: string
+          source_type?: "sop" | "regulatory" | "app_help"
+          metadata?: Json
+          created_at?: string
+        }
+        Relationships: []
+      }
+      wois_conversations: {
+        Row: {
+          id: string
+          org_id: string | null
+          user_id: string
+          title: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string | null
+          user_id: string
+          title?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string | null
+          user_id?: string
+          title?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      wois_messages: {
+        Row: {
+          id: string
+          conversation_id: string
+          sender: "user" | "assistant"
+          body: string
+          confidence_tag: "VERIFIED" | "GENERAL_KNOWLEDGE" | "REQUIRES_SOP" | "UNCERTAIN" | "ESCALATE" | null
+          source_type: "sop" | "regulatory" | "app_help" | "general" | null
+          sources: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          conversation_id: string
+          sender: "user" | "assistant"
+          body: string
+          confidence_tag?: "VERIFIED" | "GENERAL_KNOWLEDGE" | "REQUIRES_SOP" | "UNCERTAIN" | "ESCALATE" | null
+          source_type?: "sop" | "regulatory" | "app_help" | "general" | null
+          sources?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          conversation_id?: string
+          sender?: "user" | "assistant"
+          body?: string
+          confidence_tag?: "VERIFIED" | "GENERAL_KNOWLEDGE" | "REQUIRES_SOP" | "UNCERTAIN" | "ESCALATE" | null
+          source_type?: "sop" | "regulatory" | "app_help" | "general" | null
+          sources?: Json
+          created_at?: string
+        }
+        Relationships: []
+      }
       aircraft_types: {
         Row: {
           active: boolean
