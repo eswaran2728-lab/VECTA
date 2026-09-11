@@ -129,7 +129,7 @@ export default async function AttendanceReportPage({
           </div>
         </form>
 
-        {profile.role === "ADMIN" && (
+        {(profile.role === "MANAGEMENT" || profile.role === "ADMIN") && (
           <form action={runAttendanceSweep} className="flex justify-end">
             <button type="submit" className="btn-quiet">
               ↻ Run anomaly sweep (refresh flags)

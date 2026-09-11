@@ -31,6 +31,30 @@ const OPS_GROUP_LABELS: Record<OpsGroup, string> = {
   hub_avsec: "Hub AVSEC",
 };
 
+function formatRoleChip(role: string | null): string | null {
+  if (!role) return null;
+  const normalized = role.toLowerCase();
+  switch (normalized) {
+    case "admin":
+    case "management":
+      return "Management";
+    case "enforcement":
+      return "Enforcement";
+    case "dse":
+      return "DSE";
+    case "so":
+      return "SO";
+    case "aso":
+      return "ASO";
+    case "super_admin":
+      return "Super Admin";
+    case "vendor":
+      return "Vendor";
+    default:
+      return role.charAt(0).toUpperCase() + role.slice(1);
+  }
+}
+
 function todayISODateMY(): string {
   // Mirrors lib/avsec/datetime's MY-local "today" convention (UTC+8), used
   // by the report tables' submitted_at filters this page reuses.
@@ -38,6 +62,7 @@ function todayISODateMY(): string {
   const my = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   return my.toISOString().slice(0, 10);
 }
+
 
 export default async function LandingPage({
   searchParams,
@@ -121,8 +146,7 @@ export default async function LandingPage({
   const scopeGroup: OpsGroup | "all" = orgWide ? activeTab : (userOpsGroup ?? "all");
 
   const opsSummary = orgWide ? await getOpsGroupSummary(activeTab) : null;
-
-  const roleChip = role ? role.charAt(0).toUpperCase() + role.slice(1) : null;
+  const roleChip = formatRoleChip(role);
   const maxCount = opsSummary && opsSummary.length > 0 ? Math.max(1, ...opsSummary.map((r) => r.count)) : 1;
 
   const currentUserProfile = {

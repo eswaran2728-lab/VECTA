@@ -47,7 +47,7 @@ export default async function HomePage() {
             {greeting()}, <span className="text-primary">{firstName}</span>
           </h1>
           <p className="font-mono text-xs text-muted-foreground mt-1 tracking-wider uppercase">
-            {profile.role} · {profile.team ? `Team ${profile.team}` : profile.station}
+            {(profile.role === "ADMIN" ? "MANAGEMENT" : profile.role)} · {profile.team ? `Team ${profile.team}` : profile.station}
           </p>
         </div>
 

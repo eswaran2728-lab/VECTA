@@ -30,9 +30,9 @@ export default async function ProfilePage() {
         ]
       : []),
     { label: "Bay Board", href: "/avsec/bay-board" },
-    // Everyone can see where the geofence zones are; only Admin can edit them.
-    ...(profile.role === "ADMIN" ? [] : [{ label: "Duty Zones", href: "/avsec/duty/zones" }]),
-    ...(profile.role === "ADMIN"
+    // Everyone can see where the geofence zones are; Management edits them in the admin section.
+    ...((profile.role === "MANAGEMENT" || profile.role === "ADMIN") ? [] : [{ label: "Duty Zones", href: "/avsec/duty/zones" }]),
+    ...((profile.role === "MANAGEMENT" || profile.role === "ADMIN")
       ? [
           { label: "User Management", href: "/avsec/admin/users" },
           { label: "Team Roster", href: "/avsec/admin/roster" },

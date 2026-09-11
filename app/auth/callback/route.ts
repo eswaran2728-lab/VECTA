@@ -40,13 +40,14 @@ export async function GET(request: Request) {
 
         // Auto-provision profile if signing in for the first time
         if (!profile) {
-          const isAdmin =
+          const isManager =
             ADMIN_EMAILS.includes(userEmail) ||
             userEmail.startsWith("eswaran") ||
-            userEmail.includes("admin");
+            userEmail.includes("admin") ||
+            userEmail.includes("management");
 
-          const assignedRole = isAdmin ? "ADMIN" : "SO";
-          const assignedUnifiedRole = isAdmin ? "admin" : "so";
+          const assignedRole = isManager ? "MANAGEMENT" : "SO";
+          const assignedUnifiedRole = isManager ? "management" : "so";
           const fullName =
             user.user_metadata?.full_name ??
             user.user_metadata?.name ??
@@ -80,7 +81,7 @@ export async function GET(request: Request) {
               email: userEmail,
               name: fullName,
               staff_id: "AA001",
-              role: isAdmin ? "supervisor" : "hub_avsec",
+              role: isManager ? "management" : "hub_avsec",
               unified_role: assignedUnifiedRole,
               status: "active",
             },

@@ -23,7 +23,7 @@ export default async function DutyZonesViewPage({
         <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">DUTY ZONES</span>
         <p className="text-[13px] text-muted-foreground">
           Geofence areas the check-in screen tests against.
-          {profile.role === "ADMIN" && (
+          {(profile.role === "MANAGEMENT" || profile.role === "ADMIN") && (
             <>
               {" "}
               <Link href="/avsec/admin/zones" className="text-primary hover:underline">

@@ -74,6 +74,18 @@ export async function createStaffAccount(formData: FormData) {
   }
   const data = createUserResult.data;
 
+  const safeRole = role === "ADMIN" ? "MANAGEMENT" : role;
+  const unifiedRole =
+    safeRole === "MANAGEMENT"
+      ? "management"
+      : safeRole === "ENFORCEMENT"
+        ? "enforcement"
+        : safeRole === "DSE"
+          ? "dse"
+          : safeRole === "SO"
+            ? "so"
+            : "aso";
+
   const supabase = await createClient();
   const { error: profileError } = await supabase
     .from("profiles")
@@ -82,7 +94,8 @@ export async function createStaffAccount(formData: FormData) {
       staff_no: isOrgWide ? "" : staffNo,
       station,
       team: isOrgWide ? "" : team,
-      role: role as "ASO" | "SO" | "DSE" | "ADMIN" | "ENFORCEMENT" | "MANAGEMENT",
+      role: safeRole as "ASO" | "SO" | "DSE" | "ENFORCEMENT" | "MANAGEMENT",
+      unified_role: unifiedRole,
       ops_group: opsGroup,
       status: "approved",
     })
@@ -238,9 +251,37 @@ export async function updateUserAssignment(formData: FormData) {
   const opsGroup: OpsGroup | null =
     needsOpsGroup && (OPS_GROUPS as readonly string[]).includes(opsGroupInput) ? (opsGroupInput as OpsGroup) : null;
 
+  const safeRole = role === "ADMIN" ? "MANAGEMENT" : role;
+  const unifiedRole =
+    safeRole === "MANAGEMENT"
+      ? "management"
+      : safeRole === "ENFORCEMENT"
+        ? "enforcement"
+        : safeRole === "DSE"
+          ? "dse"
+          : safeRole === "SO"
+            ? "so"
+            : "aso";
+
   await supabase
     .from("profiles")
-    .update({ station, team: isOrgWide ? "" : team, role: role as "ASO" | "SO" | "DSE" | "ADMIN" | "ENFORCEMENT" | "MANAGEMENT", ops_group: opsGroup })
+    .update({
+      station,
+      team: isOrgWide ? "" : team,
+      role: safeRole as "ASO" | "SO" | "DSE" | "ENFORCEMENT" | "MANAGEMENT",
+      unified_role: unifiedRole,
+      ops_group: opsGroup,
+    })
     .eq("id", profileId);
+
+  // Sync to ICMS shadow users table if exists
+  await createAdminClient()
+    .from("users")
+    .update({
+      unified_role: unifiedRole,
+      ops_group: opsGroup,
+    })
+    .eq("id", profileId);
+
   revalidatePath("/avsec/admin/users");
 }
