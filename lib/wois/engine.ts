@@ -68,6 +68,16 @@ const HIERARCHY_PROBES = [
 /**
  * Execute W.O.I.S Intelligence Query
  */
+const ADMIN_POLICY_TRIGGERS = [
+  "per diem",
+  "salary",
+  "uniform claim",
+  "hotel claim",
+  "hotel allowance",
+  "outstation allowance",
+  "mileage claim",
+];
+
 export async function executeWoisQuery(
   query: string,
   userContext: UserContext = {}
@@ -87,6 +97,11 @@ export async function executeWoisQuery(
   // Feature: Full-Document Retrieval Intent Short-Circuit
   if (isFullDocumentRequest(normalizedQuery)) {
     return handleFullDocumentRetrieval();
+  }
+
+  // Missing Administrative Policy Handler
+  if (isMissingPolicyProbe(normalizedQuery)) {
+    return handleRequiresSop();
   }
 
   // RAG Search & Chunk Retrieval
@@ -126,6 +141,23 @@ function isHierarchyProbe(query: string): boolean {
 
 function isFullDocumentRequest(query: string): boolean {
   return FULL_DOC_TRIGGERS.some((t) => query.includes(t)) || query === "wois" || query === "w.o.i.s";
+}
+
+function isMissingPolicyProbe(query: string): boolean {
+  return ADMIN_POLICY_TRIGGERS.some((t) => query.includes(t));
+}
+
+function handleRequiresSop(): WoisEngineResponse {
+  return {
+    body: `**Assessment**: Query requires company-specific administrative or operational policy.
+**Status**: The requested procedure is not currently available in the W.O.I.S operational knowledge base.
+**Recommended Action**: Please contact your Duty Security Executive (DSE) or station management to verify the applicable policy.
+**Confidence**: 🟡 REQUIRES SOP
+**Source**: Knowledge Base Missing Reference`,
+    confidence_tag: "REQUIRES_SOP",
+    source_type: "general",
+    sources: [],
+  };
 }
 
 function handleEscalation(query: string): WoisEngineResponse {
@@ -200,6 +232,8 @@ ${doc.content}`,
 interface SearchMatch {
   docTitle: string;
   source_type: WoisSourceType;
+  is_official?: boolean;
+  metadata?: Record<string, unknown>;
   chunk: {
     section_title: string;
     page_number?: number;
@@ -230,6 +264,15 @@ const STOP_WORDS = new Set([
   "have",
   "has",
   "will",
+  "per",
+  "rate",
+  "all",
+  "out",
+  "where",
+  "when",
+  "which",
+  "into",
+  "onto",
 ]);
 
 function searchKnowledgeBase(query: string, _userContext: UserContext): SearchMatch[] {
@@ -272,6 +315,8 @@ function searchKnowledgeBase(query: string, _userContext: UserContext): SearchMa
         matches.push({
           docTitle: doc.title,
           source_type: doc.source_type,
+          is_official: doc.is_official,
+          metadata: doc.metadata,
           chunk,
           score,
         });
@@ -326,24 +371,29 @@ function handleOperationalResponse(
     recommendedAction = "Ensure aircraft is searched according to type: A320 (>=30 min), A321 (>=35 min), A330 (>=45 min). Seal all doors/hatches if left unattended.";
   } else if (match.chunk.section_title.includes("Disruptive")) {
     recommendedAction = "Assess incident severity level. For Level 2 and above, issue written warning and ensure AVSEC standby upon touchdown.";
-  } else if (match.chunk.section_title.includes("Lithium")) {
-    recommendedAction = "Verify power bank capacity in Wh (Wh = mAh * V / 1000). Ensure power banks are in carry-on baggage only.";
+  } else if (match.chunk.section_title.includes("Lithium") || match.chunk.section_title.includes("Dangerous Goods")) {
+    recommendedAction = "Verify power bank / dangerous goods capacity in Wh (Wh = mAh * V / 1000). Ensure loose batteries/power banks are in carry-on baggage only.";
   }
 
-  const tag: WoisConfidenceTag = match.source_type === "sop" ? "VERIFIED" : "GENERAL_KNOWLEDGE";
+  const isOfficialSop = match.source_type === "sop" && match.is_official !== false;
+  const tag: WoisConfidenceTag = isOfficialSop ? "VERIFIED" : "GENERAL_KNOWLEDGE";
   const caveat =
     tag === "GENERAL_KNOWLEDGE"
-      ? "\n*Note: This guidance is based on general international aviation regulatory standards. It is not confirmed AirAsia policy; please verify with your DSE/SOP for local station implementation.*"
+      ? "\n*Note: General aviation reference (industry-standard, not official AirAsia policy) — verify with your SOP/DSE.*"
       : "";
 
   const pageLabel = match.chunk.page_number ? ` · Page ${match.chunk.page_number}` : "";
+  const sourceSuffix =
+    tag === "GENERAL_KNOWLEDGE"
+      ? " — General aviation reference (industry-standard, not official AirAsia policy) — verify with your SOP/DSE"
+      : "";
 
   const body = `**Assessment**: Inquiries regarding ${match.chunk.section_title.toLowerCase()} and operational compliance.
 **Verified Information**: ${match.chunk.content}
 **Relevant Procedure**: ${match.docTitle}${pageLabel} — Section: ${match.chunk.section_title}
 **Recommended Action**: ${recommendedAction}
 **Confidence**: ${tag === "VERIFIED" ? "🟢 VERIFIED" : "🔵 GENERAL KNOWLEDGE"}
-**Source**: ${match.docTitle}${pageLabel} (${match.chunk.section_title})${caveat}`;
+**Source**: ${match.docTitle}${pageLabel} (${match.chunk.section_title})${sourceSuffix}${caveat}`;
 
   return {
     body,

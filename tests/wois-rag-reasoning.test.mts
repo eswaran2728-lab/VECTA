@@ -25,12 +25,28 @@ test("W.O.I.S SOP Lookup: Vape device offload protocol cites Page 11 with SI MAA
   assert.ok(res.body.includes("Page 11"));
 });
 
-test("W.O.I.S Regulatory / General Knowledge: Power bank 20,000mAh Wh limit returns GENERAL KNOWLEDGE with caveat", async () => {
+test("W.O.I.S Regulatory / General Knowledge: Power bank 20,000mAh Wh limit returns GENERAL KNOWLEDGE with caveat and cites reference doc", async () => {
   const res = await executeWoisQuery("can a 20,000mAh power bank board in carry on baggage?");
   
   assert.equal(res.confidence_tag, "GENERAL_KNOWLEDGE");
-  assert.ok(res.body.includes("100") || res.body.includes("Wh") || res.body.includes("carry-on"));
-  assert.ok(res.body.includes("not confirmed AirAsia policy") || res.body.includes("verify with your DSE/SOP"));
+  assert.equal(res.source_type, "regulatory");
+  assert.ok(res.body.includes("100Wh") || res.body.includes("100") || res.body.includes("Wh"));
+  assert.ok(res.body.includes("General Aviation Security & Dangerous Goods Reference"));
+  assert.ok(res.body.includes("not official AirAsia policy") || res.body.includes("verify with your SOP/DSE"));
+  assert.ok(res.sources.length > 0);
+  assert.equal(res.sources[0].documentTitle, "General Aviation Security & Dangerous Goods Reference");
+});
+
+test("W.O.I.S Regulatory / General Knowledge: 9 Dangerous Goods classes lookup cites General Aviation Reference as GENERAL KNOWLEDGE", async () => {
+  const res = await executeWoisQuery("what are the 9 dangerous goods classes?");
+  
+  assert.equal(res.confidence_tag, "GENERAL_KNOWLEDGE");
+  assert.equal(res.source_type, "regulatory");
+  assert.ok(res.body.includes("Explosives") || res.body.includes("hazard classes"));
+  assert.ok(res.body.includes("General Aviation Security & Dangerous Goods Reference"));
+  assert.ok(res.body.includes("not official AirAsia policy") || res.body.includes("verify with your SOP/DSE"));
+  assert.ok(res.sources.length > 0);
+  assert.equal(res.sources[0].documentTitle, "General Aviation Security & Dangerous Goods Reference");
 });
 
 test("W.O.I.S Full-Document Intent: 'Give me W.O.I.S' returns complete document text AND downloadable attachment", async () => {

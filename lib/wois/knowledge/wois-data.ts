@@ -10,6 +10,8 @@ export interface KnowledgeDocumentSeed {
   title: string;
   source_type: WoisSourceType;
   version: string;
+  is_official?: boolean;
+  metadata?: Record<string, unknown>;
   file_url?: string;
   content: string;
   chunks: {
@@ -354,43 +356,105 @@ export const WOIS_KNOWLEDGE_DOCUMENTS: KnowledgeDocumentSeed[] = [
   },
   {
     id: "doc-aviation-regulatory",
-    title: "International & National Aviation Security & Dangerous Goods Standards",
+    title: "General Aviation Security & Dangerous Goods Reference",
     source_type: "regulatory",
     version: "2026.1",
-    content: `# Aviation Security & Dangerous Goods Regulatory Guidance (ICAO / IATA / CAAM)
+    is_official: false,
+    metadata: {
+      is_official: false,
+      summary_type: "plain_language_summary",
+      note: "Original plain-language summary, not an official IATA/ICAO/AirAsia document",
+    },
+    content: `# General Aviation Security & Dangerous Goods Reference (Original Summary)
 
-## Dangerous Goods — Lithium Batteries & Power Banks (IATA DGR / ICAO TI)
-- Power Bank Classification: Power banks, spare lithium-ion batteries, and portable electronic devices (PEDs) must be carried in CARRY-ON BAGGAGE ONLY. Strictly FORBIDDEN in checked baggage.
-- Capacity Limits:
-  * Up to 100 Wh (or up to 20,000 mAh at 5V / 27,000 mAh at 3.7V): Permitted in carry-on baggage without airline operator approval (standard maximum 2 spare power banks per passenger).
-  * 100 Wh to 160 Wh: Permitted in carry-on baggage ONLY with prior Airline Operator Approval (maximum 2 spare batteries per passenger).
-  * Exceeding 160 Wh: Strictly FORBIDDEN on passenger aircraft (cargo aircraft only with dangerous goods declaration).
-- Formula for Conversion: Watt-hours (Wh) = (Milliampere-hours (mAh) * Voltage (V)) / 1000. E.g. 20,000 mAh * 3.7V / 1000 = 74 Wh (Permitted).
+**Purpose**: A plain-language reference for W.O.I.S AI's GENERAL KNOWLEDGE tier — standard industry practice, not an official IATA/ICAO/AirAsia document. Always tag answers built from this as GENERAL KNOWLEDGE with a "verify against current AirAsia policy/SOP" caveat, since official rules can be stricter, more detailed, or updated over time.
 
-## Liquids, Aerosols and Gels (LAGs)
-- International Flights: Individual containers must not exceed 100ml (3.4oz) capacity each, packed inside one transparent, re-sealable 1-litre plastic bag per passenger.
-- Exemptions: Baby food/milk and prescription medications required during the flight (subject to security verification).
+---
 
-## Prohibited Articles in Cabin & Sterile Areas
-- Firearms, projectile weapons, and replica firearms.
-- Pointed or bladed weapons (knives, scissors with blades > 6cm from fulcrum).
-- Blunt instruments capable of causing serious injury.
-- Explosives, flammable substances, chemical/toxic substances.`,
+## 1. Dangerous Goods — the 9 Classes (general structure)
+Dangerous goods carried by air are grouped into nine broad hazard classes, each with subdivisions:
+1. **Explosives** — fireworks, ammunition, blasting agents
+2. **Gases** — flammable, non-flammable/non-toxic, and toxic gases (e.g. aerosols, gas cylinders, lighters)
+3. **Flammable liquids** — fuels, solvents, paints, alcohol-based products
+4. **Flammable solids** — matches, substances liable to spontaneous combustion, substances dangerous when wet
+5. **Oxidizing substances & organic peroxides** — bleaches, certain fertilizers
+6. **Toxic & infectious substances** — pesticides, medical/biological samples
+7. **Radioactive material** — medical isotopes, industrial sources
+8. **Corrosives** — battery acid, certain cleaning agents
+9. **Miscellaneous dangerous goods** — items that don't fit classes 1–8 but still pose a hazard in air transport, including lithium batteries, magnetized material, and dry ice
+
+This structure is common across IATA DGR, ICAO Technical Instructions, and most national regulators (CAAM, FAA, EASA).
+
+---
+
+## 2. Lithium Batteries (the most common staff-facing question)
+Lithium batteries are regulated separately because of fire risk (thermal runaway). Two types:
+- **Lithium-ion (rechargeable)** — laptops, phones, power banks, e-cigarettes
+- **Lithium-metal (non-rechargeable)** — many camera batteries, some medical devices
+
+**Common general carry rules** (industry-standard, verify against current AirAsia policy):
+- Spare/loose lithium batteries (including power banks) are typically **carry-on only** — never in checked baggage, because a fire in the cabin can be detected and managed by crew, while one in the cargo hold cannot.
+- Devices *containing* a battery (phone, laptop) are usually fine in checked baggage, but airlines increasingly prefer carry-on for these too.
+- **Watt-hour (Wh) limits** are the standard measure of battery "size" for this purpose:
+  * Up to **100Wh**: generally allowed without special airline approval (covers the vast majority of phone, laptop, and consumer power bank batteries).
+  * **100–160Wh**: usually allowed only with airline approval, and often limited in quantity (e.g. two spares per passenger).
+  * **Above 160Wh**: generally forbidden on passenger aircraft.
+- To estimate Wh from a power bank's printed capacity: \`Wh ≈ (mAh ÷ 1000) × voltage\`. Most power banks are rated at 3.7V internally, so a 20,000mAh power bank is roughly 20 × 3.7 ≈ **74Wh** — typically within the standard 100Wh allowance, but the exact figure depends on what's printed on the specific unit, and the final call should always follow AirAsia's own policy/SOP, not this estimate.
+- Damaged, recalled, or swelling batteries are refused regardless of Wh rating.
+
+---
+
+## 3. Commonly Prohibited/Restricted Cabin Items (general reference)
+- Sharp objects (knives, scissors above a small blade length, razor blades)
+- Blunt weapons (bats, clubs)
+- Firearms and ammunition (checked baggage only, with declaration/approval)
+- Flammable liquids/gels above standard liquid limits (commonly 100ml per container in many jurisdictions, though this varies)
+- Self-defense sprays (pepper spray, mace) — typically prohibited entirely
+- Tools above a certain length (screwdrivers, wrenches)
+- Realistic replica weapons
+
+Exact thresholds and enforcement vary by country/airport authority — this list is a general orientation, not a definitive restricted-items list. Staff should always defer to the checkpoint's official restricted-items reference for enforcement decisions.
+
+---
+
+## 4. Baggage/Cargo Security Concepts (general terms staff may encounter)
+- **Reconciliation**: matching every piece of checked baggage physically loaded onto an aircraft against the passengers actually on board — a passenger who checks in bags but doesn't board should have their bags offloaded.
+- **Positive Passenger-Baggage Match (PPBM)**: the underlying security principle behind reconciliation — no bag flies without its owner on the same flight (with defined exceptions for interline/connecting baggage under specific rules).
+- **Chain of custody**: an unbroken, documented record of who handled an item (cargo, catering, baggage) from origin to aircraft, used to detect tampering or unauthorized access.
+- **Sterile area / airside**: the security-controlled zone beyond screening, where only screened passengers, crew, and authorized personnel/vehicles are permitted.
+
+---
+
+## 5. Regulatory Bodies (who sets these rules, general orientation)
+- **ICAO** (International Civil Aviation Organization) — UN body setting global standards (the "Annexes," including Annex 17 for security and Annex 18 for dangerous goods) that member states adopt into national law.
+- **IATA** (International Air Transport Association) — airline industry body; publishes detailed operational manuals (like the DGR) that airlines commonly adopt as their working standard, often stricter/more detailed than the bare ICAO minimum.
+- **CAAM** (Civil Aviation Authority of Malaysia) — Malaysia's national regulator; enforces ICAO standards domestically and can set additional national requirements.
+- **FAA / EASA** — equivalent national/regional regulators for the US and Europe, relevant mainly for aircraft manufactured there or international comparison.`,
     chunks: [
       {
-        section_title: "Lithium Batteries & Power Bank Regulations",
-        content: "Power banks must be in CARRY-ON baggage ONLY (forbidden in checked baggage). Capacity limits: <= 100 Wh (approx 20,000-27,000 mAh) permitted without operator approval; 100 Wh - 160 Wh requires airline operator approval (max 2 spares); > 160 Wh is strictly forbidden on passenger aircraft. Wh = (mAh * V) / 1000.",
-        keywords: ["power bank", "lithium battery", "powerbank", "mah", "watt hour", "wh limit", "20000mah", "100wh", "160wh", "carry on", "checked baggage", "dangerous goods"],
+        section_title: "Dangerous Goods — the 9 Hazard Classes",
+        content: "Dangerous goods carried by air are grouped into 9 hazard classes: Class 1 Explosives (fireworks, ammunition), Class 2 Gases (flammable, non-flammable, toxic, aerosols, cylinders), Class 3 Flammable liquids (fuels, solvents, paints, alcohol), Class 4 Flammable solids (matches, spontaneous combustion, dangerous when wet), Class 5 Oxidizing substances & organic peroxides (bleaches, fertilizers), Class 6 Toxic & infectious substances (pesticides, biological samples), Class 7 Radioactive material (medical isotopes), Class 8 Corrosives (battery acid, cleaning agents), Class 9 Miscellaneous (lithium batteries, magnetized material, dry ice). Common across IATA DGR, ICAO TI, CAAM, FAA, EASA.",
+        keywords: ["dangerous goods", "9 classes", "hazard classes", "class 1", "class 2", "class 3", "class 4", "class 5", "class 6", "class 7", "class 8", "class 9", "explosives", "flammable liquids", "corrosives", "toxic substances", "radioactive", "dry ice", "dgr"],
       },
       {
-        section_title: "Liquids, Aerosols & Gels (LAGs) Rules",
-        content: "LAGs on international flights must be in containers <= 100ml each, fitted into one clear 1-litre resealable plastic bag. Exemptions apply for baby formula and essential personal medications.",
-        keywords: ["lags", "liquids", "gels", "aerosols", "100ml", "plastic bag", "water bottle"],
+        section_title: "Lithium Batteries & Power Bank Carry Rules (Wh Limits)",
+        content: "Lithium-ion (rechargeable - laptops, phones, power banks, e-cigarettes) and Lithium-metal (non-rechargeable - camera batteries, medical devices). Carry rules: Spare/loose lithium batteries and power banks are CARRY-ON ONLY (strictly never in checked baggage due to thermal runaway risk). Watt-hour (Wh) limits: Up to 100Wh is generally allowed without special airline approval (covers most phones, laptops, and consumer power banks); 100–160Wh is allowed only with airline approval (often limited to 2 spares per passenger); Above 160Wh is generally forbidden on passenger aircraft. Estimation formula: Wh ≈ (mAh ÷ 1000) × voltage. At internal 3.7V, a 20,000mAh power bank is roughly 20 × 3.7 ≈ 74Wh (within standard 100Wh allowance). Damaged, recalled, or swelling batteries are refused regardless of Wh rating.",
+        keywords: ["power bank", "lithium battery", "lithium ion", "lithium metal", "watt hour", "wh", "wh limit", "100wh", "160wh", "20000mah", "20000 mah", "mah to wh", "carry on only", "thermal runaway", "swelling battery", "recalled battery", "powerbank", "can a 20,000mah power bank board"],
       },
       {
-        section_title: "Prohibited Articles in Cabin",
-        content: "Blades/scissors > 6cm, firearms, toy replicas, blunt weapons, explosives, flammables, and disabling sprays are strictly prohibited in the passenger cabin and sterile airside zones.",
-        keywords: ["prohibited items", "weapons", "knives", "scissors", "blades", "firearms"],
+        section_title: "Commonly Prohibited & Restricted Cabin Items",
+        content: "General orientation on restricted cabin items: Sharp objects (knives, scissors above small blade length, razor blades), Blunt weapons (bats, clubs), Firearms and ammunition (checked baggage only with declaration/approval), Flammable liquids/gels above standard liquid limits (commonly 100ml per container in clear plastic bag), Self-defense sprays (pepper spray, mace - typically prohibited entirely), Tools above certain length (screwdrivers, wrenches), Realistic replica weapons. Thresholds vary by authority; staff must defer to checkpoint's official restricted-items reference.",
+        keywords: ["prohibited items", "restricted cabin items", "cabin items", "sharp objects", "knives", "scissors", "blunt weapons", "firearms", "lags", "100ml", "pepper spray", "mace", "replica weapons", "tools"],
+      },
+      {
+        section_title: "Baggage & Cargo Security Concepts",
+        content: "Key security concepts: 1. Reconciliation: matching every checked bag physically loaded onto an aircraft against boarded passengers; unboarded passenger bags must be offloaded. 2. Positive Passenger-Baggage Match (PPBM): underlying security principle that no bag flies without its owner on the same flight (subject to interline exceptions). 3. Chain of Custody: unbroken, documented record of who handled an item (cargo, catering, baggage) from origin to aircraft to detect tampering or unauthorized access. 4. Sterile Area / Airside: security-controlled zone beyond screening where only screened passengers, crew, and authorized personnel/vehicles are permitted.",
+        keywords: ["reconciliation", "positive passenger baggage match", "ppbm", "chain of custody", "sterile area", "airside", "baggage security concepts", "cargo security"],
+      },
+      {
+        section_title: "Aviation Regulatory Bodies (ICAO, IATA, CAAM, FAA, EASA)",
+        content: "Overview of regulatory bodies: ICAO (UN body setting global Annex 17 security and Annex 18 dangerous goods standards adopted into national law); IATA (airline industry body publishing operational manuals like DGR often adopted as airline working standard); CAAM (Civil Aviation Authority of Malaysia, enforces ICAO standards domestically and sets national requirements); FAA & EASA (US and European regional aviation regulators).",
+        keywords: ["regulatory bodies", "icao", "iata", "caam", "faa", "easa", "annex 17", "annex 18", "civil aviation authority of malaysia"],
       },
     ],
   },
