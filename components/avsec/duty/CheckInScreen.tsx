@@ -4,10 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { submitDutyCheckIn, submitDutyCheckOut } from "@/lib/avsec/duty/checkin-actions";
+import { submitAbsenceNotice } from "@/lib/avsec/duty/absence-actions";
+import { formatAbsenceGap, calculateAbsenceGap } from "@/lib/avsec/duty/absence-logic";
+import type { AbsenceNoticeRow } from "@/lib/avsec/duty/absence-queries";
 import { useOfflineSubmit } from "@/lib/avsec/offline/useOfflineSubmit";
 import { scheduledWindow, computeLateMinutes, computeEarlyMinutes } from "@/lib/avsec/duty/lateness";
 import { pointInPolygon } from "@/lib/avsec/duty/geofence";
-import { todayISODateMY, formatTimeMY } from "@/lib/avsec/datetime";
+import { todayISODateMY, formatTimeMY, formatDateTimeMY } from "@/lib/avsec/datetime";
 import type { DutyZone, TodayRoster, DutyRecordRow } from "@/lib/avsec/duty/types";
 
 const DutyMap = dynamic(() => import("./DutyMap"), {
@@ -26,6 +29,7 @@ interface GeoPosition {
 }
 
 const LATE_PHRASES = ["Traffic / transport delay", "Medical", "Approved by supervisor", "Ops requirement"];
+const ABSENCE_PHRASES = ["Unwell / Medical condition", "Family emergency", "Transport breakdown", "Approved by DSE"];
 
 // Every team checks in/out at any of the station's marked zones — not one zone assigned
 // per shift. `matchZone` returns the first zone the position falls inside, or null if it's
@@ -35,10 +39,7 @@ function matchZone(position: { lat: number; lng: number } | null, zones: DutyZon
   return zones.find((z) => pointInPolygon(position.lng, position.lat, z.polygon)) ?? null;
 }
 
-/** Tap-to-append quick phrases for the late/early-out remark box — a local, vecta-styled
- * stand-in for the shared RemarkQuickPhrases component (components/avsec/forms/fields.tsx),
- * which is still on the old theme and is shared by ~7 not-yet-restyled report forms. Same
- * append behavior, kept local so restyling Duty doesn't touch that shared file. */
+/** Tap-to-append quick phrases for the late/early-out remark box */
 function QuickPhrases({ value, onChange, phrases }: { value: string; onChange: (next: string) => void; phrases: string[] }) {
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -60,10 +61,12 @@ export function CheckInScreen({
   roster,
   zones,
   record,
+  initialAbsence = null,
 }: {
   roster: TodayRoster | null;
   zones: DutyZone[];
   record: DutyRecordRow | null;
+  initialAbsence?: AbsenceNoticeRow | null;
 }) {
   const router = useRouter();
   const [position, setPosition] = useState<GeoPosition | null>(null);
@@ -74,6 +77,14 @@ export function CheckInScreen({
   const [queuedKind, setQueuedKind] = useState<"in" | "out" | null>(null);
   const [tick, setTick] = useState(0);
   const [locating, setLocating] = useState(false);
+
+  // Absence State
+  const [showAbsenceForm, setShowAbsenceForm] = useState(false);
+  const [absenceRemarks, setAbsenceRemarks] = useState("");
+  const [submittingAbsence, setSubmittingAbsence] = useState(false);
+  const [absenceError, setAbsenceError] = useState<string | null>(null);
+  const [absenceNotice, setAbsenceNotice] = useState<AbsenceNoticeRow | null>(initialAbsence);
+
   // GPS-denial fallback: once geolocation has failed at least once, offer a manual
   // zone picker instead of blocking the officer entirely. `manualZoneId` set means the
   // officer is proceeding on their manual choice rather than a live GPS fix.
@@ -271,6 +282,54 @@ export function CheckInScreen({
     router.refresh();
   }
 
+  const liveAbsenceCalc = useMemo(() => {
+    if (!scheduled?.start) return null;
+    return calculateAbsenceGap(scheduled.start, now);
+  }, [scheduled, now]);
+
+  async function handleReportAbsence() {
+    setAbsenceError(null);
+    if (!absenceRemarks.trim()) {
+      setAbsenceError("Please enter remarks explaining the reason for your absence.");
+      return;
+    }
+    setSubmittingAbsence(true);
+    try {
+      const result = await submitAbsenceNotice(absenceRemarks);
+      if (!result.success || result.error) {
+        setAbsenceError(result.error ?? "Failed to submit absence notice.");
+        return;
+      }
+      setAbsenceRemarks("");
+      setShowAbsenceForm(false);
+      if (result.submittedAt && result.status && result.formattedGap) {
+        setAbsenceNotice({
+          id: "temp-" + Date.now(),
+          user_id: "",
+          staff_name: "",
+          staff_id: null,
+          role: "",
+          station: null,
+          team: null,
+          ops_group: null,
+          shift_code: roster?.shift_code ?? null,
+          duty_date: todayISODateMY(),
+          shift_start_time: scheduled?.start ? scheduled.start.toISOString() : new Date().toISOString(),
+          submitted_at: result.submittedAt,
+          gap_minutes: result.status === "green" ? 120 : 0,
+          status: result.status,
+          remarks: absenceRemarks,
+          created_at: result.submittedAt,
+        });
+      }
+      router.refresh();
+    } catch (err) {
+      setAbsenceError(err instanceof Error ? err.message : "Unexpected error reporting absence.");
+    } finally {
+      setSubmittingAbsence(false);
+    }
+  }
+
   if (!roster) {
     return (
       <div className="vecta-panel border-brand/40 bg-brand/10 px-5 py-4 text-sm font-medium text-brand">
@@ -336,6 +395,42 @@ export function CheckInScreen({
 
   return (
     <div className="space-y-3">
+      {/* Existing Absence Notice banner if reported for today */}
+      {absenceNotice && (
+        <div
+          className={`vecta-panel space-y-2 border-l-4 ${
+            absenceNotice.status === "green" ? "border-l-success" : "border-l-brand"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <p
+              className={`vecta-eyebrow ${
+                absenceNotice.status === "green" ? "text-success" : "text-brand"
+              }`}
+            >
+              {absenceNotice.status === "green"
+                ? "🟢 Absence Notice (Compliant Notice)"
+                : "🔴 Absence Notice (Late Notice)"}
+            </p>
+            <span
+              className={`vecta-chip ${
+                absenceNotice.status === "green"
+                  ? "!border-success/40 !text-success"
+                  : "!border-brand/40 !text-brand"
+              }`}
+            >
+              {formatAbsenceGap(absenceNotice.gap_minutes)}
+            </span>
+          </div>
+          <p className="text-[13px] font-medium text-foreground">
+            &ldquo;{absenceNotice.remarks}&rdquo;
+          </p>
+          <p className="font-mono text-[10px] text-muted-foreground">
+            Informed at {formatDateTimeMY(absenceNotice.submitted_at)} · Recorded for {absenceNotice.shift_code ?? "Shift"}
+          </p>
+        </div>
+      )}
+
       <div className="vecta-panel overflow-hidden !p-0">
         <DutyMap position={position} zones={zones} />
       </div>
@@ -427,24 +522,103 @@ export function CheckInScreen({
         </div>
       )}
 
+      {/* Absence Report Form (Active when user taps 'Report Absent') */}
+      {showAbsenceForm && !checkedIn && (
+        <div className="vecta-panel space-y-3 !border-brand/40 bg-brand/5 !py-4">
+          <div className="flex items-center justify-between">
+            <p className="vecta-label !text-brand">REPORT ABSENCE / LATE NOTICE</p>
+            {liveAbsenceCalc && (
+              <span
+                className={`rounded-full px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${
+                  liveAbsenceCalc.status === "green"
+                    ? "bg-success/20 text-success border border-success/40"
+                    : "bg-brand/20 text-brand border border-brand/40"
+                }`}
+              >
+                {liveAbsenceCalc.status === "green" ? "🟢 Compliant" : "🔴 Late Notice"}
+              </span>
+            )}
+          </div>
+
+          <p className="text-[12px] text-muted-foreground">
+            Informed timestamp is captured <strong>server-side at submit</strong>.{" "}
+            {liveAbsenceCalc ? liveAbsenceCalc.formattedGap : "Shift gap will be computed automatically"}.
+          </p>
+
+          <div className="space-y-1.5">
+            <label className="vecta-label">Reason / Explanation (Required):</label>
+            <textarea
+              className="vecta-input h-auto py-2.5"
+              rows={3}
+              value={absenceRemarks}
+              onChange={(e) => setAbsenceRemarks(e.target.value)}
+              placeholder="State reason for absence (e.g. medical unwell, family emergency, transport delay)..."
+            />
+            <QuickPhrases
+              value={absenceRemarks}
+              onChange={setAbsenceRemarks}
+              phrases={ABSENCE_PHRASES}
+            />
+          </div>
+
+          {absenceError && <p className="font-mono text-[11px] text-brand">{absenceError}</p>}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              className="btn-secondary flex-1 py-2 text-xs"
+              onClick={() => {
+                setShowAbsenceForm(false);
+                setAbsenceError(null);
+              }}
+              disabled={submittingAbsence}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="rounded-xl bg-brand px-4 py-2 font-mono text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50 flex-1"
+              onClick={handleReportAbsence}
+              disabled={submittingAbsence || !absenceRemarks.trim()}
+            >
+              {submittingAbsence ? "Recording..." : "Confirm Absence"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {submitError && <p className="font-mono text-[11px] text-brand">{submitError}</p>}
 
-      <button
-        type="button"
-        className="vecta-btn-primary w-full"
-        disabled={submitting || locating || (!position && !manualZone) || zoneBlocked}
-        onClick={checkedIn ? handleCheckOut : handleCheckIn}
-      >
-        {submitting
-          ? "Submitting…"
-          : locating
-            ? "Confirming your location…"
-            : zoneBlocked
-              ? `Move to zone to ${checkedIn ? "check out" : "check in"}`
-              : checkedIn
-                ? "Check out"
-                : "Check in"}
-      </button>
+      {/* Primary Action Buttons */}
+      <div className="flex flex-col sm:flex-row gap-2.5">
+        <button
+          type="button"
+          className="vecta-btn-primary flex-1"
+          disabled={submitting || locating || (!position && !manualZone) || zoneBlocked}
+          onClick={checkedIn ? handleCheckOut : handleCheckIn}
+        >
+          {submitting
+            ? "Submitting…"
+            : locating
+              ? "Confirming your location…"
+              : zoneBlocked
+                ? `Move to zone to ${checkedIn ? "check out" : "check in"}`
+                : checkedIn
+                  ? "Check out"
+                  : "Check in"}
+        </button>
+
+        {/* Absent button is disabled / hidden once checked in for the shift */}
+        {!checkedIn && !showAbsenceForm && (
+          <button
+            type="button"
+            className="rounded-xl border border-brand/50 bg-brand/10 hover:bg-brand/20 px-4 py-3 font-mono text-xs font-semibold uppercase tracking-wider text-brand transition-colors flex items-center justify-center gap-1.5"
+            onClick={() => setShowAbsenceForm(true)}
+          >
+            <span>🚨</span> Report Absent
+          </button>
+        )}
+      </div>
     </div>
   );
 }

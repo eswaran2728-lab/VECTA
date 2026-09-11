@@ -44,6 +44,66 @@ export type Database = {
         }
         Relationships: []
       }
+      absence_notices: {
+        Row: {
+          id: string
+          org_id: string | null
+          user_id: string
+          staff_name: string
+          staff_id: string | null
+          role: string
+          station: string | null
+          team: string | null
+          ops_group: string | null
+          shift_code: string | null
+          duty_date: string
+          shift_start_time: string
+          submitted_at: string
+          gap_minutes: number
+          status: "green" | "red"
+          remarks: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string | null
+          user_id: string
+          staff_name: string
+          staff_id?: string | null
+          role: string
+          station?: string | null
+          team?: string | null
+          ops_group?: string | null
+          shift_code?: string | null
+          duty_date: string
+          shift_start_time: string
+          submitted_at?: string
+          gap_minutes: number
+          status: "green" | "red"
+          remarks: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string | null
+          user_id?: string
+          staff_name?: string
+          staff_id?: string | null
+          role?: string
+          station?: string | null
+          team?: string | null
+          ops_group?: string | null
+          shift_code?: string | null
+          duty_date?: string
+          shift_start_time?: string
+          submitted_at?: string
+          gap_minutes?: number
+          status?: "green" | "red"
+          remarks?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       ot_requests: {
         Row: {
           id: string
