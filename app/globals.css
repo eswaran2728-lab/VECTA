@@ -333,6 +333,85 @@
   .vecta-tile {
     @apply flex-1 rounded-2xl border border-border bg-card p-6 transition-colors hover:border-primary;
   }
+
+  /* ------------------------------------------------------------
+     Nocturne Unified Form & Component Primitives (Legacy Compatibility)
+     ------------------------------------------------------------ */
+  .t-display {
+    @apply font-display text-lg font-bold tracking-[0.04em] text-foreground uppercase;
+  }
+  .t-mono-label {
+    @apply font-mono text-[10.5px] font-semibold uppercase tracking-[0.14em] text-primary;
+  }
+  .t-mono-meta {
+    @apply font-mono text-[11px] tracking-[0.06em] text-muted-foreground;
+  }
+  .t-mono {
+    @apply font-mono;
+  }
+
+  .field-label {
+    @apply mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground;
+  }
+  .field-hint {
+    @apply mt-1.5 text-xs text-muted-foreground/80 leading-relaxed;
+  }
+  .field-error {
+    @apply mt-1.5 font-mono text-[11px] text-destructive tracking-[0.04em];
+  }
+
+  .input-base {
+    @apply w-full min-h-[46px] rounded-lg border border-border bg-input px-3.5 text-sm font-sans text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply inline-flex min-h-[46px] items-center justify-center rounded-lg bg-primary px-5 py-2.5 font-sans text-xs font-semibold uppercase tracking-[0.08em] text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-secondary {
+    @apply inline-flex min-h-[46px] items-center justify-center rounded-lg border border-border bg-card px-5 py-2.5 font-sans text-xs font-semibold uppercase tracking-[0.08em] text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50;
+  }
+  .btn-quiet {
+    @apply inline-flex items-center justify-center rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-primary transition-colors hover:bg-primary/10;
+  }
+  .btn-add-entry {
+    @apply w-full cursor-pointer rounded-lg border border-dashed border-border bg-card/40 px-4 py-3.5 text-center font-mono text-xs font-semibold uppercase tracking-[0.1em] text-primary transition-colors hover:border-primary hover:bg-primary/5;
+  }
+
+  .card {
+    @apply rounded-xl border border-border bg-card p-4 md:p-6 text-foreground shadow-sm;
+  }
+  .card-inset {
+    @apply rounded-lg border border-border bg-input p-4 text-foreground;
+  }
+
+  .section-title {
+    @apply font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-primary;
+  }
+  .form-code-badge {
+    @apply inline-block rounded border border-border bg-card/80 px-2 py-1 font-mono text-[10.5px] text-muted-foreground;
+  }
+  .disclaimer-band {
+    @apply rounded-lg border-l-4 border-destructive bg-destructive/10 px-4 py-3 text-xs font-medium text-destructive leading-relaxed;
+  }
+
+  .pill {
+    @apply inline-flex items-center rounded-full border border-border px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.08em];
+  }
+  .pill-gold {
+    @apply border-primary/50 bg-primary/10 text-primary;
+  }
+  .pill-green {
+    @apply border-success/50 bg-success/10 text-success;
+  }
+  .pill-red {
+    @apply border-destructive/50 bg-destructive/10 text-destructive;
+  }
+  .pill-blue {
+    @apply border-cyan/50 bg-cyan/10 text-cyan;
+  }
+  .pill-mid {
+    @apply border-muted-foreground/40 bg-muted/30 text-muted-foreground;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-import { Barlow, Barlow_Condensed, IBM_Plex_Mono } from "next/font/google";
-import "./globals.avsec.css";
 import { OfflineSyncProvider } from "@/components/avsec/offline/OfflineSyncProvider";
 import { OfflineStatusBadge } from "@/components/avsec/offline/OfflineStatusBadge";
 import { ServiceWorkerRegister } from "@/components/avsec/offline/ServiceWorkerRegister";
@@ -12,27 +10,6 @@ import { ORG_WIDE_ROLES, ROLE_LABELS } from "@/lib/avsec/reference-data";
 import { ThemeToggle } from "@/components/avsec/layout/ThemeToggle";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
-
-const barlow = Barlow({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-barlow",
-  display: "swap",
-});
-
-const barlowCondensed = Barlow_Condensed({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  variable: "--font-barlow-condensed",
-  display: "swap",
-});
-
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-mono-avsec",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: APP_NAME,
@@ -56,17 +33,7 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
   );
 
   return (
-    <div
-      className={`avsec-scope ${barlow.variable} ${barlowCondensed.variable} ${plexMono.variable} min-h-screen antialiased`}
-    >
-      {/* Light by default — only an explicit stored "dark" choice ever
-          switches this; OS prefers-color-scheme is not consulted, so a
-          device set to dark mode does not silently darken this section. */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `(function(){var el=document.currentScript.parentElement;var p="light";try{p=localStorage.getItem("avsec-theme")||"light"}catch(e){}var t=p==="dark"?"dark":"light";el.setAttribute("data-theme",t)})()`,
-        }}
-      />
+    <div className="min-h-screen bg-background text-foreground antialiased">
       <OfflineSyncProvider>
         <ServiceWorkerRegister />
         <OfflineStatusBadge />
