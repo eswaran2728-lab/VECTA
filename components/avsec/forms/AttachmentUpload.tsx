@@ -1,11 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { compressImage } from "@/lib/avsec/image-compression";
 
 const MAX_ATTACHMENTS = 5;
 const MAX_BYTES = 10 * 1024 * 1024;
-const MAX_DIMENSION = 1600;
-const JPEG_QUALITY = 0.8;
 const ACCEPTED_MIME = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 
 export interface PendingAttachment {
@@ -15,25 +14,6 @@ export interface PendingAttachment {
   size: number;
   blob: Blob;
   previewUrl: string;
-}
-
-async function compressImage(file: File): Promise<Blob> {
-  try {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
-    const w = Math.max(1, Math.round(bitmap.width * scale));
-    const h = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return file;
-    ctx.drawImage(bitmap, 0, 0, w, h);
-    const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY));
-    return blob && blob.size < file.size ? blob : file;
-  } catch {
-    return file;
-  }
 }
 
 /** Releases the blob: URLs behind a set of pending previews — call after a successful

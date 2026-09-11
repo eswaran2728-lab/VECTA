@@ -18,6 +18,8 @@ import {
   Download,
   Search,
   Filter,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 export default async function AttendanceMonitorPage({
@@ -31,6 +33,7 @@ export default async function AttendanceMonitorPage({
     station?: string;
     team?: string;
     search?: string;
+    page?: string;
   }>;
 }) {
   const searchParams = await searchParamsPromise;
@@ -49,6 +52,7 @@ export default async function AttendanceMonitorPage({
   const station = searchParams.station || "";
   const team = searchParams.team || "";
   const search = searchParams.search || "";
+  const page = Math.max(1, parseInt(searchParams.page || "1", 10) || 1);
 
   const data = await getMergedAttendanceData({
     periodType,
@@ -58,6 +62,8 @@ export default async function AttendanceMonitorPage({
     station: station || undefined,
     team: team || undefined,
     search: search || undefined,
+    page,
+    pageSize: periodType === "year" ? 25 : 50,
   });
 
   // Build Export Query String for on-demand OT export
@@ -518,6 +524,72 @@ export default async function AttendanceMonitorPage({
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Pagination Controls */}
+          {data.pagination && data.pagination.totalPages > 1 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-border pt-4">
+              <span className="font-mono text-xs text-muted-foreground">
+                Showing Page <strong className="text-foreground">{data.pagination.page}</strong> of{" "}
+                <strong className="text-foreground">{data.pagination.totalPages}</strong> ({data.pagination.totalProfiles} officers total)
+              </span>
+
+              <div className="flex items-center gap-2">
+                {data.pagination.page > 1 ? (
+                  <Link
+                    href={`/avsec/admin/attendance-monitor?${new URLSearchParams({
+                      periodType,
+                      date,
+                      month,
+                      year,
+                      station,
+                      team,
+                      search,
+                      page: String(data.pagination.page - 1),
+                    }).toString()}`}
+                    className="btn-secondary flex items-center gap-1 text-xs font-mono"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    <span>Previous</span>
+                  </Link>
+                ) : (
+                  <button
+                    disabled
+                    className="btn-secondary flex items-center gap-1 text-xs font-mono opacity-40 cursor-not-allowed"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    <span>Previous</span>
+                  </button>
+                )}
+
+                {data.pagination.page < data.pagination.totalPages ? (
+                  <Link
+                    href={`/avsec/admin/attendance-monitor?${new URLSearchParams({
+                      periodType,
+                      date,
+                      month,
+                      year,
+                      station,
+                      team,
+                      search,
+                      page: String(data.pagination.page + 1),
+                    }).toString()}`}
+                    className="btn-secondary flex items-center gap-1 text-xs font-mono"
+                  >
+                    <span>Next</span>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Link>
+                ) : (
+                  <button
+                    disabled
+                    className="btn-secondary flex items-center gap-1 text-xs font-mono opacity-40 cursor-not-allowed"
+                  >
+                    <span>Next</span>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </section>

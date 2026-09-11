@@ -79,6 +79,12 @@ export interface MergedAttendanceDataResult {
   dateList: string[];
   summaries: StaffMergedSummary[];
   allDailyRecords: MergedDailyRecord[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalProfiles: number;
+    totalPages: number;
+  };
   totals: {
     totalStaff: number;
     totalShiftsWorked: number;
@@ -133,10 +139,14 @@ export async function getMergedAttendanceData(
     );
   }
 
-  const profileIds = profiles.map((p) => p.id);
+  const totalProfiles = profiles.length;
+  const page = Math.max(1, Number(filters.page) || 1);
+  const defaultPageSize = periodType === "year" ? 25 : 50;
+  const pageSize = Math.max(1, Math.min(100, Number(filters.pageSize) || defaultPageSize));
+  const totalPages = Math.max(1, Math.ceil(totalProfiles / pageSize));
 
   // If no profiles match, return empty totals
-  if (profiles.length === 0) {
+  if (totalProfiles === 0) {
     return {
       periodType,
       selectedDate,
@@ -147,6 +157,12 @@ export async function getMergedAttendanceData(
       dateList,
       summaries: [],
       allDailyRecords: [],
+      pagination: {
+        page: 1,
+        pageSize,
+        totalProfiles: 0,
+        totalPages: 1,
+      },
       totals: {
         totalStaff: 0,
         totalShiftsWorked: 0,
@@ -157,6 +173,10 @@ export async function getMergedAttendanceData(
       },
     };
   }
+
+  // Slice profiles for the requested page to bound DB payload and query time
+  const paginatedProfiles = profiles.slice((page - 1) * pageSize, page * pageSize);
+  const profileIds = paginatedProfiles.map((p) => p.id);
 
   // 2. Fetch parallel data: Rosters, Duty Records, Absence/Leaves, Overtime Records
   const [
@@ -237,7 +257,7 @@ export async function getMergedAttendanceData(
   let overallPendingOtCount = 0;
   let overallLeaveDays = 0;
 
-  for (const profile of profiles) {
+  for (const profile of paginatedProfiles) {
     let staffShiftsWorked = 0;
     let staffTotalMinutes = 0;
     let staffApprovedOtHours = 0;
@@ -406,8 +426,14 @@ export async function getMergedAttendanceData(
     dateList,
     summaries,
     allDailyRecords,
+    pagination: {
+      page,
+      pageSize,
+      totalProfiles,
+      totalPages,
+    },
     totals: {
-      totalStaff: profiles.length,
+      totalStaff: totalProfiles,
       totalShiftsWorked: overallShiftsWorked,
       totalHoursWorked: overallHoursWorked,
       totalApprovedOtHours: overallApprovedOtHours,

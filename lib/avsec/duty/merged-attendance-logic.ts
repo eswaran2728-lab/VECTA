@@ -8,6 +8,8 @@ export interface MergedAttendanceFilter {
   station?: string;
   team?: string;
   search?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 export function computePeriodDateRange(filters: MergedAttendanceFilter): {
