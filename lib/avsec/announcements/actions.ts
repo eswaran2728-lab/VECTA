@@ -11,19 +11,23 @@ export interface AnnouncementActionResult {
 }
 
 /**
- * Create a new management announcement targeted by branch, station, and team.
+ * Create a new management announcement targeted by station with optional photo and pop mode.
  */
 export async function createAnnouncement({
   title,
   body,
-  branch,
   station,
+  photoUrl,
+  isPop,
+  branch,
   team,
 }: {
   title: string;
   body: string;
-  branch?: "operation_avsec" | "ifc_avsec" | "hub_avsec" | null;
   station?: string | null;
+  photoUrl?: string | null;
+  isPop?: boolean;
+  branch?: "operation_avsec" | "ifc_avsec" | "hub_avsec" | null;
   team?: string | null;
 }): Promise<AnnouncementActionResult> {
   const profile = await getCurrentProfile();
@@ -48,6 +52,8 @@ export async function createAnnouncement({
       created_by: profile.id,
       title: trimmedTitle,
       body: trimmedBody,
+      photo_url: photoUrl?.trim() || null,
+      is_pop: Boolean(isPop),
     })
     .select("id")
     .single();
@@ -56,17 +62,17 @@ export async function createAnnouncement({
     return { ok: false, error: annError?.message || "Failed to create announcement" };
   }
 
-  // 2. Insert target row
-  const targetBranch = branch || null;
+  // 2. Insert target row (Station is the primary targeting dimension; null means All Stations)
   const targetStation = station?.trim() || null;
+  const targetBranch = branch || null;
   const targetTeam = team?.trim() || null;
 
   const { error: targetError } = await supabase
     .from("announcement_targets")
     .insert({
       announcement_id: announcement.id,
-      branch: targetBranch,
       station: targetStation,
+      branch: targetBranch,
       team: targetTeam,
     });
 
@@ -76,15 +82,15 @@ export async function createAnnouncement({
 
   // 3. Send notifications to targeted staff in the organization
   let staffQuery = supabase.from("profiles").select("id, ops_group, station, team");
-  if (targetBranch) staffQuery = staffQuery.eq("ops_group", targetBranch);
   if (targetStation) staffQuery = staffQuery.eq("station", targetStation);
+  if (targetBranch) staffQuery = staffQuery.eq("ops_group", targetBranch);
   if (targetTeam) staffQuery = staffQuery.eq("team", targetTeam);
 
   const { data: targetStaff } = await staffQuery;
   if (targetStaff && targetStaff.length > 0) {
     const notifs = targetStaff.map((s) => ({
       user_id: s.id,
-      title: `📢 Announcement: ${trimmedTitle}`,
+      title: `${Boolean(isPop) ? "⚡ [URGENT POP] " : "📢 "}Announcement: ${trimmedTitle}`,
       body: trimmedBody.slice(0, 120),
       is_read: false,
     }));

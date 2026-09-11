@@ -1,11 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { formatDateTimeMY } from "@/lib/avsec/datetime";
 import { createAnnouncement } from "@/lib/avsec/announcements/actions";
-import { STATIONS, TEAM_EXAMPLES } from "@/lib/avsec/reference-data";
+import { STATIONS } from "@/lib/avsec/reference-data";
+import { compressImage } from "@/lib/avsec/image-compression";
 import type { ManagementAnnouncementView } from "@/lib/avsec/types";
-import { Megaphone, Plus, X, Loader2, Send, Users, CheckCircle2, Clock } from "lucide-react";
+import {
+  Megaphone,
+  Plus,
+  X,
+  Loader2,
+  Send,
+  Users,
+  CheckCircle2,
+  Clock,
+  Image as ImageIcon,
+  Zap,
+} from "lucide-react";
 
 export function ManagementAnnouncementsView({
   initialAnnouncements,
@@ -19,10 +31,49 @@ export function ManagementAnnouncementsView({
   // Form states
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [branch, setBranch] = useState<string>("ALL");
   const [station, setStation] = useState<string>("ALL");
-  const [team, setTeam] = useState<string>("ALL");
+  const [isPop, setIsPop] = useState(false);
+  const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
+  const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select a valid image file.");
+      return;
+    }
+
+    setIsCompressingPhoto(true);
+    try {
+      const compressedBlob = await compressImage(file, {
+        maxDimension: 1600,
+        quality: 0.8,
+        format: "image/webp",
+      });
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhotoDataUrl(reader.result as string);
+        setIsCompressingPhoto(false);
+      };
+      reader.readAsDataURL(compressedBlob);
+    } catch (err) {
+      console.error("Photo compression error:", err);
+      alert("Failed to process image. Please try another image.");
+      setIsCompressingPhoto(false);
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    setPhotoDataUrl(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,9 +83,9 @@ export function ManagementAnnouncementsView({
     const res = await createAnnouncement({
       title,
       body,
-      branch: branch === "ALL" ? null : (branch as never),
       station: station === "ALL" ? null : station,
-      team: team === "ALL" ? null : team,
+      photoUrl: photoDataUrl,
+      isPop,
     });
 
     if (res.ok && res.announcementId) {
@@ -44,14 +95,16 @@ export function ManagementAnnouncementsView({
         created_by: "",
         title,
         body,
+        photo_url: photoDataUrl,
+        is_pop: isPop,
         created_at: new Date().toISOString(),
         targets: [
           {
             id: "temp",
             announcement_id: res.announcementId,
-            branch: branch === "ALL" ? null : (branch as never),
+            branch: null,
             station: station === "ALL" ? null : station,
-            team: team === "ALL" ? null : team,
+            team: null,
             created_at: new Date().toISOString(),
           },
         ],
@@ -63,6 +116,9 @@ export function ManagementAnnouncementsView({
       setAnnouncements([newAnn, ...announcements]);
       setTitle("");
       setBody("");
+      setStation("ALL");
+      setIsPop(false);
+      setPhotoDataUrl(null);
       setIsCreating(false);
     } else {
       alert(res.error || "Failed to create announcement");
@@ -78,7 +134,7 @@ export function ManagementAnnouncementsView({
         <div>
           <h2 className="text-lg font-bold">Broadcast Announcements</h2>
           <p className="text-xs text-muted-foreground">
-            Target operational directives to branches, stations, or teams with mandatory read receipts.
+            Target operational directives to stations with mandatory read receipts, optional photos, and pop delivery.
           </p>
         </div>
         <button
@@ -92,7 +148,7 @@ export function ManagementAnnouncementsView({
 
       {/* Creation Modal / Form */}
       {isCreating && (
-        <div className="card p-5 border-border/80 bg-surface/90 space-y-4">
+        <div className="card p-5 border-border/80 bg-surface/90 space-y-4 shadow-lg">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-sm flex items-center gap-2">
               <Megaphone className="h-4 w-4 text-primary" />
@@ -106,7 +162,7 @@ export function ManagementAnnouncementsView({
             </button>
           </div>
 
-          <form onSubmit={handleCreate} className="space-y-3">
+          <form onSubmit={handleCreate} className="space-y-3.5">
             <div>
               <label className="field-label">Announcement Title</label>
               <input
@@ -119,52 +175,21 @@ export function ManagementAnnouncementsView({
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="field-label">Target Branch</label>
-                <select
-                  value={branch}
-                  onChange={(e) => setBranch(e.target.value)}
-                  className="input-base w-full text-xs"
-                >
-                  <option value="ALL">All Branches (Global)</option>
-                  <option value="operation_avsec">Operation AVSEC</option>
-                  <option value="ifc_avsec">IFC AVSEC</option>
-                  <option value="hub_avsec">Hub AVSEC</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="field-label">Target Station</label>
-                <select
-                  value={station}
-                  onChange={(e) => setStation(e.target.value)}
-                  className="input-base w-full text-xs"
-                >
-                  <option value="ALL">All Stations</option>
-                  {STATIONS.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="field-label">Target Team</label>
-                <select
-                  value={team}
-                  onChange={(e) => setTeam(e.target.value)}
-                  className="input-base w-full text-xs"
-                >
-                  <option value="ALL">All Teams</option>
-                  {TEAM_EXAMPLES.map((t) => (
-                    <option key={t} value={t}>
-                      Team {t}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Target Station Only */}
+            <div>
+              <label className="field-label">Target Station</label>
+              <select
+                value={station}
+                onChange={(e) => setStation(e.target.value)}
+                className="input-base w-full text-xs"
+              >
+                <option value="ALL">All Stations (Global Broadcast)</option>
+                {STATIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -174,9 +199,79 @@ export function ManagementAnnouncementsView({
                 rows={4}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
-                placeholder="Write the announcement directive in full. Targeted staff will see this prominently on their dashboard and must acknowledge receipt."
+                placeholder="Write the announcement directive in full. Targeted staff will see this on their dashboard and must acknowledge receipt."
                 className="input-base w-full text-sm leading-relaxed"
               />
+            </div>
+
+            {/* Optional Photo Attachment */}
+            <div className="space-y-2">
+              <label className="field-label">Optional Photo Attachment</label>
+              {photoDataUrl ? (
+                <div className="relative inline-block border border-border rounded-xl overflow-hidden bg-background max-w-sm">
+                  <img
+                    src={photoDataUrl}
+                    alt="Attachment Preview"
+                    className="max-h-48 w-auto object-contain"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleRemovePhoto}
+                    className="absolute top-2 right-2 p-1.5 rounded-full bg-background/90 text-destructive hover:bg-destructive hover:text-destructive-foreground shadow transition-colors"
+                    title="Remove Photo"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePhotoSelect}
+                    className="hidden"
+                    id="announcement-photo-upload"
+                  />
+                  <label
+                    htmlFor="announcement-photo-upload"
+                    className="btn-secondary text-xs flex items-center gap-1.5 cursor-pointer hover:border-primary/60"
+                  >
+                    {isCompressingPhoto ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    ) : (
+                      <ImageIcon className="h-4 w-4 text-primary" />
+                    )}
+                    <span>
+                      {isCompressingPhoto ? "Compressing Photo..." : "Attach Photo (Optional)"}
+                    </span>
+                  </label>
+                  <span className="text-[11px] font-mono text-muted-foreground">
+                    Auto-compressed (WebP)
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Pop Announcement Toggle */}
+            <div className="pt-1">
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card/60 cursor-pointer hover:border-primary/50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={isPop}
+                  onChange={(e) => setIsPop(e.target.checked)}
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                />
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-foreground">
+                    <Zap className="h-3.5 w-3.5 text-warning" />
+                    <span>Make this a Pop Announcement</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Delivered as an active, interrupting popup modal next time targeted staff open the app.
+                  </p>
+                </div>
+              </label>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
@@ -189,8 +284,8 @@ export function ManagementAnnouncementsView({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || !title.trim() || !body.trim()}
-                className="btn-primary text-xs flex items-center gap-1.5 disabled:opacity-50"
+                disabled={isSubmitting || isCompressingPhoto || !title.trim() || !body.trim()}
+                className="btn-primary text-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
               >
                 {isSubmitting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -219,11 +314,7 @@ export function ManagementAnnouncementsView({
                 ? Math.round((a.acknowledged_count / a.total_target_users) * 100)
                 : 0;
 
-            const targetSummary = [
-              target.branch ? target.branch.replace("_", " ").toUpperCase() : "ALL BRANCHES",
-              target.station ? target.station : "ALL STATIONS",
-              target.team ? `TEAM ${target.team}` : "ALL TEAMS",
-            ].join(" · ");
+            const targetSummary = target.station ? target.station : "ALL STATIONS (GLOBAL)";
 
             return (
               <div
@@ -231,11 +322,17 @@ export function ManagementAnnouncementsView({
                 className="card p-4 border-border/80 bg-surface/80 space-y-3 transition-all"
               >
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                  <div className="space-y-1 min-w-0">
+                  <div className="space-y-2 min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-primary/10 text-primary border border-primary/20">
                         {targetSummary}
                       </span>
+                      {a.is_pop && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-warning/20 text-warning border border-warning/30 flex items-center gap-1">
+                          <Zap className="h-3 w-3" />
+                          <span>POP MODAL</span>
+                        </span>
+                      )}
                       <span className="text-[11px] font-mono text-muted-foreground">
                         {formatDateTimeMY(a.created_at)}
                       </span>
@@ -244,6 +341,16 @@ export function ManagementAnnouncementsView({
                     <h3 className="font-display font-bold text-base text-foreground">
                       {a.title}
                     </h3>
+
+                    {a.photo_url && (
+                      <div className="pt-1">
+                        <img
+                          src={a.photo_url}
+                          alt={a.title}
+                          className="max-h-36 w-auto object-cover rounded-lg border border-border"
+                        />
+                      </div>
+                    )}
 
                     <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed whitespace-pre-wrap">
                       {a.body}

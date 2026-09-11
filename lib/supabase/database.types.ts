@@ -65,6 +65,7 @@ export type Database = {
             | "compassionate"
             | "hospitalization"
             | "maternity_paternity"
+            | "parental"
             | "unpaid"
             | "representative"
           start_date: string
@@ -107,6 +108,7 @@ export type Database = {
             | "compassionate"
             | "hospitalization"
             | "maternity_paternity"
+            | "parental"
             | "unpaid"
             | "representative"
           start_date?: string
@@ -149,6 +151,7 @@ export type Database = {
             | "compassionate"
             | "hospitalization"
             | "maternity_paternity"
+            | "parental"
             | "unpaid"
             | "representative"
           start_date?: string
@@ -308,26 +311,32 @@ export type Database = {
       announcements: {
         Row: {
           id: string
-          org_id: string
+          org_id: string | null
           created_by: string
           title: string
           body: string
+          photo_url: string | null
+          is_pop: boolean
           created_at: string
         }
         Insert: {
           id?: string
-          org_id?: string
+          org_id?: string | null
           created_by: string
           title: string
           body: string
+          photo_url?: string | null
+          is_pop?: boolean
           created_at?: string
         }
         Update: {
           id?: string
-          org_id?: string
+          org_id?: string | null
           created_by?: string
           title?: string
           body?: string
+          photo_url?: string | null
+          is_pop?: boolean
           created_at?: string
         }
         Relationships: []

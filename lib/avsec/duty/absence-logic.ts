@@ -8,6 +8,7 @@ export type LeaveType =
   | "compassionate"
   | "hospitalization"
   | "maternity_paternity"
+  | "parental"
   | "unpaid"
   | "representative";
 
@@ -26,6 +27,7 @@ export const LEAVE_TYPES: readonly LeaveType[] = [
   "compassionate",
   "hospitalization",
   "maternity_paternity",
+  "parental",
   "unpaid",
   "representative",
 ] as const;
@@ -38,6 +40,7 @@ export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
   compassionate: "Compassionate / Bereavement Leave",
   hospitalization: "Hospitalization Leave",
   maternity_paternity: "Maternity / Paternity Leave",
+  parental: "Parental Leave",
   unpaid: "Unpaid Leave",
   representative: "Representative Leave",
 };
@@ -50,6 +53,7 @@ export const LEAVE_TYPE_SHORT_LABELS: Record<LeaveType, string> = {
   compassionate: "Compassionate",
   hospitalization: "Hospitalization",
   maternity_paternity: "Maternity/Paternity",
+  parental: "Parental",
   unpaid: "Unpaid",
   representative: "Representative",
 };
@@ -62,6 +66,7 @@ export const LEAVE_TYPE_ICONS: Record<LeaveType, string> = {
   compassionate: "🕯️",
   hospitalization: "🩺",
   maternity_paternity: "🍼",
+  parental: "👶",
   unpaid: "⏸️",
   representative: "💼",
 };

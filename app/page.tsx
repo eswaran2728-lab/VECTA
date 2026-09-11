@@ -225,9 +225,15 @@ export default async function LandingPage({
                   {!orgWide && avsecProfile ? (
                     <Link
                       href="/avsec/duty"
-                      className="font-mono text-[11px] uppercase tracking-[0.08em] text-primary underline underline-offset-4"
+                      className="mt-2 inline-flex items-center justify-between gap-3 rounded-xl bg-primary px-4 py-2.5 font-sans text-xs font-bold tracking-[0.04em] text-primary-foreground shadow-sm transition-all hover:opacity-95 active:scale-[0.98] group"
                     >
-                      Duty Check-In / Check-Out &rarr;
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-primary-foreground animate-pulse" />
+                        <span>DUTY CHECK-IN / CHECK-OUT</span>
+                      </span>
+                      <span className="font-mono text-sm transition-transform group-hover:translate-x-1 shrink-0">
+                        &rarr;
+                      </span>
                     </Link>
                   ) : null}
                 </div>

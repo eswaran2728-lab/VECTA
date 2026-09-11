@@ -10,7 +10,7 @@ import {
   type LeaveType,
 } from "../lib/avsec/duty/absence-logic.ts";
 
-test("LEAVE_TYPES: covers all 9 required leave types", () => {
+test("LEAVE_TYPES: covers all 10 required leave types", () => {
   const expected: LeaveType[] = [
     "absent",
     "mc",
@@ -19,15 +19,26 @@ test("LEAVE_TYPES: covers all 9 required leave types", () => {
     "compassionate",
     "hospitalization",
     "maternity_paternity",
+    "parental",
     "unpaid",
     "representative",
   ];
 
-  assert.equal(LEAVE_TYPES.length, 9);
+  assert.equal(LEAVE_TYPES.length, 10);
   for (const t of expected) {
     assert.ok(LEAVE_TYPES.includes(t), `Missing leave type: ${t}`);
     assert.ok(LEAVE_TYPE_LABELS[t], `Missing label for leave type: ${t}`);
   }
+});
+
+test("Parental Leave: formats roster status label and metadata correctly", async () => {
+  const { formatOnLeaveLabel, LEAVE_TYPE_ICONS, LEAVE_TYPE_SHORT_LABELS } = await import(
+    "../lib/avsec/duty/absence-logic.ts"
+  );
+  assert.equal(LEAVE_TYPE_LABELS.parental, "Parental Leave");
+  assert.equal(LEAVE_TYPE_SHORT_LABELS.parental, "Parental");
+  assert.equal(LEAVE_TYPE_ICONS.parental, "👶");
+  assert.equal(formatOnLeaveLabel("parental"), "On Leave — Parental");
 });
 
 test("isSameDayLeave: true only when start date matches today date", () => {

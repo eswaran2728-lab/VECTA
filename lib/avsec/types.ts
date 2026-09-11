@@ -351,6 +351,8 @@ export interface AnnouncementRow {
   created_by: string;
   title: string;
   body: string;
+  photo_url?: string | null;
+  is_pop?: boolean;
   created_at: string;
 }
 
