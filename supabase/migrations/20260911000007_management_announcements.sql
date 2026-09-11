@@ -6,7 +6,7 @@
 -- 1. Create announcements table
 create table if not exists public.announcements (
   id uuid primary key default gen_random_uuid(),
-  org_id text references public.organizations(id) on delete cascade,
+  org_id uuid references public.organizations(id) on delete cascade,
   created_by uuid not null references public.profiles(id) on delete cascade,
   title text not null,
   body text not null,

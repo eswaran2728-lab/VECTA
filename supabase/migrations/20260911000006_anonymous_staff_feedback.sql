@@ -6,7 +6,7 @@
 -- 1. Create feedback_threads table
 create table if not exists public.feedback_threads (
   id uuid primary key default gen_random_uuid(),
-  org_id text references public.organizations(id) on delete cascade,
+  org_id uuid references public.organizations(id) on delete cascade,
   submitter_id uuid not null references public.profiles(id) on delete cascade,
   category text not null check (category in ('safety_concern', 'complaint', 'suggestion', 'other')),
   status text not null check (status in ('open', 'closed')) default 'open',
