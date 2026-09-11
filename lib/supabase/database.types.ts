@@ -73,10 +73,17 @@ export type Database = {
           submitted_at: string
           gap_minutes: number | null
           status: "green" | "red" | null
-          approval_status: "pending" | "approved" | "rejected"
+          approval_status:
+            | "pending"
+            | "approved"
+            | "rejected"
+            | "pending_cancellation"
+            | "cancelled"
           reviewed_by: string | null
           reviewed_at: string | null
           review_notes: string | null
+          cancellation_reason: string | null
+          cancel_requested_at: string | null
           remarks: string
           created_at: string
         }
@@ -108,10 +115,17 @@ export type Database = {
           submitted_at?: string
           gap_minutes?: number | null
           status?: "green" | "red" | null
-          approval_status?: "pending" | "approved" | "rejected"
+          approval_status?:
+            | "pending"
+            | "approved"
+            | "rejected"
+            | "pending_cancellation"
+            | "cancelled"
           reviewed_by?: string | null
           reviewed_at?: string | null
           review_notes?: string | null
+          cancellation_reason?: string | null
+          cancel_requested_at?: string | null
           remarks: string
           created_at?: string
         }
@@ -143,10 +157,17 @@ export type Database = {
           submitted_at?: string
           gap_minutes?: number | null
           status?: "green" | "red" | null
-          approval_status?: "pending" | "approved" | "rejected"
+          approval_status?:
+            | "pending"
+            | "approved"
+            | "rejected"
+            | "pending_cancellation"
+            | "cancelled"
           reviewed_by?: string | null
           reviewed_at?: string | null
           review_notes?: string | null
+          cancellation_reason?: string | null
+          cancel_requested_at?: string | null
           remarks?: string
           created_at?: string
         }

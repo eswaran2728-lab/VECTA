@@ -25,6 +25,8 @@ export interface AbsenceNoticeRow {
   reviewed_by: string | null;
   reviewed_at: string | null;
   review_notes: string | null;
+  cancellation_reason?: string | null;
+  cancel_requested_at?: string | null;
   remarks: string;
   created_at: string;
 }

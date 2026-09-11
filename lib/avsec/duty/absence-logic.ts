@@ -11,7 +11,12 @@ export type LeaveType =
   | "unpaid"
   | "representative";
 
-export type LeaveApprovalStatus = "pending" | "approved" | "rejected";
+export type LeaveApprovalStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "pending_cancellation"
+  | "cancelled";
 
 export const LEAVE_TYPES: readonly LeaveType[] = [
   "absent",
@@ -37,6 +42,18 @@ export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
   representative: "Representative Leave",
 };
 
+export const LEAVE_TYPE_SHORT_LABELS: Record<LeaveType, string> = {
+  absent: "Absent",
+  mc: "MC",
+  emergency: "Emergency",
+  annual: "Annual",
+  compassionate: "Compassionate",
+  hospitalization: "Hospitalization",
+  maternity_paternity: "Maternity/Paternity",
+  unpaid: "Unpaid",
+  representative: "Representative",
+};
+
 export const LEAVE_TYPE_ICONS: Record<LeaveType, string> = {
   absent: "🚨",
   mc: "🏥",
@@ -48,6 +65,42 @@ export const LEAVE_TYPE_ICONS: Record<LeaveType, string> = {
   unpaid: "⏸️",
   representative: "💼",
 };
+
+/**
+ * Returns the standard roster status label for an approved leave application,
+ * e.g. "On Leave — Annual", "On Leave — MC", etc.
+ */
+export function formatOnLeaveLabel(leaveType: LeaveType): string {
+  const short = LEAVE_TYPE_SHORT_LABELS[leaveType] || leaveType;
+  return `On Leave — ${short}`;
+}
+
+/**
+ * Checks if an approved leave is actively covering the specified date.
+ * Trigger point: on approval only (pending/cancelled/rejected do not link).
+ */
+export function isLeaveActiveOnDate(
+  leave: { approval_status: string; start_date: string; end_date: string },
+  date: string
+): boolean {
+  return (
+    leave.approval_status === "approved" &&
+    leave.start_date <= date &&
+    leave.end_date >= date
+  );
+}
+
+/**
+ * Checks if there is a coverage conflict between an active working shift and an approved leave.
+ * A conflict exists if the officer is on approved leave while an active shift (not OFF) is rostered.
+ */
+export function hasRosterConflict(
+  shiftCode: string | null | undefined,
+  hasApprovedLeave: boolean
+): boolean {
+  if (!hasApprovedLeave || !shiftCode) return false;
+  return shiftCode.toUpperCase() !== "OFF";
+}
 
 export interface AbsenceCalculationResult {
   gapMinutes: number;

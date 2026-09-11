@@ -3,7 +3,7 @@ import { requireProfile } from "@/lib/avsec/auth";
 import { formatAbsenceGap, LEAVE_TYPE_LABELS, LEAVE_TYPE_ICONS } from "@/lib/avsec/duty/absence-logic";
 import { getAbsenceNotices } from "@/lib/avsec/duty/absence-queries";
 import { ROLE_LABELS, ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
-import { LeaveReviewControls } from "@/components/avsec/duty/LeaveReviewControls";
+import { LeaveReviewControls, RequestLeaveCancellationControl } from "@/components/avsec/duty/LeaveReviewControls";
 
 export default async function StaffLeavePortalPage() {
   const profile = await requireProfile();
@@ -25,7 +25,9 @@ export default async function StaffLeavePortalPage() {
       })
     : [];
 
-  const pendingCount = teamRecords.filter((r) => r.approval_status === "pending").length;
+  const pendingCount = teamRecords.filter(
+    (r) => r.approval_status === "pending" || r.approval_status === "pending_cancellation"
+  ).length;
 
   return (
     <main className="min-h-screen bg-background pb-32">
@@ -68,9 +70,9 @@ export default async function StaffLeavePortalPage() {
             <span>ℹ️</span> Leave & Compliance Policy
           </div>
           <p className="font-mono text-xs text-muted-foreground leading-relaxed">
-            • <strong>Same-Day Leave (Starts Today)</strong>: Must give $\ge 3$ hours notice before shift start for compliant (🟢) timing. Late notice (<strong className="text-rose-500">🔴</strong>) is logged for performance review.<br />
-            • <strong>Advance Leave (Future Dates)</strong>: Logged in advance and routed to DSE for approval.<br />
-            • <strong>Approval Workflow</strong>: All leave submissions require DSE review (Approved / Rejected / Pending).
+            • <strong>Same-Day Leave (Starts Today)</strong>: Must give ≥ 3 hours notice before shift start for compliant (🟢) timing. Late notice (<strong className="text-rose-500">🔴</strong>) is logged for performance review.<br />
+            • <strong>Roster Linking</strong>: Approved leave automatically displays on the duty roster for all covered dates.<br />
+            • <strong>Cancellation Workflow</strong>: Cancellation requests must be submitted and approved by DSE before leave is removed from the roster.
           </p>
         </div>
 
@@ -83,7 +85,7 @@ export default async function StaffLeavePortalPage() {
                   <span>📥</span> DSE Review Queue ({profile.station || "All"} · Team {profile.team || "All"})
                 </h2>
                 <p className="font-mono text-xs text-muted-foreground">
-                  Pending leave applications submitted by duty staff in your station/team.
+                  Pending leave applications and cancellation requests submitted by duty staff in your station/team.
                 </p>
               </div>
               {pendingCount > 0 ? (
@@ -107,6 +109,9 @@ export default async function StaffLeavePortalPage() {
                   const isGreen = item.status === "green";
                   const isPending = item.approval_status === "pending";
                   const isApproved = item.approval_status === "approved";
+                  const isPendingCancel = item.approval_status === "pending_cancellation";
+                  const isCancelled = item.approval_status === "cancelled";
+                  const isRejected = item.approval_status === "rejected";
                   const typeLabel = LEAVE_TYPE_LABELS[item.leave_type] || item.leave_type;
                   const typeIcon = LEAVE_TYPE_ICONS[item.leave_type] || "🌴";
 
@@ -134,13 +139,17 @@ export default async function StaffLeavePortalPage() {
                     <div
                       key={item.id}
                       className={`card p-4 border-l-4 transition-all ${
-                        isEscalated
-                          ? "border-l-purple-500 bg-purple-500/5"
-                          : isPending
-                            ? "border-l-warning bg-warning/5"
-                            : isApproved
-                              ? "border-l-success bg-success/5"
-                              : "border-l-brand bg-brand/5"
+                        isPendingCancel
+                          ? "border-l-amber-500 bg-amber-500/5"
+                          : isEscalated
+                            ? "border-l-purple-500 bg-purple-500/5"
+                            : isPending
+                              ? "border-l-warning bg-warning/5"
+                              : isApproved
+                                ? "border-l-success bg-success/5"
+                                : isCancelled
+                                  ? "border-l-muted-foreground/40 bg-muted/10 opacity-80"
+                                  : "border-l-brand bg-brand/5"
                       }`}
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/40 pb-2">
@@ -158,7 +167,11 @@ export default async function StaffLeavePortalPage() {
 
                         <div className="flex items-center gap-2 flex-wrap">
                           {/* Escalation or Approval Status Badge */}
-                          {isEscalated ? (
+                          {isPendingCancel ? (
+                            <span className="font-mono text-xs px-2.5 py-0.5 rounded font-bold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse">
+                              ⚡ Cancellation Requested
+                            </span>
+                          ) : isEscalated ? (
                             <span className="font-mono text-xs px-2.5 py-0.5 rounded font-bold uppercase bg-purple-500/20 text-purple-400 border border-purple-500/30">
                               ⚡ Escalated to Management ({overlappingApprovedCount}/3 Cap)
                             </span>
@@ -167,16 +180,20 @@ export default async function StaffLeavePortalPage() {
                               className={`font-mono text-xs px-2.5 py-0.5 rounded font-bold uppercase ${
                                 isApproved
                                   ? "bg-success/20 text-success border border-success/30"
-                                  : item.approval_status === "rejected"
+                                  : isRejected
                                     ? "bg-brand/20 text-brand border border-brand/30"
-                                    : "bg-warning/20 text-warning border border-warning/30"
+                                    : isCancelled
+                                      ? "bg-muted text-muted-foreground border border-border"
+                                      : "bg-warning/20 text-warning border border-warning/30"
                               }`}
                             >
-                              {item.approval_status === "approved"
+                              {isApproved
                                 ? "✓ Approved"
-                                : item.approval_status === "rejected"
+                                : isRejected
                                   ? "✕ Rejected"
-                                  : "⏳ Pending DSE"}
+                                  : isCancelled
+                                    ? "✕ Cancelled"
+                                    : "⏳ Pending DSE"}
                             </span>
                           )}
 
@@ -209,18 +226,35 @@ export default async function StaffLeavePortalPage() {
                         {item.remarks}
                       </div>
 
+                      {item.cancellation_reason && (
+                        <div className="mt-2 p-2.5 rounded bg-amber-500/10 border border-amber-500/30 text-xs text-foreground">
+                          <div className="font-mono text-[10px] text-amber-400 uppercase font-bold mb-0.5">Cancellation Request Reason:</div>
+                          {item.cancellation_reason}
+                        </div>
+                      )}
+
                       {item.review_notes && (
                         <div className="mt-2 text-xs font-mono text-muted-foreground">
                           <strong>DSE Note:</strong> {item.review_notes}
                         </div>
                       )}
 
-                      {/* Interactive Review Controls if pending */}
+                      {/* Interactive Review Controls if pending application or pending cancellation */}
                       {isPending && (
                         <LeaveReviewControls
                           noticeId={item.id}
                           staffName={item.staff_name}
                           leaveTypeLabel={typeLabel}
+                          mode="application"
+                        />
+                      )}
+
+                      {isPendingCancel && (
+                        <LeaveReviewControls
+                          noticeId={item.id}
+                          staffName={item.staff_name}
+                          leaveTypeLabel={typeLabel}
+                          mode="cancellation"
                         />
                       )}
                     </div>
@@ -255,6 +289,9 @@ export default async function StaffLeavePortalPage() {
                 const isGreen = item.status === "green";
                 const isApproved = item.approval_status === "approved";
                 const isRejected = item.approval_status === "rejected";
+                const isPending = item.approval_status === "pending";
+                const isPendingCancel = item.approval_status === "pending_cancellation";
+                const isCancelled = item.approval_status === "cancelled";
                 const typeLabel = LEAVE_TYPE_LABELS[item.leave_type] || item.leave_type;
                 const typeIcon = LEAVE_TYPE_ICONS[item.leave_type] || "🌴";
 
@@ -262,11 +299,15 @@ export default async function StaffLeavePortalPage() {
                   <div
                     key={item.id}
                     className={`card p-4 border-l-4 transition-all ${
-                      isApproved
-                        ? "border-l-success bg-success/5"
-                        : isRejected
-                          ? "border-l-brand bg-brand/5"
-                          : "border-l-warning bg-warning/5"
+                      isPendingCancel
+                        ? "border-l-amber-500 bg-amber-500/5"
+                        : isApproved
+                          ? "border-l-success bg-success/5"
+                          : isRejected
+                            ? "border-l-brand bg-brand/5"
+                            : isCancelled
+                              ? "border-l-muted-foreground/40 bg-muted/10 opacity-75"
+                              : "border-l-warning bg-warning/5"
                     }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/40 pb-2.5">
@@ -277,18 +318,26 @@ export default async function StaffLeavePortalPage() {
 
                         <span
                           className={`font-mono text-xs px-2.5 py-0.5 rounded-full font-bold uppercase ${
-                            isApproved
-                              ? "bg-success/20 text-success border border-success/30"
-                              : isRejected
-                                ? "bg-brand/20 text-brand border border-brand/30"
-                                : "bg-warning/20 text-warning border border-warning/30"
+                            isPendingCancel
+                              ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                              : isApproved
+                                ? "bg-success/20 text-success border border-success/30"
+                                : isRejected
+                                  ? "bg-brand/20 text-brand border border-brand/30"
+                                  : isCancelled
+                                    ? "bg-muted text-muted-foreground border border-border"
+                                    : "bg-warning/20 text-warning border border-warning/30"
                           }`}
                         >
-                          {isApproved
-                            ? "✓ Approved by DSE"
-                            : isRejected
-                              ? "✕ Rejected by DSE"
-                              : "⏳ Pending DSE Review"}
+                          {isPendingCancel
+                            ? "⏳ Cancellation Requested"
+                            : isApproved
+                              ? "✓ Approved"
+                              : isRejected
+                                ? "✕ Rejected"
+                                : isCancelled
+                                  ? "✕ Cancelled"
+                                  : "⏳ Pending DSE Review"}
                         </span>
 
                         {item.status && item.gap_minutes !== null && (
@@ -341,10 +390,26 @@ export default async function StaffLeavePortalPage() {
                         {item.remarks}
                       </div>
 
+                      {item.cancellation_reason && (
+                        <div className="p-2 rounded bg-amber-500/10 font-mono text-xs text-amber-300 border border-amber-500/30">
+                          <strong>Cancellation Reason:</strong> {item.cancellation_reason}
+                        </div>
+                      )}
+
                       {item.review_notes && (
                         <div className="p-2 rounded bg-muted/40 font-mono text-xs text-muted-foreground border border-border/40">
-                          <strong className="text-foreground">DSE Feedback:</strong> {item.review_notes}
+                          <strong className="text-foreground">Review Feedback:</strong> {item.review_notes}
                         </div>
+                      )}
+
+                      {/* Cancellation request control for staff on approved or pending leaves */}
+                      {(isApproved || isPending) && (
+                        <RequestLeaveCancellationControl
+                          noticeId={item.id}
+                          leaveTypeLabel={typeLabel}
+                          startDate={item.start_date}
+                          endDate={item.end_date}
+                        />
                       )}
                     </div>
                   </div>

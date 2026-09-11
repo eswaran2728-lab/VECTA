@@ -165,9 +165,11 @@ export default async function AdminLeaveAuditPage({
               <label className="vecta-label">Approval Status</label>
               <select name="approvalStatus" defaultValue={approvalStatusFilter} className="vecta-input">
                 <option value="all">All Statuses</option>
-                <option value="pending">Pending</option>
+                <option value="pending">Pending Application</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
+                <option value="pending_cancellation">Cancellation Requested</option>
+                <option value="cancelled">Cancelled</option>
               </select>
             </div>
             <div>
@@ -309,6 +311,8 @@ export default async function AdminLeaveAuditPage({
                     const isApproved = n.approval_status === "approved";
                     const isRejected = n.approval_status === "rejected";
                     const isPending = n.approval_status === "pending";
+                    const isPendingCancel = n.approval_status === "pending_cancellation";
+                    const isCancelled = n.approval_status === "cancelled";
                     const typeLabel = LEAVE_TYPE_LABELS[n.leave_type] || n.leave_type;
                     const typeIcon = LEAVE_TYPE_ICONS[n.leave_type] || "🌴";
 
@@ -336,7 +340,13 @@ export default async function AdminLeaveAuditPage({
                       <tr
                         key={n.id}
                         className={`hover:bg-muted/30 ${
-                          isEscalated ? "bg-purple-500/[0.04]" : ""
+                          isPendingCancel
+                            ? "bg-amber-500/[0.04]"
+                            : isEscalated
+                              ? "bg-purple-500/[0.04]"
+                              : isCancelled
+                                ? "opacity-75"
+                                : ""
                         }`}
                       >
                         <td className="py-3">
@@ -359,7 +369,11 @@ export default async function AdminLeaveAuditPage({
                           </span>
                         </td>
                         <td className="py-3">
-                          {isEscalated ? (
+                          {isPendingCancel ? (
+                            <span className="font-mono text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30 whitespace-nowrap">
+                              ⚡ Cancel Requested
+                            </span>
+                          ) : isEscalated ? (
                             <span className="font-mono text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-purple-500/20 text-purple-400 border border-purple-500/30 whitespace-nowrap">
                               ⚡ Escalated — Team Cap Exceeded ({overlappingApprovedCount}/3)
                             </span>
@@ -370,10 +384,18 @@ export default async function AdminLeaveAuditPage({
                                   ? "bg-success/20 text-success border border-success/30"
                                   : isRejected
                                     ? "bg-brand/20 text-brand border border-brand/30"
-                                    : "bg-warning/20 text-warning border border-warning/30"
+                                    : isCancelled
+                                      ? "bg-muted text-muted-foreground border border-border"
+                                      : "bg-warning/20 text-warning border border-warning/30"
                               }`}
                             >
-                              {isApproved ? "✓ Approved" : isRejected ? "✕ Rejected" : "⏳ Pending"}
+                              {isApproved
+                                ? "✓ Approved"
+                                : isRejected
+                                  ? "✕ Rejected"
+                                  : isCancelled
+                                    ? "✕ Cancelled"
+                                    : "⏳ Pending"}
                             </span>
                           )}
                         </td>
@@ -395,6 +417,11 @@ export default async function AdminLeaveAuditPage({
                         <td className="py-3 text-muted-foreground">{formatDateTimeMY(n.submitted_at)}</td>
                         <td className="py-3 font-sans text-xs text-foreground max-w-xs break-words space-y-1">
                           <div>&ldquo;{n.remarks}&rdquo;</div>
+                          {n.cancellation_reason && (
+                            <div className="text-[11px] font-mono text-amber-300">
+                              <strong>Cancel Reason:</strong> {n.cancellation_reason}
+                            </div>
+                          )}
                           {n.review_notes && (
                             <div className="text-[11px] font-mono text-muted-foreground">
                               <strong>Review:</strong> {n.review_notes}
@@ -406,6 +433,17 @@ export default async function AdminLeaveAuditPage({
                                 noticeId={n.id}
                                 staffName={n.staff_name}
                                 leaveTypeLabel={typeLabel}
+                                mode="application"
+                              />
+                            </div>
+                          )}
+                          {isPendingCancel && (
+                            <div className="pt-1">
+                              <LeaveReviewControls
+                                noticeId={n.id}
+                                staffName={n.staff_name}
+                                leaveTypeLabel={typeLabel}
+                                mode="cancellation"
                               />
                             </div>
                           )}

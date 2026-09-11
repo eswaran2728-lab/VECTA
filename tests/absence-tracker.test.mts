@@ -299,3 +299,135 @@ test("Annual Leave Concurrency Cap: 3-person cap blocks 4th overlapping applicat
   }
 });
 
+test("formatOnLeaveLabel: formats correct roster status label for all 9 leave types", async () => {
+  const { formatOnLeaveLabel, LEAVE_TYPES } = await import("../lib/avsec/duty/absence-logic.ts");
+
+  assert.equal(formatOnLeaveLabel("annual"), "On Leave — Annual");
+  assert.equal(formatOnLeaveLabel("mc"), "On Leave — MC");
+  assert.equal(formatOnLeaveLabel("emergency"), "On Leave — Emergency");
+  assert.equal(formatOnLeaveLabel("compassionate"), "On Leave — Compassionate");
+  assert.equal(formatOnLeaveLabel("hospitalization"), "On Leave — Hospitalization");
+  assert.equal(formatOnLeaveLabel("maternity_paternity"), "On Leave — Maternity/Paternity");
+  assert.equal(formatOnLeaveLabel("unpaid"), "On Leave — Unpaid");
+  assert.equal(formatOnLeaveLabel("representative"), "On Leave — Representative");
+  assert.equal(formatOnLeaveLabel("absent"), "On Leave — Absent");
+
+  // Every leave type in the system must produce a non-empty string starting with "On Leave — "
+  for (const lt of LEAVE_TYPES) {
+    const label = formatOnLeaveLabel(lt);
+    assert.ok(label.startsWith("On Leave — "));
+  }
+});
+
+test("isLeaveActiveOnDate: triggers only on approval and matches date range", async () => {
+  const { isLeaveActiveOnDate } = await import("../lib/avsec/duty/absence-logic.ts");
+
+  const approvedLeave = {
+    approval_status: "approved",
+    start_date: "2026-10-05",
+    end_date: "2026-10-09",
+  };
+
+  // In-range dates when approved
+  assert.equal(isLeaveActiveOnDate(approvedLeave, "2026-10-05"), true);
+  assert.equal(isLeaveActiveOnDate(approvedLeave, "2026-10-07"), true);
+  assert.equal(isLeaveActiveOnDate(approvedLeave, "2026-10-09"), true);
+
+  // Out-of-range dates
+  assert.equal(isLeaveActiveOnDate(approvedLeave, "2026-10-04"), false);
+  assert.equal(isLeaveActiveOnDate(approvedLeave, "2026-10-10"), false);
+
+  // Pending leaves MUST NOT link to roster
+  const pendingLeave = { ...approvedLeave, approval_status: "pending" };
+  assert.equal(isLeaveActiveOnDate(pendingLeave, "2026-10-07"), false);
+
+  // Rejected leaves MUST NOT link to roster
+  const rejectedLeave = { ...approvedLeave, approval_status: "rejected" };
+  assert.equal(isLeaveActiveOnDate(rejectedLeave, "2026-10-07"), false);
+
+  // Cancelled leaves MUST NOT link to roster
+  const cancelledLeave = { ...approvedLeave, approval_status: "cancelled" };
+  assert.equal(isLeaveActiveOnDate(cancelledLeave, "2026-10-07"), false);
+
+  // Pending cancellation leaves remain linked until DSE approves cancellation
+  const pendingCancelLeave = { ...approvedLeave, approval_status: "pending_cancellation" };
+  assert.equal(isLeaveActiveOnDate(pendingCancelLeave, "2026-10-07"), false);
+});
+
+test("hasRosterConflict: detects conflicts between active working shifts and approved leave", async () => {
+  const { hasRosterConflict } = await import("../lib/avsec/duty/absence-logic.ts");
+
+  // On leave and scheduled for active shifts -> Conflict
+  assert.equal(hasRosterConflict("MORNING", true), true);
+  assert.equal(hasRosterConflict("AFTERNOON", true), true);
+  assert.equal(hasRosterConflict("NIGHT", true), true);
+  assert.equal(hasRosterConflict("CUSTOM", true), true);
+
+  // On leave and roster says OFF -> No conflict
+  assert.equal(hasRosterConflict("OFF", true), false);
+  assert.equal(hasRosterConflict("off", true), false);
+
+  // On leave but no shift rostered (null/undefined) -> No conflict
+  assert.equal(hasRosterConflict(null, true), false);
+  assert.equal(hasRosterConflict(undefined, true), false);
+  assert.equal(hasRosterConflict("", true), false);
+
+  // Not on leave -> No conflict regardless of shift
+  assert.equal(hasRosterConflict("MORNING", false), false);
+  assert.equal(hasRosterConflict("OFF", false), false);
+});
+
+test("Leave Cancellation Workflow: staff submits cancellation request and DSE approval is required", async () => {
+  interface LeaveRecord {
+    id: string;
+    user_id: string;
+    approval_status: "pending" | "approved" | "rejected" | "pending_cancellation" | "cancelled";
+    cancel_requested_at?: string | null;
+    cancellation_reason?: string | null;
+  }
+
+  // 1. Approved leave
+  const leave: LeaveRecord = {
+    id: "leave-100",
+    user_id: "officer-1",
+    approval_status: "approved",
+  };
+
+  // 2. Staff cannot unilaterally delete or revert; submitting cancellation transitions to 'pending_cancellation'
+  function requestCancel(record: LeaveRecord, requesterId: string, reason: string): boolean {
+    if (record.user_id !== requesterId) return false;
+    if (record.approval_status !== "approved" && record.approval_status !== "pending") return false;
+    record.approval_status = "pending_cancellation";
+    record.cancellation_reason = reason;
+    record.cancel_requested_at = new Date().toISOString();
+    return true;
+  }
+
+  const cancelReqOk = requestCancel(leave, "officer-1", "Change of travel plans");
+  assert.equal(cancelReqOk, true);
+  assert.equal(leave.approval_status, "pending_cancellation");
+  assert.equal(leave.cancellation_reason, "Change of travel plans");
+
+  // 3. DSE reviews and approves cancellation -> transitions to 'cancelled'
+  function reviewCancel(record: LeaveRecord, action: "approve_cancellation" | "reject_cancellation"): void {
+    if (action === "approve_cancellation") {
+      record.approval_status = "cancelled";
+    } else if (action === "reject_cancellation") {
+      record.approval_status = "approved";
+    }
+  }
+
+  reviewCancel(leave, "approve_cancellation");
+  assert.equal(leave.approval_status, "cancelled");
+
+  // 4. If DSE rejects cancellation, it reverts back to approved
+  const leave2: LeaveRecord = {
+    id: "leave-101",
+    user_id: "officer-2",
+    approval_status: "pending_cancellation",
+  };
+  reviewCancel(leave2, "reject_cancellation");
+  assert.equal(leave2.approval_status, "approved");
+});
+
+

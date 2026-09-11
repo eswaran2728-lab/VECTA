@@ -3,9 +3,15 @@
 import { useState } from "react";
 import type { Shift, RosterCell as RosterCellRow } from "@/lib/avsec/duty/roster-queries";
 import { upsertRosterCell, clearRosterCell } from "@/lib/avsec/duty/roster-actions";
+import { LEAVE_TYPE_ICONS, type LeaveType } from "@/lib/avsec/duty/absence-logic";
 
 function hhmm(t: string | null | undefined) {
   return t ? t.slice(0, 5) : "";
+}
+
+export interface LeaveInfoProp {
+  leaveType: LeaveType;
+  leaveLabel: string;
 }
 
 export function RosterCell({
@@ -15,6 +21,7 @@ export function RosterCell({
   week,
   shifts,
   cell,
+  leaveInfo,
 }: {
   station: string;
   team: string;
@@ -22,6 +29,7 @@ export function RosterCell({
   week: string;
   shifts: Shift[];
   cell?: RosterCellRow;
+  leaveInfo?: LeaveInfoProp;
 }) {
   const [editing, setEditing] = useState(false);
   const [shiftCode, setShiftCode] = useState(cell?.shift_code ?? "");
@@ -39,36 +47,67 @@ export function RosterCell({
 
   if (!editing) {
     const preset = shifts.find((s) => s.code === cell?.shift_code);
+    const isWorkingShift = Boolean(cell?.shift_code && cell.shift_code.toUpperCase() !== "OFF");
+    const hasConflict = Boolean(leaveInfo && isWorkingShift);
+
     return (
       <button
         type="button"
         onClick={() => setEditing(true)}
-        className="w-full min-h-[64px] p-2 text-left transition-colors"
+        className="w-full min-h-[68px] p-2 text-left transition-colors flex flex-col justify-between"
         style={{
-          background: cell ? "var(--panel2)" : "transparent",
-          border: cell ? "1px solid var(--line)" : "1px dashed var(--line3)",
+          background: hasConflict
+            ? "rgba(244, 63, 94, 0.08)"
+            : leaveInfo
+              ? "rgba(245, 158, 11, 0.06)"
+              : cell
+                ? "var(--panel2)"
+                : "transparent",
+          border: hasConflict
+            ? "1px solid rgba(244, 63, 94, 0.4)"
+            : leaveInfo
+              ? "1px solid rgba(245, 158, 11, 0.35)"
+              : cell
+                ? "1px solid var(--line)"
+                : "1px dashed var(--line3)",
         }}
       >
-        {cell ? (
-          <>
-            <p className="t-mono text-[10px] font-semibold" style={{ color: "var(--gold)" }}>
-              {preset?.label ?? cell.shift_code}
+        <div>
+          {cell ? (
+            <>
+              <p className="t-mono text-[10px] font-semibold" style={{ color: "var(--gold)" }}>
+                {preset?.label ?? cell.shift_code}
+              </p>
+              {(cell.start_time || cell.end_time) && (
+                <p className="t-mono text-[9px] mt-0.5" style={{ color: "var(--soft)" }}>
+                  {hhmm(cell.start_time)}–{hhmm(cell.end_time)}
+                </p>
+              )}
+              {cell.notes && (
+                <p className="text-[10px] mt-0.5 truncate" style={{ color: "var(--faint)" }}>
+                  {cell.notes}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="t-mono text-[10px]" style={{ color: "var(--faintest)" }}>
+              + Set
             </p>
-            {(cell.start_time || cell.end_time) && (
-              <p className="t-mono text-[9px] mt-0.5" style={{ color: "var(--soft)" }}>
-                {hhmm(cell.start_time)}–{hhmm(cell.end_time)}
-              </p>
+          )}
+        </div>
+
+        {/* Layered On-Leave Status & Conflict Warning */}
+        {leaveInfo && (
+          <div className="mt-1.5 space-y-1">
+            <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[8.5px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              {LEAVE_TYPE_ICONS[leaveInfo.leaveType] || "🌴"} {leaveInfo.leaveLabel}
+            </span>
+            {hasConflict && (
+              <span className="block font-mono text-[8px] font-bold text-rose-400">
+                ⚠️ Reassignment Needed
+              </span>
             )}
-            {cell.notes && (
-              <p className="text-[10px] mt-0.5 truncate" style={{ color: "var(--faint)" }}>
-                {cell.notes}
-              </p>
-            )}
-          </>
-        ) : (
-          <p className="t-mono text-[10px]" style={{ color: "var(--faintest)" }}>
-            + Set
-          </p>
+          </div>
         )}
       </button>
     );

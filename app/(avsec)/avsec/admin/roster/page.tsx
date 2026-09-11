@@ -6,8 +6,10 @@ import {
   getRosterOfficers,
   getRosterWeek,
   getStationTeams,
+  getApprovedLeavesForRoster,
   type RosterCell as RosterCellRow,
 } from "@/lib/avsec/duty/roster-queries";
+import { formatOnLeaveLabel, type LeaveType } from "@/lib/avsec/duty/absence-logic";
 import { addStationTeam, setTeamScheduleRange, deleteShift } from "@/lib/avsec/duty/roster-actions";
 import { RosterCell } from "@/components/avsec/admin/RosterCell";
 import { CreateScheduleForm } from "@/components/avsec/admin/CreateScheduleForm";
@@ -50,15 +52,56 @@ export default async function AdminRosterPage({
   const search = searchParams.q || "";
   const page = Math.max(1, Number(searchParams.page) || 1);
 
-  const [shifts, officers, rosterRows, stationTeams] = await Promise.all([
+  const [shifts, officers, rosterRows, stationTeams, approvedLeaves] = await Promise.all([
     getShifts(),
     getRosterOfficers(station, search),
     getRosterWeek(station, weekStart, weekEnd),
     getStationTeams(station),
+    getApprovedLeavesForRoster(station, weekStart, weekEnd),
   ]);
 
   const cellMap = new Map<string, RosterCellRow>();
   for (const row of rosterRows) cellMap.set(`${row.team}|${row.roster_date}`, row);
+
+  // Map approved leaves to officer ID and date
+  const officerLeaveMap = new Map<string, { leaveType: LeaveType; leaveLabel: string }>();
+  for (const leave of approvedLeaves) {
+    for (const date of days) {
+      if (leave.start_date <= date && leave.end_date >= date) {
+        officerLeaveMap.set(`${leave.user_id}|${date}`, {
+          leaveType: leave.leave_type,
+          leaveLabel: formatOnLeaveLabel(leave.leave_type),
+        });
+      }
+    }
+  }
+
+  // Detect coverage conflicts (approved leave overlapping an active working shift)
+  const coverageConflicts: Array<{
+    officerName: string;
+    officerStaffNo: string;
+    team: string;
+    date: string;
+    shiftCode: string;
+    leaveLabel: string;
+  }> = [];
+
+  for (const o of officers) {
+    for (const date of days) {
+      const leave = officerLeaveMap.get(`${o.id}|${date}`);
+      const cell = cellMap.get(`${o.team}|${date}`);
+      if (leave && cell && cell.shift_code && cell.shift_code.toUpperCase() !== "OFF") {
+        coverageConflicts.push({
+          officerName: o.name,
+          officerStaffNo: o.staff_no,
+          team: o.team,
+          date,
+          shiftCode: cell.shift_code,
+          leaveLabel: leave.leaveLabel,
+        });
+      }
+    }
+  }
 
   const totalPages = Math.max(1, Math.ceil(officers.length / PAGE_SIZE));
   const pageOfficers = officers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -85,6 +128,45 @@ export default async function AdminRosterPage({
         </div>
 
         {searchParams.error && <div className="disclaimer-band">{searchParams.error}</div>}
+
+        {/* Coverage Conflict Alert Banner */}
+        {coverageConflicts.length > 0 && (
+          <div className="card p-4 border-l-4 border-l-rose-500 bg-rose-500/5 space-y-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">⚠️</span>
+                <span className="font-display text-sm font-bold text-rose-400 uppercase tracking-wide">
+                  Coverage Reassignment Needed ({coverageConflicts.length} Conflict{coverageConflicts.length > 1 ? "s" : ""})
+                </span>
+              </div>
+              <span className="font-mono text-[10px] text-muted-foreground">
+                Manual DSE Reassignment Required
+              </span>
+            </div>
+            <p className="font-mono text-xs text-muted-foreground">
+              The following officers have approved leave overlapping an active scheduled shift. Coverage is not automatically reassigned:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
+              {coverageConflicts.map((c, i) => (
+                <div
+                  key={i}
+                  className="p-2.5 rounded bg-background/80 border border-rose-500/30 text-xs font-mono space-y-0.5"
+                >
+                  <div className="font-bold text-foreground flex items-center justify-between">
+                    <span>{c.officerName}</span>
+                    <span className="text-[10px] text-rose-400">{c.team}</span>
+                  </div>
+                  <div className="text-muted-foreground text-[11px]">
+                    {dayLabel(c.date)} · Shift: <strong className="text-foreground">{c.shiftCode}</strong>
+                  </div>
+                  <div className="text-amber-400 text-[10px] font-semibold">
+                    {c.leaveLabel}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="card p-4 flex flex-wrap items-end gap-3">
           <form method="get" className="flex items-end gap-3 flex-wrap">
@@ -186,24 +268,28 @@ export default async function AdminRosterPage({
                         </div>
                       </div>
                     </td>
-                    {days.map((date) => (
-                      <td key={date} className="p-1 align-top min-w-[140px]">
-                        {o.team ? (
-                          <RosterCell
-                            station={station}
-                            team={o.team}
-                            date={date}
-                            week={weekStart}
-                            shifts={shifts}
-                            cell={cellMap.get(`${o.team}|${date}`)}
-                          />
-                        ) : (
-                          <p className="font-mono text-[10px] p-2 text-muted-foreground/60">
-                            No team set
-                          </p>
-                        )}
-                      </td>
-                    ))}
+                    {days.map((date) => {
+                      const leaveInfo = officerLeaveMap.get(`${o.id}|${date}`);
+                      return (
+                        <td key={date} className="p-1 align-top min-w-[140px]">
+                          {o.team ? (
+                            <RosterCell
+                              station={station}
+                              team={o.team}
+                              date={date}
+                              week={weekStart}
+                              shifts={shifts}
+                              cell={cellMap.get(`${o.team}|${date}`)}
+                              leaveInfo={leaveInfo}
+                            />
+                          ) : (
+                            <p className="font-mono text-[10px] p-2 text-muted-foreground/60">
+                              No team set
+                            </p>
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>

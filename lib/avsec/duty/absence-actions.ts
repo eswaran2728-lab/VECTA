@@ -193,12 +193,80 @@ export interface LeaveReviewResult {
   success: boolean;
 }
 
+export type LeaveReviewAction =
+  | "approve"
+  | "reject"
+  | "approve_cancellation"
+  | "reject_cancellation";
+
 /**
- * Server action for DSE or Management to Approve or Reject a Leave Application.
+ * Server action for a staff member to request cancellation of an applied or approved leave.
+ * Unilateral self-cancellation is strictly forbidden; submitting routes to DSE/Management for review.
+ */
+export async function requestLeaveCancellation(input: {
+  noticeId: string;
+  reason?: string;
+}): Promise<LeaveReviewResult> {
+  const profile = await requireProfile();
+  const supabase = createAdminClient();
+
+  const { data: notice, error: fetchErr } = await supabase
+    .from("absence_notices")
+    .select("id, user_id, approval_status, leave_type")
+    .eq("id", input.noticeId)
+    .single();
+
+  if (fetchErr || !notice) {
+    return { error: "Leave application record not found.", success: false };
+  }
+
+  const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
+  if (notice.user_id !== profile.id && !isOrgWide) {
+    return { error: "Unauthorized: You can only request cancellation for your own leave applications.", success: false };
+  }
+
+  if (notice.approval_status === "cancelled") {
+    return { error: "This leave application is already cancelled.", success: false };
+  }
+
+  if (notice.approval_status === "rejected") {
+    return { error: "Cannot request cancellation for a rejected application.", success: false };
+  }
+
+  if (notice.approval_status === "pending_cancellation") {
+    return { error: "A cancellation request is already pending review.", success: false };
+  }
+
+  const now = new Date().toISOString();
+  const { error: updateErr } = await supabase
+    .from("absence_notices")
+    .update({
+      approval_status: "pending_cancellation",
+      cancel_requested_at: now,
+      cancellation_reason: input.reason?.trim() || null,
+    })
+    .eq("id", input.noticeId);
+
+  if (updateErr) {
+    console.error("[requestLeaveCancellation] Update Error:", updateErr);
+    return { error: `Failed to submit cancellation request: ${updateErr.message}`, success: false };
+  }
+
+  revalidatePath("/avsec/duty");
+  revalidatePath("/avsec/duty/absences");
+  revalidatePath("/avsec/admin/absences");
+  revalidatePath("/avsec/admin/roster");
+
+  return { error: null, success: true };
+}
+
+/**
+ * Server action for DSE or Management to Approve or Reject a Leave Application
+ * or Review a Leave Cancellation Request.
  */
 export async function reviewLeaveApplication(input: {
   noticeId: string;
-  action: "approve" | "reject";
+  action: LeaveReviewAction;
   reviewNotes?: string;
 }): Promise<LeaveReviewResult> {
   const profile = await requireProfile();
@@ -214,7 +282,7 @@ export async function reviewLeaveApplication(input: {
   // Fetch application to verify station scope for DSE and check concurrency cap
   const { data: notice, error: fetchErr } = await supabase
     .from("absence_notices")
-    .select("id, station, team, user_id, staff_name, leave_type, start_date, end_date")
+    .select("id, station, team, user_id, staff_name, leave_type, start_date, end_date, approval_status")
     .eq("id", input.noticeId)
     .single();
 
@@ -260,7 +328,19 @@ export async function reviewLeaveApplication(input: {
     }
   }
 
-  const newStatus: LeaveApprovalStatus = input.action === "approve" ? "approved" : "rejected";
+  let newStatus: LeaveApprovalStatus;
+  if (input.action === "approve") {
+    newStatus = "approved";
+  } else if (input.action === "reject") {
+    newStatus = "rejected";
+  } else if (input.action === "approve_cancellation") {
+    newStatus = "cancelled";
+  } else if (input.action === "reject_cancellation") {
+    newStatus = "approved";
+  } else {
+    return { error: "Invalid review action.", success: false };
+  }
+
   const reviewedAt = new Date().toISOString();
 
   const { error: updateErr } = await supabase
@@ -281,6 +361,8 @@ export async function reviewLeaveApplication(input: {
   revalidatePath("/avsec/duty");
   revalidatePath("/avsec/duty/absences");
   revalidatePath("/avsec/admin/absences");
+  revalidatePath("/avsec/admin/roster");
 
   return { error: null, success: true };
 }
+
