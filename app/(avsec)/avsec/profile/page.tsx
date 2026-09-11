@@ -26,6 +26,7 @@ export default async function ProfilePage() {
     ...(isMonitor ? [{ label: "Dashboard", href: "/avsec/dashboard" }] : []),
     ...((ORG_WIDE_ROLES as readonly string[]).includes(profile.role)
       ? [
+          { label: "Attendance & OT Monitor", href: "/avsec/admin/attendance-monitor" },
           { label: "Attendance Report", href: "/avsec/admin/attendance-report" },
           { label: "Leave & Absence Audit", href: "/avsec/admin/absences" },
           { label: "Overtime Records", href: "/avsec/duty/overtime" },

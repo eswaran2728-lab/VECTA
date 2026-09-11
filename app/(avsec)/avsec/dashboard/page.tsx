@@ -126,6 +126,9 @@ export default async function DashboardPage({
 
         {isOrgWideViewer && (
           <div className="grid grid-cols-2 gap-2">
+            <Link href="/avsec/admin/attendance-monitor" className="btn-secondary text-center col-span-2 !border-primary/40 !text-primary hover:!bg-primary/10">
+              📊 Attendance & Overtime Monitor →
+            </Link>
             <Link href="/avsec/dashboard/duty-monitor" className="btn-secondary text-center">
               Check-In Monitoring →
             </Link>
@@ -133,7 +136,7 @@ export default async function DashboardPage({
               Duty Heat Map →
             </Link>
             <Link href="/avsec/admin/attendance-report" className="btn-secondary text-center col-span-2">
-              Attendance Report →
+              Attendance Anomaly Report →
             </Link>
           </div>
         )}

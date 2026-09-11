@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import { requireProfile } from "@/lib/avsec/auth";
 import { getOvertimeRequestById } from "@/lib/avsec/duty/overtime-queries";
-import { endorseOvertimeRequest, approveOvertimeRequest, rejectOvertimeRequest, withdrawOvertimeRequest } from "@/lib/avsec/duty/overtime-actions";
+import { approveOvertimeRequest, rejectOvertimeRequest, withdrawOvertimeRequest } from "@/lib/avsec/duty/overtime-actions";
 import { createClient } from "@/lib/supabase/server";
-import { ORG_WIDE_ROLES, ROLE_RANK, type UserRole } from "@/lib/avsec/reference-data";
+import { ROLE_RANK, type UserRole } from "@/lib/avsec/reference-data";
 import { formatDateMY, formatDateTimeMY } from "@/lib/avsec/datetime";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -32,7 +32,6 @@ export default async function OvertimeDetailPage({
   const params = await paramsPromise;
   const searchParams = await searchParamsPromise;
   const profile = await requireProfile();
-  const orgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
 
   // RLS scopes this to requests the caller may see (own, or monitor within rank/station/team).
   const request = await getOvertimeRequestById(params.id);
@@ -47,21 +46,10 @@ export default async function OvertimeDetailPage({
 
   const submitter = profileById.get(request.profile_id);
   const mine = request.profile_id === profile.id;
-  const viewerRank = ROLE_RANK[profile.role];
-  const submitterRank = submitter ? ROLE_RANK[submitter.role] : 0;
-  const sameScope =
-    viewerRank >= ROLE_RANK.ENFORCEMENT ||
-    (profile.station === request.station && (profile.team ?? "") === (request.team ?? ""));
-  const canSettle = !mine && viewerRank > submitterRank && sameScope;
-  // DSE endorses a pending request; Management/Admin only give final approval once it's
-  // endorsed — no skipping straight from pending. Either DSE or Management/Admin can still
-  // reject at the stage they'd otherwise act on.
-  const canEndorse = canSettle && profile.role === "DSE" && request.status === "pending";
-  const canApprove = canSettle && viewerRank >= ROLE_RANK.MANAGEMENT && request.status === "endorsed";
-  const canReject =
-    canSettle &&
-    ((profile.role === "DSE" && request.status === "pending") ||
-      (viewerRank >= ROLE_RANK.MANAGEMENT && ["pending", "endorsed"].includes(request.status)));
+  const viewerRank = ROLE_RANK[profile.role] ?? 0;
+  const canReview = !mine && (profile.role === "DSE" ? (profile.station === request.station) : viewerRank >= ROLE_RANK.MANAGEMENT) && request.status === "pending";
+  const canApprove = canReview;
+  const canReject = canReview;
   const canWithdraw = mine && request.status === "pending";
 
   const statusClass = STATUS_CLASS[request.status] ?? "text-muted-foreground border-border";
@@ -114,23 +102,15 @@ export default async function OvertimeDetailPage({
           </div>
         )}
 
-        {(canEndorse || canApprove || canReject || canWithdraw) && (
+        {(canApprove || canReject || canWithdraw) && (
           <div className="vecta-panel space-y-3 !py-4">
             <p className="vecta-eyebrow">Actions</p>
             <div className="flex flex-wrap gap-2">
-              {canEndorse && (
-                <form action={endorseOvertimeRequest}>
-                  <input type="hidden" name="id" value={request.id} />
-                  <button type="submit" className="vecta-btn-primary !h-11 !w-auto px-6">
-                    Endorse
-                  </button>
-                </form>
-              )}
               {canApprove && (
                 <form action={approveOvertimeRequest}>
                   <input type="hidden" name="id" value={request.id} />
                   <button type="submit" className="vecta-btn-primary !h-11 !w-auto px-6">
-                    Approve
+                    Approve Overtime
                   </button>
                 </form>
               )}

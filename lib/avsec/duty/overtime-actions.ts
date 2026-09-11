@@ -85,43 +85,118 @@ export async function endorseOvertimeRequest(formData: FormData) {
   revalidatePath("/avsec/duty/overtime");
 }
 
+export async function reviewOvertimeRequest(input: {
+  requestId: string;
+  action: "approve" | "reject";
+  reviewNotes?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const profile = await requireProfile();
+    const { requestId, action, reviewNotes } = input;
+    if (!requestId) return { success: false, error: "Missing request ID." };
+
+    const isDse = profile.role === "DSE";
+    const isMgmt = (ROLE_RANK[profile.role] ?? 0) >= ROLE_RANK.MANAGEMENT;
+
+    if (!isDse && !isMgmt) {
+      return { success: false, error: "Only DSE or Management can review overtime requests." };
+    }
+
+    const supabase = await createClient();
+    const { data: request, error: fetchErr } = await supabase
+      .from("overtime_requests")
+      .select("id, profile_id, station, team, work_date, payable_hours, category, status")
+      .eq("id", requestId)
+      .maybeSingle();
+
+    if (fetchErr || !request) {
+      return { success: false, error: fetchErr?.message ?? "Overtime record not found." };
+    }
+
+    // DSE branch scoping
+    if (isDse && profile.station && request.station !== profile.station) {
+      return { success: false, error: "You can only review overtime records for your own station/branch." };
+    }
+
+    const nowIso = new Date().toISOString();
+    if (action === "approve") {
+      const { data: updated, error: updateErr } = await supabase
+        .from("overtime_requests")
+        .update({
+          status: "approved",
+          approved_by: profile.id,
+          approved_at: nowIso,
+          rejection_reason: reviewNotes?.trim() || null,
+        })
+        .eq("id", requestId)
+        .select("id, profile_id, station, team, work_date, payable_hours, category")
+        .maybeSingle();
+
+      if (updateErr) return { success: false, error: updateErr.message };
+
+      if (updated) {
+        const { data: submitter } = await supabase
+          .from("profiles")
+          .select("name, staff_no")
+          .eq("id", updated.profile_id)
+          .maybeSingle();
+
+        if (submitter) {
+          await notifyOvertimeApproval({
+            requestId: updated.id,
+            submitterName: submitter.name,
+            submitterStaffNo: submitter.staff_no,
+            station: updated.station,
+            team: updated.team,
+            workDate: updated.work_date,
+            payableHours: updated.payable_hours ?? 0,
+            category: updated.category,
+            approvedByName: profile.name,
+          });
+        }
+      }
+    } else {
+      const reason = reviewNotes?.trim() || "Rejected by reviewer.";
+      const { error: updateErr } = await supabase
+        .from("overtime_requests")
+        .update({
+          status: "rejected",
+          approved_by: profile.id,
+          approved_at: nowIso,
+          rejection_reason: reason,
+        })
+        .eq("id", requestId);
+
+      if (updateErr) return { success: false, error: updateErr.message };
+    }
+
+    revalidatePath("/avsec/duty/overtime");
+    revalidatePath(`/avsec/duty/overtime/${requestId}`);
+    revalidatePath("/avsec/admin/attendance-monitor");
+    revalidatePath("/avsec/admin/attendance-report");
+    revalidatePath("/avsec/duty");
+    return { success: true };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to review overtime record.";
+    return { success: false, error: message };
+  }
+}
+
 export async function approveOvertimeRequest(formData: FormData) {
   const profile = await requireProfile();
   const id = String(formData.get("id") || "");
   if (!id) return;
 
-  if (ROLE_RANK[profile.role] < ROLE_RANK.MANAGEMENT) {
-    redirect(backTo(id) + "?error=" + encodeURIComponent("Only Management or Admin can give final approval."));
+  const isDse = profile.role === "DSE";
+  const isMgmt = (ROLE_RANK[profile.role] ?? 0) >= ROLE_RANK.MANAGEMENT;
+
+  if (!isDse && !isMgmt) {
+    redirect(backTo(id) + "?error=" + encodeURIComponent("Only DSE or Management can review overtime."));
   }
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("overtime_requests")
-    .update({ status: "approved", approved_by: profile.id, approved_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("status", "endorsed")
-    .select("id, profile_id, station, team, work_date, payable_hours, category")
-    .maybeSingle();
-
-  if (error) redirect(backTo(id) + "?error=" + encodeURIComponent(error.message));
-
-  if (data) {
-    const { data: submitter } = await supabase.from("profiles").select("name, staff_no").eq("id", data.profile_id).maybeSingle();
-    if (submitter) {
-      // Awaited so the send completes before this serverless invocation ends — the
-      // function itself is still best-effort (try/catch, never throws).
-      await notifyOvertimeApproval({
-        requestId: data.id,
-        submitterName: submitter.name,
-        submitterStaffNo: submitter.staff_no,
-        station: data.station,
-        team: data.team,
-        workDate: data.work_date,
-        payableHours: data.payable_hours ?? 0,
-        category: data.category,
-        approvedByName: profile.name,
-      });
-    }
+  const res = await reviewOvertimeRequest({ requestId: id, action: "approve" });
+  if (!res.success) {
+    redirect(backTo(id) + "?error=" + encodeURIComponent(res.error ?? "Failed to approve."));
   }
 
   revalidatePath(backTo(id));
@@ -129,25 +204,15 @@ export async function approveOvertimeRequest(formData: FormData) {
 }
 
 export async function rejectOvertimeRequest(formData: FormData) {
-  const profile = await requireProfile();
   const id = String(formData.get("id") || "");
   const reason = String(formData.get("rejection_reason") || "").trim();
   if (!id) return;
   if (!reason) redirect(backTo(id) + "?error=" + encodeURIComponent("A rejection reason is required."));
 
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("overtime_requests")
-    .update({
-      status: "rejected",
-      approved_by: profile.id,
-      approved_at: new Date().toISOString(),
-      rejection_reason: reason,
-    })
-    .eq("id", id)
-    .in("status", ["pending", "endorsed"]);
-
-  if (error) redirect(backTo(id) + "?error=" + encodeURIComponent(error.message));
+  const res = await reviewOvertimeRequest({ requestId: id, action: "reject", reviewNotes: reason });
+  if (!res.success) {
+    redirect(backTo(id) + "?error=" + encodeURIComponent(res.error ?? "Failed to reject."));
+  }
 
   revalidatePath(backTo(id));
   revalidatePath("/avsec/duty/overtime");
