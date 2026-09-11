@@ -80,15 +80,10 @@ export async function submitDutyCheckIn(input: unknown): Promise<ActionResult> {
   if (!roster) return { ok: false, error: "No roster set for today — contact your supervisor." };
 
   // Both check-in and check-out must happen inside one of the station's marked zones.
-  // No zones defined at all means nothing to enforce. When GPS failed client-side, the
-  // officer instead picked a zone manually — that choice is re-verified server-side
-  // (the zone must actually belong to this station and be active) rather than trusted
-  // outright, same "never trust the client's verdict alone" rule as the GPS path.
+  // Zone detection is strictly GPS-based — comparing device coordinates against the
+  // defined boundary polygon. No manual fallback/override exists for any role.
   const { zones, match: gpsMatch } = await matchStationZone(supabase, profile.station, values.lng, values.lat);
-  const manualZone = values.manual_zone_id ? zones.find((z) => z.id === values.manual_zone_id) ?? null : null;
-  const isManual = !!manualZone;
-  const match = isManual ? manualZone : gpsMatch;
-  const insideFence = isManual ? true : zones.length === 0 ? null : !!match;
+  const insideFence = zones.length === 0 ? null : !!gpsMatch;
 
   if (insideFence === false) {
     return {
@@ -142,14 +137,14 @@ export async function submitDutyCheckIn(input: unknown): Promise<ActionResult> {
       team: profile.team || null,
       duty_date: dutyDate,
       shift_code: roster.shift_code,
-      zone_id: match?.id ?? null,
+      zone_id: gpsMatch?.id ?? null,
       check_in_at: now.toISOString(),
       check_in_lat: values.lat,
       check_in_lng: values.lng,
       check_in_accuracy_m: values.accuracy_m,
       check_in_inside_fence: insideFence,
       check_in_offline: values.offline,
-      check_in_manual_zone: isManual,
+      check_in_manual_zone: false,
       status: lateMinutes > 0 ? "late" : "present",
       late_minutes: lateMinutes,
       late_remark: lateMinutes > 0 ? values.late_remark.trim() : null,
@@ -232,11 +227,9 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
 
   // Checking out must happen inside one of the station's marked zones too — not
   // necessarily the same one checked in at, since staff patrol/move during the shift.
-  // Same manual-zone fallback and server-side re-verification as check-in.
+  // Zone detection is strictly GPS-based — no manual fallback/override for any role.
   const { zones, match: gpsMatch } = await matchStationZone(supabase, profile.station, values.lng, values.lat);
-  const manualZone = values.manual_zone_id ? zones.find((z) => z.id === values.manual_zone_id) ?? null : null;
-  const isManual = !!manualZone;
-  const insideFence = isManual ? true : zones.length === 0 ? null : !!gpsMatch;
+  const insideFence = zones.length === 0 ? null : !!gpsMatch;
 
   if (insideFence === false) {
     return {
@@ -285,7 +278,7 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
       check_out_lat: values.lat,
       check_out_lng: values.lng,
       check_out_inside_fence: insideFence,
-      check_out_manual_zone: isManual,
+      check_out_manual_zone: false,
       early_out_minutes: earlyMinutes,
       early_out_remark: earlyMinutes > 0 ? values.early_out_remark.trim() : null,
       late_out_minutes: lateOutMinutes,

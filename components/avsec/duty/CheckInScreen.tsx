@@ -104,16 +104,11 @@ export function CheckInScreen({
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [leaveNotice, setLeaveNotice] = useState<AbsenceNoticeRow | null>(initialAbsence);
 
-  // GPS-denial fallback
-  const [geoFailed, setGeoFailed] = useState(false);
-  const [manualZoneId, setManualZoneId] = useState<string>("");
-
   const { submit: submitCheckIn, pending: submittingIn } = useOfflineSubmit("duty_checkin", submitDutyCheckIn);
   const { submit: submitCheckOut, pending: submittingOut } = useOfflineSubmit("duty_checkout", submitDutyCheckOut);
   const submitting = submittingIn || submittingOut;
 
   const isOff = roster?.shift_code === "OFF";
-  const showFlow = !!roster && (!isOff || forceShow || !!record);
   const checkedIn = !!record?.check_in_at;
 
   useEffect(() => {
@@ -129,9 +124,7 @@ export function CheckInScreen({
   }, [roster, isOff, today]);
 
   const insideZone = useMemo(() => matchZone(position, zones), [position, zones]);
-  const manualZone = useMemo(() => zones.find((z) => z.id === manualZoneId) ?? null, [zones, manualZoneId]);
-  const activeZone = insideZone ?? manualZone;
-  const zoneBlocked = zones.length > 0 && !activeZone;
+  const zoneBlocked = zones.length > 0 && !insideZone;
 
   // Lateness / early-out calculations
   const predictedLate = useMemo(() => {
@@ -149,7 +142,6 @@ export function CheckInScreen({
   useEffect(() => {
     if (typeof window === "undefined" || !("geolocation" in navigator)) {
       setGeoError("Geolocation not supported on this device.");
-      setGeoFailed(true);
       return;
     }
     const id = navigator.geolocation.watchPosition(
@@ -162,8 +154,7 @@ export function CheckInScreen({
         setGeoError(null);
       },
       (err) => {
-        setGeoError(err.message);
-        setGeoFailed(true);
+        setGeoError(err.message || "Location permission denied or unavailable.");
       },
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 5000 }
     );
@@ -189,8 +180,9 @@ export function CheckInScreen({
       setPosition(fresh);
       setGeoError(null);
       return fresh;
-    } catch {
-      setGeoFailed(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Unable to detect your location. Please enable GPS and try again.";
+      setGeoError(msg);
       return position;
     } finally {
       setLocating(false);
@@ -200,13 +192,13 @@ export function CheckInScreen({
   async function handleCheckIn() {
     setSubmitError(null);
     const fresh = await getFreshPosition();
-    if (!fresh && !manualZone) {
-      setSubmitError("Cannot determine location. Please allow GPS or select a zone.");
+    if (!fresh) {
+      setSubmitError("Unable to detect your location — please enable GPS and try again.");
       return;
     }
-    const zone = matchZone(fresh, zones) ?? manualZone;
+    const zone = matchZone(fresh, zones);
     if (zones.length > 0 && !zone) {
-      setSubmitError("You are outside the duty geofence. Move closer to the station to check in.");
+      setSubmitError("You are outside the duty geofence. Move within an authorized station zone to check in.");
       return;
     }
     if (requiresRemark && !remark.trim()) {
@@ -215,15 +207,14 @@ export function CheckInScreen({
     }
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
     const outcome = await submitCheckIn({
-      lat: fresh?.lat ?? manualZone!.center_lat,
-      lng: fresh?.lng ?? manualZone!.center_lng,
-      accuracy: fresh?.accuracy ?? 0,
+      lat: fresh.lat,
+      lng: fresh.lng,
+      accuracy: fresh.accuracy,
       inside_fence: !!zone,
       zone_id: zone?.id,
       late_remark: remark,
       offline,
       client_timestamp: new Date().toISOString(),
-      manual_zone_id: manualZone?.id ?? "",
     });
     if (outcome.kind === "error") {
       setSubmitError(outcome.message);
@@ -240,13 +231,13 @@ export function CheckInScreen({
   async function handleCheckOut() {
     setSubmitError(null);
     const fresh = await getFreshPosition();
-    if (!fresh && !manualZone) {
-      setSubmitError("Cannot determine location. Please allow GPS or select a zone.");
+    if (!fresh) {
+      setSubmitError("Unable to detect your location — please enable GPS and try again.");
       return;
     }
-    const zone = matchZone(fresh, zones) ?? manualZone;
+    const zone = matchZone(fresh, zones);
     if (zones.length > 0 && !zone) {
-      setSubmitError("You are outside the duty geofence. Move closer to the station to check out.");
+      setSubmitError("You are outside the duty geofence. Move within an authorized station zone to check out.");
       return;
     }
     if (requiresRemark && !remark.trim()) {
@@ -255,13 +246,12 @@ export function CheckInScreen({
     }
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
     const outcome = await submitCheckOut({
-      lat: fresh?.lat ?? manualZone!.center_lat,
-      lng: fresh?.lng ?? manualZone!.center_lng,
+      lat: fresh.lat,
+      lng: fresh.lng,
       early_out_remark: remark,
       late_out_remark: remark,
       offline,
       client_timestamp: new Date().toISOString(),
-      manual_zone_id: manualZone?.id ?? "",
     });
     if (outcome.kind === "error") {
       setSubmitError(outcome.message);
@@ -481,7 +471,13 @@ export function CheckInScreen({
       )}
 
       <div className="vecta-panel overflow-hidden !p-0">
-        <DutyMap position={position} zones={zones} />
+        <DutyMap
+          position={position}
+          zones={zones}
+          insideZone={insideZone}
+          locating={locating}
+          station={zones[0]?.station}
+        />
       </div>
 
       {checkedIn && (
@@ -490,25 +486,37 @@ export function CheckInScreen({
         </div>
       )}
 
-      {/* Manual Zone Selector (GPS Denial fallback) */}
-      {geoFailed && zones.length > 0 && (
-        <div className="vecta-panel space-y-2 border-l-[3px] border-l-warning">
-          <p className="vecta-eyebrow text-warning">GPS signal unavailable</p>
-          <p className="text-[12px] text-muted-foreground">
-            Select your duty zone manually to continue:
+      {/* GPS Unavailable / Permission Required Banner */}
+      {(!position || geoError) && (
+        <div className="vecta-panel space-y-2 border-l-[3px] border-l-brand bg-brand/5">
+          <div className="flex items-center justify-between">
+            <p className="vecta-eyebrow text-brand flex items-center gap-1.5">
+              <span>📍</span> Live GPS Required
+            </p>
+            <button
+              type="button"
+              onClick={() => getFreshPosition()}
+              disabled={locating}
+              className="text-[10px] font-mono font-semibold text-primary underline hover:text-primary/80 transition-colors"
+            >
+              {locating ? "Acquiring…" : "↻ Retry GPS"}
+            </button>
+          </div>
+          <p className="text-[12px] text-muted-foreground leading-relaxed">
+            {geoError ?? "Location services are required to verify your presence within the duty geofence. Please enable GPS on your device and grant location access to check in or out."}
           </p>
-          <select
-            value={manualZoneId}
-            onChange={(e) => setManualZoneId(e.target.value)}
-            className="vecta-input"
-          >
-            <option value="">-- Choose zone --</option>
-            {zones.map((z) => (
-              <option key={z.id} value={z.id}>
-                {z.name} ({z.code})
-              </option>
-            ))}
-          </select>
+        </div>
+      )}
+
+      {/* Outside Geofence Warning Banner */}
+      {position && !insideZone && zones.length > 0 && (
+        <div className="vecta-panel space-y-1.5 border-l-[3px] border-l-warning bg-warning/5">
+          <p className="vecta-eyebrow text-warning flex items-center gap-1.5">
+            <span>⚠️</span> Outside Station Geofence
+          </p>
+          <p className="text-[12px] text-muted-foreground leading-relaxed">
+            Your current GPS position is outside {zones[0]?.station || "station"} duty zone boundaries. You must be physically inside a designated zone to {checkedIn ? "check out" : "check in"}.
+          </p>
         </div>
       )}
 
@@ -656,18 +664,20 @@ export function CheckInScreen({
         <button
           type="button"
           className="vecta-btn-primary flex-1"
-          disabled={submitting || locating || (!position && !manualZone) || zoneBlocked}
+          disabled={submitting || locating || !position || zoneBlocked}
           onClick={checkedIn ? handleCheckOut : handleCheckIn}
         >
           {submitting
             ? "Submitting…"
             : locating
               ? "Confirming your location…"
-              : zoneBlocked
-                ? `Move to zone to ${checkedIn ? "check out" : "check in"}`
-                : checkedIn
-                  ? "Check out"
-                  : "Check in"}
+              : !position
+                ? "GPS Location Required"
+                : zoneBlocked
+                  ? `Move to duty zone to ${checkedIn ? "check out" : "check in"}`
+                  : checkedIn
+                    ? "Check out"
+                    : "Check in"}
         </button>
 
         {/* Apply Leave button is disabled / hidden once checked in for the shift */}
