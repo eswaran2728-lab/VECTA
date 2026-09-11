@@ -12,6 +12,7 @@ import {
   History,
   FileText,
   ChevronRight,
+  Download,
 } from "lucide-react";
 
 interface WoisChatModalProps {
@@ -139,6 +140,7 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
         confidence_tag: data.response.confidence_tag,
         source_type: data.response.source_type,
         sources: data.response.sources,
+        attachment: data.response.attachment,
         created_at: new Date().toISOString(),
       };
 
@@ -327,6 +329,36 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
                       {m.body}
                     </div>
 
+                    {!isUser && m.attachment && (
+                      <div className="mt-3 pt-2.5 border-t border-border/60">
+                        <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/40 shadow-sm">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 shrink-0">
+                              <FileText className="h-5 w-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-display text-[13px] font-bold text-slate-100 truncate">
+                                {m.attachment.title || m.attachment.filename}
+                              </p>
+                              <p className="font-mono text-[10.5px] text-cyan-400/80">
+                                Original PDF · 41 Pages
+                              </p>
+                            </div>
+                          </div>
+                          <a
+                            href={m.attachment.url}
+                            download={m.attachment.filename}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500 text-black text-xs font-bold transition hover:bg-cyan-400 shrink-0"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            <span>Download PDF</span>
+                          </a>
+                        </div>
+                      </div>
+                    )}
+
                     {!isUser && m.sources && m.sources.length > 0 && (
                       <div className="mt-3 pt-2.5 border-t border-border/60 text-[11px] text-muted-foreground space-y-1">
                         <p className="font-mono text-[10px] uppercase tracking-wider text-cyan-400/80">
@@ -339,7 +371,9 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
                               className="inline-flex items-center gap-1 rounded bg-card/60 px-2 py-0.5 border border-border text-[10.5px]"
                             >
                               <FileText className="h-3 w-3 text-cyan-400" />
-                              {src.documentTitle} · {src.sectionTitle}
+                              {src.documentTitle}
+                              {src.pageNumber ? ` · p.${src.pageNumber}` : ""}
+                              {src.sectionTitle ? ` (${src.sectionTitle})` : ""}
                             </span>
                           ))}
                         </div>

@@ -2,14 +2,27 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { executeWoisQuery } from "../lib/wois/engine.ts";
 
-test("W.O.I.S SOP Lookup: A330 aircraft search timing returns VERIFIED with minimum 45 mins", async () => {
+test("W.O.I.S SOP Lookup: A330 aircraft search timing returns VERIFIED with minimum 45 mins and exact page citation", async () => {
   const res = await executeWoisQuery("what is the aircraft search timing for an A330?");
   
   assert.equal(res.confidence_tag, "VERIFIED");
   assert.equal(res.source_type, "sop");
-  assert.ok(res.body.includes("45 minutes") || res.body.includes(">=45 min") || res.body.includes("A330"));
+  assert.ok(res.body.includes("45 mins") || res.body.includes("45 minutes") || res.body.includes("A330"));
   assert.ok(res.sources.length > 0);
   assert.equal(res.sources[0].sourceType, "sop");
+  assert.equal(res.sources[0].pageNumber, 22);
+  assert.ok(res.body.includes("Page 22"));
+});
+
+test("W.O.I.S SOP Lookup: Vape device offload protocol cites Page 11 with SI MAA 01/2026", async () => {
+  const res = await executeWoisQuery("what is the procedure for vape devices detected in checked baggage?");
+  
+  assert.equal(res.confidence_tag, "VERIFIED");
+  assert.equal(res.source_type, "sop");
+  assert.ok(res.body.includes("SI (MAA) 01/2026") || res.body.includes("offloaded"));
+  assert.ok(res.sources.length > 0);
+  assert.equal(res.sources[0].pageNumber, 11);
+  assert.ok(res.body.includes("Page 11"));
 });
 
 test("W.O.I.S Regulatory / General Knowledge: Power bank 20,000mAh Wh limit returns GENERAL KNOWLEDGE with caveat", async () => {
@@ -20,11 +33,12 @@ test("W.O.I.S Regulatory / General Knowledge: Power bank 20,000mAh Wh limit retu
   assert.ok(res.body.includes("not confirmed AirAsia policy") || res.body.includes("verify with your DSE/SOP"));
 });
 
-test("W.O.I.S Full-Document Intent: 'Give me W.O.I.S' returns complete document outline", async () => {
+test("W.O.I.S Full-Document Intent: 'Give me W.O.I.S' returns complete document text AND downloadable attachment", async () => {
   const res = await executeWoisQuery("Give me W.O.I.S");
   
   assert.equal(res.confidence_tag, "VERIFIED");
   assert.equal(res.is_full_document, true);
+  // Full text structure
   assert.ok(res.body.includes("Make-Up Area"));
   assert.ok(res.body.includes("Break-Up Area"));
   assert.ok(res.body.includes("Ramp Guard"));
@@ -32,7 +46,13 @@ test("W.O.I.S Full-Document Intent: 'Give me W.O.I.S' returns complete document 
   assert.ok(res.body.includes("Hold Guard"));
   assert.ok(res.body.includes("Security Check & Aircraft Search"));
   assert.ok(res.body.includes("Aircraft Guard"));
-  assert.ok(res.body.includes("Disruptive & Unruly Passenger Management"));
+  assert.ok(res.body.includes("Disruptive & Unruly Passengers"));
+  
+  // Downloadable file attachment
+  assert.ok(res.attachment);
+  assert.equal(res.attachment?.filename, "W_O_I_S.pdf");
+  assert.equal(res.attachment?.mimeType, "application/pdf");
+  assert.equal(res.attachment?.url, "/api/wois/documents/W_O_I_S.pdf");
 });
 
 test("W.O.I.S App Help: How to submit OT returns direct guide with app_help tier", async () => {

@@ -411,7 +411,16 @@ export interface WoisSourceCitation {
   documentTitle: string;
   sectionTitle: string;
   sourceType: WoisSourceType;
+  pageNumber?: number | string;
   excerpt?: string;
+}
+
+export interface WoisAttachment {
+  filename: string;
+  title: string;
+  url: string;
+  sizeBytes?: number;
+  mimeType?: string;
 }
 
 export interface WoisDocument {
@@ -421,6 +430,7 @@ export interface WoisDocument {
   source_type: WoisSourceType;
   version: string;
   content: string;
+  file_url?: string;
   metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -431,6 +441,7 @@ export interface WoisChunk {
   document_id: string;
   chunk_index: number;
   section_title: string;
+  page_number?: number;
   content: string;
   source_type: WoisSourceType;
   metadata?: Record<string, unknown>;
@@ -453,6 +464,7 @@ export interface WoisMessage {
   confidence_tag?: WoisConfidenceTag;
   source_type?: WoisSourceType;
   sources?: WoisSourceCitation[];
+  attachment?: WoisAttachment;
   created_at: string;
 }
 
@@ -461,6 +473,7 @@ export interface WoisEngineResponse {
   confidence_tag: WoisConfidenceTag;
   source_type: WoisSourceType;
   sources: WoisSourceCitation[];
+  attachment?: WoisAttachment;
   is_full_document?: boolean;
 }
 

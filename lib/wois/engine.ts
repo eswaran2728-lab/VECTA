@@ -102,6 +102,7 @@ export async function executeWoisQuery(
   const citations: WoisSourceCitation[] = searchResults.slice(0, 3).map((r) => ({
     documentTitle: r.docTitle,
     sectionTitle: r.chunk.section_title,
+    pageNumber: r.chunk.page_number,
     sourceType: r.source_type,
     excerpt: r.chunk.content,
   }));
@@ -168,6 +169,16 @@ For inquiries regarding specific departmental organization, please consult with 
 
 function handleFullDocumentRetrieval(): WoisEngineResponse {
   const doc = WOIS_KNOWLEDGE_DOCUMENTS.find((d) => d.id === "doc-wois-sop-manual")!;
+  const attachment = doc.file_url
+    ? {
+        filename: "W_O_I_S.pdf",
+        title: "AirAsia AVSEC W.O.I.S SOP Manual (PDF)",
+        url: doc.file_url,
+        sizeBytes: 1540000,
+        mimeType: "application/pdf",
+      }
+    : undefined;
+
   return {
     body: `### 📖 W.O.I.S (World of Intelligent Aviation Systems) — Complete SOP Manual
 
@@ -177,10 +188,11 @@ ${doc.content}`,
     sources: [
       {
         documentTitle: doc.title,
-        sectionTitle: "Full Document Outline",
+        sectionTitle: "Full Document Outline (Pages 1–41)",
         sourceType: "sop",
       },
     ],
+    attachment,
     is_full_document: true,
   };
 }
@@ -190,6 +202,7 @@ interface SearchMatch {
   source_type: WoisSourceType;
   chunk: {
     section_title: string;
+    page_number?: number;
     content: string;
     keywords: string[];
     roleScope?: string[];
@@ -323,12 +336,14 @@ function handleOperationalResponse(
       ? "\n*Note: This guidance is based on general international aviation regulatory standards. It is not confirmed AirAsia policy; please verify with your DSE/SOP for local station implementation.*"
       : "";
 
+  const pageLabel = match.chunk.page_number ? ` · Page ${match.chunk.page_number}` : "";
+
   const body = `**Assessment**: Inquiries regarding ${match.chunk.section_title.toLowerCase()} and operational compliance.
 **Verified Information**: ${match.chunk.content}
-**Relevant Procedure**: ${match.docTitle} — Section: ${match.chunk.section_title}
+**Relevant Procedure**: ${match.docTitle}${pageLabel} — Section: ${match.chunk.section_title}
 **Recommended Action**: ${recommendedAction}
 **Confidence**: ${tag === "VERIFIED" ? "🟢 VERIFIED" : "🔵 GENERAL KNOWLEDGE"}
-**Source**: ${match.docTitle} (${match.chunk.section_title})${caveat}`;
+**Source**: ${match.docTitle}${pageLabel} (${match.chunk.section_title})${caveat}`;
 
   return {
     body,
