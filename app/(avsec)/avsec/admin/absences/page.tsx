@@ -91,13 +91,13 @@ export default async function AdminAbsencesPage({
           </div>
 
           <div className="vecta-tile !p-3.5 space-y-1 border-l-4 border-l-success">
-            <span className="vecta-eyebrow text-success">COMPLIANT (≥2H)</span>
+            <span className="vecta-eyebrow text-success">COMPLIANT (≥3H)</span>
             <div className="font-display text-2xl font-bold text-success">{stats.greenCount}</div>
             <span className="font-mono text-[10px] text-muted-foreground">Timely notice given</span>
           </div>
 
           <div className="vecta-tile !p-3.5 space-y-1 border-l-4 border-l-brand">
-            <span className="vecta-eyebrow text-brand">LATE NOTICE (&lt;2H)</span>
+            <span className="vecta-eyebrow text-brand">LATE NOTICE (&lt;3H)</span>
             <div className="font-display text-2xl font-bold text-brand">{stats.redCount}</div>
             <span className="font-mono text-[10px] text-muted-foreground">Short notice / after shift</span>
           </div>

@@ -65,8 +65,8 @@ export default async function StaffAbsenceHistoryPage() {
             <span>ℹ️</span> Advance Notice Compliance Standard
           </div>
           <p className="font-mono text-xs text-muted-foreground leading-relaxed">
-            • <strong className="text-emerald-500">Green (≥ 2 hours notice)</strong>: Compliant advance notice submitted before rostered shift start.<br />
-            • <strong className="text-rose-500">Red (&lt; 2 hours notice or after start)</strong>: Late notice or post-shift notice.<br />
+            • <strong className="text-emerald-500">Green (≥ 3 hours notice)</strong>: Compliant advance notice submitted before rostered shift start.<br />
+            • <strong className="text-rose-500">Red (&lt; 3 hours notice or after start)</strong>: Late notice or post-shift notice.<br />
             All submissions record permanent server timestamps utilized for operational performance evaluations.
           </p>
         </div>

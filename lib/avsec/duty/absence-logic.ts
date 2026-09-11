@@ -8,16 +8,16 @@ export interface AbsenceCalculationResult {
 }
 
 /**
- * Minimum advance notice required for compliant (green) absence reporting: 2 hours (120 minutes).
+ * Minimum advance notice required for compliant (green) absence reporting: 3 hours (180 minutes).
  */
-export const COMPLIANT_NOTICE_MINUTES = 120;
+export const COMPLIANT_NOTICE_MINUTES = 180;
 
 /**
  * Formats the gap between submission time and shift start into human-readable text.
  * E.g.:
  * - gapMinutes = 190 -> "Requested 3h 10m before shift"
+ * - gapMinutes = 180 -> "Requested 3h before shift"
  * - gapMinutes = 45 -> "Requested 45m before shift"
- * - gapMinutes = 120 -> "Requested 2h before shift"
  * - gapMinutes = -80 -> "Requested 1h 20m after shift start"
  * - gapMinutes = -45 -> "Requested 45m after shift start"
  * - gapMinutes = 0 -> "Requested at exact shift start"
@@ -55,7 +55,7 @@ export function formatAbsenceGap(gapMinutes: number): string {
  * Calculates the exact advance notice gap and status.
  * Notice timing:
  * - gapMinutes = Math.round((scheduledStart.getTime() - submittedAt.getTime()) / 60000)
- * - status = 'green' if gapMinutes >= 120, else 'red' (late notice or after shift start)
+ * - status = 'green' if gapMinutes >= 180, else 'red' (late notice or after shift start)
  */
 export function calculateAbsenceGap(
   scheduledStart: Date,

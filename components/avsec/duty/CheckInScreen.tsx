@@ -316,7 +316,7 @@ export function CheckInScreen({
           duty_date: todayISODateMY(),
           shift_start_time: scheduled?.start ? scheduled.start.toISOString() : new Date().toISOString(),
           submitted_at: result.submittedAt,
-          gap_minutes: result.status === "green" ? 120 : 0,
+          gap_minutes: result.status === "green" ? 180 : 0,
           status: result.status,
           remarks: absenceRemarks,
           created_at: result.submittedAt,
