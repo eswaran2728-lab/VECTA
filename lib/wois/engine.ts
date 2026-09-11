@@ -174,7 +174,7 @@ function handleFullDocumentRetrieval(): WoisEngineResponse {
         filename: "W_O_I_S.pdf",
         title: "AirAsia AVSEC W.O.I.S SOP Manual (PDF)",
         url: doc.file_url,
-        sizeBytes: 1540000,
+        sizeBytes: 34412922,
         mimeType: "application/pdf",
       }
     : undefined;
