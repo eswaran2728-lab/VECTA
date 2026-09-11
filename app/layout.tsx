@@ -53,13 +53,16 @@ export const viewport: Viewport = {
 };
 
 // Light by default — only an explicit stored choice (via the theme toggle)
-// ever switches to dark; OS prefers-color-scheme is no longer consulted,
-// so a device set to dark mode does not silently darken the app.
+// switches to dark mode; defaults cleanly to light theme.
 const themeInit = `
 try {
-  const stored = localStorage.getItem("cscs-theme");
+  const stored = localStorage.getItem("vecta-theme") || localStorage.getItem("avsec-theme") || localStorage.getItem("cscs-theme");
   if (stored === "dark") {
     document.documentElement.classList.add("dark");
+    document.documentElement.setAttribute("data-theme", "dark");
+  } else {
+    document.documentElement.classList.remove("dark");
+    document.documentElement.setAttribute("data-theme", "light");
   }
 } catch (e) {}
 `;
@@ -73,7 +76,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`dark ${heading.variable} ${display.variable} ${body.variable} ${mono.variable}`}
+      className={`${heading.variable} ${display.variable} ${body.variable} ${mono.variable}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />

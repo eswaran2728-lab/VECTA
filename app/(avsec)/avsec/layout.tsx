@@ -7,7 +7,6 @@ import { APP_NAME, APP_DESCRIPTION } from "@/lib/avsec/branding";
 import { getCurrentProfile } from "@/lib/avsec/auth";
 import { signOut as authSignOut } from "@/lib/avsec/profile-actions";
 import { ORG_WIDE_ROLES, ROLE_LABELS } from "@/lib/avsec/reference-data";
-import { ThemeToggle } from "@/components/avsec/layout/ThemeToggle";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 
@@ -43,7 +42,6 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
               name={profile.name}
               roleLabel={ROLE_LABELS[profile.role] ?? null}
               signOutAction={authSignOut}
-              extra={<ThemeToggle />}
             />
           ) : null}
           {children}

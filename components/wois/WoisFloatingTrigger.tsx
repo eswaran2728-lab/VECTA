@@ -21,10 +21,10 @@ export function WoisFloatingTrigger({
       {/* Floating Action Button */}
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-20 right-6 z-40 flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2.5 text-xs font-bold text-black shadow-lg shadow-cyan-500/20 transition-all duration-300 hover:scale-105 hover:shadow-cyan-500/40 hover:from-cyan-400 hover:to-blue-500 active:scale-95 border border-cyan-300/40"
+        className="fixed bottom-20 right-6 z-40 flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-300 hover:scale-105 hover:shadow-primary/40 active:scale-95 border border-primary/40 cursor-pointer"
         title="Open W.O.I.S AI Assistant"
       >
-        <Sparkles className="h-4 w-4 fill-black/20 text-black" />
+        <Sparkles className="h-4 w-4" />
         <span className="font-display tracking-wider">AI</span>
       </button>
 

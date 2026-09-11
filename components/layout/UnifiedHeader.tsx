@@ -1,14 +1,11 @@
 import Link from "next/link";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 
 /**
  * The one header used across every route — app/page.tsx's original inline
  * header, extracted so app/(avsec)/avsec/layout.tsx and
  * app/(icms)/icms/layout.tsx can render the exact same chrome instead of
- * each keeping their own competing header. `extra` is a slot for anything
- * route-specific that still needs to live in the header (AVSEC's ThemeToggle
- * uses a different data-theme mechanism than ICMS's class-based one — see
- * their own components — and only ICMS has LanguageToggle/NotificationsBell
- * at all, so those are passed in by each layout rather than hardcoded here).
+ * each keeping their own competing header.
  */
 export function UnifiedHeader({
   name,
@@ -54,6 +51,7 @@ export function UnifiedHeader({
       </Link>
       <div className="flex min-w-0 items-center gap-3">
         {extra}
+        <ThemeToggle />
         <span className="hidden truncate font-mono text-sm sm:inline">Signed in as {name}</span>
         {roleLabel ? <span className="vecta-chip shrink-0">{roleLabel}</span> : null}
         <form action={signOutAction}>

@@ -4,6 +4,7 @@ import { TriangleAlert, Clock3 } from "lucide-react";
 
 import { LoginForm } from "./login-form";
 import { PartnerLogos } from "./partner-logos";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 
 export const metadata: Metadata = { title: "Sign in — VECTA" };
 
@@ -16,28 +17,31 @@ export default async function LoginPage({
 
   return (
     <main className="relative flex min-h-screen flex-col overflow-hidden bg-background px-5 py-5">
-      {/* Radial cyan/violet glow wash, matching the mockup's .scene background. */}
+      {/* Radial cyan/violet glow wash, responsive to light & dark tokens. */}
       <div
-        className="pointer-events-none absolute inset-0"
+        className="pointer-events-none absolute inset-0 opacity-40 dark:opacity-80"
         style={{
           background:
-            "radial-gradient(ellipse 480px 340px at 20% -8%, oklch(0.62 0.2 300 / 0.28), transparent 60%), radial-gradient(ellipse 520px 380px at 85% 100%, oklch(0.78 0.14 220 / 0.22), transparent 60%)",
+            "radial-gradient(ellipse 480px 340px at 20% -8%, color-mix(in oklab, var(--violet) 22%, transparent), transparent 60%), radial-gradient(ellipse 520px 380px at 85% 100%, color-mix(in oklab, var(--cyan) 18%, transparent), transparent 60%)",
         }}
       />
       {/* Subtle CRT-style scanlines. */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-60"
+        className="pointer-events-none absolute inset-0 opacity-20 dark:opacity-60"
         style={{
           background:
-            "repeating-linear-gradient(to bottom, transparent 0px, transparent 3px, oklch(1 0 0 / 0.012) 4px)",
+            "repeating-linear-gradient(to bottom, transparent 0px, transparent 3px, color-mix(in oklab, var(--foreground) 3%, transparent) 4px)",
         }}
       />
 
       <div className="relative z-10 flex items-center justify-between">
         <span className="vecta-eyebrow">VECTA // AUTH.SYS</span>
-        <span className="font-mono text-[11px] text-muted-foreground" suppressHydrationWarning>
-          {new Date().toISOString().slice(11, 19)} UTC
-        </span>
+        <div className="flex items-center gap-3">
+          <ThemeToggle />
+          <span className="font-mono text-[11px] text-muted-foreground" suppressHydrationWarning>
+            {new Date().toISOString().slice(11, 19)} UTC
+          </span>
+        </div>
       </div>
 
       <div className="relative z-10 flex flex-1 items-center justify-center py-8">

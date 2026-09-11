@@ -74,7 +74,7 @@ export default async function ProfilePage() {
           <div className="field-label">Appearance</div>
           <ThemeOptions />
           <p className="field-hint">
-            Nocturne Command-Center Dark theme is active across the VECTA platform.
+            Choose between Nocturne Light and Dark themes. Preference persists across sessions.
           </p>
         </div>
 

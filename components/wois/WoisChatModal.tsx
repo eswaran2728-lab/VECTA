@@ -172,19 +172,19 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative flex h-full w-full max-w-2xl flex-col bg-[#0f141c] border-l border-cyan-500/20 shadow-2xl text-slate-100">
+      <div className="relative flex h-full w-full max-w-2xl flex-col bg-card border-l border-border shadow-2xl text-foreground">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border/80 px-5 py-4 bg-[#141b26]/90 backdrop-blur-md">
+        <div className="flex items-center justify-between border-b border-border/80 px-5 py-4 bg-card/95 backdrop-blur-md">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-600/30 border border-cyan-500/40 text-cyan-400">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 border border-primary/30 text-primary">
               <Sparkles className="h-5 w-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="font-display text-base font-bold tracking-wider text-cyan-300">
+                <h2 className="font-display text-base font-bold tracking-wider text-foreground">
                   W.O.I.S AI
                 </h2>
-                <span className="rounded bg-cyan-950/80 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-cyan-400 border border-cyan-800/60">
+                <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-primary border border-primary/30">
                   V1.0
                 </span>
               </div>
@@ -197,7 +197,7 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => setShowHistorySidebar(!showHistorySidebar)}
-              className="flex items-center gap-1 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-xs text-muted-foreground transition hover:border-cyan-500/40 hover:text-cyan-300"
+              className="flex items-center gap-1 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-xs text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
               title="Conversation History"
             >
               <History className="h-3.5 w-3.5" />
@@ -206,7 +206,7 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
 
             <button
               onClick={handleStartNewChat}
-              className="flex items-center gap-1 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1.5 text-xs font-medium text-cyan-300 transition hover:bg-cyan-500/20"
+              className="flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/20"
               title="New Chat"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -215,7 +215,7 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
 
             <button
               onClick={onClose}
-              className="rounded-lg p-1.5 text-muted-foreground hover:bg-card hover:text-foreground transition"
+              className="rounded-lg p-1.5 text-muted-foreground hover:bg-card hover:text-foreground transition cursor-pointer"
               title="Close"
             >
               <X className="h-5 w-5" />
@@ -225,14 +225,14 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
 
         {/* History Drawer Overlay */}
         {showHistorySidebar && (
-          <div className="absolute top-[65px] left-0 bottom-0 z-20 w-72 border-r border-border bg-[#111722] p-4 shadow-xl flex flex-col">
+          <div className="absolute top-[65px] left-0 bottom-0 z-20 w-72 border-r border-border bg-card p-4 shadow-xl flex flex-col">
             <div className="flex items-center justify-between pb-3 border-b border-border/60">
               <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground font-semibold">
                 Past Conversations
               </span>
               <button
                 onClick={() => setShowHistorySidebar(false)}
-                className="text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -251,8 +251,8 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
                     }}
                     className={`w-full text-left p-2.5 rounded-lg text-xs transition border flex items-center justify-between ${
                       activeConversationId === c.id
-                        ? "bg-cyan-950/40 border-cyan-500/40 text-cyan-200"
-                        : "bg-card/40 border-border/60 text-muted-foreground hover:border-cyan-500/30 hover:text-foreground"
+                        ? "bg-primary/10 border-primary/40 text-primary font-medium"
+                        : "bg-card/40 border-border/60 text-muted-foreground hover:border-primary/30 hover:text-foreground"
                     }`}
                   >
                     <span className="truncate pr-2">{c.title}</span>
@@ -268,12 +268,12 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-4 py-8 space-y-6">
-              <div className="h-14 w-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+              <div className="h-14 w-14 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center text-primary">
                 <Sparkles className="h-7 w-7" />
               </div>
 
               <div className="max-w-md space-y-1.5">
-                <h3 className="font-display text-lg font-bold text-slate-100">
+                <h3 className="font-display text-lg font-bold text-foreground">
                   W.O.I.S Operational Assistant
                 </h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">
@@ -291,7 +291,7 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
                     <button
                       key={idx}
                       onClick={() => handleSendMessage(s.query)}
-                      className="text-left px-3 py-2 rounded-xl bg-card/60 border border-border/80 text-xs text-slate-300 hover:border-cyan-500/50 hover:bg-cyan-950/20 hover:text-cyan-200 transition"
+                      className="text-left px-3 py-2 rounded-xl bg-card border border-border text-xs text-foreground hover:border-primary hover:bg-primary/5 transition cursor-pointer"
                     >
                       {s.label} &rarr;
                     </button>
@@ -310,8 +310,8 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
                   <div
                     className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                       isUser
-                        ? "bg-cyan-600/20 border border-cyan-500/40 text-cyan-100"
-                        : "bg-[#141c28] border border-border text-slate-200"
+                        ? "bg-primary text-primary-foreground font-medium shadow-sm"
+                        : "bg-card border border-border text-foreground shadow-sm"
                     }`}
                   >
                     {!isUser && m.confidence_tag && (
@@ -331,16 +331,16 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
 
                     {!isUser && m.attachment && (
                       <div className="mt-3 pt-2.5 border-t border-border/60">
-                        <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/40 shadow-sm">
+                        <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-primary/5 border border-primary/30 shadow-sm">
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 shrink-0">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 border border-primary/30 text-primary shrink-0">
                               <FileText className="h-5 w-5" />
                             </div>
                             <div className="min-w-0">
-                              <p className="font-display text-[13px] font-bold text-slate-100 truncate">
+                              <p className="font-display text-[13px] font-bold text-foreground truncate">
                                 {m.attachment.title || m.attachment.filename}
                               </p>
-                              <p className="font-mono text-[10.5px] text-cyan-400/80">
+                              <p className="font-mono text-[10.5px] text-muted-foreground">
                                 Original PDF · 41 Pages
                               </p>
                             </div>
@@ -350,7 +350,7 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
                             download={m.attachment.filename}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500 text-black text-xs font-bold transition hover:bg-cyan-400 shrink-0"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-bold transition hover:opacity-90 shrink-0"
                           >
                             <Download className="h-3.5 w-3.5" />
                             <span>Download PDF</span>
@@ -361,16 +361,16 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
 
                     {!isUser && m.sources && m.sources.length > 0 && (
                       <div className="mt-3 pt-2.5 border-t border-border/60 text-[11px] text-muted-foreground space-y-1">
-                        <p className="font-mono text-[10px] uppercase tracking-wider text-cyan-400/80">
+                        <p className="font-mono text-[10px] uppercase tracking-wider text-primary">
                           Sources &amp; Citations:
                         </p>
                         <div className="flex flex-wrap gap-1.5">
                           {m.sources.map((src, i) => (
                             <span
                               key={i}
-                              className="inline-flex items-center gap-1 rounded bg-card/60 px-2 py-0.5 border border-border text-[10.5px]"
+                              className="inline-flex items-center gap-1 rounded bg-secondary px-2 py-0.5 border border-border text-[10.5px] text-foreground"
                             >
-                              <FileText className="h-3 w-3 text-cyan-400" />
+                              <FileText className="h-3 w-3 text-primary" />
                               {src.documentTitle}
                               {src.pageNumber ? ` · p.${src.pageNumber}` : ""}
                               {src.sectionTitle ? ` (${src.sectionTitle})` : ""}
@@ -386,7 +386,7 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
           )}
 
           {isLoading && (
-            <div className="flex items-center gap-2.5 text-xs text-cyan-400 font-mono py-2">
+            <div className="flex items-center gap-2.5 text-xs text-primary font-mono py-2">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>Analyzing SOPs and knowledge base...</span>
             </div>
@@ -396,7 +396,7 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
         </div>
 
         {/* Input Bar */}
-        <div className="border-t border-border/80 p-3.5 bg-[#141b26]/90 backdrop-blur-md">
+        <div className="border-t border-border/80 p-3.5 bg-card/95 backdrop-blur-md">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -409,14 +409,14 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
               value={inputQuery}
               onChange={(e) => setInputQuery(e.target.value)}
               placeholder="Ask an SOP, DG limit, or app help question..."
-              className="flex-1 rounded-xl border border-border bg-[#0b0f15] px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-cyan-500 focus:outline-none"
+              className="flex-1 rounded-xl border border-border bg-input px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none"
               disabled={isLoading}
             />
 
             <button
               type="submit"
               disabled={!inputQuery.trim() || isLoading}
-              className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500 text-black transition hover:bg-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+              className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed shrink-0 cursor-pointer"
             >
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </button>

@@ -3,92 +3,55 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
+  :root,
+  :root[data-theme="light"] {
     color-scheme: light;
-    /* Bare "L C H" oklch component triplets (no oklch() wrapper, no baked
-       alpha) — tailwind.config.ts wraps most of these as
-       oklch(var(--x) / <alpha-value>), the same pattern the old
-       hsl(var(--x)) tokens used, so opacity modifiers (bg-primary/60 etc.)
-       keep working. Converted 1:1 from the previous HSL values. */
-    --background: 0.984 0.002 247.8;
-    --foreground: 0.128 0.027 261.6;
-    --card: 1 0 89.9;
-    --card-foreground: 0.128 0.027 261.6;
-    /* Gold — buttons, active states, badges, checkmarks, nav icons. */
-    --primary: 0.735 0.138 90.7;
-    --primary-foreground: 0.128 0.027 261.6;
-    /* Red — AirAsia brand accent (logos, hero/header touches). Also doubles
-       as the destructive/danger color, a common airline-security pattern. */
-    --brand: 0.616 0.226 28.9;
-    --brand-foreground: 1 0 89.9;
-    --secondary: 0.936 0.006 264.5;
-    --secondary-foreground: 0.21 0.032 264.8;
-    --muted: 0.952 0.004 264.5;
-    --muted-foreground: 0.499 0.021 264.4;
-    --accent: 0.936 0.006 264.5;
-    --accent-foreground: 0.21 0.032 264.8;
-    --destructive: 0.616 0.226 28.9;
-    --destructive-foreground: 1 0 89.9;
-    /* border/input carry their own baked alpha (full oklch() functions, not
-       bare components) — see the .dark block comment below for why. */
-    --border: oklch(0.895 0.008 264.5);
-    --input: oklch(0.854 0.012 264.5);
-    --ring: 0.735 0.138 90.7;
-    --radius: 0.5rem;
-    /* Radar green — cleared/success/live indicators. Only ever defined in
-       .dark before light became the default; added here too so bg-success/
-       text-success (Tailwind tokens, tailwind.config.ts) and the check-in
-       gate/ops dashboard that use them don't silently resolve to nothing
-       in light mode. */
-    --success: 0.55 0.15 150;
+    /* Nocturne Light Theme — Crisp aviation white/slate with rebalanced deep vivid cyan/teal interactive accents */
+    --background: 0.985 0.005 240;
+    --foreground: 0.18 0.03 260;
+    --card: 1 0 0;
+    --card-foreground: 0.18 0.03 260;
+    /* Rebalanced deep vivid cyan for high contrast, clean readability, and crisp accents on white */
+    --primary: 0.52 0.18 225;
+    --primary-foreground: 1 0 0;
+    /* AirAsia brand red for alerts/reject/destructive */
+    --brand: 0.56 0.22 28;
+    --brand-foreground: 1 0 0;
+    --secondary: 0.95 0.01 240;
+    --secondary-foreground: 0.22 0.03 260;
+    --muted: 0.96 0.008 240;
+    --muted-foreground: 0.48 0.03 250;
+    --accent: 0.94 0.02 225;
+    --accent-foreground: 0.2 0.04 240;
+    --destructive: 0.56 0.22 28;
+    --destructive-foreground: 1 0 0;
+    --border: oklch(0.88 0.015 240);
+    --input: oklch(0.99 0.002 240);
+    --ring: 0.52 0.18 225;
+    --radius: 1rem;
+    --success: 0.52 0.16 150;
     --success-foreground: 1 0 0;
 
-    /* Extra raw tokens (full oklch() functions, not bare component
-       triplets — see the .dark block's own comment) used directly via
-       var() in ~20 files across both AVSEC and the redesigned screens
-       (status pills, the scan viewfinder, SEC-016 smart-parse highlights).
-       Same reasoning as --success above: only ever defined in .dark
-       before, so light-mode readers of these files got an invalid/blank
-       color. Chosen for contrast against a white/near-white background,
-       not identical to the .dark block's brighter values (which are
-       tuned for a near-black background instead). */
-    --cyan: oklch(0.55 0.16 220);
-    --red: oklch(0.616 0.226 28.9);
-    --green: oklch(0.55 0.15 150);
-    --glass: oklch(0.98 0.004 264.5 / 0.7);
-    --violet: oklch(0.5 0.18 300);
+    /* Extra raw tokens */
+    --cyan: oklch(0.52 0.18 225);
+    --red: oklch(0.56 0.22 28);
+    --green: oklch(0.52 0.16 150);
+    --glass: oklch(1 0 0 / 0.85);
+    --violet: oklch(0.48 0.2 300);
+    --surface: oklch(0.97 0.005 240);
   }
 
-  .dark {
+  .dark,
+  :root[data-theme="dark"] {
     color-scheme: dark;
-    /* The `.dark` class is applied on a per-page <main> (not <html>/<body>),
-       so the light-mode `color` value that `body { @apply text-foreground }`
-       already resolved (using :root's --foreground) is what descendants
-       inherit — CSS inheritance passes a property's *computed* value, not a
-       live re-evaluation of the var() it referenced. Elements with their
-       own explicit text-*-foreground utility (e.g. .vecta-eyebrow's
-       text-muted-foreground) get a fresh, correctly-dark color because they
-       declare `color` themselves; elements relying on the inherited base
-       color did not, and rendered as near-invisible dark-on-dark text.
-       Re-asserting text-foreground here means the `.dark` scope root itself
-       recomputes `color` from the dark --foreground, so everything under it
-       inherits the right value with no reliance on ordering the tree changes
-       don't accidentally reintroduce. */
     @apply text-foreground;
-    /* VECTA "ops console" palette — deep indigo-black, glassmorphic panels,
-       cyan/violet accent. Exact oklch values extracted from the approved
-       FutLogin/FutDashboard/FutScan mockups' :root tokens (--bg, --glass,
-       --cyan, --violet, --red, --green), stored as bare "L C H" component
-       triplets so tailwind.config.ts's oklch(var(--x) / <alpha-value>)
-       wrapper keeps opacity modifiers (bg-primary/60 etc.) working. */
+    /* Nocturne Dark Theme — Deep indigo-black command center, glassmorphic panels, glowing cyan/violet accents */
     --background: 0.14 0.03 275;
     --foreground: 0.95 0.01 240;
     --card: 0.22 0.04 275;
     --card-foreground: 0.95 0.01 240;
-    /* Cyan — new primary interactive accent (buttons, focus rings, active nav). */
     --primary: 0.78 0.14 220;
     --primary-foreground: 0.12 0.02 275;
-    /* Red — AirAsia brand accent, reserved strictly for alerts/reject/destructive. */
     --brand: 0.6 0.2 25;
     --brand-foreground: 1 0 0;
     --secondary: 0.2 0.035 275;
@@ -99,34 +62,19 @@
     --accent-foreground: 0.95 0.01 240;
     --destructive: 0.6 0.2 25;
     --destructive-foreground: 1 0 0;
-    /* border/input are the mockups' translucent hairline/glass-fill colors
-       — they carry a fixed baked-in alpha (0.32 / 0.6) as their *resting*
-       look (every border in the design is meant to read as a faint cyan
-       hairline, not a solid one), so unlike the tokens above these are
-       full oklch() functions plugged straight through by tailwind.config
-       (no <alpha-value> — nothing in the codebase applies a border-border/NN
-       or bg-input/NN opacity modifier). */
     --border: oklch(0.78 0.14 220 / 0.32);
     --input: oklch(0.1 0.03 275 / 0.6);
     --ring: 0.78 0.14 220;
-    /* Radar green — cleared/success/live indicators (check-in gate, ops dashboard). */
+    --radius: 1rem;
     --success: 0.78 0.17 150;
     --success-foreground: 0.12 0.02 275;
-    --radius: 1rem;
 
-    /* Extra raw tokens — full oklch() color functions (not bare component
-       triplets), deliberately not wired into Tailwind's color palette.
-       --cyan/--red/--green mirror --primary/--brand/--success exactly, but
-       as directly-usable var() values for inline styles, SVG stroke/fill,
-       and gradients in the three redesigned screens — anywhere a bare
-       tailwind.config token (needing the oklch(var(--x) / <alpha-value>)
-       wrapper) would be awkward. --glass/--violet have no Tailwind token
-       equivalent at all. */
     --cyan: oklch(0.78 0.14 220);
     --red: oklch(0.6 0.2 25);
     --green: oklch(0.78 0.17 150);
     --glass: oklch(0.26 0.045 275 / 0.55);
     --violet: oklch(0.62 0.2 300);
+    --surface: oklch(0.18 0.03 275);
   }
 
   * {
@@ -290,10 +238,14 @@
    was translated from.
    ------------------------------------------------------------ */
 @layer components {
-  /* Flat panel — solid card fill, plain 1px hairline border. No blur, no glow. */
+  /* Flat panel — solid card fill, clean hairline border, refined elevation. */
   .vecta-panel {
     @apply relative border border-border bg-card px-8 py-9;
     border-radius: 18px;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  }
+  .dark .vecta-panel {
+    box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.4);
   }
   .vecta-eyebrow {
     @apply font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground;
@@ -331,7 +283,11 @@
   }
   /* Flat dashboard tile (Reports / Scan). */
   .vecta-tile {
-    @apply flex-1 rounded-2xl border border-border bg-card p-6 transition-colors hover:border-primary;
+    @apply flex-1 rounded-2xl border border-border bg-card p-6 transition-all hover:border-primary;
+    box-shadow: 0 2px 12px -2px rgba(0, 0, 0, 0.04);
+  }
+  .dark .vecta-tile {
+    box-shadow: 0 2px 16px -2px rgba(0, 0, 0, 0.25);
   }
 
   /* ------------------------------------------------------------

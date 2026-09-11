@@ -16,7 +16,6 @@ import { signOut } from "@/lib/icms/actions/auth";
 import { getLang } from "@/lib/icms/actions/language";
 import { LanguageToggle } from "@/components/icms/language-toggle";
 import { ROLE_LABELS } from "@/lib/icms/constants";
-import { ThemeToggle } from "@/components/icms/theme-toggle";
 import { NotificationsBell } from "@/components/icms/notifications-bell";
 import { PwaProvider } from "@/components/icms/pwa-provider";
 import { InstallPrompt } from "@/components/icms/install-prompt";
