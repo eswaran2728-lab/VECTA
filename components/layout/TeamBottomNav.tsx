@@ -29,27 +29,27 @@ const REPORTS: NavTab = { href: "/?section=reports#reports", label: "Reports", m
 const REPORT_SEARCH: NavTab = { href: "/avsec/reports/lookup", label: "Report Search" };
 
 const NEW_TRANSACTION: NavTab = {
-  href: "/caterlink/transactions/new",
+  href: "/icms/transactions/new",
   label: "+ New",
   match: ["/caterlink/transactions/new", "/icms/transactions/new"],
 };
 const NEW_DELIVERY: NavTab = {
-  href: "/caterlink/vendor-transactions/new",
+  href: "/icms/vendor-transactions/new",
   label: "+ New",
   match: ["/caterlink/vendor-transactions/new", "/icms/vendor-transactions/new"],
 };
 const MY_DISPATCHES: NavTab = {
-  href: "/caterlink/transactions",
+  href: "/icms/transactions",
   label: "Dispatches",
   match: ["/caterlink/transactions", "/icms/transactions"],
 };
 const MY_DELIVERIES: NavTab = {
-  href: "/caterlink/vendor-transactions",
+  href: "/icms/vendor-transactions",
   label: "Deliveries",
   match: ["/caterlink/vendor-transactions", "/icms/vendor-transactions"],
 };
 const DRIVER_HOME: NavTab = {
-  href: "/caterlink/dashboard",
+  href: "/icms/dashboard",
   label: "Home",
   match: ["/caterlink/dashboard", "/caterlink", "/icms/dashboard"],
 };

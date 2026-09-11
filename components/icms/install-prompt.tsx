@@ -60,15 +60,15 @@ export function InstallPrompt() {
   if (!visible) return null;
 
   return (
-    <div className="flex items-center gap-3 border-b bg-primary/10 px-4 py-2.5 text-sm print:hidden">
+    <div className="flex items-center gap-3 border-b border-primary/20 bg-primary/10 px-4 py-2.5 text-xs print:hidden">
       <Download className="h-4 w-4 shrink-0 text-primary" />
       <span className="flex-1 text-foreground">
-        Install CaterLink on this device for quicker access and offline support.
+        Install VECTA Catering on this device for quicker access and offline support.
       </span>
       <button
         type="button"
         onClick={install}
-        className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-105"
+        className="btn-primary text-xs px-3 py-1 shrink-0"
       >
         Install
       </button>
@@ -76,7 +76,7 @@ export function InstallPrompt() {
         type="button"
         onClick={dismiss}
         aria-label="Dismiss"
-        className="shrink-0 text-muted-foreground hover:text-foreground"
+        className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer"
       >
         <X className="h-4 w-4" />
       </button>

@@ -48,18 +48,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const nav = isDriver
     ? [
         {
-          href: isVendor ? "/caterlink/vendor-transactions/new" : "/caterlink/transactions/new",
+          href: isVendor ? "/icms/vendor-transactions/new" : "/icms/transactions/new",
           label: isVendor ? "+ New Delivery" : "+ New Transaction",
           icon: PlusCircle,
           show: true,
         },
         {
-          href: isVendor ? "/caterlink/vendor-transactions" : "/caterlink/transactions",
+          href: isVendor ? "/icms/vendor-transactions" : "/icms/transactions",
           label: isVendor ? "My Deliveries" : "My Dispatches",
           icon: ClipboardList,
           show: true,
         },
-        { href: "/caterlink/dashboard", label: "CaterLink Dashboard", icon: LayoutDashboard, show: true },
+        { href: "/icms/dashboard", label: "Catering Operations", icon: LayoutDashboard, show: true },
       ]
     : [
         { href: "/icms/dashboard", label: "Dashboard", icon: LayoutDashboard, show: true },
@@ -103,14 +103,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         name={profile.name}
         roleLabel={ROLE_LABELS[profile.role] ?? null}
         signOutAction={signOut}
-        brand={isDriver ? "CATERLINK" : "VECTA"}
-        homeHref={isDriver ? "/caterlink/dashboard" : "/"}
+        brand="VECTA"
+        homeHref={isDriver ? "/icms/dashboard" : "/"}
         extra={
           <>
             <PwaProvider />
             <LanguageToggle lang={lang} />
             <NotificationsBell userId={profile.id} />
-            <ThemeToggle />
           </>
         }
       />

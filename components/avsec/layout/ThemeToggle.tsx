@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { cn } from "@/lib/avsec/utils";
 
 type ThemePref = "light" | "dark" | "system";
 
@@ -11,14 +12,14 @@ const STORAGE_KEY = "avsec-theme";
 // darken it); "system" as a stored preference is treated the same as
 // "light" until a user makes an explicit choice.
 function systemTheme(): "light" | "dark" {
-  return "light";
+  return "dark";
 }
 
-// Always writes a concrete light/dark value — never leaves the attribute off for "system"
-// — because Tailwind's dark: variant is bound to [data-theme="dark"]. Mirrored by the
-// inline pre-paint script in layout.tsx.
+// Always writes a concrete light/dark value
 function apply(pref: ThemePref) {
-  document.documentElement.setAttribute("data-theme", pref === "system" ? systemTheme() : pref);
+  const resolved = pref === "system" ? systemTheme() : pref;
+  document.documentElement.setAttribute("data-theme", resolved);
+  document.documentElement.classList.toggle("dark", resolved === "dark");
 }
 
 function readPref(): ThemePref {
@@ -26,25 +27,21 @@ function readPref(): ThemePref {
     const v = localStorage.getItem(STORAGE_KEY);
     if (v === "light" || v === "dark" || v === "system") return v;
   } catch {
-    // localStorage unavailable (private mode) — fall through to the system default.
+    // localStorage unavailable (private mode)
   }
-  return "system";
+  return "dark";
 }
 
 export function useThemePref() {
-  const [pref, setPref] = useState<ThemePref>("system");
+  const [pref, setPref] = useState<ThemePref>("dark");
 
   useEffect(() => {
     setPref(readPref());
   }, []);
 
-  // While on "system", follow live OS changes — the pre-paint script only resolves once.
   useEffect(() => {
     if (pref !== "system") return;
-    const mq = window.matchMedia("(prefers-color-scheme: light)");
-    const sync = () => apply("system");
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
+    apply("dark");
   }, [pref]);
 
   const choose = (next: ThemePref) => {
@@ -53,37 +50,35 @@ export function useThemePref() {
     try {
       localStorage.setItem(STORAGE_KEY, next);
     } catch {
-      // Non-fatal: the choice just won't persist across sessions.
+      // Non-fatal
     }
   };
 
   return { pref, choose };
 }
 
-/** Compact circle toggle shown in the app header — flips between light and dark. */
+/** Compact toggle shown in the app header */
 export function ThemeToggle() {
   const { pref, choose } = useThemePref();
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(true);
 
   useEffect(() => {
-    setIsDark(pref === "dark");
+    setIsDark(pref !== "light");
   }, [pref]);
 
   return (
     <button
       type="button"
       onClick={() => choose(isDark ? "light" : "dark")}
-      title="Toggle light / dark"
-      aria-label="Toggle light or dark theme"
-      className="w-[34px] h-[34px] flex items-center justify-center border transition-colors"
-      style={{ borderColor: "var(--line3)" }}
+      title="Toggle theme"
+      aria-label="Toggle theme"
+      className="w-8 h-8 rounded-lg flex items-center justify-center border border-border/80 bg-surface hover:border-primary/50 text-muted-foreground hover:text-foreground transition-all cursor-pointer"
     >
       <span
-        className="w-[13px] h-[13px] rounded-full"
-        style={{
-          border: "1.5px solid var(--gold)",
-          background: isDark ? "transparent" : "var(--gold-fill)",
-        }}
+        className={cn(
+          "w-3.5 h-3.5 rounded-full border border-primary transition-all",
+          isDark ? "bg-primary shadow-[0_0_6px_rgba(59,130,246,0.5)]" : "bg-transparent"
+        )}
       />
     </button>
   );
@@ -92,10 +87,10 @@ export function ThemeToggle() {
 /** Three-way LIGHT / DARK / SYSTEM selector for the profile screen. */
 export function ThemeOptions() {
   const { pref, choose } = useThemePref();
-  const options: ThemePref[] = ["light", "dark", "system"];
+  const options: ThemePref[] = ["dark", "light", "system"];
 
   return (
-    <div className="flex gap-2">
+    <div className="grid grid-cols-3 gap-2">
       {options.map((opt) => {
         const on = pref === opt;
         return (
@@ -103,12 +98,12 @@ export function ThemeOptions() {
             key={opt}
             type="button"
             onClick={() => choose(opt)}
-            className="flex-1 text-center py-3 px-1 t-mono text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors"
-            style={{
-              border: `1px solid ${on ? "var(--gold-fill)" : "var(--line3)"}`,
-              background: on ? "var(--gold-soft)" : "transparent",
-              color: on ? "var(--gold)" : "var(--mid)",
-            }}
+            className={cn(
+              "py-2.5 px-2 rounded-lg font-mono text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer",
+              on
+                ? "bg-primary text-primary-foreground font-bold shadow-sm"
+                : "border border-border/80 bg-surface/60 text-muted-foreground hover:bg-surface hover:text-foreground"
+            )}
           >
             {opt}
           </button>

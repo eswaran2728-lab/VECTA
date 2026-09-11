@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { StatusBadge } from "@/components/icms/status-badge";
 
-export const metadata: Metadata = { title: "CaterLink Dashboard" };
+export const metadata: Metadata = { title: "Catering Operations Dashboard" };
 export const dynamic = "force-dynamic";
 
 function startOfToday(): string {
@@ -76,18 +76,18 @@ export default async function DashboardPage({
 
     return (
       <div className="mx-auto max-w-4xl space-y-6">
-        {/* CaterLink Dashboard Header */}
+        {/* Catering Operations Dashboard Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/60 pb-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-xs font-semibold uppercase tracking-wider text-amber-500">
-                {isVendor ? "CATERLINK · THIRD PARTY DRIVER" : "CATERLINK · IFC DRIVER"}
+              <span className="font-mono text-xs font-semibold uppercase tracking-wider text-amber-400">
+                {isVendor ? "INFLIGHT CATERING · 3RD PARTY VENDOR" : "INFLIGHT CATERING · IFC DRIVER"}
               </span>
             </div>
-            <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-              CaterLink Dashboard
+            <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+              Catering Operations
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground mt-1">
               Signed in as <span className="font-semibold text-foreground">{profile.name}</span> (Staff ID:{" "}
               <span className="font-mono text-foreground font-semibold">{profile.staff_id}</span>).
             </p>
@@ -95,13 +95,13 @@ export default async function DashboardPage({
         </div>
 
         {/* Primary Hero Card: CREATE NEW TRANSACTION */}
-        <div className="relative overflow-hidden rounded-2xl border-2 border-primary/50 bg-gradient-to-br from-primary/15 via-card to-card p-6 shadow-xl shadow-primary/10">
+        <div className="relative overflow-hidden rounded-2xl border border-primary/50 bg-surface/80 p-6 shadow-xl shadow-primary/5">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
             <div className="space-y-1.5 max-w-lg">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/20 px-3 py-1 font-mono text-xs font-semibold text-primary">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 px-3 py-1 font-mono text-xs font-semibold text-primary">
                 <Truck className="h-3.5 w-3.5" /> Departure Dispatch
               </span>
-              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight font-display text-foreground">
                 {isVendor ? "Start New Delivery" : "Create New Transaction"}
               </h2>
               <p className="text-sm text-muted-foreground leading-relaxed">
@@ -111,14 +111,14 @@ export default async function DashboardPage({
               </p>
             </div>
             <Link
-              href={isVendor ? "/caterlink/vendor-transactions/new" : "/caterlink/transactions/new"}
+              href={isVendor ? "/icms/vendor-transactions/new" : "/icms/transactions/new"}
               className="w-full sm:w-auto shrink-0"
             >
               <button
                 type="button"
-                className="vecta-btn-primary w-full sm:w-auto text-base px-6 py-4 font-bold flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-[0.98] transition-transform"
+                className="btn-primary w-full sm:w-auto text-sm px-6 py-3.5 font-bold flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-[0.98] transition-transform"
               >
-                <PlusCircle className="h-5 w-5" />
+                <PlusCircle className="h-4 w-4" />
                 <span>+ Create New Transaction</span>
               </button>
             </Link>
@@ -176,8 +176,8 @@ export default async function DashboardPage({
                       <Link
                         href={
                           isVendor
-                            ? `/caterlink/vendor-transactions/${tx.id}`
-                            : `/caterlink/transactions/${tx.id}`
+                            ? `/icms/vendor-transactions/${tx.id}`
+                            : `/icms/transactions/${tx.id}`
                         }
                         className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary/15 hover:bg-primary/25 text-primary py-2.5 px-3 text-xs font-bold transition-colors cursor-pointer"
                       >
@@ -196,7 +196,7 @@ export default async function DashboardPage({
         <div className="pt-2 flex items-center justify-between text-xs text-muted-foreground">
           <span>Need full dispatch history?</span>
           <Link
-            href={isVendor ? "/caterlink/vendor-transactions" : "/caterlink/transactions"}
+            href={isVendor ? "/icms/vendor-transactions" : "/icms/transactions"}
             className="font-semibold text-primary underline underline-offset-4 hover:text-primary/80"
           >
             View All Dispatches ➔
@@ -349,19 +349,19 @@ export default async function DashboardPage({
     {
       label: "Pending Part D (outbound)",
       value: pendingPartD.count ?? 0,
-      href: "/transactions?status=AIRPORT_POST_APPROVED",
+      href: "/icms/transactions?status=AIRPORT_POST_APPROVED",
       icon: PackageCheck,
     },
     {
       label: "Completed Today",
       value: completedToday.count ?? 0,
-      href: "/transactions?status=COMPLETED",
+      href: "/icms/transactions?status=COMPLETED",
       icon: CheckCircle2,
     },
     {
       label: "Escalated Cases",
       value: escalated.count ?? 0,
-      href: "/transactions?status=ESCALATED",
+      href: "/icms/transactions?status=ESCALATED",
       icon: AlertTriangle,
       alert: true,
     },
