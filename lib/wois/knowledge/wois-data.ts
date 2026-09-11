@@ -1,5 +1,5 @@
 /**
- * W.O.I.S (World of Intelligent Aviation Systems) - Core Knowledge Base
+ * W.O.I.S (Work Order Intelligence Smartbook) - Core Knowledge Base
  * Real PDF Ingestion & OCR Page-Attributed SOP Data, Regulatory Standards & VECTA App Guides.
  */
 

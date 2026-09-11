@@ -9,7 +9,7 @@ const doc = new jsPDF({
 });
 
 const pages = [
-  { page: 1, title: "W.O.I.S - World of Intelligent Aviation Systems", content: "AirAsia Aviation Security Operational Guide\nStandard Operating Procedures & Ground Duties\nVersion 2026.1" },
+  { page: 1, title: "W.O.I.S - Work Order Intelligence Smartbook", content: "AirAsia Aviation Security Operational Guide\nStandard Operating Procedures & Ground Duties\nVersion 2026.1" },
   { page: 2, title: "Table of Contents", content: "1. Make-Up Area (p. 3-11)\n2. Break-Up Area (p. 12-13)\n3. Ramp Guard (p. 14-15)\n4. Step Guard (p. 16-17)\n5. Hold Guard (p. 18-19)\n6. Security Check & Aircraft Search (p. 20-33)\n7. Aircraft Guard (p. 31)\n8. Patrolling - Landside (p. 34-35)\n9. Patrolling - Airside (p. 36-37)\n10. Disruptive & Unruly Passengers (p. 38-40)\n11. Case Study References (p. 41)" },
   { page: 3, title: "Make-Up Area - System Method & Cards", content: "1. Container Reconcile Card (CRC)\n2. Container Card - Every container\n3. Final Card / Delivery Card - Summary of each departure\nMake-up Domestic & International: Scanning via Baggage Reconciliation System (BRS) by ramp staff." },
   { page: 4, title: "Make-Up Area - Duties & Access Control", content: "Position at Make-Up zones as rostered.\nOnly authorized personnel at Make-Up Area.\nRecord baggage handlers name and staff number.\nPhysical check on baggage condition.\nFrisk baggage handlers after their duties.\nMonitoring baggage loaded into the right containers/trolleys with right baggage tag." },

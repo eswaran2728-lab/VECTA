@@ -189,7 +189,7 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
                 </span>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                World of Intelligent Aviation Systems · Staff Assistant
+                Work Order Intelligence Smartbook · Staff Assistant
               </p>
             </div>
           </div>

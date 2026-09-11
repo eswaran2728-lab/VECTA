@@ -1,5 +1,5 @@
 /**
- * W.O.I.S Intelligence Engine (World of Intelligent Aviation Systems)
+ * W.O.I.S Intelligence Engine (Work Order Intelligence Smartbook)
  * RAG Knowledge Retrieval, Precedence Reasoning, Safety Guard & Confidence Classifier.
  */
 
@@ -212,7 +212,7 @@ function handleFullDocumentRetrieval(): WoisEngineResponse {
     : undefined;
 
   return {
-    body: `### 📖 W.O.I.S (World of Intelligent Aviation Systems) — Complete SOP Manual
+    body: `### 📖 W.O.I.S (Work Order Intelligence Smartbook) — Complete SOP Manual
 
 ${doc.content}`,
     confidence_tag: "VERIFIED",

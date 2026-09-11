@@ -1,5 +1,5 @@
 -- Migration: 20260911000008_wois_ai_knowledge_base.sql
--- W.O.I.S AI (World of Intelligent Aviation Systems) V1 Schema
+-- W.O.I.S AI (Work Order Intelligence Smartbook) V1 Schema
 
 -- 1. Knowledge Base Documents Table
 CREATE TABLE IF NOT EXISTS public.kb_documents (
