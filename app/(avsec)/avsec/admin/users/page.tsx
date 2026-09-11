@@ -27,8 +27,8 @@ export default async function AdminUsersPage({
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold">User Management</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            <h1 className="font-display text-2xl font-bold tracking-[0.03em] text-foreground">User Management</h1>
+            <p className="font-mono text-xs text-muted-foreground mt-1">
               Create staff accounts, approve registrations, and assign checkpoint roles.
             </p>
           </div>
@@ -43,8 +43,8 @@ export default async function AdminUsersPage({
         </div>
 
         {searchParams.error && (
-          <div className="card p-4 border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30">
-            <p className="text-sm font-medium text-red-700 dark:text-red-300">{searchParams.error}</p>
+          <div className="card p-4 border-destructive/40 bg-destructive/10 text-destructive">
+            <p className="text-sm font-medium">{searchParams.error}</p>
           </div>
         )}
 
@@ -54,30 +54,30 @@ export default async function AdminUsersPage({
           <section className="card p-5">
             <div className="flex items-center justify-between mb-3">
               <h2 className="section-title">Pending approval</h2>
-              <span className="text-xs text-slate-500">{pending.length} waiting</span>
+              <span className="font-mono text-xs text-muted-foreground">{pending.length} waiting</span>
             </div>
-            <div className="divide-y divide-slate-200 dark:divide-slate-800">
+            <div className="divide-y divide-border">
               {pending.map((p) => (
                 <div key={p.id} className="py-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="font-semibold text-sm truncate">{p.name || p.email}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                    <p className="font-semibold text-sm text-foreground truncate">{p.name || p.email}</p>
+                    <p className="font-mono text-xs text-muted-foreground truncate">
                       {p.email} · {p.staff_no} · {p.station} · {p.team}
                     </p>
-                    <p className="text-xs text-brand-600 dark:text-brand-400 font-semibold mt-1">
+                    <p className="font-mono text-xs text-primary font-semibold mt-1">
                       Requested: {ROLE_LABELS[p.role]}
                     </p>
                   </div>
                   <div className="flex gap-2 shrink-0">
                     <form action={approveUser}>
                       <input type="hidden" name="profileId" value={p.id} />
-                      <button type="submit" className="btn-primary py-2 px-3 text-sm">
+                      <button type="submit" className="btn-primary py-2 px-3 text-xs">
                         Approve
                       </button>
                     </form>
                     <form action={rejectUser}>
                       <input type="hidden" name="profileId" value={p.id} />
-                      <button type="submit" className="btn-secondary py-2 px-3 text-sm">
+                      <button type="submit" className="btn-secondary py-2 px-3 text-xs">
                         Reject
                       </button>
                     </form>

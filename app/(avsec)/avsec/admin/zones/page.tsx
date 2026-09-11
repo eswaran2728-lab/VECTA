@@ -23,8 +23,8 @@ export default async function AdminZonesPage({
     <main className="min-h-screen pb-16">
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
         <div>
-          <h1 className="t-display text-xl">Duty Zones</h1>
-          <p className="text-[13px] mt-1" style={{ color: "var(--soft)" }}>
+          <h1 className="font-display text-xl font-bold tracking-[0.03em] text-foreground">Duty Zones</h1>
+          <p className="font-mono text-xs text-muted-foreground mt-1">
             Geofence areas the check-in screen tests against. Draw a zone by tapping points
             on the map — the app connects them into a polygon automatically.
           </p>
@@ -51,18 +51,18 @@ export default async function AdminZonesPage({
         <div className="card p-4 space-y-2">
           <p className="section-title">Zones at {station}</p>
           {zones.length === 0 && (
-            <p className="text-sm" style={{ color: "var(--soft)" }}>
+            <p className="text-sm text-muted-foreground">
               No zones defined yet for this station.
             </p>
           )}
-          <div className="divide-y" style={{ borderColor: "var(--line2)" }}>
+          <div className="divide-y divide-border">
             {zones.map((z) => (
               <div key={z.id} className="flex items-center justify-between py-2.5 gap-2">
                 <div className="min-w-0">
-                  <p className="font-semibold text-[13px]" style={{ color: "var(--ink2)" }}>
+                  <p className="font-semibold text-xs text-foreground">
                     {z.code} · {z.name}
                   </p>
-                  <p className="t-mono text-[10px]" style={{ color: "var(--soft)" }}>
+                  <p className="font-mono text-[10px] text-muted-foreground">
                     radius ≈{z.radius_m}m
                     {!(z as { active?: boolean }).active ? " · INACTIVE" : ""}
                   </p>

@@ -72,15 +72,15 @@ export default async function AttendanceReportPage({
     <main className="min-h-screen pb-16">
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
         <div>
-          <h1 className="t-display text-xl">Attendance Report</h1>
-          <p className="text-[13px] mt-1" style={{ color: "var(--soft)" }}>
+          <h1 className="font-display text-xl font-bold tracking-[0.03em] text-foreground">Attendance Report</h1>
+          <p className="font-mono text-xs text-muted-foreground mt-1">
             Built from actual check-in/out records, cross-referenced against the roster.
           </p>
         </div>
 
         {searchParams.error && <div className="disclaimer-band">{searchParams.error}</div>}
         {searchParams.swept && (
-          <div className="disclaimer-band" style={{ color: "var(--green)", borderColor: "var(--green)" }}>
+          <div className="disclaimer-band border-success text-success bg-success/10">
             Anomaly sweep complete — flags refreshed.
           </div>
         )}
@@ -110,43 +110,49 @@ export default async function AttendanceReportPage({
             <input type="text" name="team" defaultValue={team} placeholder="All" className="input-base" />
           </div>
           <div>
-            <label className="field-label">Search officer</label>
-            <input type="text" name="q" defaultValue={search} placeholder="Name or staff no." className="input-base" />
+            <label className="field-label">Search</label>
+            <input
+              type="text"
+              name="q"
+              defaultValue={search}
+              placeholder="Name or staff no…"
+              className="input-base"
+            />
           </div>
-          <input type="hidden" name="flag" value={flag} />
-          <div className="col-span-2 sm:col-span-5 flex gap-3 flex-wrap">
-            <button type="submit" className="btn-primary">
-              Apply filters
+          <div className="flex gap-2">
+            <button type="submit" className="btn-secondary flex-1">
+              Filter
             </button>
-            <a href={`/api/avsec/export/attendance?${exportQs.toString()}`} className="btn-secondary">
-              Export Excel
-            </a>
-            {profile.role === "ADMIN" && (
-              <form action={runAttendanceSweep} className="inline">
-                <input type="hidden" name="returnTo" value={`/admin/attendance-report?${baseQs.toString()}&flag=${flag}`} />
-                <button type="submit" className="btn-quiet">
-                  Run anomaly sweep
-                </button>
-              </form>
-            )}
+            <Link href={`/api/avsec/export/attendance?${exportQs.toString()}`} className="btn-secondary" title="Export CSV">
+              CSV
+            </Link>
           </div>
         </form>
 
-        <div className="flex gap-1.5 flex-wrap">
+        {profile.role === "ADMIN" && (
+          <form action={runAttendanceSweep} className="flex justify-end">
+            <button type="submit" className="btn-quiet">
+              ↻ Run anomaly sweep (refresh flags)
+            </button>
+          </form>
+        )}
+
+        {/* Flag filter tabs */}
+        <div className="flex flex-wrap gap-1.5">
           {FLAG_TABS.map((t) => {
-            const on = t.value === flag;
-            const qs = new URLSearchParams({ dateFrom, dateTo, station, team, q: search, flag: t.value });
+            const active = flag === t.value;
+            const qs = new URLSearchParams(baseQs);
+            if (t.value !== "all") qs.set("flag", t.value);
+            else qs.delete("flag");
             return (
               <Link
                 key={t.value}
                 href={`/avsec/admin/attendance-report?${qs.toString()}`}
-                className="t-mono text-[9.5px] font-semibold px-3 py-2"
-                style={{
-                  letterSpacing: "0.1em",
-                  border: `1px solid ${on ? "var(--gold-fill)" : "var(--line3)"}`,
-                  background: on ? "var(--gold-soft)" : "transparent",
-                  color: on ? "var(--gold)" : "var(--mid)",
-                }}
+                className={`rounded-full border px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                  active
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                }`}
               >
                 {t.label} · {counts[t.value]}
               </Link>
@@ -154,22 +160,22 @@ export default async function AttendanceReportPage({
           })}
         </div>
 
-        <details className="card p-4 text-[12.5px]" style={{ color: "var(--soft)" }}>
-          <summary className="cursor-pointer font-semibold" style={{ color: "var(--ink2)" }}>
+        <details className="card p-4 text-xs text-muted-foreground">
+          <summary className="cursor-pointer font-semibold text-foreground">
             What do these flags mean?
           </summary>
           <ul className="mt-2 space-y-1.5 list-disc pl-5">
             <li>
-              <strong style={{ color: "var(--red)" }}>No-Show</strong> — the officer&apos;s team was
+              <strong className="text-destructive">No-Show</strong> — the officer&apos;s team was
               rostered to work that day, but they never checked in at all.
             </li>
             <li>
-              <strong style={{ color: "var(--red)" }}>Missing Checkout</strong> — they checked in but
+              <strong className="text-destructive">Missing Checkout</strong> — they checked in but
               never checked out, and the shift&apos;s end time (plus a grace period) has already passed.
               No hour total is shown for these — a missed checkout was never a real duration.
             </li>
             <li>
-              <strong style={{ color: "var(--red)" }}>Off-Schedule</strong> — they checked in on a day
+              <strong className="text-primary">Off-Schedule</strong> — they checked in on a day
               their team&apos;s roster explicitly marks as an Off Day.
             </li>
             <li>Flags refresh automatically overnight, or on demand via &quot;Run anomaly sweep&quot; (Admin only).</li>
@@ -180,21 +186,21 @@ export default async function AttendanceReportPage({
         <div className="card p-4 overflow-x-auto hidden sm:block">
           <table className="w-full text-sm min-w-[860px]">
             <thead>
-              <tr style={{ borderBottom: "1px solid var(--line2)" }}>
+              <tr className="border-b border-border">
                 {["Officer", "Station / Team", "Date", "Check In", "Check Out", "Total Hours", ""].map((h) => (
-                  <th key={h} className="text-left p-2 t-mono text-[10px]" style={{ color: "var(--faint)" }}>
+                  <th key={h} className="text-left p-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                     {h}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-border/60">
               {rows.map((r) => (
                 <AttendanceRowDesktop key={r.id} row={r} />
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="p-4 text-center text-sm" style={{ color: "var(--soft)" }}>
+                  <td colSpan={7} className="p-4 text-center text-sm text-muted-foreground">
                     No attendance records for this filter.
                   </td>
                 </tr>
@@ -206,7 +212,7 @@ export default async function AttendanceReportPage({
         {/* Mobile card list */}
         <div className="space-y-2 sm:hidden">
           {rows.length === 0 && (
-            <p className="text-sm text-center py-4" style={{ color: "var(--soft)" }}>
+            <p className="text-sm text-center py-4 text-muted-foreground">
               No attendance records for this filter.
             </p>
           )}
@@ -222,27 +228,31 @@ export default async function AttendanceReportPage({
 function StatusPills({ row }: { row: AttendanceRow }) {
   return (
     <>
-      {row.is_no_show && <Pill color="var(--red)">NO-SHOW</Pill>}
-      {row.is_missing_checkout && <Pill color="var(--red)">MISSING CHECKOUT</Pill>}
-      {row.is_off_schedule && <Pill color="var(--gold)">OFF-SCHEDULE</Pill>}
+      {row.is_no_show && <Pill color="red">NO-SHOW</Pill>}
+      {row.is_missing_checkout && <Pill color="red">MISSING CHECKOUT</Pill>}
+      {row.is_off_schedule && <Pill color="gold">OFF-SCHEDULE</Pill>}
       {row.ot_minutes != null && (
         row.ot_request_id ? (
           <Link href={`/avsec/duty/overtime/${row.ot_request_id}`}>
-            <Pill color="var(--green)">+{formatHours(row.ot_minutes)} OT →</Pill>
+            <Pill color="green">+{formatHours(row.ot_minutes)} OT →</Pill>
           </Link>
         ) : (
-          <Pill color="var(--green)">+{formatHours(row.ot_minutes)} OT (unclaimed)</Pill>
+          <Pill color="green">+{formatHours(row.ot_minutes)} OT (unclaimed)</Pill>
         )
       )}
     </>
   );
 }
 
-function Pill({ color, children }: { color: string; children: React.ReactNode }) {
+function Pill({ color, children }: { color: "red" | "gold" | "green"; children: React.ReactNode }) {
+  const colorMap = {
+    red: "border-destructive/40 bg-destructive/10 text-destructive",
+    gold: "border-primary/40 bg-primary/10 text-primary",
+    green: "border-success/40 bg-success/10 text-success",
+  };
   return (
     <span
-      className="t-mono text-[8.5px] font-bold px-1.5 py-0.5 inline-block"
-      style={{ letterSpacing: "0.06em", color, border: `1px solid ${color}` }}
+      className={`font-mono text-[8.5px] font-bold px-1.5 py-0.5 inline-block rounded border uppercase tracking-wider ${colorMap[color]}`}
     >
       {children}
     </span>
@@ -251,40 +261,37 @@ function Pill({ color, children }: { color: string; children: React.ReactNode })
 
 function AttendanceRowDesktop({ row }: { row: AttendanceRow }) {
   return (
-    <tr style={{ borderTop: "1px solid var(--line2)" }}>
+    <tr className="hover:bg-card/40 transition-colors">
       <td className="p-2 align-top">
         <div className="flex items-center gap-2">
-          <span
-            className="w-7 h-7 shrink-0 rounded-full flex items-center justify-center t-mono text-[9.5px] font-bold"
-            style={{ background: "var(--gold-fill)", color: "var(--on-gold)" }}
-          >
+          <span className="w-7 h-7 shrink-0 rounded-full flex items-center justify-center font-mono text-[9.5px] font-bold bg-primary/20 text-primary border border-primary/30">
             {initials(row.staff_name)}
           </span>
           <div>
-            <p className="font-semibold text-[12.5px]" style={{ color: "var(--ink2)" }}>
+            <p className="font-semibold text-xs text-foreground">
               {row.staff_name}
             </p>
-            <p className="t-mono text-[9.5px]" style={{ color: "var(--faint)" }}>
+            <p className="font-mono text-[10px] text-muted-foreground">
               {row.staff_no}
             </p>
           </div>
         </div>
       </td>
-      <td className="p-2 align-top t-mono text-[11px]" style={{ color: "var(--ink3)" }}>
+      <td className="p-2 align-top font-mono text-xs text-foreground/80">
         {row.station}
         <br />
-        {row.team || "—"}
+        <span className="text-muted-foreground">{row.team || "—"}</span>
       </td>
-      <td className="p-2 align-top t-mono text-[11px]" style={{ color: "var(--ink3)" }}>
+      <td className="p-2 align-top font-mono text-xs text-muted-foreground">
         {formatDateMY(row.duty_date)}
       </td>
-      <td className="p-2 align-top t-mono text-[11px]" style={{ color: "var(--ink3)" }}>
+      <td className="p-2 align-top font-mono text-xs text-muted-foreground">
         {formatTimeMY(row.check_in_at)}
       </td>
-      <td className="p-2 align-top t-mono text-[11px]" style={{ color: "var(--ink3)" }}>
-        {row.is_missing_checkout ? <span style={{ color: "var(--red)" }}>Missing</span> : formatTimeMY(row.check_out_at)}
+      <td className="p-2 align-top font-mono text-xs">
+        {row.is_missing_checkout ? <span className="text-destructive font-semibold">Missing</span> : <span className="text-muted-foreground">{formatTimeMY(row.check_out_at)}</span>}
       </td>
-      <td className="p-2 align-top t-mono text-[11px] font-semibold" style={{ color: "var(--ink)" }}>
+      <td className="p-2 align-top font-mono text-xs font-semibold text-foreground">
         {row.is_missing_checkout ? "—" : formatHours(row.total_minutes)}
       </td>
       <td className="p-2 align-top">
@@ -301,42 +308,39 @@ function AttendanceCardMobile({ row }: { row: AttendanceRow }) {
     <div className="card p-3.5 space-y-2">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span
-            className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center t-mono text-[10px] font-bold"
-            style={{ background: "var(--gold-fill)", color: "var(--on-gold)" }}
-          >
+          <span className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center font-mono text-[10px] font-bold bg-primary/20 text-primary border border-primary/30">
             {initials(row.staff_name)}
           </span>
           <div className="min-w-0">
-            <p className="font-semibold text-[13px] truncate" style={{ color: "var(--ink2)" }}>
+            <p className="font-semibold text-xs text-foreground truncate">
               {row.staff_name}
             </p>
-            <p className="t-mono text-[9.5px]" style={{ color: "var(--faint)" }}>
+            <p className="font-mono text-[10px] text-muted-foreground">
               {row.staff_no} · {row.station} · {row.team || "—"}
             </p>
           </div>
         </div>
-        <p className="t-mono text-[10.5px] shrink-0" style={{ color: "var(--soft)" }}>
+        <p className="font-mono text-[10.5px] text-muted-foreground shrink-0">
           {formatDateMY(row.duty_date)}
         </p>
       </div>
-      <div className="grid grid-cols-3 gap-2 text-center">
+      <div className="grid grid-cols-3 gap-2 text-center pt-1 border-t border-border/60">
         <div>
-          <p className="field-hint mb-0">Check In</p>
-          <p className="t-mono text-[11.5px] font-semibold">{formatTimeMY(row.check_in_at)}</p>
+          <p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Check In</p>
+          <p className="font-mono text-xs font-semibold text-foreground mt-0.5">{formatTimeMY(row.check_in_at)}</p>
         </div>
         <div>
-          <p className="field-hint mb-0">Check Out</p>
-          <p className="t-mono text-[11.5px] font-semibold" style={row.is_missing_checkout ? { color: "var(--red)" } : undefined}>
+          <p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Check Out</p>
+          <p className={`font-mono text-xs font-semibold mt-0.5 ${row.is_missing_checkout ? "text-destructive" : "text-foreground"}`}>
             {row.is_missing_checkout ? "Missing" : formatTimeMY(row.check_out_at)}
           </p>
         </div>
         <div>
-          <p className="field-hint mb-0">Total</p>
-          <p className="t-mono text-[11.5px] font-semibold">{row.is_missing_checkout ? "—" : formatHours(row.total_minutes)}</p>
+          <p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Total</p>
+          <p className="font-mono text-xs font-semibold text-foreground mt-0.5">{row.is_missing_checkout ? "—" : formatHours(row.total_minutes)}</p>
         </div>
       </div>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-1.5 pt-1">
         <StatusPills row={row} />
       </div>
     </div>

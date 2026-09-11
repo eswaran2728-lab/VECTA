@@ -44,88 +44,77 @@ export default async function ProfilePage() {
   ];
 
   return (
-    <main className="min-h-screen pb-32" style={{ background: "var(--page)" }}>
-
-      <div className="max-w-3xl mx-auto animate-slide">
-        <div
-          className="flex items-center gap-3.5 px-4 py-5"
-          style={{ borderBottom: "1px solid var(--line)" }}
-        >
-          <div
-            className="w-14 h-14 shrink-0 flex items-center justify-center t-mono text-[18px] font-bold"
-            style={{ background: "var(--gold-fill)", color: "var(--on-gold)" }}
-          >
+    <main className="min-h-screen bg-background pb-32">
+      <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
+        <div className="card p-5 flex items-center gap-4 border-l-4 border-l-primary">
+          <div className="w-14 h-14 shrink-0 rounded-xl flex items-center justify-center font-mono text-lg font-bold bg-primary/20 text-primary border border-primary/30">
             {initials(profile.name)}
           </div>
           <div className="min-w-0">
-            <div
-              className="font-condensed font-semibold text-[19px] leading-none uppercase"
-              style={{ letterSpacing: "0.1em", color: "var(--ink)" }}
-            >
+            <div className="font-display font-bold text-lg text-foreground tracking-[0.03em] uppercase">
               {profile.name}
             </div>
-            <div className="t-mono text-[10.5px] font-medium mt-1.5" style={{ color: "var(--gold)" }}>
+            <div className="font-mono text-xs font-semibold text-primary mt-1">
               {ROLE_LABELS[profile.role]}
             </div>
-            <div className="t-mono text-[10.5px] mt-1" style={{ color: "var(--soft)" }}>
+            <div className="font-mono text-xs text-muted-foreground mt-0.5">
               {[profile.staff_no, profile.station, profile.team].filter(Boolean).join(" · ")}
             </div>
           </div>
         </div>
 
-        <div className="px-4 py-3.5" style={{ borderBottom: "1px solid var(--line)" }}>
+        <div className="card p-4 space-y-1">
           <div className="field-label">Profile status</div>
-          <div className="font-semibold text-[13px]" style={{ color: "var(--green)" }}>
-            {profile.status === "approved" ? "Approved" : profile.status}
+          <div className="font-mono text-xs font-bold text-success uppercase tracking-wider">
+            ● {profile.status === "approved" ? "Approved" : profile.status}
           </div>
         </div>
 
-        <div className="px-4 py-3.5" style={{ borderBottom: "1px solid var(--line)" }}>
+        <div className="card p-4 space-y-2">
           <div className="field-label">Appearance</div>
           <ThemeOptions />
           <p className="field-hint">
-            System follows your device setting. Your choice is remembered on this device.
+            Nocturne Command-Center Dark theme is active across the VECTA platform.
           </p>
         </div>
 
-        {menu.map((m) => (
-          <Link
-            key={m.href}
-            href={m.href}
-            className="flex items-center justify-between px-4 py-4 transition-colors"
-            style={{ borderBottom: "1px solid var(--line2)" }}
-          >
-            <span className="text-[14px] font-medium" style={{ color: "var(--ink2)" }}>
-              {m.label}
-            </span>
-            <span className="t-mono text-[11px]" style={{ color: "var(--faintest)" }}>
-              ›
-            </span>
-          </Link>
-        ))}
+        <div className="card overflow-hidden !p-0 divide-y divide-border">
+          {menu.map((m) => (
+            <Link
+              key={m.href}
+              href={m.href}
+              className="flex items-center justify-between px-4 py-3.5 hover:bg-card/40 transition-colors group"
+            >
+              <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                {m.label}
+              </span>
+              <span className="font-mono text-xs text-muted-foreground group-hover:text-primary transition-colors">
+                →
+              </span>
+            </Link>
+          ))}
 
-        <form action={signOut}>
-          <button
-            type="submit"
-            className="w-full flex items-center justify-between px-4 py-4 text-left transition-colors"
-            style={{ borderBottom: "1px solid var(--line2)" }}
-          >
-            <span className="text-[14px] font-medium" style={{ color: "var(--red)" }}>
-              Sign out
-            </span>
-          </button>
-        </form>
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-destructive/10 transition-colors group cursor-pointer"
+            >
+              <span className="text-sm font-medium text-destructive">
+                Sign out
+              </span>
+              <span className="font-mono text-xs text-destructive">
+                →
+              </span>
+            </button>
+          </form>
+        </div>
 
-        <div
-          className="px-4 py-5 t-mono text-[9.5px] leading-relaxed"
-          style={{ letterSpacing: "0.08em", color: "var(--faintest)" }}
-        >
-          AVSEC REPORTS · {REPORT_TYPES.map((t) => t.replace("sec", "")).join(" / ")}
+        <div className="px-2 py-3 font-mono text-[10px] text-muted-foreground/60 leading-relaxed text-center uppercase tracking-widest">
+          VECTA AVSEC OPS · {REPORT_TYPES.map((t) => t.replace("sec", "")).join(" / ")}
           <br />
-          OFFLINE-FIRST PWA · IMMUTABLE SUBMISSIONS
+          OFFLINE-FIRST PWA · IMMUTABLE SEC SUBMISSIONS
         </div>
       </div>
-
     </main>
   );
 }

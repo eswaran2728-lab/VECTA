@@ -4,9 +4,10 @@ import type { FieldValues, Path, UseFormRegister, UseFormWatch, UseFormSetValue,
 import { cn } from "@/lib/avsec/utils";
 
 const OPTION_BASE =
-  "flex items-center justify-center gap-2 px-2 py-2 min-h-[44px] text-sm font-medium cursor-pointer transition-colors " +
-  "border border-[var(--line3)] text-[var(--mid)] " +
-  "has-[:checked]:border-[var(--gold-fill)] has-[:checked]:bg-[var(--gold-soft)] has-[:checked]:text-[var(--gold)]";
+  "flex items-center justify-center gap-2 px-2 py-2 min-h-[44px] text-xs font-mono font-semibold cursor-pointer transition-all rounded-lg " +
+  "border border-border/70 bg-surface/50 text-muted-foreground " +
+  "has-[:checked]:border-primary has-[:checked]:bg-primary/10 has-[:checked]:text-primary has-[:checked]:shadow-sm " +
+  "hover:border-border hover:bg-surface hover:text-foreground";
 
 export function Sec029ChecklistItem<T extends FieldValues>({
   index,
@@ -41,13 +42,17 @@ export function Sec029ChecklistItem<T extends FieldValues>({
 
   return (
     <div
-      className="card-inset p-3 space-y-3"
-      style={flagged ? { borderColor: "var(--red)", background: "var(--red-panel)" } : undefined}
+      className={cn(
+        "card-inset p-3.5 space-y-3 rounded-lg border transition-all",
+        flagged
+          ? "border-red-500/50 bg-red-500/10"
+          : "border-border/70 bg-surface/50"
+      )}
     >
-      <p className="font-medium text-sm" style={{ color: "var(--ink2)" }}>{label}</p>
+      <p className="font-semibold text-xs text-foreground leading-relaxed">{label}</p>
 
       <div>
-        <p className="field-hint mb-1">CHECKED</p>
+        <p className="field-hint text-[10px] font-mono uppercase text-muted-foreground mb-1.5">CHECKED</p>
         <div className={cn("grid gap-2", allowNotApplicable ? "grid-cols-3" : "grid-cols-2")}>
           {checkedOptions.map((opt) => (
             <label key={opt} className={OPTION_BASE}>
@@ -59,32 +64,32 @@ export function Sec029ChecklistItem<T extends FieldValues>({
       </div>
 
       <div>
-        <p className="field-hint mb-1">REMARK / DETECTION</p>
+        <p className="field-hint text-[10px] font-mono uppercase text-muted-foreground mb-1.5">REMARK / DETECTION</p>
         <div className={cn("grid gap-2", allowNotApplicable ? "grid-cols-3" : "grid-cols-2")}>
           <label className={OPTION_BASE}>
             <input type="radio" value="nil" className="sr-only" {...register(remarkTypeName)} />
-            Checked with nil issues
+            Nil Issues
           </label>
           <label className={OPTION_BASE}>
             <input type="radio" value="other" className="sr-only" {...register(remarkTypeName)} />
-            Other:
+            Other
           </label>
           {allowNotApplicable && (
             <label className={OPTION_BASE} onClick={() => setValue(checkedName, "NA" as never)}>
               <input type="radio" value="na" className="sr-only" {...register(remarkTypeName)} />
-              Not Applicable
+              N/A
             </label>
           )}
         </div>
         {remarkType === "other" && (
-          <div className="mt-2">
+          <div className="mt-2.5">
             <input
-              className="input-base"
+              className="input-base text-xs"
               placeholder="Describe the detection / issue"
               {...register(remarkTextName)}
             />
             {itemErrors?.[index]?.remark_text && (
-              <p className="field-error">{itemErrors[index]?.remark_text?.message}</p>
+              <p className="text-xs text-red-400 font-mono mt-1">{itemErrors[index]?.remark_text?.message}</p>
             )}
           </div>
         )}

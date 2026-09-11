@@ -14,30 +14,30 @@ export default async function PendingApprovalPage() {
   const deactivated = profile.status === "deactivated";
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-sm card p-6 text-center space-y-3">
-        <h1 className="text-xl font-bold">{APP_NAME}</h1>
+    <main className="min-h-screen flex items-center justify-center p-4 bg-background">
+      <div className="w-full max-w-sm card p-6 text-center space-y-4">
+        <h1 className="font-display text-xl font-bold tracking-[0.03em] text-foreground">{APP_NAME}</h1>
         {deactivated ? (
           <>
-            <p className="font-semibold text-red-600 dark:text-red-400">Account deactivated</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+            <p className="font-semibold text-destructive font-mono text-xs uppercase tracking-wider">Account deactivated</p>
+            <p className="font-mono text-xs text-muted-foreground">
               Your access to {APP_NAME} has been deactivated. Contact your administrator if you
               believe this is a mistake.
             </p>
           </>
         ) : rejected ? (
           <>
-            <p className="font-semibold text-red-600 dark:text-red-400">Access request declined</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+            <p className="font-semibold text-destructive font-mono text-xs uppercase tracking-wider">Access request declined</p>
+            <p className="font-mono text-xs text-muted-foreground">
               Your account request was not approved. Contact your administrator if you believe this
               is a mistake.
             </p>
           </>
         ) : (
           <>
-            <p className="font-semibold">Waiting for admin approval</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              You requested access as <strong>{ROLE_LABELS[profile.role]}</strong>. An admin needs to
+            <p className="font-semibold text-primary font-mono text-xs uppercase tracking-wider">Waiting for admin approval</p>
+            <p className="font-mono text-xs text-muted-foreground">
+              You requested access as <strong className="text-foreground">{ROLE_LABELS[profile.role]}</strong>. An admin needs to
               approve your account before you can use {APP_NAME}. Try again later.
             </p>
           </>

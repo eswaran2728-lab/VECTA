@@ -224,22 +224,22 @@ export function Sec033Form({
 
         <AttachmentUpload value={attachments} onChange={setAttachments} disabled={isSubmitting} />
 
-        <div className="card-inset p-4 space-y-3 text-center mt-3">
-          <p className="font-semibold text-sm" style={{ color: "var(--ink2)" }}>
+        <div className="card-inset p-4 space-y-3 text-center mt-3 rounded-lg border border-border/70 bg-surface/50">
+          <p className="font-semibold text-xs text-foreground">
             Do you need to add another Report?
           </p>
           <div className="flex gap-2.5 justify-center">
-            <button type="button" className="btn-secondary min-w-[100px]" onClick={handleAddAnother}>
+            <button type="button" className="btn-secondary min-w-[100px] text-xs" onClick={handleAddAnother}>
               Yes
             </button>
-            <button type="submit" className="btn-primary min-w-[140px]" disabled={isSubmitting}>
-              {isSubmitting ? "Submitting…" : "No, Submitted"}
+            <button type="submit" className="btn-primary min-w-[140px] text-xs" disabled={isSubmitting}>
+              {isSubmitting ? "Submitting…" : "No, Submit Report ▸"}
             </button>
           </div>
         </div>
       </FormSection>
 
-      <p className="text-center t-mono text-[9.5px]" style={{ color: "var(--faintest)" }}>
+      <p className="text-center font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
         SUBMITTED REPORTS ARE IMMUTABLE · CORRECTIONS ARE FILED AS AMENDMENTS
       </p>
     </form>

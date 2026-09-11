@@ -146,7 +146,7 @@ export default async function DashboardPage({
 
         <section className="card p-4 space-y-3">
           <h2 className="section-title">Staff report lookup</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="font-mono text-xs text-muted-foreground">
             End-of-shift check: search a staff name to see their daily report or aircraft reports
             for that day.
           </p>
@@ -178,13 +178,13 @@ export default async function DashboardPage({
           </form>
 
           {staffQuery && (
-            <div className="divide-y divide-slate-200 dark:divide-slate-800 pt-2">
-              <p className="text-xs text-slate-500 dark:text-slate-400 pb-2">
+            <div className="divide-y divide-border pt-2">
+              <p className="font-mono text-xs text-muted-foreground pb-2">
                 {staffResults.length} result{staffResults.length === 1 ? "" : "s"} for &quot;
                 {staffQuery}&quot; on {staffDate}
               </p>
               {staffResults.length === 0 && (
-                <p className="py-3 text-sm text-slate-500 dark:text-slate-400">
+                <p className="py-3 font-mono text-sm text-muted-foreground">
                   No {staffCategory === "aircraft" ? "aircraft" : "daily"} report found for this
                   staff on this date.
                 </p>
@@ -193,14 +193,14 @@ export default async function DashboardPage({
                 <Link
                   key={`${r.reportType}-${r.reportId}`}
                   href={`/avsec/reports/view/${r.reportType}/${r.reportId}`}
-                  className="flex items-center justify-between py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-sm"
+                  className="flex items-center justify-between py-2 hover:bg-card/40 text-sm group"
                 >
                   <div className="min-w-0">
-                    <p className="font-mono text-xs text-slate-400">{REPORT_META[r.reportType].code}</p>
-                    <p className="font-semibold">{r.staffName}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{r.detail}</p>
+                    <p className="font-mono text-xs text-primary">{REPORT_META[r.reportType].code}</p>
+                    <p className="font-semibold text-foreground group-hover:text-primary transition-colors">{r.staffName}</p>
+                    <p className="font-mono text-xs text-muted-foreground truncate">{r.detail}</p>
                   </div>
-                  <span className="text-xs text-slate-500 text-right shrink-0 ml-3">
+                  <span className="font-mono text-xs text-muted-foreground text-right shrink-0 ml-3">
                     {r.station} · {r.team}
                     <br />
                     {formatDateTimeMY(r.submittedAt)}
@@ -272,22 +272,22 @@ export default async function DashboardPage({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {REPORT_TYPES.map((t) => (
               <div key={t} className="card p-4 text-center">
-                <p className="text-2xl font-bold">{counts[t]}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{REPORT_META[t].code}</p>
+                <p className="font-mono text-2xl font-bold text-foreground">{counts[t]}</p>
+                <p className="font-mono text-[10px] text-muted-foreground mt-1">{REPORT_META[t].code}</p>
               </div>
             ))}
           </div>
         </section>
 
         {overdue.length > 0 && (
-          <section className="card border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-4">
-            <h2 className="font-bold text-red-800 dark:text-red-300 mb-2">
+          <section className="card border-destructive/40 bg-destructive/10 p-4">
+            <h2 className="font-bold text-destructive mb-2 font-mono text-xs uppercase tracking-wider">
               ⚠ Bay Board — {overdue.length} aircraft overdue for SEC 029 search
             </h2>
-            <ul className="space-y-1 text-sm text-red-700 dark:text-red-300">
+            <ul className="space-y-1 text-xs text-destructive-foreground/90 font-mono">
               {overdue.map((a) => (
                 <li key={a.id}>
-                  {a.station} · Reg <span className="font-semibold">{a.reg_no}</span> · Bay {a.bay} ·{" "}
+                  {a.station} · Reg <span className="font-bold text-foreground">{a.reg_no}</span> · Bay {a.bay} ·{" "}
                   {a.hoursOnGround.toFixed(1)}h on ground
                 </li>
               ))}
@@ -302,25 +302,25 @@ export default async function DashboardPage({
               {complianceTeam ? ` · ${complianceTeam}` : ""} · {filters.dateFrom}
             </h2>
             {compliance.length === 0 && (
-              <p className="text-sm text-slate-500">No officers registered at this station.</p>
+              <p className="font-mono text-sm text-muted-foreground">No officers registered at this station.</p>
             )}
-            <div className="divide-y divide-slate-200 dark:divide-slate-800">
+            <div className="divide-y divide-border">
               {compliance.map((c) => {
                 const duty = dutyCompliance.get(c.profile.id);
                 const flagged = duty && (duty.lateMinutes > 0 || duty.earlyOutMinutes > 0);
                 return (
                   <div key={c.profile.id} className="flex items-center justify-between py-2 gap-2">
                     <div className="min-w-0">
-                      <p className="font-medium text-sm">{c.profile.name || c.profile.email}</p>
-                      <p className="text-xs text-slate-500">{c.profile.team}</p>
+                      <p className="font-semibold text-sm text-foreground">{c.profile.name || c.profile.email}</p>
+                      <p className="font-mono text-xs text-muted-foreground">{c.profile.team}</p>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <span
                         className={cn(
-                          "text-xs font-bold px-2 py-1 rounded-full",
+                          "font-mono text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider",
                           c.submitted
-                            ? "bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300"
-                            : "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300",
+                            ? "bg-success/10 text-success border-success/30"
+                            : "bg-destructive/10 text-destructive border-destructive/30",
                         )}
                       >
                         {c.submitted ? "SUBMITTED" : "MISSING"}
@@ -328,19 +328,19 @@ export default async function DashboardPage({
                       {flagged ? (
                         <details className="relative">
                           <summary
-                            className="list-none cursor-pointer text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
+                            className="list-none cursor-pointer font-mono text-[9px] font-bold px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary uppercase tracking-wider"
                           >
                             {duty.lateMinutes > 0 ? "LATE" : "EARLY-OUT"}
                           </summary>
-                          <div className="absolute right-0 z-10 mt-1 w-56 p-2 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg">
+                          <div className="absolute right-0 z-10 mt-1 w-56 p-2.5 text-xs rounded-lg border border-border bg-card shadow-lg font-mono">
                             {duty.lateMinutes > 0 && (
-                              <p>
-                                <span className="font-semibold">Late {duty.lateMinutes} min</span> — {duty.lateRemark}
+                              <p className="text-foreground">
+                                <span className="font-semibold text-primary">Late {duty.lateMinutes} min</span> — {duty.lateRemark}
                               </p>
                             )}
                             {duty.earlyOutMinutes > 0 && (
-                              <p className={duty.lateMinutes > 0 ? "mt-1.5" : ""}>
-                                <span className="font-semibold">Early out {duty.earlyOutMinutes} min</span> —{" "}
+                              <p className={`text-foreground ${duty.lateMinutes > 0 ? "mt-1.5" : ""}`}>
+                                <span className="font-semibold text-primary">Early out {duty.earlyOutMinutes} min</span> —{" "}
                                 {duty.earlyOutRemark}
                               </p>
                             )}
@@ -349,10 +349,10 @@ export default async function DashboardPage({
                       ) : (
                         <span
                           className={cn(
-                            "text-xs font-bold px-2 py-1 rounded-full",
+                            "font-mono text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider",
                             duty?.checkedIn
-                              ? "bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300"
-                              : "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300",
+                              ? "bg-success/10 text-success border-success/30"
+                              : "bg-destructive/10 text-destructive border-destructive/30",
                           )}
                         >
                           {duty?.checkedIn ? "CHECKED-IN" : "NOT CHECKED-IN"}
@@ -370,56 +370,56 @@ export default async function DashboardPage({
           <h2 className="section-title mb-3">
             Flight report coverage — SEC 016 · {flightCoverage.length} flights
           </h2>
-          <div className="divide-y divide-slate-200 dark:divide-slate-800 text-sm">
+          <div className="divide-y divide-border text-sm">
             {flightCoverage.map((f) => (
               <Link
                 key={f.id as string}
                 href={`/avsec/reports/view/sec016/${f.id}`}
-                className="flex items-center justify-between py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                className="flex items-center justify-between py-2 hover:bg-card/40 group"
               >
-                <span className="font-medium">
+                <span className="font-semibold text-foreground group-hover:text-primary transition-colors">
                   {f.flight as string} · {f.reg_no as string}
                 </span>
-                <span className="text-xs text-slate-500">
+                <span className="font-mono text-xs text-muted-foreground">
                   {f.station as string} · Bay {f.bay_no as string} ·{" "}
                   {formatDateTimeMY(f.submitted_at as string)}
                 </span>
               </Link>
             ))}
-            {flightCoverage.length === 0 && <p className="text-slate-500 py-2">No SEC 016 submissions in range.</p>}
+            {flightCoverage.length === 0 && <p className="font-mono text-xs text-muted-foreground py-2">No SEC 016 submissions in range.</p>}
           </div>
         </section>
 
         <section className="card p-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="section-title">Submissions</h2>
-            <span className="text-xs text-slate-500">{submissions.length} results</span>
+            <span className="font-mono text-xs text-muted-foreground">{submissions.length} results</span>
           </div>
-          <div className="divide-y divide-slate-200 dark:divide-slate-800 text-sm">
+          <div className="divide-y divide-border text-sm">
             {submissions.map((s) => (
               <Link
                 key={`${s.type}-${s.id}`}
                 href={`/avsec/reports/view/${s.type}/${s.id}`}
-                className="flex items-center justify-between py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                className="flex items-center justify-between py-2 hover:bg-card/40 group"
               >
                 <div>
-                  <p className="font-mono text-xs text-slate-400">
+                  <p className="font-mono text-xs text-primary">
                     {REPORT_META[s.type].code}
                     {s.report_no ? ` · ${s.report_no}` : ""}
                   </p>
-                  <p className="font-medium">
+                  <p className="font-semibold text-foreground group-hover:text-primary transition-colors">
                     {s.summary}
                     {attachmentCounts[s.id] ? ` · 📎 ${attachmentCounts[s.id]}` : ""}
                   </p>
                 </div>
-                <span className="text-xs text-slate-500 text-right">
+                <span className="font-mono text-xs text-muted-foreground text-right">
                   {s.station} · {s.team}
                   <br />
                   {formatDateTimeMY(s.submitted_at)}
                 </span>
               </Link>
             ))}
-            {submissions.length === 0 && <p className="text-slate-500 py-2">No submissions in range.</p>}
+            {submissions.length === 0 && <p className="font-mono text-xs text-muted-foreground py-2">No submissions in range.</p>}
           </div>
         </section>
       </div>

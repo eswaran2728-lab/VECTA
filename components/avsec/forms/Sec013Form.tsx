@@ -304,15 +304,15 @@ export function Sec013Form({
           })}
         </div>
 
-        <div className="card-inset p-4 space-y-3 text-center mt-3">
-          <p className="font-semibold text-sm" style={{ color: "var(--ink2)" }}>Do you need to add another Profiling Report?</p>
+        <div className="card-inset p-4 space-y-3 text-center mt-3 rounded-lg border border-border/70 bg-surface/50">
+          <p className="font-semibold text-xs text-foreground">Do you need to add another Profiling Report?</p>
           <div className="flex gap-2.5 justify-center">
-            <button type="button" className="btn-secondary min-w-[100px]" onClick={handleAddAnother}>
+            <button type="button" className="btn-secondary min-w-[100px] text-xs" onClick={handleAddAnother}>
               Yes
             </button>
             <button
               type="button"
-              className="btn-primary min-w-[100px]"
+              className="btn-primary min-w-[100px] text-xs"
               onClick={() =>
                 document.getElementById("sec013-final-section")?.scrollIntoView({ behavior: "smooth" })
               }
@@ -323,7 +323,7 @@ export function Sec013Form({
         </div>
       </FormSection>
 
-      <div id="sec013-final-section" className="card p-4 sm:p-5 space-y-4" style={{ borderColor: "var(--gold-fill)" }}>
+      <div id="sec013-final-section" className="card p-4 sm:p-5 space-y-4 border-primary/50 bg-card">
         <h2 className="section-title">Final Remarks &amp; Certification</h2>
         <TextAreaField name="remark" register={register} label="Remark" error={errors.remark} />
         <RemarkQuickPhrases
@@ -349,7 +349,7 @@ export function Sec013Form({
       <button type="submit" className="btn-primary w-full" disabled={isSubmitting}>
         {isSubmitting ? "Submitting…" : "Submit report ▸"}
       </button>
-      <p className="text-center t-mono text-[9.5px]" style={{ color: "var(--faintest)" }}>
+      <p className="text-center font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
         SUBMITTED REPORTS ARE IMMUTABLE · CORRECTIONS ARE FILED AS AMENDMENTS
       </p>
     </form>

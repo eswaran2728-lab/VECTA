@@ -56,36 +56,32 @@ export default async function ReportViewPage({
 
   return (
     <main className="min-h-screen pb-32">
-
-      <div style={{ background: "var(--view-header)", borderBottom: "1px solid var(--line)" }} className="px-4 py-5">
-        <div className="max-w-2xl mx-auto">
+      <div className="border-b border-border/80 bg-surface/80 backdrop-blur-md px-4 py-5">
+        <div className="max-w-2xl mx-auto space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="t-mono text-[10px]" style={{ color: "var(--mid)" }}>
+            <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
               {meta.code}
             </span>
-            <span
-              className="t-mono text-[9px] font-bold uppercase px-2.5 py-1"
-              style={{ letterSpacing: "0.14em", background: "var(--gold-fill)", color: "var(--on-gold)" }}
-            >
+            <span className="font-mono text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               Submitted
             </span>
           </div>
-          <h1 className="t-display text-xl mt-3">{meta.name}</h1>
-          <p className="t-mono text-[10px] mt-2" style={{ color: "var(--soft)" }}>
+          <h1 className="font-display text-xl font-bold text-foreground">{meta.name}</h1>
+          <p className="font-mono text-xs text-muted-foreground">
             {formatDateTimeMY(submittedAt)}
           </p>
         </div>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-        <a href={`/api/avsec/export/pdf/${type}/${params.id}`} className="btn-secondary w-full" target="_blank">
-          Download PDF (audit submission)
+        <a href={`/api/avsec/export/pdf/${type}/${params.id}`} className="btn-secondary w-full text-xs text-center" target="_blank">
+          Download PDF (Audit Submission)
         </a>
 
         {(acknowledgement || canAcknowledge || searchParams.error) && (
-          <div className="card p-4 space-y-2">
+          <div className="card p-4 space-y-2 border-border/80 bg-surface/80">
             {acknowledgement ? (
-              <p className="text-sm text-green-700 dark:text-green-400">
+              <p className="text-xs font-mono text-emerald-400">
                 ✓ Acknowledged by <strong>{acknowledgement.acknowledgedByName}</strong> on{" "}
                 {formatDateTimeMY(acknowledgement.acknowledgedAt)}
               </p>
@@ -94,13 +90,13 @@ export default async function ReportViewPage({
                 <form action={acknowledgeReport}>
                   <input type="hidden" name="reportType" value={type} />
                   <input type="hidden" name="reportId" value={params.id} />
-                  <button type="submit" className="btn-primary w-full">
-                    Acknowledge report
+                  <button type="submit" className="btn-primary w-full text-xs">
+                    Acknowledge Report
                   </button>
                 </form>
               )
             )}
-            {searchParams.error && <p className="field-error">{searchParams.error}</p>}
+            {searchParams.error && <p className="text-xs text-red-400 font-mono">{searchParams.error}</p>}
           </div>
         )}
 
@@ -113,40 +109,34 @@ export default async function ReportViewPage({
 
         <AttachmentGallery attachments={attachments} />
 
-        <section className="card p-4 sm:p-5">
-          <h2 className="section-title mb-3">Record Trail</h2>
+        <section className="card p-4 sm:p-5 border-border/80 bg-surface/80 space-y-3">
+          <h2 className="section-title">Record Trail</h2>
           <div className="space-y-3">
-            <div className="grid grid-cols-[44px_1fr] gap-3">
-              <p className="t-mono text-[11px]" style={{ color: "var(--mid)" }}>
+            <div className="grid grid-cols-[60px_1fr] gap-3 items-start">
+              <p className="font-mono text-xs text-muted-foreground">
                 {formatTimeMY(submittedAt)}
               </p>
-              <div className="relative pl-[18px]" style={{ borderLeft: "1px solid var(--line3)" }}>
-                <span
-                  className="absolute -left-[4.5px] top-1 w-2 h-2 rounded-full"
-                  style={{ background: "var(--gold-fill)" }}
-                />
-                <p className="font-semibold text-[13px]" style={{ color: "var(--ink2)" }}>
-                  Submitted · immutable
+              <div className="relative pl-4 border-l border-border/60">
+                <span className="absolute -left-[4.5px] top-1.5 w-2 h-2 rounded-full bg-emerald-400" />
+                <p className="font-bold text-xs text-foreground">
+                  Submitted · Immutable
                 </p>
-                <p className="t-mono text-[10.5px] mt-[2px]" style={{ color: "var(--soft)" }}>
+                <p className="font-mono text-xs text-muted-foreground mt-0.5">
                   {profile.id === reportRow.profile_id ? profile.name : "Submitter"}
                 </p>
               </div>
             </div>
             {acknowledgement && (
-              <div className="grid grid-cols-[44px_1fr] gap-3">
-                <p className="t-mono text-[11px]" style={{ color: "var(--mid)" }}>
+              <div className="grid grid-cols-[60px_1fr] gap-3 items-start">
+                <p className="font-mono text-xs text-muted-foreground">
                   {formatTimeMY(acknowledgement.acknowledgedAt)}
                 </p>
-                <div className="relative pl-[18px]" style={{ borderLeft: "1px solid var(--line3)" }}>
-                  <span
-                    className="absolute -left-[4.5px] top-1 w-2 h-2 rounded-full"
-                    style={{ background: "var(--blue)" }}
-                  />
-                  <p className="font-semibold text-[13px]" style={{ color: "var(--ink2)" }}>
+                <div className="relative pl-4 border-l border-border/60">
+                  <span className="absolute -left-[4.5px] top-1.5 w-2 h-2 rounded-full bg-primary" />
+                  <p className="font-bold text-xs text-foreground">
                     Acknowledged
                   </p>
-                  <p className="t-mono text-[10.5px] mt-[2px]" style={{ color: "var(--soft)" }}>
+                  <p className="font-mono text-xs text-muted-foreground mt-0.5">
                     {acknowledgement.acknowledgedByName}
                   </p>
                 </div>

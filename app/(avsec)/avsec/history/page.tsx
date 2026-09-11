@@ -4,6 +4,7 @@ import { getMySubmissions } from "@/lib/avsec/reports/queries";
 import { getAttachmentCounts } from "@/lib/avsec/attachments/actions";
 import { REPORT_META } from "@/lib/avsec/reference-data";
 import { formatTimeMY } from "@/lib/avsec/datetime";
+import { cn } from "@/lib/avsec/utils";
 
 const STATUS_FILTERS = ["ALL", "SUBMITTED", "DRAFT"] as const;
 const FLIGHT_FILTERS = [
@@ -50,22 +51,28 @@ export default async function HistoryPage({
   return (
     <main className="min-h-screen pb-32">
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold font-display">Submission History</h1>
+          <p className="text-xs text-muted-foreground mt-1">
+            Browse and review your logged reports, patrol records, and shift submissions.
+          </p>
+        </div>
+
+        <div className="card p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-border/80">
           <div className="flex gap-1.5 flex-wrap items-center">
-            <span className="t-mono text-[9px] uppercase tracking-wider text-muted-foreground mr-1">Status:</span>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mr-1">Status:</span>
             {STATUS_FILTERS.map((f) => {
               const on = f === activeStatus;
               return (
                 <Link
                   key={f}
                   href={makeFilterUrl(f, activeFlight)}
-                  className="t-mono text-[9.5px] font-semibold px-2.5 py-1.5 rounded"
-                  style={{
-                    letterSpacing: "0.1em",
-                    border: `1px solid ${on ? "var(--gold-fill)" : "var(--line3)"}`,
-                    background: on ? "var(--gold-soft)" : "transparent",
-                    color: on ? "var(--gold)" : "var(--mid)",
-                  }}
+                  className={cn(
+                    "font-mono text-xs font-semibold px-2.5 py-1 rounded transition-all",
+                    on
+                      ? "bg-primary text-primary-foreground font-bold shadow-sm"
+                      : "bg-surface hover:bg-muted text-muted-foreground border border-border/60"
+                  )}
                 >
                   {f}
                 </Link>
@@ -74,20 +81,19 @@ export default async function HistoryPage({
           </div>
 
           <div className="flex gap-1.5 flex-wrap items-center">
-            <span className="t-mono text-[9px] uppercase tracking-wider text-muted-foreground mr-1">SEC016 Movement:</span>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mr-1">SEC016:</span>
             {FLIGHT_FILTERS.map((f) => {
               const on = f.value === activeFlight;
               return (
                 <Link
                   key={f.value}
                   href={makeFilterUrl(activeStatus, f.value)}
-                  className="t-mono text-[9.5px] font-semibold px-2.5 py-1.5 rounded"
-                  style={{
-                    letterSpacing: "0.1em",
-                    border: `1px solid ${on ? "var(--gold-fill)" : "var(--line3)"}`,
-                    background: on ? "var(--gold-soft)" : "transparent",
-                    color: on ? "var(--gold)" : "var(--mid)",
-                  }}
+                  className={cn(
+                    "font-mono text-xs font-semibold px-2.5 py-1 rounded transition-all",
+                    on
+                      ? "bg-primary text-primary-foreground font-bold shadow-sm"
+                      : "bg-surface hover:bg-muted text-muted-foreground border border-border/60"
+                  )}
                 >
                   {f.label}
                 </Link>
@@ -96,52 +102,63 @@ export default async function HistoryPage({
           </div>
         </div>
 
-        {rows.length === 0 && (
-          <p className="text-sm" style={{ color: "var(--soft)" }}>
-            No submissions found.
-          </p>
+        {rows.length === 0 ? (
+          <div className="card p-8 text-center space-y-2 border-dashed">
+            <p className="text-sm font-semibold text-foreground">No submissions found</p>
+            <p className="text-xs text-muted-foreground">
+              Try changing the status or movement filter above.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {rows.map((r) => {
+              const submitted = r.status === "submitted";
+              return (
+                <Link
+                  key={`${r.type}-${r.id}`}
+                  href={`/avsec/reports/view/${r.type}/${r.id}`}
+                  className="card p-4 flex items-center justify-between gap-3 border-border/80 bg-surface/80 hover:border-primary/60 transition-all block"
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-primary">
+                        {REPORT_META[r.type].code}
+                        {r.report_no ? ` · ${r.report_no}` : ""}
+                      </span>
+                      {r.flight_type && (
+                        <span className="font-mono text-[10px] uppercase px-1.5 py-0.5 rounded bg-surface border border-border/60 text-muted-foreground">
+                          {r.flight_type}
+                        </span>
+                      )}
+                    </div>
+                    <p className="font-semibold text-sm text-foreground truncate">
+                      {REPORT_META[r.type].name}
+                    </p>
+                    <p className="font-mono text-xs text-muted-foreground truncate">
+                      {r.summary}
+                      {attachmentCounts[r.id] ? ` · 📎 ${attachmentCounts[r.id]}` : ""}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0 space-y-1">
+                    <span
+                      className={cn(
+                        "font-mono text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border",
+                        submitted
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          : "bg-muted text-muted-foreground border-border"
+                      )}
+                    >
+                      {r.status.toUpperCase()}
+                    </span>
+                    <p className="font-mono text-[11px] text-muted-foreground">
+                      {formatTimeMY(r.submitted_at ?? r.created_at)}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
         )}
-
-        <div>
-          {rows.map((r) => {
-            const submitted = r.status === "submitted";
-            const color = submitted ? "var(--gold)" : "var(--faint)";
-            return (
-              <Link
-                key={`${r.type}-${r.id}`}
-                href={`/avsec/reports/view/${r.type}/${r.id}`}
-                className="flex items-center gap-3 py-3"
-                style={{ borderBottom: "1px solid var(--line2)" }}
-              >
-                <span className="w-[3px] h-[38px] shrink-0" style={{ background: color }} />
-                <div className="min-w-0 flex-1">
-                  <p className="t-mono text-[9.5px]" style={{ color: "var(--faint)" }}>
-                    {REPORT_META[r.type].code}
-                    {r.report_no ? ` · ${r.report_no}` : ""}
-                  </p>
-                  <p className="font-semibold text-[13px] mt-[3px] truncate" style={{ color: "var(--ink2)" }}>
-                    {REPORT_META[r.type].name}
-                  </p>
-                  <p className="t-mono text-[10.5px] mt-[3px] truncate" style={{ color: "var(--soft)" }}>
-                    {r.summary}
-                    {attachmentCounts[r.id] ? ` · 📎 ${attachmentCounts[r.id]}` : ""}
-                  </p>
-                </div>
-                <div className="text-right shrink-0">
-                  <span
-                    className="t-mono text-[8.5px] font-semibold px-1.5 py-1"
-                    style={{ letterSpacing: "0.08em", color, border: `1px solid ${color}` }}
-                  >
-                    {r.status.toUpperCase()}
-                  </span>
-                  <p className="t-mono text-[9.5px] mt-1.5" style={{ color: "var(--faint)" }}>
-                    {formatTimeMY(r.submitted_at ?? r.created_at)}
-                  </p>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
       </div>
     </main>
   );

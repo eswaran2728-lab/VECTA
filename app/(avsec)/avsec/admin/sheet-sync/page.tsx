@@ -20,11 +20,11 @@ export default async function AdminSheetSyncPage({
     <main className="min-h-screen pb-16">
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
         <div>
-          <h1 className="t-display text-xl">Google Sheets Sync</h1>
-          <p className="text-[13px] mt-1" style={{ color: "var(--soft)" }}>
+          <h1 className="font-display text-xl font-bold tracking-[0.03em] text-foreground">Google Sheets Sync</h1>
+          <p className="font-mono text-xs text-muted-foreground mt-1">
             One-way, read-only mirror of every submitted report into a Google Sheet — Sheets
             is never a source of truth, only a copy. See{" "}
-            <span className="t-mono">docs/GOOGLE_SHEETS_SETUP.md</span> for the Apps Script
+            <span className="font-mono text-primary">docs/GOOGLE_SHEETS_SETUP.md</span> for the Apps Script
             setup steps.
           </p>
         </div>
@@ -33,16 +33,16 @@ export default async function AdminSheetSyncPage({
 
         <div className="grid grid-cols-3 gap-2">
           <div className="card p-4 text-center">
-            <p className="text-2xl font-bold" style={{ color: "var(--soft)" }}>{counts.pending}</p>
-            <p className="t-mono text-[9px] mt-1" style={{ color: "var(--faint)" }}>PENDING</p>
+            <p className="font-mono text-2xl font-bold text-muted-foreground">{counts.pending}</p>
+            <p className="font-mono text-[9px] uppercase tracking-wider mt-1 text-muted-foreground">PENDING</p>
           </div>
           <div className="card p-4 text-center">
-            <p className="text-2xl font-bold" style={{ color: "var(--green)" }}>{counts.sent}</p>
-            <p className="t-mono text-[9px] mt-1" style={{ color: "var(--faint)" }}>SENT</p>
+            <p className="font-mono text-2xl font-bold text-success">{counts.sent}</p>
+            <p className="font-mono text-[9px] uppercase tracking-wider mt-1 text-muted-foreground">SENT</p>
           </div>
           <div className="card p-4 text-center">
-            <p className="text-2xl font-bold" style={{ color: "var(--red)" }}>{counts.failed}</p>
-            <p className="t-mono text-[9px] mt-1" style={{ color: "var(--faint)" }}>FAILED</p>
+            <p className="font-mono text-2xl font-bold text-destructive">{counts.failed}</p>
+            <p className="font-mono text-[9px] uppercase tracking-wider mt-1 text-muted-foreground">FAILED</p>
           </div>
         </div>
 
@@ -71,7 +71,7 @@ export default async function AdminSheetSyncPage({
                 name="webhookUrl"
                 defaultValue={config?.webhook_url ?? ""}
                 placeholder="https://script.google.com/macros/s/.../exec"
-                className="input-base t-mono"
+                className="input-base font-mono text-xs"
               />
             </div>
             <div>
@@ -81,15 +81,15 @@ export default async function AdminSheetSyncPage({
                 name="webhookSecret"
                 defaultValue={config?.webhook_secret ?? ""}
                 placeholder="A long random string — also pasted into the Apps Script"
-                className="input-base t-mono"
+                className="input-base font-mono text-xs"
               />
               <p className="field-hint">
-                Must exactly match the <span className="t-mono">SYNC_SECRET</span> constant in
+                Must exactly match the <span className="font-mono text-foreground">SYNC_SECRET</span> constant in
                 the deployed Apps Script.
               </p>
             </div>
-            <label className="flex items-center gap-2 text-[13px]" style={{ color: "var(--ink2)" }}>
-              <input type="checkbox" name="enabled" defaultChecked={config?.enabled ?? false} />
+            <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
+              <input type="checkbox" name="enabled" defaultChecked={config?.enabled ?? false} className="rounded border-border" />
               Sync enabled (runs automatically every 2 minutes when on)
             </label>
             <button type="submit" className="btn-primary w-full">
@@ -100,17 +100,17 @@ export default async function AdminSheetSyncPage({
 
         {failed.length > 0 && (
           <div className="card p-4 space-y-2">
-            <p className="section-title">Recent failures</p>
-            <div className="divide-y" style={{ borderColor: "var(--line2)" }}>
+            <p className="section-title text-destructive">Recent failures</p>
+            <div className="divide-y divide-border/60">
               {failed.map((f) => (
                 <div key={f.id} className="py-2.5">
-                  <p className="t-mono text-[10.5px] font-semibold" style={{ color: "var(--ink2)" }}>
+                  <p className="font-mono text-xs font-semibold text-foreground">
                     {f.report_type.toUpperCase()} · {f.report_no ?? f.report_id.slice(0, 8)}
                   </p>
-                  <p className="t-mono text-[9.5px] mt-1" style={{ color: "var(--red)" }}>
+                  <p className="font-mono text-[10px] mt-1 text-destructive">
                     {f.attempts} attempt(s) · {f.last_error ?? "Unknown error"}
                   </p>
-                  <p className="t-mono text-[9px] mt-1" style={{ color: "var(--faint)" }}>
+                  <p className="font-mono text-[9px] mt-1 text-muted-foreground">
                     {formatDateTimeMY(f.created_at)}
                   </p>
                 </div>
