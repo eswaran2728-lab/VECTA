@@ -3,6 +3,8 @@ import { requireRole } from "@/lib/avsec/auth";
 import { getOverdueAircraft, getMySubmissions } from "@/lib/avsec/reports/queries";
 import { getTodayRoster, getTodayDutyRecord } from "@/lib/avsec/duty/checkin-queries";
 import { REPORT_META, type ReportType } from "@/lib/avsec/reference-data";
+import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries";
+import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
 import { formatTimeMY, nowTimeMY } from "@/lib/avsec/datetime";
 
 const REPORT_ORDER: ReportType[] = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013"];
@@ -21,10 +23,11 @@ function greeting() {
 
 export default async function HomePage() {
   const profile = await requireRole(["ASO"]);
-  const [overdue, recent, roster] = await Promise.all([
+  const [overdue, recent, roster, announcements] = await Promise.all([
     profile.station ? getOverdueAircraft(profile.station) : Promise.resolve([]),
     getMySubmissions({ profileId: profile.id, limit: 5 }),
     profile.station ? getTodayRoster(profile.station, profile.team ?? "") : Promise.resolve(null),
+    getActiveAnnouncementsForUser(profile),
   ]);
   const dutyRecord = roster ? await getTodayDutyRecord(profile.id, roster.shift_code) : null;
   const firstName = profile.name.split(" ")[0] || profile.name;
@@ -48,23 +51,46 @@ export default async function HomePage() {
           </p>
         </div>
 
-        <Link
-          href="/avsec/duty"
-          className="flex items-center justify-between gap-3 p-4"
-          style={{ background: "var(--panel)", border: "1px solid var(--line)", borderLeft: "3px solid var(--gold)" }}
-        >
-          <div>
-            <p className="t-mono text-[10px] font-semibold" style={{ letterSpacing: "0.12em", color: "var(--soft)" }}>
-              DUTY CHECK-IN
-            </p>
-            <p className="text-[14px] font-semibold mt-1" style={{ color: "var(--ink)" }}>
-              {dutyStatusLabel}
-            </p>
-          </div>
-          <span className="t-mono text-[13px] shrink-0" style={{ color: "var(--faintest)" }}>
-            ›
-          </span>
-        </Link>
+        {/* Management Announcements Section */}
+        <AnnouncementBanner announcements={announcements} />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Link
+            href="/avsec/duty"
+            className="flex items-center justify-between gap-3 p-4"
+            style={{ background: "var(--panel)", border: "1px solid var(--line)", borderLeft: "3px solid var(--gold)" }}
+          >
+            <div>
+              <p className="t-mono text-[10px] font-semibold" style={{ letterSpacing: "0.12em", color: "var(--soft)" }}>
+                DUTY CHECK-IN
+              </p>
+              <p className="text-[14px] font-semibold mt-1" style={{ color: "var(--ink)" }}>
+                {dutyStatusLabel}
+              </p>
+            </div>
+            <span className="t-mono text-[13px] shrink-0" style={{ color: "var(--faintest)" }}>
+              ›
+            </span>
+          </Link>
+
+          <Link
+            href="/avsec/feedback"
+            className="flex items-center justify-between gap-3 p-4"
+            style={{ background: "var(--panel)", border: "1px solid var(--line)", borderLeft: "3px solid var(--cyan)" }}
+          >
+            <div>
+              <p className="t-mono text-[10px] font-semibold" style={{ letterSpacing: "0.12em", color: "var(--cyan)" }}>
+                ANONYMOUS FEEDBACK
+              </p>
+              <p className="text-[13.5px] font-semibold mt-1" style={{ color: "var(--ink)" }}>
+                Report safety hazards & suggestions
+              </p>
+            </div>
+            <span className="t-mono text-[13px] shrink-0" style={{ color: "var(--faintest)" }}>
+              ›
+            </span>
+          </Link>
+        </div>
 
         {overdue.length > 0 && (
           <section className="p-4" style={{ background: "var(--red-panel)", borderLeft: "3px solid var(--red)" }}>

@@ -309,3 +309,92 @@ export interface ReportListItem {
   report_no: string | null;
   flight_type?: "arrival" | "departure";
 }
+
+// Anonymous Staff Feedback types
+export type FeedbackCategory = "safety_concern" | "complaint" | "suggestion" | "other";
+export type FeedbackStatus = "open" | "closed";
+export type FeedbackSenderRole = "submitter" | "management";
+
+export interface FeedbackThreadRow {
+  id: string;
+  org_id: string | null;
+  submitter_id: string;
+  category: FeedbackCategory;
+  status: FeedbackStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FeedbackMessageRow {
+  id: string;
+  thread_id: string;
+  sender_role: FeedbackSenderRole;
+  body: string;
+  created_at: string;
+}
+
+export interface ManagementFeedbackThreadView {
+  id: string;
+  org_id: string | null;
+  category: FeedbackCategory;
+  status: FeedbackStatus;
+  created_at: string;
+  updated_at: string;
+  last_message?: string;
+  message_count?: number;
+}
+
+// Management Announcements types
+export interface AnnouncementRow {
+  id: string;
+  org_id: string | null;
+  created_by: string;
+  title: string;
+  body: string;
+  created_at: string;
+}
+
+export interface AnnouncementTargetRow {
+  id: string;
+  announcement_id: string;
+  branch: "operation_avsec" | "ifc_avsec" | "hub_avsec" | null;
+  station: string | null;
+  team: string | null;
+  created_at: string;
+}
+
+export interface AnnouncementAcknowledgementRow {
+  id: string;
+  announcement_id: string;
+  user_id: string;
+  acknowledged_at: string;
+}
+
+export interface AnnouncementWithStatus extends AnnouncementRow {
+  targets: AnnouncementTargetRow[];
+  acknowledged: boolean;
+  acknowledged_at: string | null;
+}
+
+export interface ManagementAnnouncementView extends AnnouncementRow {
+  targets: AnnouncementTargetRow[];
+  total_target_users: number;
+  acknowledged_count: number;
+  acknowledgements: {
+    user_id: string;
+    name: string;
+    role: string;
+    station: string | null;
+    team: string | null;
+    acknowledged_at: string;
+  }[];
+  pending_users: {
+    user_id: string;
+    name: string;
+    role: string;
+    station: string | null;
+    team: string | null;
+  }[];
+}
+
+

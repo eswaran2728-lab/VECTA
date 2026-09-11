@@ -95,6 +95,159 @@ export type Database = {
         }
         Relationships: []
       }
+      feedback_threads: {
+        Row: {
+          id: string
+          org_id: string
+          submitter_id: string
+          category: "safety_concern" | "complaint" | "suggestion" | "other"
+          status: "open" | "closed"
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string
+          submitter_id?: string
+          category: "safety_concern" | "complaint" | "suggestion" | "other"
+          status?: "open" | "closed"
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          submitter_id?: string
+          category?: "safety_concern" | "complaint" | "suggestion" | "other"
+          status?: "open" | "closed"
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      feedback_threads_management_view: {
+        Row: {
+          id: string
+          org_id: string
+          category: "safety_concern" | "complaint" | "suggestion" | "other"
+          status: "open" | "closed"
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string
+          category?: "safety_concern" | "complaint" | "suggestion" | "other"
+          status?: "open" | "closed"
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          category?: "safety_concern" | "complaint" | "suggestion" | "other"
+          status?: "open" | "closed"
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      feedback_messages: {
+        Row: {
+          id: string
+          thread_id: string
+          sender_role: "submitter" | "management"
+          body: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          thread_id: string
+          sender_role: "submitter" | "management"
+          body: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          thread_id?: string
+          sender_role?: "submitter" | "management"
+          body?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      announcements: {
+        Row: {
+          id: string
+          org_id: string
+          created_by: string
+          title: string
+          body: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string
+          created_by: string
+          title: string
+          body: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          created_by?: string
+          title?: string
+          body?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      announcement_targets: {
+        Row: {
+          id: string
+          announcement_id: string
+          branch: "operation_avsec" | "ifc_avsec" | "hub_avsec" | null
+          station: string | null
+          team: string | null
+        }
+        Insert: {
+          id?: string
+          announcement_id: string
+          branch?: "operation_avsec" | "ifc_avsec" | "hub_avsec" | null
+          station?: string | null
+          team?: string | null
+        }
+        Update: {
+          id?: string
+          announcement_id?: string
+          branch?: "operation_avsec" | "ifc_avsec" | "hub_avsec" | null
+          station?: string | null
+          team?: string | null
+        }
+        Relationships: []
+      }
+      announcement_acknowledgements: {
+        Row: {
+          id: string
+          announcement_id: string
+          user_id: string
+          acknowledged_at: string
+        }
+        Insert: {
+          id?: string
+          announcement_id: string
+          user_id: string
+          acknowledged_at?: string
+        }
+        Update: {
+          id?: string
+          announcement_id?: string
+          user_id?: string
+          acknowledged_at?: string
+        }
+        Relationships: []
+      }
       aircraft_types: {
         Row: {
           active: boolean

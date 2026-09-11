@@ -10,6 +10,8 @@ import { StatusDot, type OpsStatus } from "@/components/layout/StatusDot";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { TransactionStageBar } from "@/components/layout/TransactionStageBar";
+import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries";
+import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
 import type { Direction, OpsGroup, TransactionRoute, TransactionStatus } from "@/lib/icms/database.types";
 
 // Unified role vocabulary (supabase/migrations/unified_role_model):
@@ -123,9 +125,18 @@ export default async function LandingPage({
   const roleChip = role ? role.charAt(0).toUpperCase() + role.slice(1) : null;
   const maxCount = opsSummary && opsSummary.length > 0 ? Math.max(1, ...opsSummary.map((r) => r.count)) : 1;
 
-  const [snapshot, activity] = await Promise.all([
+  const currentUserProfile = {
+    id: user.id,
+    role: role,
+    station: avsecProfile?.station ?? null,
+    team: avsecProfile?.team ?? null,
+    ops_group: profile.ops_group ?? null,
+  };
+
+  const [snapshot, activity, announcements] = await Promise.all([
     getDashboardSnapshot(scopeGroup),
     getActivityFeed(scopeGroup),
+    getActiveAnnouncementsForUser(currentUserProfile),
   ]);
 
   const overallStatus: OpsStatus =
@@ -157,6 +168,9 @@ export default async function LandingPage({
         <UnifiedHeader name={profile.name} roleLabel={roleChip} signOutAction={signOut} />
 
         <div className="flex flex-col gap-6 px-8 py-8">
+          {/* Management Announcements Section */}
+          <AnnouncementBanner announcements={announcements} />
+
           {/* Operational status header */}
           <div className="vecta-panel flex flex-wrap items-center justify-between gap-4 px-6 py-5">
             <div className="flex flex-col gap-1.5">
@@ -226,13 +240,39 @@ export default async function LandingPage({
               </Link>
             )}
             {showAdmin && (
-              <Link href="/avsec/admin/users" className="vecta-tile group">
+              <>
+                <Link href="/avsec/admin/users" className="vecta-tile group">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-3.5" aria-hidden="true">
+                    <circle cx="12" cy="8" r="3.4" stroke="var(--cyan)" strokeWidth="1.6" />
+                    <path d="M5 20c0-3.6 3-6 7-6s7 2.4 7 6" stroke="var(--cyan)" strokeWidth="1.6" />
+                  </svg>
+                  <h2 className="font-display text-xl font-bold tracking-[0.03em]">Admin</h2>
+                  <p className="vecta-eyebrow mt-1">Users, whitelists, audit</p>
+                </Link>
+                <Link href="/avsec/management/feedback" className="vecta-tile group">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-3.5" aria-hidden="true">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <h2 className="font-display text-xl font-bold tracking-[0.03em]">Feedback Inbox</h2>
+                  <p className="vecta-eyebrow mt-1">Anonymous staff feedback</p>
+                </Link>
+                <Link href="/avsec/management/announcements" className="vecta-tile group">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-3.5" aria-hidden="true">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <h2 className="font-display text-xl font-bold tracking-[0.03em]">Announcements</h2>
+                  <p className="vecta-eyebrow mt-1">Broadcast to staff & teams</p>
+                </Link>
+              </>
+            )}
+            {!showAdmin && (
+              <Link href="/avsec/feedback" className="vecta-tile group">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-3.5" aria-hidden="true">
-                  <circle cx="12" cy="8" r="3.4" stroke="var(--cyan)" strokeWidth="1.6" />
-                  <path d="M5 20c0-3.6 3-6 7-6s7 2.4 7 6" stroke="var(--cyan)" strokeWidth="1.6" />
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                <h2 className="font-display text-xl font-bold tracking-[0.03em]">Admin</h2>
-                <p className="vecta-eyebrow mt-1">Users, whitelists, audit</p>
+                <h2 className="font-display text-xl font-bold tracking-[0.03em]">Staff Feedback</h2>
+                <p className="vecta-eyebrow mt-1">Submit anonymous feedback</p>
               </Link>
             )}
           </div>
