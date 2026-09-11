@@ -93,11 +93,14 @@ WHERE role = 'ADMIN' OR unified_role = 'admin';
 
 ALTER TABLE public.profiles ENABLE TRIGGER USER;
 
-IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users') THEN
-  UPDATE public.users
-  SET unified_role = 'management'
-  WHERE unified_role = 'admin' OR role = 'supervisor';
-END IF;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users') THEN
+    UPDATE public.users
+    SET unified_role = 'management'
+    WHERE unified_role = 'admin' OR role = 'supervisor';
+  END IF;
+END $$;
 
 ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_unified_role_check;
 ALTER TABLE public.profiles
