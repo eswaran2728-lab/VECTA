@@ -303,7 +303,7 @@ test("formatOnLeaveLabel: formats correct roster status label for all 9 leave ty
   const { formatOnLeaveLabel, LEAVE_TYPES } = await import("../lib/avsec/duty/absence-logic.ts");
 
   assert.equal(formatOnLeaveLabel("annual"), "On Leave — Annual");
-  assert.equal(formatOnLeaveLabel("mc"), "On Leave — MC");
+  assert.equal(formatOnLeaveLabel("mc"), "On Leave — Sick Leave");
   assert.equal(formatOnLeaveLabel("emergency"), "On Leave — Emergency");
   assert.equal(formatOnLeaveLabel("compassionate"), "On Leave — Compassionate");
   assert.equal(formatOnLeaveLabel("hospitalization"), "On Leave — Hospitalization");

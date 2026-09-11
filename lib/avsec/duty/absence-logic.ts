@@ -32,7 +32,7 @@ export const LEAVE_TYPES: readonly LeaveType[] = [
 
 export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
   absent: "Absent / Uninformed",
-  mc: "MC (Medical Leave)",
+  mc: "Sick Leave",
   emergency: "Emergency Leave",
   annual: "Annual Leave",
   compassionate: "Compassionate / Bereavement Leave",
@@ -44,7 +44,7 @@ export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
 
 export const LEAVE_TYPE_SHORT_LABELS: Record<LeaveType, string> = {
   absent: "Absent",
-  mc: "MC",
+  mc: "Sick Leave",
   emergency: "Emergency",
   annual: "Annual",
   compassionate: "Compassionate",

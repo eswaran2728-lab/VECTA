@@ -39,7 +39,7 @@ interface GeoPosition {
 const LATE_PHRASES = ["Traffic / transport delay", "Medical", "Approved by supervisor", "Ops requirement"];
 const LEAVE_PHRASES = [
   "Informed DSE via phone",
-  "Medical unwell / MC to follow",
+  "Medical unwell / Sick Leave to follow",
   "Family emergency",
   "Scheduled annual leave",
   "Approved operational relief",
