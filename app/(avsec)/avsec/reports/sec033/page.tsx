@@ -1,10 +1,14 @@
-import { requireRole } from "@/lib/avsec/auth";
+import { redirect } from "next/navigation";
+import { requireRole, landingPathForRole } from "@/lib/avsec/auth";
 import { loadDraft } from "@/lib/avsec/reports/drafts";
 import { Sec033Form } from "@/components/avsec/forms/Sec033Form";
 import { REPORT_META } from "@/lib/avsec/reference-data";
 
 export default async function Sec033Page() {
   const profile = await requireRole(["ASO"]);
+  if (profile.ops_group === "ifc_avsec") {
+    redirect(landingPathForRole(profile.role));
+  }
   const serverDraft = await loadDraft("sec033");
 
   return (

@@ -9,6 +9,7 @@ import { combineDateTimeMY } from "@/lib/avsec/datetime";
 
 interface UIValues {
   reg_no: string;
+  flight: string;
   aircraft_type: string;
   bay: string;
   date: string;
@@ -27,6 +28,7 @@ export function AddBayBoardForm({ station }: { station: string }) {
   } = useForm<UIValues>({
     defaultValues: {
       reg_no: "",
+      flight: "",
       aircraft_type: "",
       bay: "",
       date: now.toISOString().slice(0, 10),
@@ -39,6 +41,7 @@ export function AddBayBoardForm({ station }: { station: string }) {
     const res = await addBayBoardEntry({
       station,
       reg_no: v.reg_no,
+      flight: v.flight || undefined,
       aircraft_type: v.aircraft_type || undefined,
       bay: v.bay,
       on_ground_since: combineDateTimeMY(v.date, v.time),
@@ -55,7 +58,7 @@ export function AddBayBoardForm({ station }: { station: string }) {
   if (!open) {
     return (
       <button className="btn-primary w-full" onClick={() => setOpen(true)}>
-        + Log aircraft on ground
+        + Log aircraft on ground (Manual)
       </button>
     );
   }
@@ -64,9 +67,12 @@ export function AddBayBoardForm({ station }: { station: string }) {
     <form onSubmit={onSubmit} className="card p-4 space-y-4">
       <FieldRow>
         <TextField name="reg_no" register={register} label="Reg No" required error={errors.reg_no} />
-        <SelectField name="aircraft_type" register={register} label="Aircraft Type" options={AIRCRAFT_TYPES} error={errors.aircraft_type} />
+        <TextField name="flight" register={register} label="Flight No (Optional)" placeholder="e.g. AK5102" error={errors.flight} />
       </FieldRow>
-      <TextField name="bay" register={register} label="Bay" required error={errors.bay} />
+      <FieldRow>
+        <SelectField name="aircraft_type" register={register} label="Aircraft Type" options={AIRCRAFT_TYPES} error={errors.aircraft_type} />
+        <TextField name="bay" register={register} label="Bay" required error={errors.bay} />
+      </FieldRow>
       <FieldRow>
         <TextField name="date" type="date" register={register} label="Arrival Date" required error={errors.date as never} />
         <TextField name="time" type="time" register={register} label="Arrival Time" required error={errors.time as never} />

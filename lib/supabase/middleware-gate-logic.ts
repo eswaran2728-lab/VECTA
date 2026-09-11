@@ -1,16 +1,12 @@
 // Pure decision logic used by updateSession() in middleware.ts, split into its own
 // framework-free module (no next/server or @supabase/ssr imports) purely so it's
-// unit-testable with the plain node:test runner outside a Next.js build. Behavior is
-// unchanged from what was previously inlined in middleware.ts.
+// unit-testable with the plain node:test runner outside a Next.js build.
 
-// Seniority-based exemptions: admin/management/enforcement are not shift-based staff,
+// Seniority-based exemptions: super_admin/management/admin/enforcement are not shift-based staff,
 // so the check-in gate doesn't apply to them at all.
-const SENIORITY_EXEMPT_ROLES = ["admin", "management", "enforcement"];
+const SENIORITY_EXEMPT_ROLES = ["super_admin", "management", "admin", "enforcement"];
 
-// Vendor is a SEPARATE exemption, kept apart from the seniority list on purpose:
-// vendors are third-party/external, not AirAsia staff, so the AirAsia
-// attendance/check-in concept doesn't apply to them at all — a different reason than
-// "senior enough to skip it".
+// Vendor is a SEPARATE exemption: third-party/external, not AirAsia staff.
 const VENDOR_EXEMPT_ROLE = "vendor";
 
 export function isCheckinGateExempt(role: string | null): boolean {
@@ -19,17 +15,26 @@ export function isCheckinGateExempt(role: string | null): boolean {
   return seniorityExempt || vendorExempt;
 }
 
-// AVSEC roles permitted in VECTA (Operation AVSEC & IFC AVSEC)
-export const VECTA_ALLOWED_ROLES = ["admin", "management", "enforcement", "so", "aso", "dse"];
+// AVSEC roles permitted in VECTA
+export const VECTA_ALLOWED_ROLES = ["super_admin", "management", "admin", "enforcement", "so", "aso", "dse"];
 
 export function isVectaRoleAllowed(role: string | null): boolean {
   if (!role) return false;
   return VECTA_ALLOWED_ROLES.includes(role);
 }
 
-// Coarse edge-level defense-in-depth for the admin section (item 6): additive to, never
-// a replacement for, RLS + requireRole(["ADMIN"]) in the actual page/action code.
+// Management user-management admin section: accessible by Management & Admin
 export function isAdminPathForbidden(path: string, role: string | null): boolean {
-  return path.startsWith("/avsec/admin") && role !== "admin";
+  return path.startsWith("/avsec/admin") && role !== "management" && role !== "admin";
 }
 
+// Super Admin platform portal: strictly for super_admin
+export function isSuperAdminPathForbidden(path: string, role: string | null): boolean {
+  return path.startsWith("/super-admin") && role !== "super_admin";
+}
+
+// Super Admin must NOT participate in any tenant's operational workflows
+export function isOperationalPathForbiddenForSuperAdmin(path: string, role: string | null): boolean {
+  if (role !== "super_admin") return false;
+  return path.startsWith("/avsec") || path.startsWith("/icms") || path.startsWith("/caterlink");
+}

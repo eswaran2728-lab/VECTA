@@ -31,10 +31,22 @@ export interface ActionResult {
   error?: string;
 }
 
-async function requireProfileId(): Promise<{ id: string; station: string; team: string } | null> {
+async function requireProfileId(): Promise<{
+  id: string;
+  station: string;
+  team: string;
+  ops_group?: string | null;
+  role: string;
+} | null> {
   const profile = await getCurrentProfile();
   if (!profile || !profile.station || !profile.team) return null;
-  return { id: profile.id, station: profile.station, team: profile.team };
+  return {
+    id: profile.id,
+    station: profile.station,
+    team: profile.team,
+    ops_group: profile.ops_group,
+    role: profile.role,
+  };
 }
 
 // Reports can only be filed while actually on duty — mirrors the dashboard's compliance
@@ -59,11 +71,51 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
   const v = parsed.data;
 
   const supabase = await createClient();
+  const regNoUpper = v.reg_no.trim().toUpperCase();
+  let searchOverdueFlag = false;
+  let searchRemark: string | null = null;
+  let discrepanciesFinal = v.discrepancies;
+
+  // For departures: check if aircraft was on ground >= 4 hours on Bay Board
+  if (v.flight_type === "departure") {
+    const { data: openBay } = await supabase
+      .from("bay_board")
+      .select("id, on_ground_since")
+      .eq("station", v.station)
+      .eq("reg_no", regNoUpper)
+      .is("cleared_at", null)
+      .order("on_ground_since", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (openBay) {
+      const hoursOnGround = (Date.now() - new Date(openBay.on_ground_since).getTime()) / 3600000;
+      if (hoursOnGround >= 4 && !v.aircraft_search_completed) {
+        searchOverdueFlag = true;
+        searchRemark = "Aircraft Search not completed — aircraft on ground >4h";
+        if (
+          !discrepanciesFinal ||
+          discrepanciesFinal === "N/A" ||
+          discrepanciesFinal === "NONE" ||
+          discrepanciesFinal === "NIL"
+        ) {
+          discrepanciesFinal = searchRemark;
+        } else if (!discrepanciesFinal.includes("Aircraft Search not completed")) {
+          discrepanciesFinal = `${discrepanciesFinal}\n[AUTO-FLAG] ${searchRemark}`;
+        }
+      }
+    }
+  }
+
   const { data, error } = await supabase
     .from("report_sec016")
     .insert({
       profile_id: profile.id,
       status: "submitted",
+      flight_type: v.flight_type,
+      aircraft_search_completed: v.aircraft_search_completed,
+      search_overdue_flag: searchOverdueFlag,
+      search_remark: searchRemark,
       station: v.station,
       team: v.team,
       staff_name: v.staff_name,
@@ -75,7 +127,7 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
       assisted_by: v.assisted_by,
       aircraft_type: v.aircraft_type,
       aircraft_type_other: v.aircraft_type_other || null,
-      reg_no: v.reg_no,
+      reg_no: regNoUpper,
       sta_std: v.sta_std,
       ata_atd: v.ata_atd,
       bay_no: v.bay_no,
@@ -96,7 +148,7 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
       ramp_staff_5: v.ramp_staff_5,
       cargo_hold_checked: v.cargo_hold_checked,
       staff_frisked: v.staff_frisked,
-      discrepancies: v.discrepancies,
+      discrepancies: discrepanciesFinal,
       offload_flight_no: v.offload_flight_no,
       offload_destination: v.offload_destination,
       offload_baggage_tag_no: v.offload_baggage_tag_no,
@@ -107,13 +159,44 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
     .single();
 
   if (error) return { ok: false, error: error.message };
+
+  // Bay Board auto-linkage (Operation AVSEC only)
+  const isOps = profile.ops_group === "operation_avsec" || !profile.ops_group;
+  if (isOps) {
+    if (v.flight_type === "arrival") {
+      await supabase.from("bay_board").insert({
+        station: v.station,
+        reg_no: regNoUpper,
+        aircraft_type: v.aircraft_type === "Other" ? v.aircraft_type_other : v.aircraft_type,
+        bay: v.bay_no,
+        flight: v.flight.trim().toUpperCase(),
+        arrival_report_id: data.id,
+        on_ground_since: new Date().toISOString(),
+        is_manual: false,
+        created_by: profile.id,
+      });
+    } else if (v.flight_type === "departure") {
+      await supabase
+        .from("bay_board")
+        .update({
+          cleared_at: new Date().toISOString(),
+          cleared_by_report_id: data.id,
+          departure_report_id: data.id,
+        })
+        .eq("station", v.station)
+        .eq("reg_no", regNoUpper)
+        .is("cleared_at", null);
+    }
+    revalidatePath("/avsec/bay-board");
+  }
+
   await clearDraft("sec016");
   await notifyReportSubmission({
     reportType: "sec016",
     submittedAt: data.submitted_at ?? new Date().toISOString(),
     submittedByName: v.staff_name,
     submittedByStaffNo: v.staff_no,
-    fields: sec016EmailFields(v),
+    fields: sec016EmailFields({ ...v, discrepancies: discrepanciesFinal }),
   });
   revalidatePath("/avsec/history");
   return { ok: true, id: data.id, submittedAt: data.submitted_at ?? new Date().toISOString(), reportNo: data.report_no ?? undefined };
@@ -495,6 +578,7 @@ export async function addBayBoardEntry(input: {
   reg_no: string;
   aircraft_type?: string;
   bay: string;
+  flight?: string;
   on_ground_since: string;
 }): Promise<ActionResult> {
   const profile = await requireProfileId();
@@ -508,7 +592,9 @@ export async function addBayBoardEntry(input: {
       reg_no: input.reg_no.trim().toUpperCase(),
       aircraft_type: input.aircraft_type || null,
       bay: input.bay,
+      flight: input.flight?.trim().toUpperCase() || null,
       on_ground_since: input.on_ground_since,
+      is_manual: true,
       created_by: profile.id,
     })
     .select("id")
@@ -517,4 +603,19 @@ export async function addBayBoardEntry(input: {
   if (error) return { ok: false, error: error.message };
   revalidatePath("/avsec/bay-board");
   return { ok: true, id: data.id };
+}
+
+export async function clearBayBoardEntry(id: string): Promise<ActionResult> {
+  const profile = await requireProfileId();
+  if (!profile) return { ok: false, error: "Not authenticated" };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("bay_board")
+    .update({ cleared_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/avsec/bay-board");
+  return { ok: true };
 }

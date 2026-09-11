@@ -1,6 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { isCheckinGateExempt, isAdminPathForbidden } from "./middleware-gate-logic";
+import {
+  isCheckinGateExempt,
+  isAdminPathForbidden,
+  isSuperAdminPathForbidden,
+  isOperationalPathForbiddenForSuperAdmin,
+} from "./middleware-gate-logic";
 
 
 // Unified role vocabulary (see supabase/migrations/unified_role_model and
@@ -89,7 +94,7 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
-  const isGated = path.startsWith("/icms") || path.startsWith("/avsec") || path.startsWith("/caterlink");
+  const isGated = path.startsWith("/icms") || path.startsWith("/avsec") || path.startsWith("/caterlink") || path.startsWith("/super-admin");
   // API routes authenticate themselves (requireRole()/auth.getUser() per
   // route — see app/api/**) and some, like /api/icms/qr/mint, are meant to
   // be called server-to-server with a Bearer token and no cookies at all.
@@ -121,6 +126,19 @@ export async function updateSession(request: NextRequest) {
     if (request.nextUrl.searchParams.has("error")) {
       return supabaseResponse;
     }
+
+    const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
+      supabase.from("profiles").select("unified_role, role").eq("id", user.id).maybeSingle(),
+      supabase.from("users").select("unified_role, role").eq("id", user.id).maybeSingle(),
+    ]);
+    const uRole = avsecProfile?.unified_role ?? icmsProfile?.unified_role ?? avsecProfile?.role ?? icmsProfile?.role;
+    if (uRole === "super_admin" || uRole === "SUPER_ADMIN") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/super-admin";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+
     const userEmail = (user.email ?? "").toLowerCase();
     const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
     const isCaterLinkEmail =
@@ -140,7 +158,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   // --- Role + check-in gate ---
-  if (user && isGated) {
+  if (user && (isGated || path === "/")) {
     const userEmail = (user.email ?? "").toLowerCase();
     const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
     const isCaterLinkUser =
@@ -173,12 +191,12 @@ export async function updateSession(request: NextRequest) {
     const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
       supabase
         .from("profiles")
-        .select("unified_role, status")
+        .select("unified_role, role, status")
         .eq("id", user.id)
         .maybeSingle(),
       supabase
         .from("users")
-        .select("unified_role, status")
+        .select("unified_role, role, status")
         .eq("id", user.id)
         .maybeSingle(),
     ]);
@@ -192,7 +210,24 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    const role = (profile?.unified_role ?? (isCaterLinkUser ? "vendor" : null)) as string | null;
+    const role = (profile?.unified_role ?? (profile?.role === "SUPER_ADMIN" ? "super_admin" : isCaterLinkUser ? "vendor" : null)) as string | null;
+
+    // Super Admin: platform portal only. Forbidden from operational routes.
+    if (isOperationalPathForbiddenForSuperAdmin(path, role) || (path === "/" && role === "super_admin")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/super-admin";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+
+    // Non-super-admins forbidden from /super-admin
+    if (isSuperAdminPathForbidden(path, role)) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/";
+      url.search = "";
+      url.searchParams.set("error", "forbidden");
+      return NextResponse.redirect(url);
+    }
 
     // Boundary Gate: Driver & Vendor accounts are restricted from AVSEC reports and routed to CaterLink
     if (role === "vendor" && path.startsWith("/avsec")) {
@@ -205,16 +240,13 @@ export async function updateSession(request: NextRequest) {
     // this gate: check-in/duty_records/team_rosters are entirely AVSEC-side
     // concepts keyed to a profiles row.
     const icmsOnlyExempt = !avsecProfile && Boolean(icmsProfile);
-    const exempt = isCheckinGateExempt(role) || icmsOnlyExempt || isCaterLinkUser || path.startsWith("/icms") || path.startsWith("/caterlink");
+    const exempt = isCheckinGateExempt(role) || icmsOnlyExempt || isCaterLinkUser || path.startsWith("/icms") || path.startsWith("/caterlink") || path.startsWith("/super-admin");
     const alreadyOnCheckin =
       path.startsWith("/avsec/duty") ||
       path.startsWith("/avsec/profile-setup") ||
       path.startsWith("/avsec/pending-approval");
 
-    // Coarse edge-level defense-in-depth for the admin section: additive to,
-    // not a replacement for, RLS and requireRole(["ADMIN"]) in the page/
-    // action code. A non-admin unified_role hitting /avsec/admin/* is
-    // bounced straight back to "/" here, before any admin-only query runs.
+    // Coarse edge-level defense-in-depth for the admin section:
     if (isAdminPathForbidden(path, role)) {
       const url = request.nextUrl.clone();
       url.pathname = "/";

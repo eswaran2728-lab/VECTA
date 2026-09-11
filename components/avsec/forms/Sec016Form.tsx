@@ -21,9 +21,13 @@ import {
 import { SubmissionConfirmation } from "@/components/avsec/forms/SubmissionConfirmation";
 import { AttachmentUpload, revokeAttachmentPreviews, type PendingAttachment } from "@/components/avsec/forms/AttachmentUpload";
 import { SmartInputSec016 } from "@/components/avsec/forms/SmartInputSec016";
+import { PlaneLanding, PlaneTakeoff } from "lucide-react";
+import { cn } from "@/lib/avsec/utils";
 import type { Profile } from "@/lib/avsec/types";
 
 interface UIValues {
+  flight_type: "arrival" | "departure";
+  aircraft_search_completed: boolean;
   station: string;
   team: string;
   staff_name: string;
@@ -70,6 +74,8 @@ function buildDefaults(profile: Profile, serverDraft?: UIValues | null): UIValue
   const draft = readLocalDraft<UIValues>("sec016") ?? serverDraft;
   if (draft) return draft;
   return {
+    flight_type: "arrival",
+    aircraft_search_completed: false,
     station: profile.station ?? "",
     team: profile.team ?? "",
     staff_name: profile.name,
@@ -202,6 +208,66 @@ export function Sec016Form({
         draftNote={savedAt ? `DRAFT SAVED ${savedAt.toLocaleTimeString()}` : "AUTOSAVING…"}
         activeIndex={1}
       />
+
+      {/* Flight Direction Required Selector */}
+      <div className="card p-4 space-y-3 border-primary/40 bg-surface/80">
+        <div className="flex items-center justify-between">
+          <label className="field-label block font-semibold text-xs tracking-wider uppercase text-foreground">
+            Flight Direction <span className="text-red-500">*</span>
+          </label>
+          <span className="t-mono text-[10px] uppercase font-bold text-primary">
+            {values.flight_type === "arrival" ? "Auto Bay Board Addition" : "Auto Bay Board Clearance"}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setValue("flight_type", "arrival", { shouldDirty: true, shouldValidate: true })}
+            className={cn(
+              "flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl border font-bold text-sm transition-all cursor-pointer",
+              values.flight_type === "arrival"
+                ? "bg-emerald-500/15 border-emerald-500 text-emerald-400 shadow-sm"
+                : "bg-surface border-border text-muted-foreground hover:border-border/80"
+            )}
+          >
+            <PlaneLanding className="h-4 w-4 text-emerald-400" />
+            <span>Arrival (ARR)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setValue("flight_type", "departure", { shouldDirty: true, shouldValidate: true })}
+            className={cn(
+              "flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl border font-bold text-sm transition-all cursor-pointer",
+              values.flight_type === "departure"
+                ? "bg-sky-500/15 border-sky-500 text-sky-400 shadow-sm"
+                : "bg-surface border-border text-muted-foreground hover:border-border/80"
+            )}
+          >
+            <PlaneTakeoff className="h-4 w-4 text-sky-400" />
+            <span>Departure (DEP)</span>
+          </button>
+        </div>
+      </div>
+
+      {values.flight_type === "departure" && (
+        <div className="card p-4 space-y-2 border-amber-500/30 bg-amber-500/5">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              {...register("aircraft_search_completed")}
+              className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+            />
+            <div>
+              <p className="text-xs font-bold text-foreground">
+                Aircraft Search Completed (SEC 029)
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Recommended if aircraft has been on ground for $\ge$ 4 hours. If not completed, an audit remark will be logged automatically on this departure report.
+              </p>
+            </div>
+          </label>
+        </div>
+      )}
 
       <SmartInputSec016 setValue={setValue} onParsed={setAutoFilledFields} />
 

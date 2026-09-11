@@ -4,48 +4,96 @@ import { getMySubmissions } from "@/lib/avsec/reports/queries";
 import { getAttachmentCounts } from "@/lib/avsec/attachments/actions";
 import { REPORT_META } from "@/lib/avsec/reference-data";
 import { formatTimeMY } from "@/lib/avsec/datetime";
-import { cn } from "@/lib/avsec/utils";
 
-const FILTERS = ["ALL", "SUBMITTED", "DRAFT"] as const;
+const STATUS_FILTERS = ["ALL", "SUBMITTED", "DRAFT"] as const;
+const FLIGHT_FILTERS = [
+  { label: "ALL TYPES", value: "ALL" },
+  { label: "ARRIVALS", value: "ARRIVAL" },
+  { label: "DEPARTURES", value: "DEPARTURE" },
+] as const;
 
 export default async function HistoryPage({
   searchParams: searchParamsPromise,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; flight_type?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
   const profile = await requireProfile();
   const submissions = await getMySubmissions({ profileId: profile.id, limit: 200 });
   const attachmentCounts = await getAttachmentCounts(submissions.map((r) => r.id));
 
-  const active = FILTERS.includes(searchParams.status as (typeof FILTERS)[number])
-    ? (searchParams.status as (typeof FILTERS)[number])
+  const activeStatus = STATUS_FILTERS.includes(searchParams.status?.toUpperCase() as (typeof STATUS_FILTERS)[number])
+    ? (searchParams.status?.toUpperCase() as (typeof STATUS_FILTERS)[number])
     : "ALL";
-  const rows =
-    active === "ALL" ? submissions : submissions.filter((r) => r.status.toUpperCase() === active);
+
+  const activeFlight = FLIGHT_FILTERS.some((f) => f.value === searchParams.flight_type?.toUpperCase())
+    ? (searchParams.flight_type?.toUpperCase() as "ALL" | "ARRIVAL" | "DEPARTURE")
+    : "ALL";
+
+  const rows = submissions.filter((r) => {
+    if (activeStatus !== "ALL" && r.status.toUpperCase() !== activeStatus) return false;
+    if (activeFlight !== "ALL") {
+      if (r.type !== "sec016") return false;
+      if (r.flight_type?.toUpperCase() !== activeFlight) return false;
+    }
+    return true;
+  });
+
+  const makeFilterUrl = (newStatus: string, newFlight: string) => {
+    const params = new URLSearchParams();
+    if (newStatus !== "ALL") params.set("status", newStatus);
+    if (newFlight !== "ALL") params.set("flight_type", newFlight);
+    const qs = params.toString();
+    return qs ? `/history?${qs}` : "/history";
+  };
 
   return (
     <main className="min-h-screen pb-32">
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-        <div className="flex gap-1.5 flex-wrap">
-          {FILTERS.map((f) => {
-            const on = f === active;
-            return (
-              <Link
-                key={f}
-                href={f === "ALL" ? "/history" : `/history?status=${f}`}
-                className="t-mono text-[9.5px] font-semibold px-3 py-2"
-                style={{
-                  letterSpacing: "0.1em",
-                  border: `1px solid ${on ? "var(--gold-fill)" : "var(--line3)"}`,
-                  background: on ? "var(--gold-soft)" : "transparent",
-                  color: on ? "var(--gold)" : "var(--mid)",
-                }}
-              >
-                {f}
-              </Link>
-            );
-          })}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex gap-1.5 flex-wrap items-center">
+            <span className="t-mono text-[9px] uppercase tracking-wider text-muted-foreground mr-1">Status:</span>
+            {STATUS_FILTERS.map((f) => {
+              const on = f === activeStatus;
+              return (
+                <Link
+                  key={f}
+                  href={makeFilterUrl(f, activeFlight)}
+                  className="t-mono text-[9.5px] font-semibold px-2.5 py-1.5 rounded"
+                  style={{
+                    letterSpacing: "0.1em",
+                    border: `1px solid ${on ? "var(--gold-fill)" : "var(--line3)"}`,
+                    background: on ? "var(--gold-soft)" : "transparent",
+                    color: on ? "var(--gold)" : "var(--mid)",
+                  }}
+                >
+                  {f}
+                </Link>
+              );
+            })}
+          </div>
+
+          <div className="flex gap-1.5 flex-wrap items-center">
+            <span className="t-mono text-[9px] uppercase tracking-wider text-muted-foreground mr-1">SEC016 Movement:</span>
+            {FLIGHT_FILTERS.map((f) => {
+              const on = f.value === activeFlight;
+              return (
+                <Link
+                  key={f.value}
+                  href={makeFilterUrl(activeStatus, f.value)}
+                  className="t-mono text-[9.5px] font-semibold px-2.5 py-1.5 rounded"
+                  style={{
+                    letterSpacing: "0.1em",
+                    border: `1px solid ${on ? "var(--gold-fill)" : "var(--line3)"}`,
+                    background: on ? "var(--gold-soft)" : "transparent",
+                    color: on ? "var(--gold)" : "var(--mid)",
+                  }}
+                >
+                  {f.label}
+                </Link>
+              );
+            })}
+          </div>
         </div>
 
         {rows.length === 0 && (

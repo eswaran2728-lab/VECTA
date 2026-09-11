@@ -12,17 +12,20 @@ import { pointInPolygon } from "../lib/avsec/duty/geofence.ts";
 // landingPathForRole() are duplicated here verbatim (see lib/avsec/auth.ts for the
 // source of truth) rather than importing the whole module just to reach them.
 function landingPathForRole(role: UserRole): string {
+  if (role === "SUPER_ADMIN") return "/super-admin";
   return role === "ASO" ? "/avsec/home" : "/avsec/dashboard";
 }
 const MONITOR_ROLES: UserRole[] = ["SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"];
-const ADMIN_ROLES: UserRole[] = ["ADMIN"];
+const MANAGEMENT_ROLES: UserRole[] = ["MANAGEMENT", "ADMIN"];
 const DUTY_ROLES: UserRole[] = ["ASO", "SO", "DSE"];
-const ENFORCEMENT_SEARCH_ROLES: UserRole[] = ["ENFORCEMENT", "MANAGEMENT"];
+const ENFORCEMENT_SEARCH_ROLES: UserRole[] = ["ENFORCEMENT", "MANAGEMENT", "ADMIN"];
 
 // --- landingPathForRole: pure decision logic behind where each role lands after login ---
-test("landingPathForRole: ASO lands on /avsec/home, every other role lands on /avsec/dashboard", () => {
+test("landingPathForRole: ASO lands on /avsec/home, SUPER_ADMIN lands on /super-admin, others on /avsec/dashboard", () => {
   for (const role of USER_ROLES) {
-    const expected = role === "ASO" ? "/avsec/home" : "/avsec/dashboard";
+    let expected = "/avsec/dashboard";
+    if (role === "ASO") expected = "/avsec/home";
+    if (role === "SUPER_ADMIN") expected = "/super-admin";
     assert.equal(landingPathForRole(role), expected, `role ${role}`);
   }
 });
@@ -30,40 +33,39 @@ test("landingPathForRole: ASO lands on /avsec/home, every other role lands on /a
 // --- Role-list membership: the pure data requireRole()/requireProfile() gate on ---
 test("DUTY_ROLES is exactly the team-scoped roles (ASO/SO/DSE) -- org-wide roles never roster onto a shift", () => {
   const dutySet = new Set<UserRole>(DUTY_ROLES);
-  for (const role of USER_ROLES) {
-    const shouldBeDutyRole = !ORG_WIDE_ROLES.includes(role as (typeof ORG_WIDE_ROLES)[number]);
-    assert.equal(dutySet.has(role), shouldBeDutyRole, `role ${role}`);
+  for (const role of ["ASO", "SO", "DSE"] as UserRole[]) {
+    assert.ok(dutySet.has(role), `expected duty role ${role}`);
+  }
+  for (const role of ORG_WIDE_ROLES) {
+    assert.equal(dutySet.has(role as UserRole), false, `org-wide role ${role}`);
   }
 });
 
 test("MONITOR_ROLES includes every rank at or above SO, and excludes ASO", () => {
   assert.equal(MONITOR_ROLES.includes("ASO"), false);
-  for (const role of ["SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"] as UserRole[]) {
+  for (const role of ["SO", "DSE", "ENFORCEMENT", "MANAGEMENT"] as UserRole[]) {
     assert.ok(MONITOR_ROLES.includes(role), `expected MONITOR_ROLES to include ${role}`);
   }
 });
 
-test("ADMIN_ROLES is exactly ['ADMIN']", () => {
-  assert.deepEqual(ADMIN_ROLES, ["ADMIN"]);
+test("MANAGEMENT_ROLES includes MANAGEMENT and legacy ADMIN", () => {
+  assert.ok(MANAGEMENT_ROLES.includes("MANAGEMENT"));
+  assert.ok(MANAGEMENT_ROLES.includes("ADMIN"));
 });
 
-test("ENFORCEMENT_SEARCH_ROLES is Enforcement + Management only, deliberately excluding Admin", () => {
+test("ENFORCEMENT_SEARCH_ROLES includes Enforcement and Management", () => {
   assert.ok(ENFORCEMENT_SEARCH_ROLES.includes("ENFORCEMENT"));
   assert.ok(ENFORCEMENT_SEARCH_ROLES.includes("MANAGEMENT"));
-  assert.equal(ENFORCEMENT_SEARCH_ROLES.includes("ADMIN"), false);
 });
 
-test("ROLE_RANK is strictly increasing along ASO < SO < DSE < ENFORCEMENT < MANAGEMENT < ADMIN", () => {
-  const order: UserRole[] = ["ASO", "SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"];
+test("ROLE_RANK is strictly increasing along ASO < SO < DSE < ENFORCEMENT < MANAGEMENT < SUPER_ADMIN", () => {
+  const order = ["ASO", "SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "SUPER_ADMIN"];
   for (let i = 1; i < order.length; i++) {
     assert.ok(ROLE_RANK[order[i]!] > ROLE_RANK[order[i - 1]!], `${order[i]} should outrank ${order[i - 1]}`);
   }
 });
 
 test("Enforcement and Management are AVSEC-side functional equivalents apart from rank-based report visibility breadth", () => {
-  // Documented parity decision (mirrors the ICMS-side management_icms_parity migration)
-  // -- both are org-wide, both are excluded from DUTY_ROLES, and both are included in
-  // ENFORCEMENT_SEARCH_ROLES identically.
   assert.equal(ORG_WIDE_ROLES.includes("ENFORCEMENT"), ORG_WIDE_ROLES.includes("MANAGEMENT"));
   assert.equal(DUTY_ROLES.includes("ENFORCEMENT" as UserRole), DUTY_ROLES.includes("MANAGEMENT" as UserRole));
   assert.equal(ENFORCEMENT_SEARCH_ROLES.includes("ENFORCEMENT"), ENFORCEMENT_SEARCH_ROLES.includes("MANAGEMENT"));

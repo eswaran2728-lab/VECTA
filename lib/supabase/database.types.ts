@@ -14,6 +14,87 @@ export type Database = {
   }
   public: {
     Tables: {
+      organizations: {
+        Row: {
+          id: string
+          name: string
+          code: string | null
+          status: "active" | "inactive" | "suspended"
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          code?: string | null
+          status?: "active" | "inactive" | "suspended"
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          code?: string | null
+          status?: "active" | "inactive" | "suspended"
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      ot_requests: {
+        Row: {
+          id: string
+          org_id: string
+          requester_id: string
+          branch: "operation_avsec" | "ifc_avsec" | "hub_avsec"
+          work_date: string
+          hours: number
+          reason: string
+          status: "pending" | "approved" | "rejected"
+          requested_at: string
+          reviewed_by: string | null
+          reviewed_at: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string
+          requester_id: string
+          branch: "operation_avsec" | "ifc_avsec" | "hub_avsec"
+          work_date: string
+          hours: number
+          reason: string
+          status?: "pending" | "approved" | "rejected"
+          requested_at?: string
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          requester_id?: string
+          branch?: "operation_avsec" | "ifc_avsec" | "hub_avsec"
+          work_date?: string
+          hours?: number
+          reason?: string
+          status?: "pending" | "approved" | "rejected"
+          requested_at?: string
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       aircraft_types: {
         Row: {
           active: boolean
@@ -82,37 +163,52 @@ export type Database = {
       bay_board: {
         Row: {
           aircraft_type: string | null
+          arrival_report_id: string | null
           bay: string
           cleared_at: string | null
           cleared_by_report_id: string | null
           created_at: string
           created_by: string
+          departure_report_id: string | null
+          flight: string | null
           id: string
+          is_manual: boolean
           on_ground_since: string
+          org_id: string
           reg_no: string
           station: string
         }
         Insert: {
           aircraft_type?: string | null
+          arrival_report_id?: string | null
           bay: string
           cleared_at?: string | null
           cleared_by_report_id?: string | null
           created_at?: string
           created_by: string
+          departure_report_id?: string | null
+          flight?: string | null
           id?: string
+          is_manual?: boolean
           on_ground_since: string
+          org_id?: string
           reg_no: string
           station: string
         }
         Update: {
           aircraft_type?: string | null
+          arrival_report_id?: string | null
           bay?: string
           cleared_at?: string | null
           cleared_by_report_id?: string | null
           created_at?: string
           created_by?: string
+          departure_report_id?: string | null
+          flight?: string | null
           id?: string
+          is_manual?: boolean
           on_ground_since?: string
+          org_id?: string
           reg_no?: string
           station?: string
         }
@@ -1875,6 +1971,7 @@ export type Database = {
       }
       report_sec016: {
         Row: {
+          aircraft_search_completed: boolean
           aircraft_type: string
           aircraft_type_other: string | null
           amendment_of: string | null
@@ -1889,6 +1986,7 @@ export type Database = {
           duty_date: string
           duty_hour: string
           flight: string
+          flight_type: "arrival" | "departure"
           id: string
           inbound_baggage: string
           inbound_cargo: string
@@ -1911,6 +2009,8 @@ export type Database = {
           reason_for_delay: string | null
           reg_no: string
           report_no: string | null
+          search_overdue_flag: boolean
+          search_remark: string | null
           shift_leader: string
           sta_std: string
           staff_frisked: string
@@ -1923,6 +2023,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          aircraft_search_completed?: boolean
           aircraft_type: string
           aircraft_type_other?: string | null
           amendment_of?: string | null
@@ -1937,6 +2038,7 @@ export type Database = {
           duty_date: string
           duty_hour: string
           flight: string
+          flight_type?: "arrival" | "departure"
           id?: string
           inbound_baggage: string
           inbound_cargo: string
@@ -1959,6 +2061,8 @@ export type Database = {
           reason_for_delay?: string | null
           reg_no: string
           report_no?: string | null
+          search_overdue_flag?: boolean
+          search_remark?: string | null
           shift_leader: string
           sta_std: string
           staff_frisked: string
@@ -1971,6 +2075,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          aircraft_search_completed?: boolean
           aircraft_type?: string
           aircraft_type_other?: string | null
           amendment_of?: string | null
@@ -1985,6 +2090,7 @@ export type Database = {
           duty_date?: string
           duty_hour?: string
           flight?: string
+          flight_type?: "arrival" | "departure"
           id?: string
           inbound_baggage?: string
           inbound_cargo?: string
@@ -2007,6 +2113,8 @@ export type Database = {
           reason_for_delay?: string | null
           reg_no?: string
           report_no?: string | null
+          search_overdue_flag?: boolean
+          search_remark?: string | null
           shift_leader?: string
           sta_std?: string
           staff_frisked?: string

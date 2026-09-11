@@ -170,45 +170,49 @@ function UserRow({ profile: p }: { profile: Profile }) {
         {formatDateTimeMY(p.created_at, "dd MMM yyyy")}
       </td>
       <td className="px-5 py-3">
-        <div className="flex items-center justify-end gap-1 flex-wrap">
-          <button form={formId} type="submit" className="btn-quiet font-semibold">
-            Save
-          </button>
-          {p.status === "approved" ? (
+        {p.role === "SUPER_ADMIN" ? (
+          <span className="font-mono text-[11px] text-muted-foreground italic">Protected</span>
+        ) : (
+          <div className="flex items-center justify-end gap-1 flex-wrap">
+            <button form={formId} type="submit" className="btn-quiet font-semibold">
+              Save
+            </button>
+            {p.status === "approved" ? (
+              <button
+                form={`deactivate-user-${p.id}`}
+                type="submit"
+                className="btn-quiet font-semibold text-amber-700 dark:text-amber-400"
+                onClick={(e) => {
+                  if (!confirm(`Deactivate ${p.name || p.email}? They won't be able to sign in until reactivated.`)) {
+                    e.preventDefault();
+                  }
+                }}
+              >
+                Deactivate
+              </button>
+            ) : (
+              <button form={`reactivate-user-${p.id}`} type="submit" className="btn-quiet font-semibold text-green-700 dark:text-green-400">
+                Reactivate
+              </button>
+            )}
             <button
-              form={`deactivate-user-${p.id}`}
+              form={`delete-user-${p.id}`}
               type="submit"
-              className="btn-quiet font-semibold text-amber-700 dark:text-amber-400"
+              className="btn-quiet font-semibold text-red-600 dark:text-red-400"
               onClick={(e) => {
-                if (!confirm(`Deactivate ${p.name || p.email}? They won't be able to sign in until reactivated.`)) {
+                if (
+                  !confirm(
+                    `Permanently delete ${p.name || p.email}? This cannot be undone. Only allowed if they have no report history — use Deactivate otherwise.`,
+                  )
+                ) {
                   e.preventDefault();
                 }
               }}
             >
-              Deactivate
+              Delete
             </button>
-          ) : (
-            <button form={`reactivate-user-${p.id}`} type="submit" className="btn-quiet font-semibold text-green-700 dark:text-green-400">
-              Reactivate
-            </button>
-          )}
-          <button
-            form={`delete-user-${p.id}`}
-            type="submit"
-            className="btn-quiet font-semibold text-red-600 dark:text-red-400"
-            onClick={(e) => {
-              if (
-                !confirm(
-                  `Permanently delete ${p.name || p.email}? This cannot be undone. Only allowed if they have no report history — use Deactivate otherwise.`,
-                )
-              ) {
-                e.preventDefault();
-              }
-            }}
-          >
-            Delete
-          </button>
-        </div>
+          </div>
+        )}
       </td>
     </tr>
   );

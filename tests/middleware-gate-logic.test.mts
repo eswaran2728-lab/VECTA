@@ -1,12 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isCheckinGateExempt, isAdminPathForbidden, isVectaRoleAllowed } from "../lib/supabase/middleware-gate-logic.ts";
+import {
+  isCheckinGateExempt,
+  isAdminPathForbidden,
+  isVectaRoleAllowed,
+  isSuperAdminPathForbidden,
+  isOperationalPathForbiddenForSuperAdmin,
+} from "../lib/supabase/middleware-gate-logic.ts";
 
-
-// --- Check-in gate exemption (item 3/6 context, item 7 pure-logic coverage) ---
-test("isCheckinGateExempt: admin/management/enforcement are seniority-exempt", () => {
-  assert.equal(isCheckinGateExempt("admin"), true);
+// --- Check-in gate exemption ---
+test("isCheckinGateExempt: super_admin/management/enforcement are seniority-exempt", () => {
+  assert.equal(isCheckinGateExempt("super_admin"), true);
   assert.equal(isCheckinGateExempt("management"), true);
+  assert.equal(isCheckinGateExempt("admin"), true);
   assert.equal(isCheckinGateExempt("enforcement"), true);
 });
 
@@ -24,26 +30,37 @@ test("isCheckinGateExempt: null role (no profile row matched) is not exempt -- f
   assert.equal(isCheckinGateExempt(null), false);
 });
 
-// --- Admin-path edge gate (item 6) ---
-test("isAdminPathForbidden: non-admin roles are forbidden from /avsec/admin/*", () => {
-  for (const role of ["so", "aso", "dse", "enforcement", "management", "vendor", null]) {
+// --- Admin-path edge gate ---
+test("isAdminPathForbidden: management and admin roles are allowed through", () => {
+  assert.equal(isAdminPathForbidden("/avsec/admin/users", "management"), false);
+  assert.equal(isAdminPathForbidden("/avsec/admin/users", "admin"), false);
+});
+
+test("isAdminPathForbidden: non-management roles are forbidden from /avsec/admin/*", () => {
+  for (const role of ["so", "aso", "dse", "enforcement", "vendor", null]) {
     assert.equal(isAdminPathForbidden("/avsec/admin/users", role), true, `role ${role}`);
   }
 });
 
-test("isAdminPathForbidden: admin role is allowed through", () => {
-  assert.equal(isAdminPathForbidden("/avsec/admin/users", "admin"), false);
-  assert.equal(isAdminPathForbidden("/avsec/admin", "admin"), false);
+// --- Super Admin portal & isolation gates ---
+test("isSuperAdminPathForbidden: only super_admin can access /super-admin", () => {
+  assert.equal(isSuperAdminPathForbidden("/super-admin", "super_admin"), false);
+  for (const role of ["management", "admin", "enforcement", "so", "aso", "dse", "vendor", null]) {
+    assert.equal(isSuperAdminPathForbidden("/super-admin", role), true, `role ${role}`);
+  }
 });
 
-test("isAdminPathForbidden: non-admin paths are never forbidden by this check regardless of role", () => {
-  assert.equal(isAdminPathForbidden("/avsec/dashboard", "so"), false);
-  assert.equal(isAdminPathForbidden("/avsec/duty", null), false);
+test("isOperationalPathForbiddenForSuperAdmin: super_admin cannot participate in tenant operational workflows", () => {
+  assert.equal(isOperationalPathForbiddenForSuperAdmin("/avsec/duty", "super_admin"), true);
+  assert.equal(isOperationalPathForbiddenForSuperAdmin("/avsec/reports/sec014", "super_admin"), true);
+  assert.equal(isOperationalPathForbiddenForSuperAdmin("/icms/transactions", "super_admin"), true);
+  assert.equal(isOperationalPathForbiddenForSuperAdmin("/caterlink/dashboard", "super_admin"), true);
+  assert.equal(isOperationalPathForbiddenForSuperAdmin("/avsec/duty", "management"), false);
 });
 
 // --- VECTA vs CaterLink role boundary segregation ---
 test("isVectaRoleAllowed: AVSEC operation roles are allowed in VECTA", () => {
-  for (const role of ["admin", "management", "enforcement", "so", "aso", "dse"]) {
+  for (const role of ["super_admin", "admin", "management", "enforcement", "so", "aso", "dse"]) {
     assert.equal(isVectaRoleAllowed(role), true, `role ${role} should have VECTA access`);
   }
 });

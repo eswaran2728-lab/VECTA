@@ -70,6 +70,11 @@ export interface Sec016Row {
   offload_baggage_tag_no: string;
   offload_total_baggage: string;
   offload_remark: string;
+
+  flight_type: "arrival" | "departure";
+  aircraft_search_completed: boolean;
+  search_overdue_flag: boolean;
+  search_remark: string | null;
 }
 
 export interface Sec014PatrolEntry {
@@ -279,7 +284,11 @@ export interface BayBoardRow {
   reg_no: string;
   aircraft_type: string | null;
   bay: string;
+  flight: string | null;
   on_ground_since: string;
+  is_manual: boolean;
+  arrival_report_id: string | null;
+  departure_report_id: string | null;
   cleared_by_report_id: string | null;
   cleared_at: string | null;
   created_by: string;
@@ -298,4 +307,5 @@ export interface ReportListItem {
   team: string;
   summary: string;
   report_no: string | null;
+  flight_type?: "arrival" | "departure";
 }

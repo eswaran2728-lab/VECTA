@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import type { UserRole, ProfileStatus } from "@/lib/avsec/reference-data";
+import type { ProfileStatus } from "@/lib/avsec/reference-data";
 
 export interface RegisterState {
   error: string | null;
@@ -84,7 +84,7 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
           email,
           name,
           staff_no: staffId,
-          role: avsecRole as UserRole,
+          role: (avsecRole ?? "ASO") as "ASO" | "SO" | "DSE" | "ADMIN" | "ENFORCEMENT" | "MANAGEMENT",
           unified_role: unifiedRole,
           ops_group: opsGroup,
           team,

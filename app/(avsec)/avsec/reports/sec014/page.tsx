@@ -1,4 +1,4 @@
-import { requireRole, DAILY_REPORT_ROLES, landingPathForRole } from "@/lib/avsec/auth";
+import { requireRole, DAILY_REPORT_ROLES } from "@/lib/avsec/auth";
 import { loadDraft } from "@/lib/avsec/reports/drafts";
 import { Sec014Form } from "@/components/avsec/forms/Sec014Form";
 import { REPORT_META } from "@/lib/avsec/reference-data";

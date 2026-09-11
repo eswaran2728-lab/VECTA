@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import type { UserRole, ProfileStatus } from "@/lib/avsec/reference-data";
+import type { ProfileStatus } from "@/lib/avsec/reference-data";
 
 export async function POST(request: Request) {
   try {
@@ -126,7 +126,7 @@ export async function POST(request: Request) {
           email,
           name,
           staff_no: staffId,
-          role: avsecRole as UserRole,
+          role: (avsecRole ?? "ASO") as "ASO" | "SO" | "DSE" | "ADMIN" | "ENFORCEMENT" | "MANAGEMENT",
           unified_role: unifiedRole,
           ops_group: opsGroup,
           team,

@@ -12,13 +12,20 @@ export function Sec016Pdf({ report, qrDataUrl }: { report: Sec016Row; qrDataUrl?
       <Page size="A4" style={s.page}>
         <PdfHeader title={meta.name} code={meta.code} reportNo={report.report_no} qrDataUrl={qrDataUrl} />
 
-        <PdfSection title="Staff Details">
+        <PdfSection title="Staff & Flight Details">
+          <PdfField label="Flight Type" value={(report.flight_type || "arrival").toUpperCase()} />
           <PdfField label="Station" value={report.station} />
           <PdfField label="Team" value={report.team} />
           <PdfField label="Name" value={report.staff_name} />
           <PdfField label="Staff No" value={report.staff_no} />
           <PdfField label="Date" value={formatDateMY(report.duty_date)} />
           <PdfField label="Duty Hour" value={report.duty_hour} />
+          {report.flight_type === "departure" && (
+            <PdfField
+              label="Aircraft Search"
+              value={report.aircraft_search_completed ? "Completed" : "Not Completed"}
+            />
+          )}
         </PdfSection>
 
         <PdfSection title="Aircraft">

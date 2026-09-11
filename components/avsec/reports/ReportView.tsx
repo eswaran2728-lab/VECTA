@@ -1,5 +1,6 @@
 import { SEC029_ITEMS, SECURITY_DISCLAIMER, SEC013_CERTIFICATION_TEXT } from "@/lib/avsec/reference-data";
 import { formatDateTimeMY, formatDateMY, formatTimeMY } from "@/lib/avsec/datetime";
+import { cn } from "@/lib/avsec/utils";
 import type {
   Sec016Row,
   Sec014Row,
@@ -55,13 +56,46 @@ function ViewEntryCard({ label, children }: { label: string; children: React.Rea
 export function Sec016View({ report }: { report: Sec016Row }) {
   return (
     <div className="space-y-4">
-      <ViewSection title="Staff Details">
+      <ViewSection title="Movement & Staff Details">
+        <Field
+          label="Flight Type"
+          value={
+            <span
+              className={cn(
+                "inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold uppercase",
+                report.flight_type === "departure"
+                  ? "bg-blue-500/10 text-blue-500 border border-blue-500/20"
+                  : "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+              )}
+            >
+              {report.flight_type ? report.flight_type.toUpperCase() : "ARRIVAL"}
+            </span>
+          }
+        />
         <Field label="Station" value={report.station} />
         <Field label="Team" value={report.team} />
         <Field label="Name" value={report.staff_name} />
         <Field label="Staff No" value={report.staff_no} />
         <Field label="Date" value={formatDateMY(report.duty_date)} />
         <Field label="Duty Hour" value={report.duty_hour} />
+        {report.flight_type === "departure" && (
+          <>
+            <Field
+              label="Aircraft Search Completed"
+              value={report.aircraft_search_completed ? "✓ Yes (Completed)" : "✗ No (Not Completed)"}
+            />
+            {report.search_overdue_flag && (
+              <Field
+                label="Search Warning / Flag"
+                value={
+                  <span className="text-red-500 font-bold">
+                    ⚠️ {report.search_remark || "Aircraft Search not completed — aircraft on ground >4h"}
+                  </span>
+                }
+              />
+            )}
+          </>
+        )}
       </ViewSection>
 
       <ViewSection title="Aircraft">

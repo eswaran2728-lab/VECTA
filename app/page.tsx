@@ -97,15 +97,20 @@ export default async function LandingPage({
 
   // Scan = the unified checkpoint scan entry point — not applicable to
   // org-wide roles (Management/Enforcement/Admin never work a checkpoint
-  // themselves); they get Report Search instead, both here and in
-  // TeamBottomNav.
+  // Scan: ASO (Operation & IFC) and SO (IFC). SO (Operation) and DSE do NOT get scan access.
   const userOpsGroup = (profile.ops_group ?? null) as OpsGroup | null;
-  const showScan = Boolean(userOpsGroup) && !orgWide;
+  const isOpsSO = role === "so" && (userOpsGroup === "operation_avsec" || userOpsGroup === "hub_avsec");
+  const isDSE = role === "dse";
+  const showScan = Boolean(userOpsGroup) && !orgWide && !isOpsSO && !isDSE;
 
-  const showAdmin = role === "admin";
+  const showAdmin = role === "management" || role === "admin";
   const showIcmsReports = Boolean(
     icmsProfile && ["supervisor", "enforcement", "management"].includes(icmsProfile.role ?? "")
   ) || orgWide;
+
+  const permittedAvsecReports = orgWide || (role === "aso" && (userOpsGroup === "operation_avsec" || userOpsGroup === "hub_avsec"))
+    ? AVSEC_REPORT_TYPES
+    : (["sec014"] as readonly (typeof AVSEC_REPORT_TYPES)[number][]);
 
   const activeTab: OpsGroup | "all" = orgWide && ops && OPS_GROUPS.includes(ops as OpsGroup) ? (ops as OpsGroup) : "all";
   // Effective ops_group scope for header counts / activity feed: the
@@ -287,7 +292,7 @@ export default async function LandingPage({
               </div>
               <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
                 {showReports &&
-                  AVSEC_REPORT_TYPES.map((t) => (
+                  permittedAvsecReports.map((t) => (
                     <Link
                       key={t}
                       href={`/avsec/reports/${t}`}
@@ -356,7 +361,7 @@ export default async function LandingPage({
         </div>
       </div>
 
-      <TeamBottomNav opsGroup={userOpsGroup} orgWide={orgWide} />
+      <TeamBottomNav opsGroup={userOpsGroup} orgWide={orgWide} role={role} />
     </main>
   );
 }

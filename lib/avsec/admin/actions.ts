@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
+import { requireRole, MANAGEMENT_ROLES } from "@/lib/avsec/auth";
 import {
   REQUESTABLE_ROLES,
   ORG_WIDE_ROLES,
@@ -15,11 +15,8 @@ import {
 } from "@/lib/avsec/reference-data";
 import { buildShadowUserRow } from "@/lib/icms/shadow-user";
 
-// Admin-created accounts skip the self-signup approval queue entirely (Admin vouches for
-// them directly), and are created already email-confirmed since there's no signup flow
-// for them to confirm through.
 export async function createStaffAccount(formData: FormData) {
-  await requireRole(ADMIN_ROLES);
+  await requireRole(MANAGEMENT_ROLES);
 
   const name = String(formData.get("name") || "").trim();
   const staffNo = String(formData.get("staffNo") || "").trim();
@@ -32,7 +29,7 @@ export async function createStaffAccount(formData: FormData) {
   const opsGroupInput = String(formData.get("opsGroup") || "").trim() as OpsGroup | "";
   const password = String(formData.get("password") || "");
 
-  const allRoles: readonly string[] = [...REQUESTABLE_ROLES, "ADMIN"];
+  const allRoles: readonly string[] = [...REQUESTABLE_ROLES, "MANAGEMENT"];
   const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(role);
   const needsOpsGroup = (OPS_GROUP_REQUIRED_ROLES as readonly string[]).includes(role);
 
@@ -52,7 +49,7 @@ export async function createStaffAccount(formData: FormData) {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceRoleKey) {
     redirect(
-      "/admin/users?error=" +
+      "/avsec/admin/users?error=" +
         encodeURIComponent(
           `Missing server config — SUPABASE_URL: ${supabaseUrl ? "present (" + supabaseUrl.length + " chars)" : "MISSING"}, SUPABASE_SERVICE_ROLE_KEY: ${serviceRoleKey ? "present (" + serviceRoleKey.length + " chars)" : "MISSING"}.`,
         ),
@@ -85,7 +82,7 @@ export async function createStaffAccount(formData: FormData) {
       staff_no: isOrgWide ? "" : staffNo,
       station,
       team: isOrgWide ? "" : team,
-      role,
+      role: role as "ASO" | "SO" | "DSE" | "ADMIN" | "ENFORCEMENT" | "MANAGEMENT",
       ops_group: opsGroup,
       status: "approved",
     })
@@ -95,14 +92,6 @@ export async function createStaffAccount(formData: FormData) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent(profileError.message));
   }
 
-  // Every AVSEC-native account also needs an ICMS-side shadow identity
-  // (public.users, same id) so ICMS's own access control (requireProfile())
-  // recognizes it without a separate auth change — see
-  // lib/icms/shadow-user.ts and supabase/migrations/backfill_icms_shadow_users.sql
-  // for the one-time backfill this mirrors going forward. Done sequentially,
-  // after the profile write, using the same admin client so a failure here
-  // is surfaced (not silently swallowed) rather than rolled back — the
-  // AVSEC account itself is already valid at this point.
   const { error: shadowUserError } = await createAdminClient()
     .from("users")
     .insert(
@@ -127,7 +116,7 @@ export async function createStaffAccount(formData: FormData) {
 }
 
 export async function approveUser(formData: FormData) {
-  await requireRole(ADMIN_ROLES);
+  await requireRole(MANAGEMENT_ROLES);
   const profileId = String(formData.get("profileId") || "");
   if (!profileId) return;
 
@@ -137,7 +126,7 @@ export async function approveUser(formData: FormData) {
 }
 
 export async function rejectUser(formData: FormData) {
-  await requireRole(ADMIN_ROLES);
+  await requireRole(MANAGEMENT_ROLES);
   const profileId = String(formData.get("profileId") || "");
   if (!profileId) return;
 
@@ -146,19 +135,21 @@ export async function rejectUser(formData: FormData) {
   revalidatePath("/avsec/admin/users");
 }
 
-// For resigned/off-boarded staff: blocks their login immediately but keeps the account and
-// all their historical report submissions intact for audit purposes. Reversible — Admin can
-// reactivate (via approveUser) if it was a mistake or they return.
 export async function deactivateUser(formData: FormData) {
-  const admin = await requireRole(ADMIN_ROLES);
+  const manager = await requireRole(MANAGEMENT_ROLES);
   const profileId = String(formData.get("profileId") || "");
   if (!profileId) return;
 
-  if (profileId === admin.id) {
+  if (profileId === manager.id) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent("You cannot deactivate your own account."));
   }
 
   const supabase = await createClient();
+  const { data: target } = await supabase.from("profiles").select("role, unified_role").eq("id", profileId).maybeSingle();
+  if ((target?.role as string) === "SUPER_ADMIN" || target?.unified_role === "super_admin") {
+    redirect("/avsec/admin/users?error=" + encodeURIComponent("Cannot deactivate a Super Admin account."));
+  }
+
   await supabase.from("profiles").update({ status: "deactivated" }).eq("id", profileId);
   revalidatePath("/avsec/admin/users");
 }
@@ -172,21 +163,21 @@ const REPORT_TABLES = [
   "report_sec013",
 ] as const;
 
-// Permanently removes the account (Supabase Auth user + profile). Only allowed when the
-// person has no report submissions at all — deleting a profile with report history would
-// either fail outright (reports keep a required, non-cascading reference to it) or silently
-// destroy official security records, neither of which is safe to do from a button click.
-// Deactivate is the right call for anyone who has actually submitted reports.
 export async function deleteUserAccount(formData: FormData) {
-  const admin = await requireRole(ADMIN_ROLES);
+  const manager = await requireRole(MANAGEMENT_ROLES);
   const profileId = String(formData.get("profileId") || "");
   if (!profileId) return;
 
-  if (profileId === admin.id) {
+  if (profileId === manager.id) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent("You cannot delete your own account."));
   }
 
   const supabase = await createClient();
+  const { data: target } = await supabase.from("profiles").select("role, unified_role").eq("id", profileId).maybeSingle();
+  if ((target?.role as string) === "SUPER_ADMIN" || target?.unified_role === "super_admin") {
+    redirect("/avsec/admin/users?error=" + encodeURIComponent("Cannot delete a Super Admin account."));
+  }
+
   const [reportCounts, ackCount, bayBoardCount] = await Promise.all([
     Promise.all(
       REPORT_TABLES.map((table) => supabase.from(table).select("id", { count: "exact", head: true }).eq("profile_id", profileId)),
@@ -198,7 +189,7 @@ export async function deleteUserAccount(formData: FormData) {
   const totalOther = (ackCount.count ?? 0) + (bayBoardCount.count ?? 0);
   if (totalReports > 0 || totalOther > 0) {
     redirect(
-      "/admin/users?error=" +
+      "/avsec/admin/users?error=" +
         encodeURIComponent(
           `Can't delete — this account has ${totalReports} submitted report(s) and ${totalOther} other linked record(s) (acknowledgements/bay board entries). Use Deactivate instead to keep their records intact.`,
         ),
@@ -225,11 +216,8 @@ export async function deleteUserAccount(formData: FormData) {
   revalidatePath("/avsec/admin/users");
 }
 
-// Lets Admin reassign someone's station/team mid-month (e.g. Kamal moves from Bravo to
-// Alpha) or correct their role — including promoting to ADMIN, which users can never
-// self-select.
 export async function updateUserAssignment(formData: FormData) {
-  await requireRole(ADMIN_ROLES);
+  await requireRole(MANAGEMENT_ROLES);
   const profileId = String(formData.get("profileId") || "");
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();
@@ -237,17 +225,22 @@ export async function updateUserAssignment(formData: FormData) {
   const opsGroupInput = String(formData.get("opsGroup") || "").trim() as OpsGroup | "";
   if (!profileId || !station || !role) return;
 
-  const allRoles: readonly string[] = [...REQUESTABLE_ROLES, "ADMIN"];
+  const supabase = await createClient();
+  const { data: target } = await supabase.from("profiles").select("role, unified_role").eq("id", profileId).maybeSingle();
+  if ((target?.role as string) === "SUPER_ADMIN" || target?.unified_role === "super_admin") {
+    redirect("/avsec/admin/users?error=" + encodeURIComponent("Cannot reassign a Super Admin account."));
+  }
+
+  const allRoles: readonly string[] = [...REQUESTABLE_ROLES, "MANAGEMENT"];
   if (!allRoles.includes(role)) return;
   const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(role);
   const needsOpsGroup = (OPS_GROUP_REQUIRED_ROLES as readonly string[]).includes(role);
   const opsGroup: OpsGroup | null =
     needsOpsGroup && (OPS_GROUPS as readonly string[]).includes(opsGroupInput) ? (opsGroupInput as OpsGroup) : null;
 
-  const supabase = await createClient();
   await supabase
     .from("profiles")
-    .update({ station, team: isOrgWide ? "" : team, role, ops_group: opsGroup })
+    .update({ station, team: isOrgWide ? "" : team, role: role as "ASO" | "SO" | "DSE" | "ADMIN" | "ENFORCEMENT" | "MANAGEMENT", ops_group: opsGroup })
     .eq("id", profileId);
   revalidatePath("/avsec/admin/users");
 }

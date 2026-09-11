@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/avsec/auth";
-import { REQUESTABLE_ROLES, ORG_WIDE_ROLES, type UserRole } from "@/lib/avsec/reference-data";
+import { REQUESTABLE_ROLES, ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 
 export async function updateProfile(formData: FormData) {
   const user = await getCurrentUser();
@@ -13,9 +13,9 @@ export async function updateProfile(formData: FormData) {
   const staff_no = String(formData.get("staff_no") || "").trim();
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();
-  const role = String(formData.get("role") || "").trim() as UserRole;
+  const role = String(formData.get("role") || "").trim() as (typeof REQUESTABLE_ROLES)[number];
 
-  if (!REQUESTABLE_ROLES.includes(role as (typeof REQUESTABLE_ROLES)[number])) {
+  if (!REQUESTABLE_ROLES.includes(role)) {
     redirect("/avsec/profile-setup?error=Invalid role");
   }
   const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(role);

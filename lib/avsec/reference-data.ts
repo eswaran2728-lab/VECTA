@@ -33,45 +33,35 @@ export const TEAM_EXAMPLES = ["ALPHA", "BRAVO", "CHARLIE", "DELTA"] as const;
 export const AIRCRAFT_TYPES = ["A320", "A321", "A330"] as const;
 export type AircraftType = (typeof AIRCRAFT_TYPES)[number];
 
-export const USER_ROLES = ["ASO", "SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"] as const;
-export type UserRole = (typeof USER_ROLES)[number];
+export const USER_ROLES = ["ASO", "SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "SUPER_ADMIN"] as const;
+export type UserRole = (typeof USER_ROLES)[number] | "ADMIN";
 
-// Roles a new signup can request for themselves — ADMIN is never self-selectable,
-// it can only be granted by an existing admin.
+// Roles a new signup can request for themselves — Management/Enforcement or operational roles.
 export const REQUESTABLE_ROLES = ["ASO", "SO", "DSE", "ENFORCEMENT", "MANAGEMENT"] as const;
 
 // Org-wide roles aren't tied to a specific team, so they don't need a staff ID/team on
 // their profile and they monitor every team's reports (not just their own).
-export const ORG_WIDE_ROLES = ["ENFORCEMENT", "MANAGEMENT", "ADMIN"] as const;
+export const ORG_WIDE_ROLES = ["ENFORCEMENT", "MANAGEMENT"] as const;
 
-// Mirrors the role_rank() SQL function — keep in sync. ASO < SO < DSE < ENFORCEMENT <
-// MANAGEMENT < ADMIN. Each role monitors reports from any strictly lower rank.
-//
-// Enforcement vs Management on the AVSEC side: MANAGEMENT ranks one above ENFORCEMENT
-// here only for report-monitoring breadth (Management additionally sees Enforcement's
-// own — nonexistent, since Enforcement files no reports — activity). In every other
-// respect (ORG_WIDE_ROLES membership, ENFORCEMENT_SEARCH_ROLES, DUTY_ROLES exclusion,
-// approval workflow, geofence exemption) the two roles are treated identically by
-// design — there is no functional AVSEC feature gated to one but not the other. This
-// mirrors the deliberate ICMS-side decision to give Management parity with Enforcement
-// (see supabase/migrations/management_icms_parity.sql) — do not introduce a distinction
-// between them here without an equally explicit decision recorded like this one.
-export const ROLE_RANK: Record<UserRole, number> = {
+// Mirrors the role_rank() SQL function — keep in sync. ASO < SO < DSE < ENFORCEMENT < MANAGEMENT.
+export const ROLE_RANK: Record<string, number> = {
   ASO: 1,
   SO: 2,
   DSE: 3,
   ENFORCEMENT: 4,
   MANAGEMENT: 5,
-  ADMIN: 6,
+  ADMIN: 5,
+  SUPER_ADMIN: 6,
 };
 
-export const ROLE_LABELS: Record<UserRole, string> = {
+export const ROLE_LABELS: Record<string, string> = {
   ASO: "ASO — Assistant Security Officer",
   SO: "SO — Security Officer",
   DSE: "DSE",
   ENFORCEMENT: "Enforcement",
   MANAGEMENT: "Management Team",
-  ADMIN: "Admin",
+  ADMIN: "Management Team",
+  SUPER_ADMIN: "Platform Super Admin",
 };
 
 // Functional grouping (supabase/migrations/team_based_ops_groups.sql) — a

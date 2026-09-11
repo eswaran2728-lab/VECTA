@@ -45,9 +45,18 @@ export async function scanTransaction(raw: string): Promise<ScanResult> {
 
   const orgWide = ORG_WIDE_UNIFIED_ROLES.includes(profile.unified_role ?? "");
   const userOpsGroup = profile.ops_group as OpsGroup | null;
+  const role = profile.unified_role;
 
-  if (!orgWide && !userOpsGroup) {
-    return { error: "Your account has no ops group assigned — contact an admin." };
+  if (!orgWide) {
+    if (!userOpsGroup) {
+      return { error: "Your account has no ops group assigned — contact an admin." };
+    }
+    if (role === "so" && (userOpsGroup === "operation_avsec" || userOpsGroup === "hub_avsec")) {
+      return { error: "SO in Operation AVSEC does not clear CaterLink movements." };
+    }
+    if (role === "dse") {
+      return { error: "DSE does not perform movement scans." };
+    }
   }
 
   const payload = parseCaterLinkQrPayload(raw);

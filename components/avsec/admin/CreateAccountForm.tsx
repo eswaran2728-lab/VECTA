@@ -72,7 +72,6 @@ export function CreateAccountForm() {
                   {ROLE_LABELS[r]}
                 </option>
               ))}
-              <option value="ADMIN">{ROLE_LABELS.ADMIN}</option>
             </select>
           </div>
           <div>

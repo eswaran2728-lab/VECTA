@@ -80,21 +80,26 @@ export function TeamBottomNav({
   } else if (isDriver) {
     tabs = [NEW_TRANSACTION, MY_DISPATCHES, DRIVER_HOME];
   } else if (orgWide) {
-    // Org-wide (admin/management/enforcement): no team-specific 3rd tab —
-    // team filtering happens inside the Dashboard itself via the existing
-    // ops-query-param tab switcher. Report Search replaces Scan (see
-    // REPORT_SEARCH above).
     tabs = [DASHBOARD, REPORT_SEARCH, REPORTS, PROFILE];
-  } else if (opsGroup === "ifc_avsec") {
+  } else if (role === "so" && (opsGroup === "operation_avsec" || opsGroup === "hub_avsec")) {
+    // SO - Operation: Bay Board access, NO Scan/CaterLink clearance
+    tabs = [DASHBOARD, BAY_BOARD, PROFILE];
+  } else if (role === "so" && opsGroup === "ifc_avsec") {
+    // SO - IFC: Scan / Transaction access at Post 2, Transaction History
     tabs = [DASHBOARD, SCAN, TRANSACTION_HISTORY, PROFILE];
-  } else if (opsGroup === "operation_avsec") {
-    tabs = [DASHBOARD, SCAN, BAY_BOARD, PROFILE];
-  } else if (opsGroup === "hub_avsec") {
-    // Confirmed by the project owner: Hub AVSEC keeps Bay Board as its 3rd
-    // tab, same as Operation AVSEC.
+  } else if (role === "dse" && (opsGroup === "operation_avsec" || opsGroup === "hub_avsec")) {
+    // DSE - Operation: Bay Board access, NO Scan
+    tabs = [DASHBOARD, BAY_BOARD, PROFILE];
+  } else if (role === "dse" && opsGroup === "ifc_avsec") {
+    // DSE - IFC: Team KPIs, Transaction History, NO Bay Board
+    tabs = [DASHBOARD, TRANSACTION_HISTORY, PROFILE];
+  } else if (opsGroup === "ifc_avsec") {
+    // ASO - IFC: Scan at Post 2, Transaction History, NO Bay Board
+    tabs = [DASHBOARD, SCAN, TRANSACTION_HISTORY, PROFILE];
+  } else if (opsGroup === "operation_avsec" || opsGroup === "hub_avsec") {
+    // ASO - Operation: Scan at Post 6 / RedQ, Bay Board
     tabs = [DASHBOARD, SCAN, BAY_BOARD, PROFILE];
   } else {
-    // No ops_group and not org-wide — fall back to the 3 tabs common to everyone.
     tabs = [DASHBOARD, SCAN, PROFILE];
   }
 

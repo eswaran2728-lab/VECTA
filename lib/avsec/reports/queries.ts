@@ -90,9 +90,11 @@ export async function getMySubmissions({
 function toListItem(type: ReportType, row: Record<string, unknown>): ReportListItem {
   let summary = "";
   switch (type) {
-    case "sec016":
-      summary = `Flight ${row.flight} · Reg ${row.reg_no}`;
+    case "sec016": {
+      const dirTag = row.flight_type === "departure" ? "[DEP]" : "[ARR]";
+      summary = `${dirTag} Flight ${row.flight} · Reg ${row.reg_no}`;
       break;
+    }
     case "sec014":
       summary = `Patrol duty · ${row.remark ? String(row.remark).slice(0, 60) : ""}`;
       break;
@@ -119,6 +121,7 @@ function toListItem(type: ReportType, row: Record<string, unknown>): ReportListI
     team: String(row.team),
     summary,
     report_no: (row.report_no as string | null) ?? null,
+    flight_type: (row.flight_type as "arrival" | "departure" | undefined) ?? undefined,
   };
 }
 

@@ -1,9 +1,13 @@
 import { z } from "zod";
-import { requiredText, timeString, dateString, yesNo } from "./common";
-import { SEC016_CHECKED_OPTIONS } from "../reference-data";
+import { requiredText, timeString, dateString, yesNo } from "./common.ts";
+import { SEC016_CHECKED_OPTIONS } from "../reference-data.ts";
 
 export const sec016Schema = z
   .object({
+    // flight direction
+    flight_type: z.enum(["arrival", "departure"]).default("arrival"),
+    aircraft_search_completed: z.boolean().default(false),
+
     // staff details
     station: requiredText("Station"),
     team: requiredText("Team"),
@@ -63,6 +67,8 @@ export const sec016Schema = z
 export type Sec016FormValues = z.infer<typeof sec016Schema>;
 
 export const sec016Defaults: Sec016FormValues = {
+  flight_type: "arrival",
+  aircraft_search_completed: false,
   station: "",
   team: "",
   staff_name: "",
