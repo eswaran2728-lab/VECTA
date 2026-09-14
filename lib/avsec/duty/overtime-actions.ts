@@ -57,7 +57,7 @@ export async function submitOvertimeRequest(formData: FormData) {
 }
 
 function backTo(id: string) {
-  return `/duty/overtime/${id}`;
+  return `/avsec/duty/overtime/${id}`;
 }
 
 /** DSE endorses a pending request, within their own station+team. RLS ("overtime dse
