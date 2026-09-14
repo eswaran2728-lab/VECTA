@@ -12,7 +12,8 @@ export function BayBoardList({
   station,
 }: {
   initialEntries: (BayBoardRow & { hoursOnGround: number })[];
-  station: string;
+  /** null for an org-wide viewer with no single station — shows "all stations" instead of a blank. */
+  station: string | null;
 }) {
   const [entries, setEntries] = useState(initialEntries);
   const [clearingId, setClearingId] = useState<string | null>(null);
@@ -36,7 +37,7 @@ export function BayBoardList({
       <div className="card p-8 text-center space-y-2 border-border/60">
         <Plane className="h-8 w-8 mx-auto text-muted-foreground opacity-50" />
         <p className="text-sm font-semibold text-foreground">
-          No aircraft currently logged on ground at {station}.
+          No aircraft currently logged on ground at {station ?? "all stations"}.
         </p>
         <p className="text-xs text-muted-foreground">
           Aircraft will appear here automatically upon filing an Arrival SEC016 or via manual logging.
@@ -89,6 +90,12 @@ export function BayBoardList({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground font-mono">
+                  {station === null && (
+                    <>
+                      <span className="text-foreground font-semibold">{e.station}</span>
+                      <span>·</span>
+                    </>
+                  )}
                   <span>Bay: <strong className="text-foreground">{e.bay}</strong></span>
                   <span>·</span>
                   <span className="flex items-center gap-1">
