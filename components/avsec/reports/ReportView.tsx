@@ -54,6 +54,15 @@ function ViewEntryCard({ label, children }: { label: string; children: React.Rea
 }
 
 export function Sec016View({ report }: { report: Sec016Row }) {
+  const isArrival = (report.flight_type || "arrival") === "arrival";
+  // Pre-Rev.03 reports carry the old five individual ramp_staff_N slots and the
+  // "CHECKED?" section instead of the Rev.03 fields — render whichever this report
+  // actually has, so historical submissions keep displaying correctly.
+  const legacyRampStaff = [report.ramp_staff_1, report.ramp_staff_2, report.ramp_staff_3, report.ramp_staff_4, report.ramp_staff_5]
+    .filter(Boolean)
+    .join(", ");
+  const hasLegacyOffload = Boolean(report.offload_flight_no || report.offload_destination || report.offload_total_baggage);
+
   return (
     <div className="space-y-4">
       <ViewSection title="Movement & Staff Details">
@@ -63,7 +72,7 @@ export function Sec016View({ report }: { report: Sec016Row }) {
             <span
               className={cn(
                 "inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold uppercase",
-                report.flight_type === "departure"
+                !isArrival
                   ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
                   : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
               )}
@@ -78,7 +87,7 @@ export function Sec016View({ report }: { report: Sec016Row }) {
         <Field label="Staff No" value={report.staff_no} />
         <Field label="Date" value={formatDateMY(report.duty_date)} />
         <Field label="Duty Hour" value={report.duty_hour} />
-        {report.flight_type === "departure" && (
+        {!isArrival && (
           <>
             <Field
               label="Aircraft Search Completed"
@@ -100,46 +109,74 @@ export function Sec016View({ report }: { report: Sec016Row }) {
 
       <ViewSection title="Aircraft Details">
         <Field label="Flight" value={report.flight} />
-        <Field label="Origin Arr / Dep" value={report.origin_arr_dep} />
+        <Field label={isArrival ? "Origin (Arrival)" : "Destination (Departure)"} value={report.origin_arr_dep} />
         <Field label="Assisted By" value={report.assisted_by} />
         <Field
           label="Aircraft Type"
           value={report.aircraft_type === "Other" ? `Other (${report.aircraft_type_other})` : report.aircraft_type}
         />
         <Field label="Reg No" value={report.reg_no} />
-        <Field label="STA / STD" value={report.sta_std} />
-        <Field label="ATA / ATD" value={report.ata_atd} />
+        <Field label={isArrival ? "STA" : "STD"} value={report.sta_std} />
+        <Field label={isArrival ? "ATA" : "ATD"} value={report.ata_atd} />
         <Field label="Bay No" value={report.bay_no} />
         <Field label="Reason for Delay" value={report.reason_for_delay} />
         <Field label="D/O INFMD" value={report.do_infmd} />
-        <Field label="Inbound Baggage" value={report.inbound_baggage} />
-        <Field label="Outbound Baggage" value={report.outbound_baggage} />
-        <Field label="Inbound Cargo" value={report.inbound_cargo} />
-        <Field label="Outbound Cargo" value={report.outbound_cargo} />
-        <Field label="Inbound Co-Mail" value={report.inbound_co_mail} />
-        <Field label="Outbound Co-Mail" value={report.outbound_co_mail} />
+        {isArrival ? (
+          <>
+            <Field label="Inbound Baggage" value={report.inbound_baggage} />
+            <Field label="Inbound Cargo" value={report.inbound_cargo} />
+            <Field label="Inbound Co-Mail / Comat" value={report.inbound_co_mail} />
+          </>
+        ) : (
+          <>
+            <Field label="Outbound Baggage" value={report.outbound_baggage} />
+            <Field label="Outbound Cargo" value={report.outbound_cargo} />
+            <Field label="Outbound Co-Mail / Comat" value={report.outbound_co_mail} />
+          </>
+        )}
       </ViewSection>
 
-      <ViewSection title="Search & Screening Details">
-        <Field label="Checked Items" value={report.checked_items?.join(", ") || "None"} />
-        <Field label="Shift Leader" value={report.shift_leader} />
-        <Field
-          label="Ramp Staff"
-          value={[report.ramp_staff_1, report.ramp_staff_2, report.ramp_staff_3, report.ramp_staff_4, report.ramp_staff_5]
-            .filter(Boolean)
-            .join(", ") || "—"}
-        />
+      <ViewSection title="Ramp Loading Supervisor & Agents">
+        <Field label="Ramp Loading Supervisor (RLS)" value={report.shift_leader} />
+        {report.ramp_agents_baggage != null || report.ramp_agents_cargo != null ? (
+          <>
+            <Field
+              label="Ramp agent details (baggage)"
+              value={<span className="whitespace-pre-line">{report.ramp_agents_baggage}</span>}
+            />
+            <Field
+              label="Ramp agent details (cargo)"
+              value={<span className="whitespace-pre-line">{report.ramp_agents_cargo}</span>}
+            />
+          </>
+        ) : (
+          <Field label="Ramp Staff" value={legacyRampStaff || "—"} />
+        )}
+        {report.checked_items && report.checked_items.length > 0 && (
+          <Field label="Checked Items (legacy)" value={report.checked_items.join(", ")} />
+        )}
+      </ViewSection>
+
+      <ViewSection title="Security Checks">
         <Field label="Cargo Hold Checked" value={report.cargo_hold_checked} />
         <Field label="Staff Frisked" value={report.staff_frisked} />
+        {report.cabin_check && <Field label="Cabin Check" value={report.cabin_check} />}
         <Field label="Discrepancies" value={report.discrepancies} />
       </ViewSection>
 
-      {report.offload_flight_no && (
+      {!isArrival && (
         <ViewSection title="Offload Information">
-          <Field label="Flight No" value={report.offload_flight_no} />
-          <Field label="Destination" value={report.offload_destination} />
-          <Field label="Baggage Tag No" value={report.offload_baggage_tag_no} />
-          <Field label="Total Baggage" value={report.offload_total_baggage} />
+          {hasLegacyOffload && (
+            <>
+              <Field label="Flight No" value={report.offload_flight_no} />
+              <Field label="Destination" value={report.offload_destination} />
+              <Field label="Total Baggage" value={report.offload_total_baggage} />
+            </>
+          )}
+          <Field
+            label="Baggage Tag No"
+            value={<span className="whitespace-pre-line">{report.offload_baggage_tag_no}</span>}
+          />
           <Field label="Remark" value={report.offload_remark} />
         </ViewSection>
       )}

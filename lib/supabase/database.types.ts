@@ -2398,6 +2398,7 @@ export type Database = {
           assisted_by: string
           ata_atd: string
           bay_no: string
+          cabin_check: string | null
           cargo_hold_checked: string
           checked_items: string[]
           created_at: string
@@ -2408,24 +2409,26 @@ export type Database = {
           flight: string
           flight_type: "arrival" | "departure"
           id: string
-          inbound_baggage: string
-          inbound_cargo: string
-          inbound_co_mail: string
-          offload_baggage_tag_no: string
-          offload_destination: string
-          offload_flight_no: string
-          offload_remark: string
-          offload_total_baggage: string
+          inbound_baggage: string | null
+          inbound_cargo: string | null
+          inbound_co_mail: string | null
+          offload_baggage_tag_no: string | null
+          offload_destination: string | null
+          offload_flight_no: string | null
+          offload_remark: string | null
+          offload_total_baggage: string | null
           origin_arr_dep: string
-          outbound_baggage: string
-          outbound_cargo: string
-          outbound_co_mail: string
+          outbound_baggage: string | null
+          outbound_cargo: string | null
+          outbound_co_mail: string | null
           profile_id: string
-          ramp_staff_1: string
-          ramp_staff_2: string
-          ramp_staff_3: string
-          ramp_staff_4: string
-          ramp_staff_5: string
+          ramp_agents_baggage: string | null
+          ramp_agents_cargo: string | null
+          ramp_staff_1: string | null
+          ramp_staff_2: string | null
+          ramp_staff_3: string | null
+          ramp_staff_4: string | null
+          ramp_staff_5: string | null
           reason_for_delay: string | null
           reg_no: string
           report_no: string | null
@@ -2450,6 +2453,7 @@ export type Database = {
           assisted_by: string
           ata_atd: string
           bay_no: string
+          cabin_check?: string | null
           cargo_hold_checked: string
           checked_items?: string[]
           created_at?: string
@@ -2460,24 +2464,26 @@ export type Database = {
           flight: string
           flight_type?: "arrival" | "departure"
           id?: string
-          inbound_baggage: string
-          inbound_cargo: string
-          inbound_co_mail: string
-          offload_baggage_tag_no: string
-          offload_destination: string
-          offload_flight_no: string
-          offload_remark: string
-          offload_total_baggage: string
+          inbound_baggage?: string | null
+          inbound_cargo?: string | null
+          inbound_co_mail?: string | null
+          offload_baggage_tag_no?: string | null
+          offload_destination?: string | null
+          offload_flight_no?: string | null
+          offload_remark?: string | null
+          offload_total_baggage?: string | null
           origin_arr_dep: string
-          outbound_baggage: string
-          outbound_cargo: string
-          outbound_co_mail: string
+          outbound_baggage?: string | null
+          outbound_cargo?: string | null
+          outbound_co_mail?: string | null
           profile_id: string
-          ramp_staff_1: string
-          ramp_staff_2: string
-          ramp_staff_3: string
-          ramp_staff_4: string
-          ramp_staff_5: string
+          ramp_agents_baggage?: string | null
+          ramp_agents_cargo?: string | null
+          ramp_staff_1?: string | null
+          ramp_staff_2?: string | null
+          ramp_staff_3?: string | null
+          ramp_staff_4?: string | null
+          ramp_staff_5?: string | null
           reason_for_delay?: string | null
           reg_no: string
           report_no?: string | null
@@ -2502,6 +2508,7 @@ export type Database = {
           assisted_by?: string
           ata_atd?: string
           bay_no?: string
+          cabin_check?: string | null
           cargo_hold_checked?: string
           checked_items?: string[]
           created_at?: string
@@ -2512,24 +2519,26 @@ export type Database = {
           flight?: string
           flight_type?: "arrival" | "departure"
           id?: string
-          inbound_baggage?: string
-          inbound_cargo?: string
-          inbound_co_mail?: string
-          offload_baggage_tag_no?: string
-          offload_destination?: string
-          offload_flight_no?: string
-          offload_remark?: string
-          offload_total_baggage?: string
+          inbound_baggage?: string | null
+          inbound_cargo?: string | null
+          inbound_co_mail?: string | null
+          offload_baggage_tag_no?: string | null
+          offload_destination?: string | null
+          offload_flight_no?: string | null
+          offload_remark?: string | null
+          offload_total_baggage?: string | null
           origin_arr_dep?: string
-          outbound_baggage?: string
-          outbound_cargo?: string
-          outbound_co_mail?: string
+          outbound_baggage?: string | null
+          outbound_cargo?: string | null
+          outbound_co_mail?: string | null
           profile_id?: string
-          ramp_staff_1?: string
-          ramp_staff_2?: string
-          ramp_staff_3?: string
-          ramp_staff_4?: string
-          ramp_staff_5?: string
+          ramp_agents_baggage?: string | null
+          ramp_agents_cargo?: string | null
+          ramp_staff_1?: string | null
+          ramp_staff_2?: string | null
+          ramp_staff_3?: string | null
+          ramp_staff_4?: string | null
+          ramp_staff_5?: string | null
           reason_for_delay?: string | null
           reg_no?: string
           report_no?: string | null

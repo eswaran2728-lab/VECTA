@@ -12,7 +12,9 @@ import { SEC029_ITEMS } from "@/lib/avsec/reference-data";
 import type { EmailField } from "./reportEmailTemplate";
 
 export function sec016EmailFields(v: Sec016FormValues): EmailField[] {
-  return [
+  const isArrival = v.flight_type === "arrival";
+  const fields: EmailField[] = [
+    { label: "Flight Direction", value: isArrival ? "ARRIVAL" : "DEPARTURE" },
     { label: "Station", value: v.station },
     { label: "Team", value: v.team },
     { label: "Name", value: v.staff_name },
@@ -20,37 +22,49 @@ export function sec016EmailFields(v: Sec016FormValues): EmailField[] {
     { label: "Date", value: v.duty_date },
     { label: "Duty Hour", value: v.duty_hour },
     { label: "Flight", value: v.flight },
-    { label: "Origin Arr / Dep", value: v.origin_arr_dep },
+    { label: isArrival ? "Origin (Arrival)" : "Destination (Departure)", value: v.origin_arr_dep },
     { label: "Assisted By", value: v.assisted_by },
     { label: "Aircraft Type", value: v.aircraft_type === "Other" ? v.aircraft_type_other : v.aircraft_type },
     { label: "Reg No", value: v.reg_no },
-    { label: "STA / STD", value: v.sta_std },
-    { label: "ATA / ATD", value: v.ata_atd },
+    { label: isArrival ? "STA" : "STD", value: v.sta_std },
+    { label: isArrival ? "ATA" : "ATD", value: v.ata_atd },
     { label: "Bay No", value: v.bay_no },
     { label: "Reason for Delay", value: v.reason_for_delay },
     { label: "D/O INFMD", value: v.do_infmd },
-    { label: "Inbound Baggage", value: v.inbound_baggage },
-    { label: "Outbound Baggage", value: v.outbound_baggage },
-    { label: "Inbound Cargo", value: v.inbound_cargo },
-    { label: "Outbound Cargo", value: v.outbound_cargo },
-    { label: "Inbound Co-Mail / Comart", value: v.inbound_co_mail },
-    { label: "Outbound Co-Mail / Comart", value: v.outbound_co_mail },
-    { label: "Checked", value: v.checked_items.join(", ") },
-    { label: "Shift Leader", value: v.shift_leader },
-    { label: "Ramp Staff 1", value: v.ramp_staff_1 },
-    { label: "Ramp Staff 2", value: v.ramp_staff_2 },
-    { label: "Ramp Staff 3", value: v.ramp_staff_3 },
-    { label: "Ramp Staff 4", value: v.ramp_staff_4 },
-    { label: "Ramp Staff 5", value: v.ramp_staff_5 },
+  ];
+
+  if (isArrival) {
+    fields.push(
+      { label: "Inbound Baggage", value: v.inbound_baggage },
+      { label: "Inbound Cargo", value: v.inbound_cargo },
+      { label: "Inbound Co-Mail / Comat", value: v.inbound_co_mail },
+    );
+  } else {
+    fields.push(
+      { label: "Outbound Baggage", value: v.outbound_baggage },
+      { label: "Outbound Cargo", value: v.outbound_cargo },
+      { label: "Outbound Co-Mail / Comat", value: v.outbound_co_mail },
+    );
+  }
+
+  fields.push(
+    { label: "Ramp Loading Supervisor (RLS)", value: v.shift_leader },
+    { label: "Ramp agent details (baggage)", value: v.ramp_agents_baggage },
+    { label: "Ramp agent details (cargo)", value: v.ramp_agents_cargo },
     { label: "Cargo Hold Checked", value: v.cargo_hold_checked },
     { label: "Staff Frisked", value: v.staff_frisked },
+    { label: "Cabin Check", value: v.cabin_check ?? "—" },
     { label: "Discrepancies", value: v.discrepancies },
-    { label: "Offload Flight No", value: v.offload_flight_no },
-    { label: "Offload Destination", value: v.offload_destination },
-    { label: "Offload Baggage Tag No", value: v.offload_baggage_tag_no },
-    { label: "Offload Total Baggage", value: v.offload_total_baggage },
-    { label: "Offload Remark", value: v.offload_remark },
-  ];
+  );
+
+  if (!isArrival) {
+    fields.push(
+      { label: "Offload Baggage Tag No", value: v.offload_baggage_tag_no },
+      { label: "Offload Remark", value: v.offload_remark },
+    );
+  }
+
+  return fields;
 }
 
 export function sec014EmailFields(v: Sec014FormValues): EmailField[] {

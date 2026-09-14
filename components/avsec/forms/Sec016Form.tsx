@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { STATIONS, REPORT_META, SEC016_CHECKED_OPTIONS } from "@/lib/avsec/reference-data";
+import { STATIONS, REPORT_META } from "@/lib/avsec/reference-data";
 import { sec016Schema } from "@/lib/avsec/schemas/sec016";
 import { submitSec016 } from "@/lib/avsec/reports/actions";
 import { useOfflineSubmit } from "@/lib/avsec/offline/useOfflineSubmit";
@@ -12,16 +12,14 @@ import {
   TextAreaField,
   SelectField,
   RadioGroupField,
-  CheckboxGroupField,
   FieldRow,
   FormSection,
   FormStepIndicator,
-  RemarkQuickPhrases,
 } from "@/components/avsec/forms/fields";
 import { SubmissionConfirmation } from "@/components/avsec/forms/SubmissionConfirmation";
 import { AttachmentUpload, revokeAttachmentPreviews, type PendingAttachment } from "@/components/avsec/forms/AttachmentUpload";
 import { SmartInputSec016 } from "@/components/avsec/forms/SmartInputSec016";
-import { PlaneLanding, PlaneTakeoff } from "lucide-react";
+import { PlaneLanding, PlaneTakeoff, Star, Camera } from "lucide-react";
 import { cn } from "@/lib/avsec/utils";
 import type { Profile } from "@/lib/avsec/types";
 
@@ -52,21 +50,15 @@ interface UIValues {
   outbound_cargo: string;
   inbound_co_mail: string;
   outbound_co_mail: string;
-  checked_items: string[];
   shift_leader: string;
-  ramp_staff_1: string;
-  ramp_staff_2: string;
-  ramp_staff_3: string;
-  ramp_staff_4: string;
-  ramp_staff_5: string;
+  ramp_agents_baggage: string;
+  ramp_agents_cargo: string;
   cargo_hold_checked: "YES" | "NO";
   staff_frisked: "YES" | "NO";
+  cabin_check?: "YES" | "NO";
   discrepancies: string;
 
-  offload_flight_no: string;
-  offload_destination: string;
   offload_baggage_tag_no: string;
-  offload_total_baggage: string;
   offload_remark: string;
 }
 
@@ -99,22 +91,82 @@ function buildDefaults(profile: Profile, serverDraft?: UIValues | null): UIValue
     outbound_cargo: "",
     inbound_co_mail: "",
     outbound_co_mail: "",
-    checked_items: [],
     shift_leader: "",
-    ramp_staff_1: "",
-    ramp_staff_2: "",
-    ramp_staff_3: "",
-    ramp_staff_4: "",
-    ramp_staff_5: "",
+    ramp_agents_baggage: "",
+    ramp_agents_cargo: "",
     cargo_hold_checked: "NO",
     staff_frisked: "NO",
+    cabin_check: undefined,
     discrepancies: "",
-    offload_flight_no: "",
-    offload_destination: "",
     offload_baggage_tag_no: "",
-    offload_total_baggage: "",
     offload_remark: "",
   };
+}
+
+const DISCREPANCY_QUICK_ADDS = ["Nil discrepancy", "Incident reported", "Baggage discrepancy"] as const;
+const OFFLOAD_QUICK_ADDS = [
+  "Passenger no show at the departure gate",
+  "Passenger customs / immigration / quarantine (CIQ)",
+  "Offload by airline",
+  "Volunteer offload",
+  "Offload by AVSEC",
+] as const;
+
+/** Clickable star that toggles the "Name ID (hold/tarmac)" entry-format guidance
+ *  beside a Ramp agent details label. */
+function FormatGuidanceStar() {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+        aria-label="Show entry format guidance"
+        title="Show entry format guidance"
+      >
+        <Star className={cn("h-3.5 w-3.5", open && "fill-primary text-primary")} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-5 z-10 w-56 rounded-lg border border-border bg-card p-2.5 shadow-lg">
+          <p className="font-mono text-[10px] leading-relaxed text-foreground whitespace-pre-line">
+            Name ID (hold){"\n"}Name ID (tarmac)
+          </p>
+        </div>
+      )}
+    </span>
+  );
+}
+
+function RampAgentsField({
+  name,
+  label,
+  register,
+  error,
+}: {
+  name: "ramp_agents_baggage" | "ramp_agents_cargo";
+  label: string;
+  register: ReturnType<typeof useForm<UIValues>>["register"];
+  error?: { message?: string };
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5">
+        <label className="field-label" htmlFor={name}>
+          {label} <span className="text-red-400">*</span>
+        </label>
+        <FormatGuidanceStar />
+      </div>
+      <textarea
+        id={name}
+        rows={4}
+        className="input-base font-mono text-xs leading-relaxed"
+        placeholder={"One agent per line, e.g.\nJohn Doe A1234 (hold)\nJane Roe A5678 (tarmac)"}
+        {...register(name)}
+      />
+      {error?.message && <p className="text-xs text-red-400 font-mono mt-1.5">{error.message}</p>}
+    </div>
+  );
 }
 
 export function Sec016Form({
@@ -132,6 +184,7 @@ export function Sec016Form({
   >(null);
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [photoRequiredError, setPhotoRequiredError] = useState(false);
 
   const {
     register,
@@ -147,8 +200,39 @@ export function Sec016Form({
   const { savedAt } = useDraftAutosave("sec016", values);
   const { submit } = useOfflineSubmit("sec016", submitSec016);
 
+  const isArrival = values.flight_type === "arrival";
+  const requiresDiscrepancyPhoto = /baggage discrepancy/i.test(values.discrepancies || "");
+  const hasPhoto = attachments.some((a) => a.mimeType.startsWith("image/"));
+
   const onSubmit = handleSubmit(async (v) => {
-    const parsed = sec016Schema.safeParse(v);
+    setPhotoRequiredError(false);
+
+    // Item 4: a PDF alone must not satisfy the baggage-discrepancy photo
+    // requirement — enforced here since attachments upload separately from the
+    // report row itself (see useOfflineSubmit / uploadAttachments).
+    if (requiresDiscrepancyPhoto && !hasPhoto) {
+      setPhotoRequiredError(true);
+      document.getElementById("sec016-attachments")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+
+    const payload = {
+      ...v,
+      // Direction-specific fields for the opposite direction are never shown to the
+      // user — send them through as empty rather than leaving stale values from a
+      // prior direction toggle so they can never surface as "applicable information"
+      // for the report actually being filed.
+      inbound_baggage: isArrival ? v.inbound_baggage : "",
+      inbound_cargo: isArrival ? v.inbound_cargo : "",
+      inbound_co_mail: isArrival ? v.inbound_co_mail : "",
+      outbound_baggage: isArrival ? "" : v.outbound_baggage,
+      outbound_cargo: isArrival ? "" : v.outbound_cargo,
+      outbound_co_mail: isArrival ? "" : v.outbound_co_mail,
+      offload_baggage_tag_no: isArrival ? "" : v.offload_baggage_tag_no,
+      offload_remark: isArrival ? "" : v.offload_remark,
+    };
+
+    const parsed = sec016Schema.safeParse(payload);
     if (!parsed.success) {
       parsed.error.issues.forEach((issue) => {
         setError(issue.path.join(".") as never, { message: issue.message });
@@ -195,6 +279,7 @@ export function Sec016Form({
         onSubmitAnother={() => {
           reset(buildDefaults(profile));
           setAutoFilledFields(new Set());
+          setPhotoRequiredError(false);
           setResult(null);
         }}
       />
@@ -203,20 +288,21 @@ export function Sec016Form({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      {/* 1. Report name and draft status */}
       <FormStepIndicator
         code={meta.code}
         draftNote={savedAt ? `DRAFT SAVED ${savedAt.toLocaleTimeString()}` : "AUTOSAVING…"}
         activeIndex={1}
       />
 
-      {/* Flight Direction Required Selector */}
+      {/* 2. Flight Direction */}
       <div className="card p-4 space-y-3 border-primary/40 bg-surface/80">
         <div className="flex items-center justify-between">
           <label className="field-label block font-semibold text-xs tracking-wider uppercase text-foreground">
             Flight Direction <span className="text-red-500">*</span>
           </label>
           <span className="t-mono text-[10px] uppercase font-bold text-primary">
-            {values.flight_type === "arrival" ? "Auto Bay Board Addition" : "Auto Bay Board Clearance"}
+            {isArrival ? "Auto Bay Board Addition" : "Auto Bay Board Clearance"}
           </span>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -225,7 +311,7 @@ export function Sec016Form({
             onClick={() => setValue("flight_type", "arrival", { shouldDirty: true, shouldValidate: true })}
             className={cn(
               "flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl border font-bold text-sm transition-all cursor-pointer",
-              values.flight_type === "arrival"
+              isArrival
                 ? "bg-emerald-500/15 border-emerald-500 text-emerald-400 shadow-sm"
                 : "bg-surface border-border text-muted-foreground hover:border-border/80"
             )}
@@ -238,7 +324,7 @@ export function Sec016Form({
             onClick={() => setValue("flight_type", "departure", { shouldDirty: true, shouldValidate: true })}
             className={cn(
               "flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl border font-bold text-sm transition-all cursor-pointer",
-              values.flight_type === "departure"
+              !isArrival
                 ? "bg-sky-500/15 border-sky-500 text-sky-400 shadow-sm"
                 : "bg-surface border-border text-muted-foreground hover:border-border/80"
             )}
@@ -249,7 +335,7 @@ export function Sec016Form({
         </div>
       </div>
 
-      {values.flight_type === "departure" && (
+      {!isArrival && (
         <div className="card p-4 space-y-2 border-amber-500/30 bg-amber-500/5">
           <label className="flex items-start gap-3 cursor-pointer">
             <input
@@ -269,8 +355,10 @@ export function Sec016Form({
         </div>
       )}
 
+      {/* 3. Smart Input */}
       <SmartInputSec016 setValue={setValue} onParsed={setAutoFilledFields} />
 
+      {/* 4. Staff Details */}
       <FormSection title="Staff Details">
         <p className="field-hint">Email: {profile.email}</p>
         <FieldRow>
@@ -287,10 +375,18 @@ export function Sec016Form({
         </FieldRow>
       </FormSection>
 
+      {/* 5. Aircraft details */}
       <FormSection title="Aircraft">
         <FieldRow>
           <TextField name="flight" register={register} label="Flight" required error={errors.flight} autoFilled={autoFilledFields.has("flight")} />
-          <TextField name="origin_arr_dep" register={register} label="Origin Arr / Dep" required error={errors.origin_arr_dep} autoFilled={autoFilledFields.has("origin_arr_dep")} />
+          <TextField
+            name="origin_arr_dep"
+            register={register}
+            label={isArrival ? "Origin (Arrival)" : "Destination (Departure)"}
+            required
+            error={errors.origin_arr_dep}
+            autoFilled={autoFilledFields.has("origin_arr_dep")}
+          />
         </FieldRow>
         <TextField name="assisted_by" register={register} label="Assisted By" required error={errors.assisted_by} />
 
@@ -318,71 +414,172 @@ export function Sec016Form({
           <TextField name="bay_no" register={register} label="Bay No" required error={errors.bay_no} autoFilled={autoFilledFields.has("bay_no")} />
         </FieldRow>
         <FieldRow>
-          <TextField name="sta_std" type="time" register={register} label="STA / STD" required error={errors.sta_std as never} autoFilled={autoFilledFields.has("sta_std")} />
-          <TextField name="ata_atd" type="time" register={register} label="ATA / ATD" required error={errors.ata_atd as never} autoFilled={autoFilledFields.has("ata_atd")} />
+          <TextField
+            name="sta_std"
+            type="time"
+            register={register}
+            label={isArrival ? "STA" : "STD"}
+            required
+            error={errors.sta_std as never}
+            autoFilled={autoFilledFields.has("sta_std")}
+          />
+          <TextField
+            name="ata_atd"
+            type="time"
+            register={register}
+            label={isArrival ? "ATA" : "ATD"}
+            required
+            error={errors.ata_atd as never}
+            autoFilled={autoFilledFields.has("ata_atd")}
+          />
         </FieldRow>
         <TextField name="reason_for_delay" register={register} label="Reason for Delay" error={errors.reason_for_delay} autoFilled={autoFilledFields.has("reason_for_delay")} />
         <RadioGroupField name="do_infmd" register={register} label="D/O INFMD" required options={["YES", "NO"]} error={errors.do_infmd as never} />
 
-        <FieldRow>
-          <TextField name="inbound_baggage" register={register} label="Inbound Baggage" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.inbound_baggage} />
-          <TextField name="outbound_baggage" register={register} label="Outbound Baggage" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.outbound_baggage} />
-        </FieldRow>
-        <FieldRow>
-          <TextField name="inbound_cargo" register={register} label="Inbound Cargo" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.inbound_cargo} />
-          <TextField name="outbound_cargo" register={register} label="Outbound Cargo" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.outbound_cargo} />
-        </FieldRow>
-        <FieldRow>
-          <TextField name="inbound_co_mail" register={register} label="Inbound Co-Mail / Comart" required naFillable setValue={setValue} error={errors.inbound_co_mail} />
-          <TextField name="outbound_co_mail" register={register} label="Outbound Co-Mail / Comart" required naFillable setValue={setValue} error={errors.outbound_co_mail} />
-        </FieldRow>
+        {/* 6. Direction-specific baggage, cargo, and Co-Mail / Comat */}
+        {isArrival ? (
+          <>
+            <TextField name="inbound_baggage" register={register} label="Inbound Baggage" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.inbound_baggage} />
+            <TextField name="inbound_cargo" register={register} label="Inbound Cargo" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.inbound_cargo} />
+            <TextField name="inbound_co_mail" register={register} label="Inbound Co-Mail / Comat" required naFillable setValue={setValue} error={errors.inbound_co_mail} />
+          </>
+        ) : (
+          <>
+            <TextField name="outbound_baggage" register={register} label="Outbound Baggage" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.outbound_baggage} />
+            <TextField name="outbound_cargo" register={register} label="Outbound Cargo" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.outbound_cargo} />
+            <TextField name="outbound_co_mail" register={register} label="Outbound Co-Mail / Comat" required naFillable setValue={setValue} error={errors.outbound_co_mail} />
+          </>
+        )}
+      </FormSection>
 
-        <CheckboxGroupField
-          name="checked_items"
-          register={register}
-          label='For long layover / night-stop flights — "CHECKED?"'
-          required
-          options={SEC016_CHECKED_OPTIONS}
-          error={errors.checked_items as never}
-        />
+      {/* 7. Ramp Loading Supervisor (RLS) */}
+      <FormSection title="Ramp Loading Supervisor">
+        <TextField name="shift_leader" register={register} label="Ramp Loading Supervisor (RLS)" hint="Name & ID" required error={errors.shift_leader} />
 
-        <TextField name="shift_leader" register={register} label="Shift Leader (Ground Handler)" hint="Name & ID" required error={errors.shift_leader} />
-        <FieldRow>
-          <TextField name="ramp_staff_1" register={register} label="Ramp Staff (Handler 1)" hint="Name & ID" required error={errors.ramp_staff_1} autoFilled={autoFilledFields.has("ramp_staff_1")} />
-          <TextField name="ramp_staff_2" register={register} label="Ramp Staff (Handler 2)" hint="Name & ID" required naFillable setValue={setValue} error={errors.ramp_staff_2} autoFilled={autoFilledFields.has("ramp_staff_2")} />
-        </FieldRow>
-        <FieldRow>
-          <TextField name="ramp_staff_3" register={register} label="Ramp Staff (Handler 3)" hint="Name & ID" required naFillable setValue={setValue} error={errors.ramp_staff_3} autoFilled={autoFilledFields.has("ramp_staff_3")} />
-          <TextField name="ramp_staff_4" register={register} label="Ramp Staff (Handler 4)" hint="Name & ID" required naFillable setValue={setValue} error={errors.ramp_staff_4} autoFilled={autoFilledFields.has("ramp_staff_4")} />
-        </FieldRow>
-        <TextField name="ramp_staff_5" register={register} label="Ramp Staff (Handler 5)" hint="Name & ID" required naFillable setValue={setValue} error={errors.ramp_staff_5} autoFilled={autoFilledFields.has("ramp_staff_5")} />
+        {/* 8 & 9. Ramp agent details */}
+        <RampAgentsField name="ramp_agents_baggage" label="Ramp agent details (baggage)" register={register} error={errors.ramp_agents_baggage} />
+        <RampAgentsField name="ramp_agents_cargo" label="Ramp agent details (cargo)" register={register} error={errors.ramp_agents_cargo} />
+      </FormSection>
 
-        <FieldRow>
+      {/* 10. Security Checks */}
+      <FormSection title="Security Checks">
+        <div>
           <RadioGroupField name="cargo_hold_checked" register={register} label="Cargo Hold Checked" required options={["YES", "NO"]} error={errors.cargo_hold_checked as never} />
-          <RadioGroupField name="staff_frisked" register={register} label="Staff Frisked" required options={["YES", "NO"]} error={errors.staff_frisked as never} autoFilled={autoFilledFields.has("staff_frisked")} />
-        </FieldRow>
+          <p className="field-hint text-[11px] text-muted-foreground font-mono mt-1.5">
+            {isArrival
+              ? "Ensure baggage, cargo, mail, courier bags, etc. are offloaded from the aircraft hold."
+              : "Ensure baggage, cargo, mail, courier bags, etc. are loaded into the aircraft hold."}
+          </p>
+        </div>
+        <RadioGroupField name="staff_frisked" register={register} label="Staff Frisked" required options={["YES", "NO"]} error={errors.staff_frisked as never} autoFilled={autoFilledFields.has("staff_frisked")} />
+        <RadioGroupField name="cabin_check" register={register} label="Cabin Check" options={["YES", "NO"]} error={errors.cabin_check as never} />
+      </FormSection>
 
+      {/* 11. Discrepancies */}
+      <FormSection title="Discrepancies">
         <TextAreaField name="discrepancies" register={register} label="Discrepancies (if any)" required rows={3} error={errors.discrepancies} />
-        <RemarkQuickPhrases
-          value={values.discrepancies}
-          onChange={(next) => setValue("discrepancies", next, { shouldDirty: true })}
-        />
+        <div className="flex flex-wrap gap-1.5">
+          {DISCREPANCY_QUICK_ADDS.map((text) => (
+            <button
+              key={text}
+              type="button"
+              onClick={() =>
+                setValue(
+                  "discrepancies",
+                  ((values.discrepancies ? values.discrepancies.trim() + ". " : "") + text) as never,
+                  { shouldDirty: true, shouldValidate: true },
+                )
+              }
+              className="font-mono text-[10.5px] font-medium px-2.5 py-1 rounded border border-dashed border-border/80 text-muted-foreground bg-surface/40 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all cursor-pointer"
+            >
+              + {text}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-muted-foreground italic">
+          Example — Incident reported: &ldquo;Incident reported — refer email from DSE/duty officer.&rdquo;
+        </p>
+
+        {requiresDiscrepancyPhoto && (
+          <div
+            className={cn(
+              "card-inset p-3 rounded-lg border flex items-start gap-2.5",
+              hasPhoto ? "border-emerald-500/40 bg-emerald-500/5" : "border-amber-500/50 bg-amber-500/10"
+            )}
+          >
+            <Camera className={cn("h-4 w-4 mt-0.5 shrink-0", hasPhoto ? "text-emerald-400" : "text-amber-400")} />
+            <p className="text-xs font-semibold text-foreground">
+              {hasPhoto
+                ? "Photo attached for baggage discrepancy."
+                : "Baggage discrepancy selected — at least one photo is required before this report can be submitted. A PDF alone does not satisfy this requirement."}
+            </p>
+          </div>
+        )}
       </FormSection>
 
-      <FormSection title="Offload Information (Departure Flight)">
-        <FieldRow>
-          <TextField name="offload_flight_no" register={register} label="Flight No" required naFillable setValue={setValue} error={errors.offload_flight_no} />
-          <TextField name="offload_destination" register={register} label="Destination" required naFillable setValue={setValue} error={errors.offload_destination} />
-        </FieldRow>
-        <FieldRow>
-          <TextField name="offload_baggage_tag_no" register={register} label="Baggage Tag No" required naFillable setValue={setValue} error={errors.offload_baggage_tag_no} />
-          <TextField name="offload_total_baggage" register={register} label="Total Baggage" required naFillable setValue={setValue} error={errors.offload_total_baggage} />
-        </FieldRow>
-        <TextAreaField name="offload_remark" register={register} label="Remark" required error={errors.offload_remark} />
-      </FormSection>
+      {/* 12 & 13. Offload Information — Departure only */}
+      {!isArrival && (
+        <FormSection title="Offload Information (Departure Flight)">
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <label className="field-label" htmlFor="offload_baggage_tag_no">
+                Baggage Tag No <span className="text-red-400">*</span>
+              </label>
+              <button
+                type="button"
+                className="btn-quiet -mt-1 text-xs"
+                onClick={() => setValue("offload_baggage_tag_no", "N/A" as never, { shouldValidate: true, shouldDirty: true })}
+              >
+                N/A
+              </button>
+            </div>
+            <textarea
+              id="offload_baggage_tag_no"
+              rows={4}
+              className="input-base font-mono text-xs leading-relaxed"
+              {...register("offload_baggage_tag_no")}
+            />
+            <p className="field-hint text-[11px] text-muted-foreground font-mono mt-1">
+              Enter one baggage tag number per line.
+            </p>
+            {errors.offload_baggage_tag_no?.message && (
+              <p className="text-xs text-red-400 font-mono mt-1.5">{errors.offload_baggage_tag_no.message}</p>
+            )}
+          </div>
 
-      <AttachmentUpload value={attachments} onChange={setAttachments} disabled={isSubmitting} />
+          <TextAreaField name="offload_remark" register={register} label="Remark" required error={errors.offload_remark} />
+          <div className="flex flex-wrap gap-1.5">
+            {OFFLOAD_QUICK_ADDS.map((text) => (
+              <button
+                key={text}
+                type="button"
+                onClick={() =>
+                  setValue(
+                    "offload_remark",
+                    ((values.offload_remark ? values.offload_remark.trim() + ". " : "") + text) as never,
+                    { shouldDirty: true, shouldValidate: true },
+                  )
+                }
+                className="font-mono text-[10.5px] font-medium px-2.5 py-1 rounded border border-dashed border-border/80 text-muted-foreground bg-surface/40 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all cursor-pointer"
+              >
+                + {text}
+              </button>
+            ))}
+          </div>
+        </FormSection>
+      )}
 
+      {/* 14. Attachments */}
+      <div id="sec016-attachments">
+        <AttachmentUpload value={attachments} onChange={setAttachments} disabled={isSubmitting} />
+        {photoRequiredError && (
+          <p className="text-xs text-red-400 font-mono mt-2">
+            ⚠ Add at least one photo before submitting — baggage discrepancy was reported and a PDF alone isn&apos;t enough.
+          </p>
+        )}
+      </div>
+
+      {/* 15. Submit report and immutability notice */}
       <button type="submit" className="btn-primary w-full" disabled={isSubmitting}>
         {isSubmitting ? "Submitting…" : "Submit report ▸"}
       </button>
