@@ -152,6 +152,10 @@ export default async function DashboardPage({
           </Link>
         )}
 
+        <Link href="/avsec/flights" className="btn-secondary w-full text-center">
+          ✈ Flight Records — SEC016, SEC029, CaterLink &amp; Incidents by Flight →
+        </Link>
+
         <section className="card p-4 space-y-3">
           <h2 className="section-title">Staff report lookup</h2>
           <p className="font-mono text-xs text-muted-foreground">
