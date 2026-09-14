@@ -439,6 +439,11 @@ export interface WoisSourceCitation {
   sourceType: WoisSourceType;
   pageNumber?: number | string;
   excerpt?: string;
+  /** Source document's version and ISO last-reviewed date, shown alongside
+   * every citation so staleness is visible rather than implied by a
+   * confidence tag alone. */
+  version?: string;
+  lastReviewed?: string;
 }
 
 export interface WoisAttachment {
@@ -491,6 +496,8 @@ export interface WoisMessage {
   source_type?: WoisSourceType;
   sources?: WoisSourceCitation[];
   attachment?: WoisAttachment;
+  actionHref?: string;
+  actionLabel?: string;
   created_at: string;
 }
 
@@ -501,6 +508,10 @@ export interface WoisEngineResponse {
   sources: WoisSourceCitation[];
   attachment?: WoisAttachment;
   is_full_document?: boolean;
+  /** For app-usage answers: a real in-app screen the user can jump to
+   * directly, e.g. "Open My Overtime" -> /avsec/duty/overtime. */
+  actionHref?: string;
+  actionLabel?: string;
 }
 
 

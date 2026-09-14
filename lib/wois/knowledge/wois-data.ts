@@ -13,6 +13,19 @@
  * feature it documents changes — whoever ships a behavior change here should also
  * update the matching app_help chunk in the same PR, and it's worth adding a
  * lint/checklist step for that rather than relying on someone remembering.
+ *
+ * REVIEW CHECKLIST — before shipping a change to any AVSEC or ICMS feature,
+ * check whether "doc-vecta-app-help" (below) describes that feature. If so:
+ *   1. Update the affected chunk's `content` (and the document `content`
+ *      section it's copied from) to match the new behavior.
+ *   2. Bump that document's `version` and set `last_reviewed` to today's date.
+ *   3. Update `keywords` if the feature gained new names/terms users might ask
+ *      about.
+ * `last_reviewed` is surfaced on every citation in the WOIS chat UI — a
+ * VERIFIED tag is only trustworthy when this date is actually current, so an
+ * old date on an app_help document is a real signal something may be stale,
+ * not just metadata. This checklist is the only enforcement mechanism today;
+ * there is no automated staleness detection.
  */
 
 import type { WoisSourceType } from "@/lib/avsec/types";
@@ -22,6 +35,11 @@ export interface KnowledgeDocumentSeed {
   title: string;
   source_type: WoisSourceType;
   version: string;
+  /** ISO date this document's content was last checked against real app
+   * behavior / the source SOP. Shown to users alongside every citation so a
+   * stale answer is visibly stale rather than silently tagged VERIFIED —
+   * see the process note above. Update this whenever the content changes. */
+  last_reviewed: string;
   is_official?: boolean;
   metadata?: Record<string, unknown>;
   file_url?: string;
@@ -42,6 +60,7 @@ export const WOIS_KNOWLEDGE_DOCUMENTS: KnowledgeDocumentSeed[] = [
     title: "AirAsia AVSEC W.O.I.S Standard Operating Procedures (SOP) Manual",
     source_type: "sop",
     version: "2026.1",
+    last_reviewed: "2026-01-15",
     file_url: "/api/wois/documents/W_O_I_S.pdf",
     content: `# AirAsia AVSEC W.O.I.S Standard Operating Procedures (SOP) Manual
 
@@ -303,7 +322,11 @@ export const WOIS_KNOWLEDGE_DOCUMENTS: KnowledgeDocumentSeed[] = [
     id: "doc-vecta-app-help",
     title: "VECTA Operations Suite — User & Feature Guide",
     source_type: "app_help",
-    version: "2026.1",
+    version: "2026.2",
+    // Re-verified 2026-09-14 after the OT section was found describing the
+    // old manual-request flow well after it was replaced — see the process
+    // note at the top of this file.
+    last_reviewed: "2026-09-14",
     content: `# VECTA Operations Suite — In-App Help Guide
 
 ## SEC 016 (Aircraft Attendance Report)
@@ -374,6 +397,7 @@ export const WOIS_KNOWLEDGE_DOCUMENTS: KnowledgeDocumentSeed[] = [
     title: "General Aviation Security & Dangerous Goods Reference",
     source_type: "regulatory",
     version: "2026.1",
+    last_reviewed: "2026-01-15",
     is_official: false,
     metadata: {
       is_official: false,
@@ -478,6 +502,7 @@ Exact thresholds and enforcement vary by country/airport authority — this list
     title: "General Aviation Knowledge Base",
     source_type: "regulatory",
     version: "2026.1",
+    last_reviewed: "2026-01-15",
     is_official: false,
     metadata: {
       is_official: false,
@@ -671,6 +696,7 @@ Vehicle identification, Authorized drivers, Permits, Vehicle inspections, Escort
     title: "ICAO Annex 17 — Aviation Security Knowledge Base",
     source_type: "regulatory",
     version: "2026.1",
+    last_reviewed: "2026-01-15",
     is_official: false,
     metadata: {
       is_official: false,

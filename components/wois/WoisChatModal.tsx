@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { WoisConfidenceBadge } from "./WoisConfidenceBadge";
 import type { WoisConversation, WoisMessage } from "@/lib/avsec/types";
 import {
@@ -360,23 +361,44 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
                     )}
 
                     {!isUser && m.sources && m.sources.length > 0 && (
-                      <div className="mt-3 pt-2.5 border-t border-border/60 text-[11px] text-muted-foreground space-y-1">
+                      <div className="mt-3 pt-2.5 border-t border-border/60 text-[11px] text-muted-foreground space-y-1.5">
                         <p className="font-mono text-[10px] uppercase tracking-wider text-primary">
                           Sources &amp; Citations:
                         </p>
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-col gap-1.5">
                           {m.sources.map((src, i) => (
-                            <span
+                            <div
                               key={i}
-                              className="inline-flex items-center gap-1 rounded bg-secondary px-2 py-0.5 border border-border text-[10.5px] text-foreground"
+                              className="rounded bg-secondary px-2 py-1.5 border border-border text-[10.5px] text-foreground"
                             >
-                              <FileText className="h-3 w-3 text-primary" />
-                              {src.documentTitle}
-                              {src.pageNumber ? ` · p.${src.pageNumber}` : ""}
-                              {src.sectionTitle ? ` (${src.sectionTitle})` : ""}
-                            </span>
+                              <span className="inline-flex items-center gap-1">
+                                <FileText className="h-3 w-3 text-primary shrink-0" />
+                                {src.documentTitle}
+                                {src.pageNumber ? ` · p.${src.pageNumber}` : ""}
+                                {src.sectionTitle ? ` (${src.sectionTitle})` : ""}
+                              </span>
+                              {(src.version || src.lastReviewed) && (
+                                <span className="block mt-0.5 font-mono text-[9.5px] text-muted-foreground">
+                                  {src.version ? `v${src.version}` : ""}
+                                  {src.version && src.lastReviewed ? " · " : ""}
+                                  {src.lastReviewed ? `last reviewed ${src.lastReviewed}` : ""}
+                                </span>
+                              )}
+                            </div>
                           ))}
                         </div>
+                      </div>
+                    )}
+
+                    {!isUser && m.actionHref && m.actionLabel && (
+                      <div className="mt-3 pt-2.5 border-t border-border/60">
+                        <Link
+                          href={m.actionHref}
+                          onClick={onClose}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-bold transition hover:opacity-90"
+                        >
+                          {m.actionLabel} →
+                        </Link>
                       </div>
                     )}
                   </div>
