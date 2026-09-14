@@ -108,6 +108,30 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
     }
   }
 
+  // Workflow Upgrades item 6: if a prior shift handover named this same
+  // flight (matched by flight number + station, same as the Flight Detail
+  // Page's matching rule) and this SEC016 is being filed by someone other
+  // than who handed it over, surface the handover context as a remark —
+  // this is happening at initial insert, not a post-hoc mutation of an
+  // already-submitted report.
+  const { data: handoverMatch } = await supabase
+    .from("shift_handovers")
+    .select("staff_name, created_at, outgoing_profile_id")
+    .eq("station", v.station)
+    .ilike("flight_number", v.flight.trim())
+    .neq("outgoing_profile_id", profile.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (handoverMatch) {
+    const handoverNote = `[HANDOVER] Took over Flight ${v.flight} from ${handoverMatch.staff_name} at ${new Date(handoverMatch.created_at).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" })}.`;
+    discrepanciesFinal =
+      !discrepanciesFinal || ["N/A", "NONE", "NIL"].includes(discrepanciesFinal)
+        ? handoverNote
+        : `${discrepanciesFinal}\n${handoverNote}`;
+  }
+
   const { data, error } = await supabase
     .from("report_sec016")
     .insert({
