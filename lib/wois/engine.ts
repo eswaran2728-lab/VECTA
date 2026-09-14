@@ -138,6 +138,15 @@ export async function executeWoisQuery(
     return handleFallbackReasoning(normalizedQuery, userContext);
   }
 
+  // Ambiguity Guard: a low-confidence top match, or a close second match on
+  // a genuinely different topic, means guessing is more likely to give a
+  // confident-but-wrong answer than to help — ask which one they meant
+  // instead of silently picking one.
+  const ambiguous = detectAmbiguity(searchResults);
+  if (ambiguous) {
+    return handleAmbiguousQuery(ambiguous);
+  }
+
   // Primary Matched Result from Knowledge Base
   const topMatch = searchResults[0];
   const citations: WoisSourceCitation[] = searchResults.slice(0, 3).map((r) => ({
@@ -146,6 +155,8 @@ export async function executeWoisQuery(
     pageNumber: r.chunk.page_number,
     sourceType: r.source_type,
     excerpt: r.chunk.content,
+    version: r.version,
+    lastReviewed: r.last_reviewed,
   }));
 
   // Handle App Help Direct Answers
@@ -259,6 +270,8 @@ ${doc.content}`,
         documentTitle: doc.title,
         sectionTitle: "Full Document Outline (Pages 1–41)",
         sourceType: "sop",
+        version: doc.version,
+        lastReviewed: doc.last_reviewed,
       },
     ],
     attachment,
@@ -271,6 +284,8 @@ export interface SearchMatch {
   source_type: WoisSourceType;
   is_official?: boolean;
   metadata?: Record<string, unknown>;
+  version: string;
+  last_reviewed: string;
   chunk: {
     section_title: string;
     page_number?: number;
@@ -354,6 +369,8 @@ export function searchKnowledgeBase(query: string, _userContext: UserContext): S
           source_type: doc.source_type,
           is_official: doc.is_official,
           metadata: doc.metadata,
+          version: doc.version,
+          last_reviewed: doc.last_reviewed,
           chunk,
           score,
         });
@@ -364,6 +381,45 @@ export function searchKnowledgeBase(query: string, _userContext: UserContext): S
   // Sort by highest relevance score
   matches.sort((a, b) => b.score - a.score);
   return matches;
+}
+
+// App-usage answers link straight to the real screen instead of just
+// describing it — matched by the same chunk section_title used in
+// wois-data.ts. Same deep-link-by-href pattern as the "Needs Your Action"
+// dashboard panel (lib/dashboard/needs-your-action.ts).
+const APP_HELP_ACTIONS: Record<string, { href: string; label: string }> = {
+  "SEC 016 Aircraft Attendance Guide": { href: "/avsec/reports/sec016", label: "Open SEC016" },
+  "Overtime (OT) Automatic Calculation Guide": { href: "/avsec/duty/overtime", label: "Open My Overtime" },
+  "Duty Check-In and Timesheet Guide": { href: "/avsec/duty", label: "Open Duty Check-In" },
+  "Anonymous Staff Feedback Guide": { href: "/avsec/feedback", label: "Open Staff Feedback" },
+  "Bay Board Operational Guide": { href: "/avsec/bay-board", label: "Open Bay Board" },
+};
+
+/** Only flags ambiguity when the TOP match itself is weak (a confident,
+ * strongly-scored match is answered directly even if a related document
+ * also scores close — e.g. "19 ICAO annexes" legitimately scores well
+ * against both the general-aviation KB and the Annex 17 KB, and should
+ * just be answered, not questioned) AND a second, differently-titled
+ * match is close behind it — e.g. a bare "bay" could mean the SEC016
+ * bay/parking-bay field or the Bay Board feature, and neither score is
+ * strong enough to trust picking one over the other. */
+function detectAmbiguity(results: SearchMatch[]): SearchMatch[] | null {
+  if (results.length < 2) return null;
+  const [first, second] = results;
+  if (first.score >= 35) return null;
+  if (first.chunk.section_title === second.chunk.section_title) return null;
+  if (first.score - second.score > 10) return null;
+  return [first, second];
+}
+
+function handleAmbiguousQuery(candidates: SearchMatch[]): WoisEngineResponse {
+  const options = candidates.map((c) => `- ${c.chunk.section_title}`).join("\n");
+  return {
+    body: `That could mean a couple of things — which did you mean?\n\n${options}\n\nAsk me about one of these specifically and I'll give you the full answer.`,
+    confidence_tag: "UNCERTAIN",
+    source_type: "general",
+    sources: [],
+  };
 }
 
 function handleAppHelpResponse(
@@ -381,12 +437,15 @@ function handleAppHelpResponse(
   }
 
   const body = `${match.chunk.content}${branchContextNote}`;
+  const action = APP_HELP_ACTIONS[match.chunk.section_title];
 
   return {
     body,
     confidence_tag: "VERIFIED",
     source_type: "app_help",
     sources: citations,
+    actionHref: action?.href,
+    actionLabel: action?.label,
   };
 }
 
