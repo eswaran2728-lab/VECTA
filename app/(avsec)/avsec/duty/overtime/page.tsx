@@ -110,7 +110,14 @@ export default async function OvertimeListPage({
             const statusClass = STATUS_CLASS[r.status] ?? "text-muted-foreground border-border";
             const mine = r.profile_id === profile.id;
             const staffName = mine ? "You" : (nameById.get(r.profile_id) ?? "Team member");
-            const canReview = (isDse || orgWide) && !mine && r.status === "pending";
+            // PENDING -> DSE ENDORSED -> MANAGEMENT APPROVED. DSE endorses a
+            // pending request (own station, via RLS/action scoping); only
+            // Management gives final approval, and only once endorsed.
+            // Either can reject, DSE only while still pending.
+            const canEndorse = isDse && !mine && r.status === "pending";
+            const canApprove = orgWide && !mine && r.status === "endorsed";
+            const canReject =
+              !mine && ((isDse && r.status === "pending") || (orgWide && ["pending", "endorsed"].includes(r.status)));
 
             return (
               <div key={r.id} className="vecta-panel space-y-2 !p-4">
@@ -145,13 +152,16 @@ export default async function OvertimeListPage({
                 </div>
 
                 {/* Inline Review Controls for DSE and Management */}
-                {canReview && (
+                {(canEndorse || canApprove || canReject) && (
                   <div className="border-t border-border pt-2">
                     <OvertimeReviewControls
                       requestId={r.id}
                       staffName={staffName}
                       payableHours={r.payable_hours}
                       workDate={r.work_date}
+                      canEndorse={canEndorse}
+                      canApprove={canApprove}
+                      canReject={canReject}
                     />
                   </div>
                 )}
