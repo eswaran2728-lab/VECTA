@@ -23,6 +23,12 @@ import { SubmissionConfirmation } from "@/components/avsec/forms/SubmissionConfi
 import { AttachmentUpload, revokeAttachmentPreviews, type PendingAttachment } from "@/components/avsec/forms/AttachmentUpload";
 import type { Profile } from "@/lib/avsec/types";
 
+const SEC014_REMARK_QUICK_ADDS = [
+  "Nil discrepancy",
+  "Incident reported — refer email from DSE/duty officer",
+  "Unattended baggage",
+] as const;
+
 interface UIValues {
   station: string;
   team: string;
@@ -33,7 +39,7 @@ interface UIValues {
   date_out: string;
   time_out: string;
   patrols: {
-    location: "Aircraft" | "Terminal" | "Premises" | "";
+    location: "Apron" | "Terminal" | "Premises" | "";
     time_from: string;
     time_to: string;
     description: string;
@@ -204,7 +210,7 @@ export function Sec014Form({
         </FieldRow>
       </FormSection>
 
-      <FormSection title="Patrolling" note="Add each patrol entry as it happens — up to 15 per shift.">
+      <FormSection title="Patrolling" note="Add each patrol entry as it happens.">
         <div className="space-y-3">
           {fields.map((field, idx) => (
             <EntryCard key={field.id} label={`Entry ${idx + 1}`} onRemove={() => remove(idx)}>
@@ -213,7 +219,7 @@ export function Sec014Form({
                   name={`patrols.${idx}.location`}
                   register={register}
                   label="Location"
-                  options={["Aircraft", "Terminal", "Premises"]}
+                  options={["Apron", "Terminal", "Premises"]}
                   error={errors.patrols?.[idx]?.location}
                 />
                 <div className="grid grid-cols-2 gap-2">
@@ -242,17 +248,15 @@ export function Sec014Form({
               />
             </EntryCard>
           ))}
-          {fields.length < 15 && (
-            <button
-              type="button"
-              className="btn-add-entry"
-              onClick={() =>
-                append({ location: "", time_from: "", time_to: "", description: "" })
-              }
-            >
-              + Add Patrol Entry ({fields.length}/15)
-            </button>
-          )}
+          <button
+            type="button"
+            className="btn-add-entry"
+            onClick={() =>
+              append({ location: "", time_from: "", time_to: "", description: "" })
+            }
+          >
+            + Add Patrol Entry
+          </button>
         </div>
       </FormSection>
 
@@ -268,6 +272,7 @@ export function Sec014Form({
         <RemarkQuickPhrases
           value={values.remark}
           onChange={(next) => setValue("remark", next, { shouldDirty: true })}
+          phrases={SEC014_REMARK_QUICK_ADDS}
         />
       </FormSection>
 
