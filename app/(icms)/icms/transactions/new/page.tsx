@@ -20,10 +20,16 @@ export default async function NewTransactionPage() {
       .order("vehicle_number"),
     supabase
       .from("drivers")
-      .select("name, staff_id, pass_expiry_date")
+      .select("name, staff_id, pass_expiry_date, catering_company_id")
       .eq("is_active", true)
       .order("name"),
   ]);
+
+  // The signed-in PIC is usually the one driving too — if their staff ID
+  // matches a whitelisted driver record, default the form to "it's me"
+  // instead of making them retype their own name/ID/company.
+  const ownDriverRecord =
+    (drivers.data ?? []).find((d) => d.staff_id.toUpperCase() === profile.staff_id.toUpperCase()) ?? null;
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -40,7 +46,16 @@ export default async function NewTransactionPage() {
         companies={(companies.data ?? []) as CateringCompany[]}
         vehicles={(vehicles.data ?? []) as Pick<VehicleRecord, "vehicle_number" | "pass_expiry_date">[]}
         drivers={
-          (drivers.data ?? []) as Pick<DriverRecord, "name" | "staff_id" | "pass_expiry_date">[]
+          (drivers.data ?? []) as Pick<
+            DriverRecord,
+            "name" | "staff_id" | "pass_expiry_date" | "catering_company_id"
+          >[]
+        }
+        ownDriverRecord={
+          ownDriverRecord as Pick<
+            DriverRecord,
+            "name" | "staff_id" | "pass_expiry_date" | "catering_company_id"
+          > | null
         }
       />
     </div>

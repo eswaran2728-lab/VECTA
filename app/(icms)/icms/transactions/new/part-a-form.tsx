@@ -47,12 +47,15 @@ function whitelistHint(state: WhitelistState): { text: string; className: string
   }
 }
 
+type DriverOption = Pick<DriverRecord, "name" | "staff_id" | "pass_expiry_date" | "catering_company_id">;
+
 interface PartAFormProps {
   picName: string;
   picStaffId: string;
   companies: CateringCompany[];
   vehicles: Pick<VehicleRecord, "vehicle_number" | "pass_expiry_date">[];
-  drivers: Pick<DriverRecord, "name" | "staff_id" | "pass_expiry_date">[];
+  drivers: DriverOption[];
+  ownDriverRecord: DriverOption | null;
 }
 
 /**
@@ -114,6 +117,7 @@ export function PartAForm({
   companies,
   vehicles,
   drivers,
+  ownDriverRecord,
 }: PartAFormProps) {
   const [state, formAction, pending] = useActionState(createTransaction, initialState);
   const [movement, setMovement] = useState<MovementSelection | null>(null);
@@ -121,8 +125,12 @@ export function PartAForm({
   const [searchDone, setSearchDone] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [vehicleNumber, setVehicleNumber] = useState("");
-  const [driverId, setDriverId] = useState("");
-  const [driverName, setDriverName] = useState("");
+  // Reduce repeated typing: if the signed-in PIC has a matching driver
+  // record, default to "it's me" (auto-filled, read-only) instead of
+  // making them retype their own name/ID. If someone else is actually
+  // driving, they flip this and pick from the approved driver list.
+  const [useOwnDriver, setUseOwnDriver] = useState(ownDriverRecord !== null);
+  const [selectedOtherDriverId, setSelectedOtherDriverId] = useState("");
   const [escortOfficerName, setEscortOfficerName] = useState("");
   const [escortOfficerStaffId, setEscortOfficerStaffId] = useState("");
   const [escortVehicleNumber, setEscortVehicleNumber] = useState("");
@@ -131,7 +139,14 @@ export function PartAForm({
   ]);
   const [cargoTypes, setCargoTypes] = useState<CargoType[]>([]);
 
-  const defaultCompanyId = companies.find((c) => c.code === "IFC")?.id ?? "";
+  const otherDrivers = drivers.filter((d) => d.staff_id !== ownDriverRecord?.staff_id);
+  const selectedOtherDriver = otherDrivers.find((d) => d.staff_id === selectedOtherDriverId) ?? null;
+  const matchedDriver = useOwnDriver ? ownDriverRecord : selectedOtherDriver;
+  const driverId = matchedDriver?.staff_id ?? "";
+  const driverName = matchedDriver?.name ?? "";
+
+  const defaultCompanyId =
+    matchedDriver?.catering_company_id ?? companies.find((c) => c.code === "IFC")?.id ?? "";
 
   const toggleCargoType = (type: CargoType) => {
     setCargoTypes((prev) =>
@@ -151,27 +166,14 @@ export function PartAForm({
     return rec.pass_expiry_date && rec.pass_expiry_date < today ? "expired" : "matched";
   }, [vehicleNumber, vehicles, today]);
 
-  const matchedDriver = useMemo(() => {
-    const d = driverId.trim().toUpperCase();
-    if (!d) return null;
-    return drivers.find((x) => x.staff_id.toUpperCase() === d) ?? null;
-  }, [driverId, drivers]);
-
-  const driverState: WhitelistState = useMemo(() => {
-    if (!driverId.trim()) return "empty";
-    if (!matchedDriver) return "unlisted";
-    return matchedDriver.pass_expiry_date && matchedDriver.pass_expiry_date < today
+  // Driver is always picked from the approved list now (self or "different
+  // driver" dropdown), never typed, so there's no unlisted/name-mismatch
+  // case to detect — only whether the selected record's pass is expired.
+  const driverState: WhitelistState = !matchedDriver
+    ? "empty"
+    : matchedDriver.pass_expiry_date && matchedDriver.pass_expiry_date < today
       ? "expired"
       : "matched";
-  }, [driverId, matchedDriver, today]);
-
-  // The driver ID resolved to a whitelist entry, but the typed name must
-  // also match the name on file — an ID alone shouldn't wave through
-  // whoever is actually driving.
-  const driverNameMismatch =
-    matchedDriver !== null &&
-    driverName.trim() !== "" &&
-    driverName.trim().toUpperCase() !== matchedDriver.name.trim().toUpperCase();
 
   const vehicleHint = whitelistHint(vehicleState);
   const driverHint = whitelistHint(driverState);
@@ -184,7 +186,7 @@ export function PartAForm({
   const escortComplete =
     !escortAny ||
     (escortOfficerName.trim() !== "" && escortOfficerStaffId.trim() !== "" && escortVehicleNumber.trim() !== "");
-  const anyUnlisted = vehicleState === "unlisted" || driverState === "unlisted";
+  const anyUnlisted = vehicleState === "unlisted";
 
   const selectedOption = MOVEMENT_OPTIONS.find((o) => o.value === movement) ?? null;
   const direction = selectedOption?.direction ?? null;
@@ -306,6 +308,7 @@ export function PartAForm({
             <div className="space-y-2">
               <Label htmlFor="catering_company_id">Catering Company</Label>
               <Select
+                key={defaultCompanyId}
                 id="catering_company_id"
                 name="catering_company_id"
                 defaultValue={defaultCompanyId}
@@ -330,49 +333,76 @@ export function PartAForm({
             </div>
             <div className="space-y-2">
               <Label htmlFor="vehicle_number">Vehicle Number</Label>
-              <Input
+              <Select
                 id="vehicle_number"
                 name="vehicle_number"
-                placeholder="e.g. WKD 4521"
-                autoCapitalize="characters"
                 value={vehicleNumber}
                 onChange={(e) => setVehicleNumber(e.target.value)}
                 required
                 className="font-mono"
-              />
+              >
+                <option value="">Select an approved vehicle…</option>
+                {vehicles.map((v) => (
+                  <option key={v.vehicle_number} value={v.vehicle_number}>
+                    {v.vehicle_number}
+                    {v.pass_expiry_date && v.pass_expiry_date < today ? " (pass expired)" : ""}
+                  </option>
+                ))}
+              </Select>
               {vehicleHint ? (
                 <p className={`text-xs ${vehicleHint.className}`}>{vehicleHint.text}</p>
               ) : null}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="driver_id">Driver ID</Label>
-              <Input
-                id="driver_id"
-                name="driver_id"
-                value={driverId}
-                onChange={(e) => setDriverId(e.target.value)}
-                required
-                className="font-mono"
-              />
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Driver</Label>
+              {ownDriverRecord ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="__driver_mode"
+                      checked={useOwnDriver}
+                      onChange={() => setUseOwnDriver(true)}
+                      className="h-4 w-4 accent-primary"
+                    />
+                    It&apos;s me — {ownDriverRecord.name} ({ownDriverRecord.staff_id})
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="__driver_mode"
+                      checked={!useOwnDriver}
+                      onChange={() => setUseOwnDriver(false)}
+                      className="h-4 w-4 accent-primary"
+                    />
+                    A different authorized driver
+                  </label>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Your staff ID isn&apos;t on the driver whitelist — select who is driving below.
+                </p>
+              )}
+              {!useOwnDriver ? (
+                <Select
+                  value={selectedOtherDriverId}
+                  onChange={(e) => setSelectedOtherDriverId(e.target.value)}
+                  required
+                >
+                  <option value="">Select an authorized driver…</option>
+                  {otherDrivers.map((d) => (
+                    <option key={d.staff_id} value={d.staff_id}>
+                      {d.name} ({d.staff_id})
+                      {d.pass_expiry_date && d.pass_expiry_date < today ? " — pass expired" : ""}
+                    </option>
+                  ))}
+                </Select>
+              ) : null}
               {driverHint ? (
                 <p className={`text-xs ${driverHint.className}`}>{driverHint.text}</p>
               ) : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="driver_name">Driver Name</Label>
-              <Input
-                id="driver_name"
-                name="driver_name"
-                value={driverName}
-                onChange={(e) => setDriverName(e.target.value)}
-                required
-              />
-              {driverNameMismatch ? (
-                <p className="text-xs font-semibold text-red-600">
-                  ✕ Does not match the whitelisted name for this driver ID — submission will be
-                  blocked. / Tidak sepadan dengan nama dalam senarai putih untuk ID pemandu ini.
-                </p>
-              ) : null}
+              <input type="hidden" name="driver_id" value={driverId} />
+              <input type="hidden" name="driver_name" value={driverName} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="escort_officer_name">Escort Officer (optional)</Label>
@@ -518,14 +548,6 @@ export function PartAForm({
             </p>
           ) : null}
 
-          {driverNameMismatch ? (
-            <p className="rounded-md bg-red-100 p-3 text-sm font-semibold text-red-800 dark:bg-red-900/40 dark:text-red-200">
-              WHITELIST VIOLATION — the driver name does not match the whitelisted name on file for
-              this driver ID. Submission is blocked. / PELANGGARAN SENARAI PUTIH — nama pemandu
-              tidak sepadan dengan senarai putih.
-            </p>
-          ) : null}
-
           <div className="rounded-md bg-muted p-3 text-sm">
             <p>
               <span className="text-muted-foreground">PIC:</span>{" "}
@@ -579,7 +601,7 @@ export function PartAForm({
                     !sealsReady ||
                     cargoTypes.length === 0 ||
                     anyUnlisted ||
-                    driverNameMismatch ||
+                    !matchedDriver ||
                     !escortComplete ||
                     !hubDestinationReady
                   ) {
@@ -589,7 +611,7 @@ export function PartAForm({
                     else if (cargoTypes.length === 0) alert("Please select at least one cargo type.");
                     else if (!hubDestinationReady) alert("Please select a Hub destination.");
                     else if (anyUnlisted) alert("Vehicle or driver is not on the active whitelist.");
-                    else if (driverNameMismatch) alert("Driver name does not match the whitelist.");
+                    else if (!matchedDriver) alert("Please select who is driving.");
                     else if (!escortComplete) alert("Please complete all escort details or leave them blank.");
                     e.preventDefault();
                   }
