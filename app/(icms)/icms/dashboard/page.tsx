@@ -20,6 +20,8 @@ import {
   PlusCircle,
 } from "lucide-react";
 import { StatusBadge } from "@/components/icms/status-badge";
+import { getNeedsYourActionItems } from "@/lib/dashboard/needs-your-action";
+import { NeedsYourActionPanel } from "@/components/dashboard/NeedsYourActionPanel";
 
 export const metadata: Metadata = { title: "Catering Operations Dashboard" };
 export const dynamic = "force-dynamic";
@@ -367,6 +369,8 @@ export default async function DashboardPage({
     },
   ];
 
+  const actionItems = await getNeedsYourActionItems();
+
   const checkpointQueue =
     profile.role === "post2_avsec"
       ? { label: "Pending In-flight Post", value: pendingInflightPost.count ?? 0 }
@@ -394,6 +398,8 @@ export default async function DashboardPage({
           <span>You don&apos;t have access to that page for your role.</span>
         </div>
       ) : null}
+
+      <NeedsYourActionPanel items={actionItems} />
 
       {checkpointQueue ? (
         <Link href="/icms/scan" className="animate-scale-in block">

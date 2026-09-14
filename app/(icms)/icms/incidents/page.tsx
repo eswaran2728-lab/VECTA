@@ -22,13 +22,19 @@ import { signedUrl } from "@/lib/icms/storage";
 import { IncidentResolve } from "./incident-resolve";
 import { IncidentPdfButton } from "./incident-pdf-button";
 import type { Incident, IncidentPhoto, Transaction } from "@/lib/icms/database.types";
+import { HighlightRow } from "@/components/dashboard/HighlightRow";
 
 export const metadata: Metadata = { title: "Incidents" };
 export const dynamic = "force-dynamic";
 
 type IncidentRow = Incident & { transactions: Pick<Transaction, "transaction_number" | "vehicle_number"> | null };
 
-export default async function IncidentsPage() {
+export default async function IncidentsPage({
+  searchParams: searchParamsPromise,
+}: {
+  searchParams: Promise<{ highlight?: string }>;
+}) {
+  const searchParams = await searchParamsPromise;
   const profile = await requireProfile();
   const canResolve = profile.role === "supervisor" || profile.role === "enforcement" || profile.role === "management";
   const supabase = await createClient();
@@ -86,7 +92,7 @@ export default async function IncidentsPage() {
               </TableRow>
             ) : (
               incidents.map((incident) => (
-                <TableRow key={incident.id}>
+                <HighlightRow key={incident.id} id={incident.id} highlightId={searchParams.highlight}>
                   <TableCell>
                     <Link
                       href={`/icms/transactions/${incident.transaction_id}`}
@@ -135,7 +141,7 @@ export default async function IncidentsPage() {
                       />
                     </TableCell>
                   ) : null}
-                </TableRow>
+                </HighlightRow>
               ))
             )}
           </TableBody>

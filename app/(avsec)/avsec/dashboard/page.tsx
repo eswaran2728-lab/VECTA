@@ -16,6 +16,8 @@ import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries
 import { getManagementFeedbackStats } from "@/lib/avsec/feedback/queries";
 import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
 import { searchDailyReportsByStaff, searchAircraftReportsByStaff } from "@/lib/avsec/search/queries";
+import { getNeedsYourActionItems } from "@/lib/dashboard/needs-your-action";
+import { NeedsYourActionPanel } from "@/components/dashboard/NeedsYourActionPanel";
 
 export default async function DashboardPage({
   searchParams: searchParamsPromise,
@@ -36,11 +38,12 @@ export default async function DashboardPage({
 
   const isManagement = profile.role === "MANAGEMENT" || profile.role === "ADMIN";
 
-  const [{ counts, submissions }, bayBoard, announcements, feedbackStats] = await Promise.all([
+  const [{ counts, submissions }, bayBoard, announcements, feedbackStats, actionItems] = await Promise.all([
     getTodayCounts(filters),
     getOpenBayBoard(filters.station),
     getActiveAnnouncementsForUser(profile),
     isManagement ? getManagementFeedbackStats() : Promise.resolve({ totalOpen: 0, urgentSafetyCount: 0 }),
+    getNeedsYourActionItems(),
   ]);
   const attachmentCounts = await getAttachmentCounts(submissions.map((s) => s.id));
 
@@ -75,6 +78,8 @@ export default async function DashboardPage({
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
         {/* Active Announcements */}
         <AnnouncementBanner announcements={announcements} />
+
+        <NeedsYourActionPanel items={actionItems} />
 
         {/* Management Communication Portal */}
         {isManagement && (
