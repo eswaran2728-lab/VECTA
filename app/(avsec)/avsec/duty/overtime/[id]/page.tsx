@@ -7,7 +7,7 @@ import {
   rejectOvertimeRequest,
   withdrawOvertimeRequest,
 } from "@/lib/avsec/duty/overtime-actions";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { ROLE_RANK, type UserRole } from "@/lib/avsec/reference-data";
 import { formatDateMY, formatDateTimeMY } from "@/lib/avsec/datetime";
 
@@ -45,8 +45,15 @@ export default async function OvertimeDetailPage({
   const otherIds = Array.from(
     new Set([request.profile_id, request.endorsed_by, request.approved_by].filter((id): id is string => !!id)),
   );
-  const supabase = await createClient();
-  const { data: profileRows } = await supabase.from("profiles").select("id, name, role").in("id", otherIds);
+  // Admin client: the "profiles self select" RLS policy only lets a caller
+  // read their own row, so a submitter viewing their own OT record's
+  // Record Trail couldn't see the endorser's/approver's name — just an
+  // opaque "Endorser"/"Approver" fallback. The viewer is already entitled
+  // to know who reviewed their own request (it's shown in the trail
+  // either way); this is a narrowly-scoped display-name lookup, not a
+  // broader access grant.
+  const adminClient = createAdminClient();
+  const { data: profileRows } = await adminClient.from("profiles").select("id, name, role").in("id", otherIds);
   const profileById = new Map((profileRows ?? []).map((p) => [p.id, p as { id: string; name: string; role: UserRole }]));
 
   const submitter = profileById.get(request.profile_id);
