@@ -78,6 +78,28 @@ const ADMIN_POLICY_TRIGGERS = [
   "mileage claim",
 ];
 
+// Bare greetings/small talk carry no operational content — answer them directly instead
+// of falling through to the "insufficient information" catch-all, which reads as broken
+// for the first message a staff member ever sends the assistant.
+const GREETING_PATTERNS = [
+  "hi",
+  "hello",
+  "hey",
+  "yo",
+  "hai",
+  "good morning",
+  "good afternoon",
+  "good evening",
+  "morning",
+  "afternoon",
+  "evening",
+  "thanks",
+  "thank you",
+  "ok",
+  "okay",
+  "test",
+];
+
 export async function executeWoisQuery(
   query: string,
   userContext: UserContext = {}
@@ -87,6 +109,10 @@ export async function executeWoisQuery(
   // Safety Policy 1: Immediate Security / Incident Escalation
   if (isEscalationTriggered(normalizedQuery)) {
     return handleEscalation(query);
+  }
+
+  if (isGreeting(normalizedQuery)) {
+    return handleGreeting();
   }
 
   // Safety Policy 2: Strict Role Hierarchy Non-Disclosure Deflection
@@ -133,6 +159,28 @@ export async function executeWoisQuery(
 
 function isEscalationTriggered(query: string): boolean {
   return ESCALATION_TRIGGERS.some((trigger) => query.includes(trigger));
+}
+
+function isGreeting(query: string): boolean {
+  const stripped = query.replace(/[^a-z\s]/g, "").trim();
+  if (stripped.length === 0) return false;
+  // Only short messages — "hi" matches, "hi what is the search timing" should not.
+  if (stripped.split(/\s+/).length > 3) return false;
+  return GREETING_PATTERNS.some((g) => stripped === g || stripped.startsWith(g + " "));
+}
+
+function handleGreeting(): WoisEngineResponse {
+  return {
+    body: `Hi, I'm W.O.I.S — your operational assistant for SOPs, dangerous goods limits, and VECTA app help.
+
+Ask me something like:
+- "What is the minimum aircraft search timing for an A330?"
+- "Can a 20,000mAh power bank board in carry-on baggage?"
+- "How do I submit an Overtime (OT) request?"`,
+    confidence_tag: "GENERAL_KNOWLEDGE",
+    source_type: "general",
+    sources: [],
+  };
 }
 
 function isHierarchyProbe(query: string): boolean {
