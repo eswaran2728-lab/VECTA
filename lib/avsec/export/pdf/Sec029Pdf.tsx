@@ -1,7 +1,7 @@
 import { Document, Page, Text, View } from "@react-pdf/renderer";
 import { pdfStyles as s } from "./styles";
 import { PdfHeader, PdfField, PdfFieldFull, PdfSection, PdfFooter } from "./common";
-import { REPORT_META, SEC029_ITEMS } from "@/lib/avsec/reference-data";
+import { REPORT_META, sec029ItemLabel } from "@/lib/avsec/reference-data";
 import { formatDateTimeMY } from "@/lib/avsec/datetime";
 import type { Sec029Row, Sec029ItemEntry } from "@/lib/avsec/types";
 
@@ -13,7 +13,6 @@ export function Sec029Pdf({
   qrDataUrl?: string | null;
 }) {
   const meta = REPORT_META.sec029;
-  const itemMap = new Map((report.items ?? []).map((i) => [i.item_code, i]));
 
   return (
     <Document>
@@ -29,8 +28,12 @@ export function Sec029Pdf({
         </PdfSection>
 
         <PdfSection title="Aircraft Details">
-          <PdfField label="Aircraft Type" value={report.aircraft_type} />
+          <PdfField
+            label="Aircraft Type"
+            value={report.aircraft_type === "Others" ? `Others (${report.aircraft_type_other})` : report.aircraft_type}
+          />
           <PdfField label="Flight No" value={report.flight_no} />
+          {report.flight_destination && <PdfField label="Flight Destination" value={report.flight_destination} />}
           <PdfField label="Aircraft Registration" value={report.aircraft_registration} />
           <PdfField label="STD" value={report.std} />
           <PdfField label="Parking Bay" value={report.parking_bay} />
@@ -40,18 +43,18 @@ export function Sec029Pdf({
 
         <View style={s.section} wrap>
           <Text style={s.sectionTitle}>Checklist</Text>
-          {SEC029_ITEMS.map((item) => {
-            const entry = itemMap.get(item.code);
-            return (
-              <View key={item.code} style={s.checklistRow}>
-                <Text>{item.label}</Text>
-                <Text>
-                  {entry?.checked ?? "-"}
-                  {entry?.remark_type === "other" && entry.remark_text ? ` — ${entry.remark_text}` : ""}
-                </Text>
-              </View>
-            );
-          })}
+          {/* Prints whatever was actually recorded on this report, not the current
+              item list — a pre-Rev.03 report keeps showing every item it was
+              submitted with. */}
+          {(report.items ?? []).map((entry) => (
+            <View key={entry.item_code} style={s.checklistRow}>
+              <Text>{sec029ItemLabel(entry.item_code)}</Text>
+              <Text>
+                {entry.checked ?? "-"}
+                {entry.remark_type === "other" && entry.remark_text ? ` — ${entry.remark_text}` : ""}
+              </Text>
+            </View>
+          ))}
         </View>
 
         <PdfSection title="Final">

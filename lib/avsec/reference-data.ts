@@ -26,6 +26,14 @@ export const STATIONS = [
 
 export type Station = (typeof STATIONS)[number];
 
+// SEC029-only station list: "KUL - MAA" / "KUL - AAX" collapsed into a single "KUL" —
+// specific to this report's Station field, per its Rev.03 spec. Every other report
+// still uses the shared STATIONS list above unchanged.
+export const SEC029_STATIONS: readonly string[] = [
+  "KUL",
+  ...STATIONS.filter((s) => s !== "KUL - MAA" && s !== "KUL - AAX"),
+];
+
 // Team names are free text, entered by hand — different stations use different team
 // names, so this is no longer a fixed list. Kept only as placeholder/example values.
 export const TEAM_EXAMPLES = ["ALPHA", "BRAVO", "CHARLIE", "DELTA"] as const;
@@ -156,6 +164,12 @@ export const SECURITY_DISCLAIMER =
   "This report contains sensitive security information intended solely for authorized AirAsia Security (AVSEC). Any unauthorized access, disclosure, duplication or distribution is strictly prohibited.";
 
 // SEC 029 checklist item catalogue — order matches the physical form.
+// Rev.03: removed the standalone (A) I. VISUAL INSPECTION and (B) IV. VISUAL
+// INSPECTION items (their headings are now heading-only, no independent controls);
+// renamed C(III) LIFE JACKET -> LIFE JACKET POUCHES; "A. AIRCRAFT (EXTERNAL)" ->
+// "A. AIRCRAFT VISUAL INSPECTION (EXTERNAL)"; "B. CARGO HOLD (EXTERNAL)" -> "CARGO
+// HOLD (EXTERNAL)". See SEC029_LEGACY_ITEM_LABELS below for the removed items' labels
+// — historical reports that recorded them still display correctly.
 export const SEC029_ITEMS: {
   code: string;
   section: string;
@@ -170,7 +184,7 @@ export const SEC029_ITEMS: {
   { code: "B_IV", section: "B. LAVATORY", label: "B(IV) TOILET BOWLS" },
   { code: "C_I", section: "C. SEAT", label: "C(I) ARM REST" },
   { code: "C_II", section: "C. SEAT", label: "C(II) SEAT POCKETS" },
-  { code: "C_III", section: "C. SEAT", label: "C(III) LIFE JACKET" },
+  { code: "C_III", section: "C. SEAT", label: "C(III) LIFE JACKET POUCHES" },
   { code: "A1", section: "OTHER ACCESSIBLE COMPARTMENTS", label: "A1. OVERHEAD COMPARTMENTS" },
   { code: "B1", section: "OTHER ACCESSIBLE COMPARTMENTS", label: "B1. CREW SEATS & SEAT COMPARTMENTS" },
   { code: "A2", section: "COCKPIT AREA", label: "A2. SEATS" },
@@ -182,13 +196,23 @@ export const SEC029_ITEMS: {
     label: "LAVATORY SHROUDS SECURITY SEALS",
     allowNotApplicable: true,
   },
-  { code: "A_EXT_I", section: "A. AIRCRAFT (EXTERNAL)", label: "(A) I. VISUAL INSPECTION" },
-  { code: "A_EXT_II", section: "A. AIRCRAFT (EXTERNAL)", label: "(A) II. LANDING GEAR BAYS" },
-  { code: "A_EXT_III", section: "A. AIRCRAFT (EXTERNAL)", label: "(A) III. WHEELS AND BODIES" },
-  { code: "B_EXT_IV", section: "B. CARGO HOLD (EXTERNAL)", label: "(B) IV. VISUAL INSPECTION" },
-  { code: "B_EXT_V", section: "B. CARGO HOLD (EXTERNAL)", label: "(B) V. FLOOR & WALL CEILING" },
-  { code: "B_EXT_VI", section: "B. CARGO HOLD (EXTERNAL)", label: "(B) VI. RESTRAINT NETS" },
+  { code: "A_EXT_II", section: "A. AIRCRAFT VISUAL INSPECTION (EXTERNAL)", label: "I. LANDING GEAR BAY" },
+  { code: "A_EXT_III", section: "A. AIRCRAFT VISUAL INSPECTION (EXTERNAL)", label: "(A) III. WHEELS AND BODIES" },
+  { code: "B_EXT_V", section: "CARGO HOLD (EXTERNAL)", label: "(B) V. FLOOR & WALL CEILING" },
+  { code: "B_EXT_VI", section: "CARGO HOLD (EXTERNAL)", label: "(B) VI. RESTRAINT NETS" },
 ];
+
+// Removed items' labels, kept only so a historical report that recorded them (before
+// Rev.03) still renders correctly in the detail view / PDF instead of showing a bare
+// item code.
+export const SEC029_LEGACY_ITEM_LABELS: Record<string, string> = {
+  A_EXT_I: "(A) I. VISUAL INSPECTION",
+  B_EXT_IV: "(B) IV. VISUAL INSPECTION",
+};
+
+export function sec029ItemLabel(code: string): string {
+  return SEC029_ITEMS.find((i) => i.code === code)?.label ?? SEC029_LEGACY_ITEM_LABELS[code] ?? code;
+}
 
 // SEC016_CHECKED_OPTIONS ("CHECKED?" — COCKPIT/CABIN/F/AID KITS/HOLDS/NOT APPLICABLE)
 // removed in AA/SEC/F/016 Rev.03 — historical reports still carry checked_items in the

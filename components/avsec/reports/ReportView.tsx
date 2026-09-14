@@ -1,4 +1,4 @@
-import { SEC029_ITEMS, SECURITY_DISCLAIMER, SEC013_CERTIFICATION_TEXT } from "@/lib/avsec/reference-data";
+import { sec029ItemLabel, SECURITY_DISCLAIMER, SEC013_CERTIFICATION_TEXT } from "@/lib/avsec/reference-data";
 import { formatDateTimeMY, formatDateMY, formatTimeMY } from "@/lib/avsec/datetime";
 import { cn } from "@/lib/avsec/utils";
 import type {
@@ -223,8 +223,6 @@ export function Sec014View({ report }: { report: Sec014Row & { patrols?: Sec014P
 }
 
 export function Sec029View({ report }: { report: Sec029Row & { items?: Sec029ItemEntry[] } }) {
-  const itemMap = new Map((report.items ?? []).map((i) => [i.item_code, i]));
-
   return (
     <div className="space-y-4">
       <ViewSection title="Staff Details">
@@ -236,8 +234,12 @@ export function Sec029View({ report }: { report: Sec029Row & { items?: Sec029Ite
       </ViewSection>
 
       <ViewSection title="Aircraft Details">
-        <Field label="Aircraft Type" value={report.aircraft_type} />
+        <Field
+          label="Aircraft Type"
+          value={report.aircraft_type === "Others" ? `Others (${report.aircraft_type_other})` : report.aircraft_type}
+        />
         <Field label="Flight No" value={report.flight_no} />
+        {report.flight_destination && <Field label="Flight Destination" value={report.flight_destination} />}
         <Field label="Aircraft Registration" value={report.aircraft_registration} />
         <Field label="STD" value={report.std} />
         <Field label="Parking Bay" value={report.parking_bay} />
@@ -247,17 +249,18 @@ export function Sec029View({ report }: { report: Sec029Row & { items?: Sec029Ite
 
       <section className="card p-4 sm:p-5 space-y-2 border-border/80 bg-surface/80">
         <h2 className="section-title mb-2">Checklist Result</h2>
-        {SEC029_ITEMS.map((item) => {
-          const entry = itemMap.get(item.code);
-          if (!entry) return null;
+        {/* Renders whatever was actually recorded on this report — not the current
+            SEC029_ITEMS list — so a pre-Rev.03 report still shows every item it was
+            submitted with, including ones the current form no longer has. */}
+        {(report.items ?? []).map((entry) => {
           const flagged = entry.checked === "NO" || entry.remark_type === "other";
           return (
             <div
-              key={item.code}
+              key={entry.item_code}
               className="flex items-center justify-between gap-2 py-2 border-b border-border/50 last:border-0"
             >
               <span className="text-xs text-foreground">
-                {item.label}
+                {sec029ItemLabel(entry.item_code)}
                 {entry.remark_type === "other" && entry.remark_text ? ` — ${entry.remark_text}` : ""}
               </span>
               <span
@@ -278,7 +281,7 @@ export function Sec029View({ report }: { report: Sec029Row & { items?: Sec029Ite
       </section>
 
       <ViewSection title="Final">
-        <Field label="Information to PIC" value={report.pic_informed} />
+        <Field label="Informed PIC that aircraft security check has been completed" value={report.pic_informed} />
         <Field label="Declaration" value={report.declaration} />
         {report.d_remark && (
           <div className="sm:col-span-2">
