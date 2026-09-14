@@ -157,11 +157,11 @@ export async function executeWoisQuery(
   return handleOperationalResponse(normalizedQuery, topMatch, citations, userContext);
 }
 
-function isEscalationTriggered(query: string): boolean {
+export function isEscalationTriggered(query: string): boolean {
   return ESCALATION_TRIGGERS.some((trigger) => query.includes(trigger));
 }
 
-function isGreeting(query: string): boolean {
+export function isGreeting(query: string): boolean {
   const stripped = query.replace(/[^a-z\s]/g, "").trim();
   if (stripped.length === 0) return false;
   // Only short messages — "hi" matches, "hi what is the search timing" should not.
@@ -183,11 +183,11 @@ Ask me something like:
   };
 }
 
-function isHierarchyProbe(query: string): boolean {
+export function isHierarchyProbe(query: string): boolean {
   return HIERARCHY_PROBES.some((probe) => query.includes(probe));
 }
 
-function isFullDocumentRequest(query: string): boolean {
+export function isFullDocumentRequest(query: string): boolean {
   return FULL_DOC_TRIGGERS.some((t) => query.includes(t)) || query === "wois" || query === "w.o.i.s";
 }
 
@@ -208,7 +208,7 @@ function handleRequiresSop(): WoisEngineResponse {
   };
 }
 
-function handleEscalation(query: string): WoisEngineResponse {
+export function handleEscalation(query: string): WoisEngineResponse {
   const body = `### 🚨 URGENT OPERATIONAL ESCALATION REQUIRED
 
 **Assessment**: The query describes an active high-risk safety or security emergency (${query}).
@@ -236,7 +236,7 @@ function handleEscalation(query: string): WoisEngineResponse {
   };
 }
 
-function handleHierarchyDeflection(): WoisEngineResponse {
+export function handleHierarchyDeflection(): WoisEngineResponse {
   return {
     body: `I am W.O.I.S, your operational intelligence assistant. I am designed to assist you with standard operating procedures (SOPs), dangerous goods limits, security screening checks, and VECTA app features for your assigned station duties. 
 
@@ -247,7 +247,7 @@ For inquiries regarding specific departmental organization, please consult with 
   };
 }
 
-function handleFullDocumentRetrieval(): WoisEngineResponse {
+export function handleFullDocumentRetrieval(): WoisEngineResponse {
   const doc = WOIS_KNOWLEDGE_DOCUMENTS.find((d) => d.id === "doc-wois-sop-manual")!;
   const attachment = doc.file_url
     ? {
@@ -277,7 +277,7 @@ ${doc.content}`,
   };
 }
 
-interface SearchMatch {
+export interface SearchMatch {
   docTitle: string;
   source_type: WoisSourceType;
   is_official?: boolean;
@@ -323,7 +323,7 @@ const STOP_WORDS = new Set([
   "onto",
 ]);
 
-function searchKnowledgeBase(query: string, _userContext: UserContext): SearchMatch[] {
+export function searchKnowledgeBase(query: string, _userContext: UserContext): SearchMatch[] {
   const queryWords = query
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, "")
