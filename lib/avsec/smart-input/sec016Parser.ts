@@ -14,11 +14,10 @@ export interface Sec016ParsedFields {
   ata_atd?: string;
   reason_for_delay?: string;
   staff_frisked?: "YES" | "NO";
-  ramp_staff_1?: string;
-  ramp_staff_2?: string;
-  ramp_staff_3?: string;
-  ramp_staff_4?: string;
-  ramp_staff_5?: string;
+  /** Names found under a "RAMP STAFF" heading go here, one per line — Smart Input
+   *  can't tell baggage handlers from cargo handlers apart, so it fills the baggage
+   *  box and leaves the cargo box for manual entry/review. */
+  ramp_agents_baggage?: string;
 }
 
 // The fixed set of fields Smart Input is capable of detecting — used to report
@@ -33,11 +32,7 @@ export const SEC016_PARSEABLE_FIELDS: (keyof Sec016ParsedFields)[] = [
   "ata_atd",
   "reason_for_delay",
   "staff_frisked",
-  "ramp_staff_1",
-  "ramp_staff_2",
-  "ramp_staff_3",
-  "ramp_staff_4",
-  "ramp_staff_5",
+  "ramp_agents_baggage",
 ];
 
 const MONTHS: Record<string, string> = {
@@ -158,10 +153,7 @@ export function parseSec016WhatsAppMessage(rawText: string): Sec016ParsedFields 
       if (/^(body\s*frisk|frisk|cargo|shift\s*leader)/i.test(line)) break;
       names.push(line);
     }
-    names.forEach((name, idx) => {
-      const key = `ramp_staff_${idx + 1}` as keyof Sec016ParsedFields;
-      (result[key] as string) = name;
-    });
+    if (names.length > 0) result.ramp_agents_baggage = names.join("\n");
   }
 
   return result;

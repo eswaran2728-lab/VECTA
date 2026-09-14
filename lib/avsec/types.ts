@@ -52,28 +52,42 @@ export interface Sec016Row {
   bay_no: string;
   reason_for_delay: string | null;
   do_infmd: "YES" | "NO";
-  inbound_baggage: string;
-  outbound_baggage: string;
-  inbound_cargo: string;
-  outbound_cargo: string;
-  inbound_co_mail: string;
-  outbound_co_mail: string;
+  /** Arrival only from Rev.03 onward — null on a departure report. */
+  inbound_baggage: string | null;
+  /** Departure only from Rev.03 onward — null on an arrival report. */
+  outbound_baggage: string | null;
+  inbound_cargo: string | null;
+  outbound_cargo: string | null;
+  inbound_co_mail: string | null;
+  outbound_co_mail: string | null;
+  /** Pre-Rev.03 "CHECKED?" section — kept only so historical reports still render; no
+   *  longer collected. */
   checked_items: string[];
+  /** Labeled "Ramp Loading Supervisor (RLS)" in the UI from Rev.03 onward — same column. */
   shift_leader: string;
-  ramp_staff_1: string;
-  ramp_staff_2: string;
-  ramp_staff_3: string;
-  ramp_staff_4: string;
-  ramp_staff_5: string;
+  /** Pre-Rev.03 individual handler slots — kept only so historical reports still render;
+   *  Rev.03 collects ramp_agents_baggage/ramp_agents_cargo instead. */
+  ramp_staff_1: string | null;
+  ramp_staff_2: string | null;
+  ramp_staff_3: string | null;
+  ramp_staff_4: string | null;
+  ramp_staff_5: string | null;
+  /** Rev.03: multiline "Name ID (hold)" entries, one or more agents per box. */
+  ramp_agents_baggage: string | null;
+  ramp_agents_cargo: string | null;
   cargo_hold_checked: "YES" | "NO";
   staff_frisked: "YES" | "NO";
+  /** Rev.03 addition — optional, no new mandatory requirement. */
+  cabin_check: "YES" | "NO" | null;
   discrepancies: string;
 
-  offload_flight_no: string;
-  offload_destination: string;
-  offload_baggage_tag_no: string;
-  offload_total_baggage: string;
-  offload_remark: string;
+  /** Pre-Rev.03 offload fields — kept only so historical departure reports still render. */
+  offload_flight_no: string | null;
+  offload_destination: string | null;
+  /** Rev.03: multiline, one baggage tag number per line. Departure only. */
+  offload_baggage_tag_no: string | null;
+  offload_total_baggage: string | null;
+  offload_remark: string | null;
 
   flight_type: "arrival" | "departure";
   aircraft_search_completed: boolean;

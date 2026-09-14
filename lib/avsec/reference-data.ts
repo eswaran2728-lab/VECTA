@@ -190,10 +190,6 @@ export const SEC029_ITEMS: {
   { code: "B_EXT_VI", section: "B. CARGO HOLD (EXTERNAL)", label: "(B) VI. RESTRAINT NETS" },
 ];
 
-export const SEC016_CHECKED_OPTIONS = [
-  "COCKPIT",
-  "CABIN",
-  "F/AID KITS",
-  "HOLDS",
-  "NOT APPLICABLE",
-] as const;
+// SEC016_CHECKED_OPTIONS ("CHECKED?" — COCKPIT/CABIN/F/AID KITS/HOLDS/NOT APPLICABLE)
+// removed in AA/SEC/F/016 Rev.03 — historical reports still carry checked_items in the
+// database and render it if present, but nothing new writes to it.
