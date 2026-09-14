@@ -2,18 +2,26 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { reviewOvertimeRequest } from "@/lib/avsec/duty/overtime-actions";
+import { reviewOvertimeRequest, endorseOvertimeRequest } from "@/lib/avsec/duty/overtime-actions";
 
 export function OvertimeReviewControls({
   requestId,
   staffName,
   payableHours,
   workDate,
+  canEndorse,
+  canApprove,
+  canReject,
 }: {
   requestId: string;
   staffName: string;
   payableHours: number;
   workDate: string;
+  /** DSE endorsing a still-pending request, within their own station. */
+  canEndorse: boolean;
+  /** Management giving final approval — only once the request is endorsed. */
+  canApprove: boolean;
+  canReject: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -37,6 +45,16 @@ export function OvertimeReviewControls({
 
       setShowPrompt(null);
       setNotes("");
+      router.refresh();
+    });
+  }
+
+  function handleEndorse() {
+    setError(null);
+    startTransition(async () => {
+      const formData = new FormData();
+      formData.set("id", requestId);
+      await endorseOvertimeRequest(formData);
       router.refresh();
     });
   }
@@ -88,22 +106,41 @@ export function OvertimeReviewControls({
     );
   }
 
+  if (!canEndorse && !canApprove && !canReject) return null;
+
   return (
-    <div className="flex items-center gap-2 mt-2">
-      <button
-        type="button"
-        className="btn-secondary !text-success hover:!bg-success/20 px-3 py-1 text-xs font-mono font-bold"
-        onClick={() => setShowPrompt("approve")}
-      >
-        ✓ Approve OT
-      </button>
-      <button
-        type="button"
-        className="btn-secondary !text-brand hover:!bg-brand/20 px-3 py-1 text-xs font-mono font-bold"
-        onClick={() => setShowPrompt("reject")}
-      >
-        ✕ Reject
-      </button>
+    <div className="flex flex-col gap-1.5 mt-2">
+      {error && <p className="font-mono text-[11px] text-brand">{error}</p>}
+      <div className="flex items-center gap-2">
+        {canEndorse && (
+          <button
+            type="button"
+            className="btn-secondary !text-primary hover:!bg-primary/20 px-3 py-1 text-xs font-mono font-bold"
+            onClick={handleEndorse}
+            disabled={isPending}
+          >
+            {isPending ? "Endorsing…" : "→ Endorse OT"}
+          </button>
+        )}
+        {canApprove && (
+          <button
+            type="button"
+            className="btn-secondary !text-success hover:!bg-success/20 px-3 py-1 text-xs font-mono font-bold"
+            onClick={() => setShowPrompt("approve")}
+          >
+            ✓ Approve OT
+          </button>
+        )}
+        {canReject && (
+          <button
+            type="button"
+            className="btn-secondary !text-brand hover:!bg-brand/20 px-3 py-1 text-xs font-mono font-bold"
+            onClick={() => setShowPrompt("reject")}
+          >
+            ✕ Reject
+          </button>
+        )}
+      </div>
     </div>
   );
 }
