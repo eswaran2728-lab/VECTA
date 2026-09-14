@@ -176,6 +176,63 @@ export type Database = {
         }
         Relationships: []
       }
+      shift_handovers: {
+        Row: {
+          id: string
+          org_id: string | null
+          outgoing_profile_id: string
+          station: string
+          team: string | null
+          staff_name: string
+          staff_id: string
+          place_category: "Bay" | "Premises" | "Terminal"
+          place_detail: string
+          flight_number: string | null
+          handover_notes: string
+          unfinished_work_summary: Json
+          acknowledged_by: string | null
+          acknowledged_at: string | null
+          acknowledgment_notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string | null
+          outgoing_profile_id: string
+          station: string
+          team?: string | null
+          staff_name: string
+          staff_id: string
+          place_category: "Bay" | "Premises" | "Terminal"
+          place_detail: string
+          flight_number?: string | null
+          handover_notes: string
+          unfinished_work_summary?: Json
+          acknowledged_by?: string | null
+          acknowledged_at?: string | null
+          acknowledgment_notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string | null
+          outgoing_profile_id?: string
+          station?: string
+          team?: string | null
+          staff_name?: string
+          staff_id?: string
+          place_category?: "Bay" | "Premises" | "Terminal"
+          place_detail?: string
+          flight_number?: string | null
+          handover_notes?: string
+          unfinished_work_summary?: Json
+          acknowledged_by?: string | null
+          acknowledged_at?: string | null
+          acknowledgment_notes?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       ot_requests: {
         Row: {
           id: string
