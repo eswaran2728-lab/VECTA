@@ -42,15 +42,6 @@ INSERT INTO public.organizations (id, name, code, status)
 VALUES ('00000000-0000-0000-0000-000000000001', 'AirAsia', 'AIRASIA', 'active')
 ON CONFLICT (id) DO UPDATE SET name = 'AirAsia', code = 'AIRASIA', status = 'active';
 
-CREATE OR REPLACE FUNCTION current_org_id()
-RETURNS uuid AS $$
-  SELECT coalesce(
-    (SELECT org_id FROM public.profiles WHERE id = auth.uid()),
-    (SELECT org_id FROM public.users WHERE id = auth.uid()),
-    '00000000-0000-0000-0000-000000000001'::uuid
-  );
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
-
 DO $$
 DECLARE
   v_default_org uuid := '00000000-0000-0000-0000-000000000001'::uuid;
@@ -80,6 +71,15 @@ BEGIN
     END IF;
   END LOOP;
 END $$;
+
+CREATE OR REPLACE FUNCTION current_org_id()
+RETURNS uuid AS $$
+  SELECT coalesce(
+    (SELECT org_id FROM public.profiles WHERE id = auth.uid()),
+    (SELECT org_id FROM public.users WHERE id = auth.uid()),
+    '00000000-0000-0000-0000-000000000001'::uuid
+  );
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
 
 -- ============================================================================
@@ -372,7 +372,7 @@ CREATE POLICY "announcements_management_all"
     EXISTS (
       SELECT 1 FROM public.profiles
       WHERE id = auth.uid()
-      AND role IN ('MANAGEMENT', 'ADMIN', 'SUPER_ADMIN')
+      AND (role::text IN ('MANAGEMENT', 'ADMIN', 'SUPER_ADMIN') OR unified_role IN ('management', 'super_admin'))
     )
   );
 
@@ -402,7 +402,7 @@ CREATE POLICY "announcement_targets_management_all"
     EXISTS (
       SELECT 1 FROM public.profiles
       WHERE id = auth.uid()
-      AND role IN ('MANAGEMENT', 'ADMIN', 'SUPER_ADMIN')
+      AND (role::text IN ('MANAGEMENT', 'ADMIN', 'SUPER_ADMIN') OR unified_role IN ('management', 'super_admin'))
     )
   );
 
@@ -428,7 +428,7 @@ CREATE POLICY "announcement_acks_management_select"
     EXISTS (
       SELECT 1 FROM public.profiles
       WHERE id = auth.uid()
-      AND role IN ('MANAGEMENT', 'ADMIN', 'SUPER_ADMIN')
+      AND (role::text IN ('MANAGEMENT', 'ADMIN', 'SUPER_ADMIN') OR unified_role IN ('management', 'super_admin'))
     )
   );
 
@@ -645,9 +645,13 @@ CREATE POLICY "absence_notices_select_elevated" ON public.absence_notices
     AND EXISTS (
       SELECT 1 FROM public.profiles p
       WHERE p.id = auth.uid()
-        AND p.role IN ('DSE', 'ENFORCEMENT', 'MANAGEMENT', 'ADMIN', 'SUPER_ADMIN')
         AND (
-          p.role IN ('MANAGEMENT', 'ADMIN', 'ENFORCEMENT', 'SUPER_ADMIN')
+          p.role::text IN ('DSE', 'ENFORCEMENT', 'MANAGEMENT', 'ADMIN', 'SUPER_ADMIN')
+          OR p.unified_role IN ('management', 'super_admin', 'enforcement', 'dse')
+        )
+        AND (
+          p.role::text IN ('MANAGEMENT', 'ADMIN', 'ENFORCEMENT', 'SUPER_ADMIN')
+          OR p.unified_role IN ('management', 'super_admin', 'enforcement')
           OR (p.role = 'DSE' AND (p.station IS NULL OR p.station = absence_notices.station))
         )
     )
@@ -662,7 +666,8 @@ CREATE POLICY "absence_notices_dse_management_update" ON public.absence_notices
       SELECT 1 FROM public.profiles p
       WHERE p.id = auth.uid()
         AND (
-          p.role IN ('MANAGEMENT', 'ADMIN', 'SUPER_ADMIN')
+          p.role::text IN ('MANAGEMENT', 'ADMIN', 'SUPER_ADMIN')
+          OR p.unified_role IN ('management', 'super_admin')
           OR (
             p.role = 'DSE'
             AND (
@@ -679,7 +684,8 @@ CREATE POLICY "absence_notices_dse_management_update" ON public.absence_notices
       SELECT 1 FROM public.profiles p
       WHERE p.id = auth.uid()
         AND (
-          p.role IN ('MANAGEMENT', 'ADMIN', 'SUPER_ADMIN')
+          p.role::text IN ('MANAGEMENT', 'ADMIN', 'SUPER_ADMIN')
+          OR p.unified_role IN ('management', 'super_admin')
           OR (
             p.role = 'DSE'
             AND (

@@ -53,7 +53,7 @@ export default async function DutyZonesViewPage({
         </form>
 
         <div className="vecta-panel overflow-hidden !p-0">
-          <ZonesMapViewLoader zones={zones} />
+          <ZonesMapViewLoader zones={zones} station={station} />
         </div>
 
         <div className="space-y-2">

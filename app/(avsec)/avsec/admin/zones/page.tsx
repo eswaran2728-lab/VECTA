@@ -117,7 +117,12 @@ export default async function AdminZonesPage({
               </div>
             </div>
 
-            <ZoneEditorLoader initialPolygon={editing?.polygon ?? null} hiddenInputId="zone-geometry" />
+            <ZoneEditorLoader
+              initialPolygon={editing?.polygon ?? null}
+              hiddenInputId="zone-geometry"
+              station={station}
+              existingZones={zones}
+            />
 
             <button type="submit" className="btn-primary w-full">
               {editing ? "Save changes" : "Create zone"}

@@ -157,3 +157,72 @@ test("Role neutrality: ASO, SO, and DSE roles all adhere to strict GPS geofencin
     assert.equal(match, null, `Role ${role} must not bypass geofencing`);
   }
 });
+
+// ZoneMapEditor geometry creation logic test
+function computeTestGeometry(points: [number, number][]) {
+  if (points.length < 3) return { polygon: null, center_lat: null, center_lng: null, radius_m: null };
+  const rawCenterLat = points.reduce((s, [lat]) => s + lat, 0) / points.length;
+  const rawCenterLng = points.reduce((s, [, lng]) => s + lng, 0) / points.length;
+  const centerLat = Number(rawCenterLat.toFixed(6));
+  const centerLng = Number(rawCenterLng.toFixed(6));
+  const radius = Math.round(Math.max(...points.map(([lat, lng]) => haversineMeters(centerLat, centerLng, lat, lng))));
+  const ring = [...points, points[0]!].map(([lat, lng]) => [Number(lng.toFixed(6)), Number(lat.toFixed(6))]);
+  return {
+    polygon: { type: "Polygon" as const, coordinates: [ring] },
+    center_lat: centerLat,
+    center_lng: centerLng,
+    radius_m: radius,
+  };
+}
+
+test("ZoneMapEditor computeGeometry: returns nulls when < 3 vertices drawn", () => {
+  assert.deepEqual(computeTestGeometry([]), { polygon: null, center_lat: null, center_lng: null, radius_m: null });
+  assert.deepEqual(computeTestGeometry([[2.74, 101.68]]), { polygon: null, center_lat: null, center_lng: null, radius_m: null });
+  assert.deepEqual(computeTestGeometry([[2.74, 101.68], [2.75, 101.69]]), { polygon: null, center_lat: null, center_lng: null, radius_m: null });
+});
+
+test("ZoneMapEditor computeGeometry: creates valid closed GeoJSON polygon and accurate center/radius for >= 3 vertices", () => {
+  // Penang International Airport gate polygon
+  const vertices: [number, number][] = [
+    [5.2950, 100.2750],
+    [5.2990, 100.2750],
+    [5.2990, 100.2790],
+    [5.2950, 100.2790],
+  ];
+
+  const geom = computeTestGeometry(vertices);
+  assert.ok(geom.polygon);
+  assert.equal(geom.polygon.type, "Polygon");
+  assert.equal(geom.polygon.coordinates[0].length, 5); // 4 vertices + 1 closing ring vertex
+  assert.deepEqual(geom.polygon.coordinates[0][0], geom.polygon.coordinates[0][4]); // Ring is closed
+  assert.deepEqual(geom.polygon.coordinates[0][0], [100.2750, 5.2950]); // GeoJSON is [lng, lat]
+
+  assert.equal(geom.center_lat, 5.2970);
+  assert.equal(geom.center_lng, 100.2770);
+  assert.ok(geom.radius_m && geom.radius_m > 0);
+
+  // End-to-end checkin test with newly created zone
+  const newZone: DutyZone = {
+    id: "zone-pen-new",
+    station: "PEN",
+    name: "PEN Bay 1-4 Geofence",
+    code: "PEN-B14",
+    polygon: geom.polygon,
+    center_lat: geom.center_lat,
+    center_lng: geom.center_lng,
+    radius_m: geom.radius_m,
+    active: true,
+  };
+
+  // Staff inside new zone
+  const staffInside = { lat: 5.2970, lng: 100.2770 };
+  const matchedInside = matchZone(staffInside, [newZone]);
+  assert.ok(matchedInside);
+  assert.equal(matchedInside.id, "zone-pen-new");
+
+  // Staff outside new zone
+  const staffOutside = { lat: 5.3100, lng: 100.2900 };
+  const matchedOutside = matchZone(staffOutside, [newZone]);
+  assert.equal(matchedOutside, null);
+});
+
