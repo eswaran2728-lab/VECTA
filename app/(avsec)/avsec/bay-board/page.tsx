@@ -14,7 +14,11 @@ export default async function BayBoardPage() {
     redirect(landingPathForRole(profile.role));
   }
 
-  const entries = profile.station ? await getOpenBayBoard(profile.station) : [];
+  // An org-wide viewer (Admin/Management/Enforcement) has no single station
+  // of their own — previously that meant `entries` was silently left empty
+  // ("No aircraft currently logged on ground at ."), when what they actually
+  // want is the board across every station.
+  const entries = await getOpenBayBoard(profile.station ?? undefined);
 
   return (
     <main className="min-h-screen pb-32">
@@ -24,9 +28,11 @@ export default async function BayBoardPage() {
           Arrival SEC016 submissions automatically place aircraft on this board, and Departure SEC016 submissions clear them.
         </p>
 
-        <AddBayBoardForm station={profile.station!} />
+        {/* Manual add always applies to one specific station, which an
+            org-wide viewer doesn't have — station-scoped viewers only. */}
+        {profile.station ? <AddBayBoardForm station={profile.station} /> : null}
 
-        <BayBoardList initialEntries={entries} station={profile.station!} />
+        <BayBoardList initialEntries={entries} station={profile.station} />
       </div>
     </main>
   );
