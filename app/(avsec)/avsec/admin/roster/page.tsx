@@ -106,6 +106,20 @@ export default async function AdminRosterPage({
   const totalPages = Math.max(1, Math.ceil(officers.length / PAGE_SIZE));
   const pageOfficers = officers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+  // Every officer's cell edit actually applies to their whole team (see
+  // upsertRosterCell) — the rows just look per-officer for easy scanning.
+  // Rather than only explaining that once at the top of the page, tell each
+  // officer's cell exactly who else shares their team, from the FULL
+  // officers list (not just this page) so a teammate on another page still
+  // shows up.
+  const teammatesByTeam = new Map<string, string[]>();
+  for (const o of officers) {
+    if (!o.team) continue;
+    const list = teammatesByTeam.get(o.team) ?? [];
+    list.push(o.name);
+    teammatesByTeam.set(o.team, list);
+  }
+
   const prevWeek = addDays(weekStart, -7);
   const nextWeek = addDays(weekStart, 7);
 
@@ -281,6 +295,7 @@ export default async function AdminRosterPage({
                               shifts={shifts}
                               cell={cellMap.get(`${o.team}|${date}`)}
                               leaveInfo={leaveInfo}
+                              teammates={(teammatesByTeam.get(o.team) ?? []).filter((n) => n !== o.name)}
                             />
                           ) : (
                             <p className="font-mono text-[10px] p-2 text-muted-foreground/60">

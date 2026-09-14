@@ -25,7 +25,7 @@ export function UnifiedHeader({
   const isCaterLink = brand === "CATERLINK";
 
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-border px-6 py-[18px]">
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-4 py-3 sm:px-6 sm:py-[18px]">
       <Link href={homeHref} className="flex shrink-0 items-center gap-2.5">
         {isCaterLink ? (
           <>
@@ -49,7 +49,7 @@ export function UnifiedHeader({
           </>
         )}
       </Link>
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1.5 sm:gap-3">
         {extra}
         <ThemeToggle />
         <span className="hidden truncate font-mono text-sm sm:inline">Signed in as {name}</span>

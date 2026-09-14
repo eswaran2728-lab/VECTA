@@ -14,6 +14,7 @@ import { TransactionStageBar } from "@/components/layout/TransactionStageBar";
 import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries";
 import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
 import type { Direction, OpsGroup, TransactionRoute, TransactionStatus } from "@/lib/icms/database.types";
+import { formatTimeMY } from "@/lib/avsec/datetime";
 
 // Unified role vocabulary (supabase/migrations/unified_role_model):
 // admin, management, enforcement, so, aso, dse. Org-wide roles
@@ -242,7 +243,12 @@ export default async function LandingPage({
                   <Metric label="Staff on Duty" value={snapshot.staffOnDuty} />
                   <Metric label="Active Transactions" value={snapshot.activeTransactions} />
                   <Metric label="Reports Today" value={snapshot.reportsToday} />
-                  <Metric label="Alerts" value={snapshot.alerts} alert={snapshot.alerts > 0} />
+                  <Metric
+                    label="Alerts"
+                    value={snapshot.alerts}
+                    alert={snapshot.alerts > 0}
+                    href={`/avsec/admin/alerts${activeTab !== "all" ? `?ops=${activeTab}` : ""}`}
+                  />
                 </div>
               </div>
 
@@ -306,7 +312,7 @@ export default async function LandingPage({
                     <table className="w-full min-w-[560px] border-collapse text-left text-sm">
                       <thead>
                         <tr className="border-b border-border text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-                          <th className="pb-2 pr-3 font-mono font-medium">Time</th>
+                          <th className="pb-2 pr-3 font-mono font-medium">Time (MYT)</th>
                           <th className="pb-2 pr-3 font-mono font-medium">Activity</th>
                           <th className="pb-2 pr-3 font-mono font-medium">Location</th>
                           <th className="pb-2 font-mono font-medium">Status</th>
@@ -460,8 +466,21 @@ export default async function LandingPage({
   );
 }
 
-function Metric({ label, value, alert }: { label: string; value: number; alert?: boolean }) {
-  return (
+function Metric({
+  label,
+  value,
+  alert,
+  href,
+}: {
+  label: string;
+  value: number;
+  alert?: boolean;
+  /** When set, the metric becomes a link — used for Alerts so the count
+   *  isn't a dead end (it used to be a static number with no way to see
+   *  what the alerts actually were). */
+  href?: string;
+}) {
+  const content = (
     <div className="flex flex-col items-end gap-0.5">
       <span
         className="font-mono text-2xl font-semibold tabular-nums"
@@ -471,6 +490,12 @@ function Metric({ label, value, alert }: { label: string; value: number; alert?:
       </span>
       <span className="vecta-eyebrow">{label}</span>
     </div>
+  );
+  if (!href) return content;
+  return (
+    <Link href={href} className="rounded-md transition-opacity hover:opacity-75">
+      {content}
+    </Link>
   );
 }
 
@@ -483,7 +508,12 @@ function TabPill({ label, active, href }: { label: string; active: boolean; href
 }
 
 function formatClock(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  // Was `.toLocaleTimeString()` with no timezone — on Vercel's UTC server that
+  // rendered raw UTC (e.g. 04:57) while every other view (formatTimeMY) already
+  // converts to Asia/Kuala_Lumpur (e.g. 12:57 for the same instant), an 8-hour
+  // discrepancy for the exact same check-in event. Use the same MY-local
+  // formatter everywhere, with an explicit "MYT" label so it's unambiguous.
+  return formatTimeMY(iso);
 }
 
 /**
