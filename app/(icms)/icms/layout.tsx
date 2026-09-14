@@ -104,6 +104,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         role={profile.role}
         roleLabel={ROLE_LABELS[profile.role] ?? null}
         opsGroup={(profile.ops_group ?? null) as OpsGroup | null}
+        unifiedRole={profile.unified_role}
         signOutAction={signOut}
       />
 

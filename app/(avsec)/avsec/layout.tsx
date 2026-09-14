@@ -45,6 +45,7 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
             opsGroup={profile.ops_group}
             station={profile.station}
             team={profile.team}
+            unifiedRole={profile.unified_role}
             signOutAction={authSignOut}
           />
         ) : null}

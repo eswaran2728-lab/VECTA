@@ -15,6 +15,7 @@ import type { VendorPartA, VendorPartB, VendorPartC, VendorTransaction } from "@
 
 export const metadata: Metadata = { title: "Vendor Delivery" };
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function Sig({ url, label }: { url: string | null; label: string }) {
   if (!url) return null;

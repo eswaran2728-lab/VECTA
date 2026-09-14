@@ -49,6 +49,7 @@ export function AppSidebar({
   opsGroup,
   station,
   team,
+  unifiedRole,
   signOutAction,
 }: {
   name: string;
@@ -57,13 +58,26 @@ export function AppSidebar({
   opsGroup: OpsGroup | null;
   station?: string | null;
   team?: string | null;
+  /**
+   * Unified role vocabulary (supabase/migrations/unified_role_model.sql) —
+   * the single source of truth for org-tier ("is this account Management-or-
+   * above") across both AVSEC (`profiles.role`) and ICMS (`users.role`),
+   * which otherwise use different legacy strings for the same tier (e.g.
+   * ICMS's admin-equivalent account is `role: "supervisor"`, not "admin").
+   * Falls back to `role` string-matching below when not provided, so older
+   * call sites keep working, but any caller that has it should pass it.
+   */
+  unifiedRole?: string | null;
   signOutAction?: () => Promise<void>;
 }) {
   const pathname = usePathname();
   const [woisOpen, setWoisOpen] = useState(false);
 
   const normalizedRole = (role ?? "").toLowerCase();
-  const isOrgWide = ["admin", "management", "enforcement", "super_admin"].includes(normalizedRole);
+  const normalizedUnifiedRole = (unifiedRole ?? "").toLowerCase();
+  const isOrgWide =
+    ["management", "super_admin", "enforcement"].includes(normalizedUnifiedRole) ||
+    ["admin", "management", "enforcement", "super_admin", "supervisor"].includes(normalizedRole);
   const isDse = normalizedRole === "dse";
   const isDriver = ["warehouse_pic", "vendor"].includes(normalizedRole);
   const isVendor = normalizedRole === "vendor";

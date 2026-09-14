@@ -201,6 +201,7 @@ export default async function TransactionsPage({
                   <TableCell>
                     <Link
                       href={`/icms/transactions/${t.id}`}
+                      prefetch={false}
                       className="font-mono font-medium text-primary hover:underline"
                     >
                       {t.transaction_number}

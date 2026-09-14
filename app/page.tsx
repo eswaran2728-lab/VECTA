@@ -197,6 +197,7 @@ export default async function LandingPage({
         opsGroup={userOpsGroup}
         station={avsecProfile?.station ?? null}
         team={avsecProfile?.team ?? null}
+        unifiedRole={role}
         signOutAction={signOut}
       />
 

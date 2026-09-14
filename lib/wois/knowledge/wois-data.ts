@@ -1,6 +1,18 @@
 /**
  * W.O.I.S (Work Order Intelligence Smartbook) - Core Knowledge Base
  * Real PDF Ingestion & OCR Page-Attributed SOP Data, Regulatory Standards & VECTA App Guides.
+ *
+ * PROCESS NOTE (found 2026-09-14): the "doc-vecta-app-help" document's OT section
+ * described the old manual OT-request flow well after it was replaced by the
+ * automatic check-in/check-out-based calculation in lib/avsec/duty/checkin-actions.ts
+ * — and because app_help chunks are always surfaced as VERIFIED (see
+ * handleAppHelpResponse in lib/wois/engine.ts), W.O.I.S confidently gave wrong
+ * answers about it. This file is hand-maintained and has no automated link to the
+ * app behavior it documents, so nothing flags it when a described feature changes.
+ * There is currently no process that re-checks this file when the underlying
+ * feature it documents changes — whoever ships a behavior change here should also
+ * update the matching app_help chunk in the same PR, and it's worth adding a
+ * lint/checklist step for that rather than relying on someone remembering.
  */
 
 import type { WoisSourceType } from "@/lib/avsec/types";
@@ -300,10 +312,12 @@ export const WOIS_KNOWLEDGE_DOCUMENTS: KnowledgeDocumentSeed[] = [
 - Bay Board Auto-Link: When submitting an Arrival SEC016, an active Bay Board card is created automatically with ground time tracking. When submitting a Departure SEC016 with 'Completed Search' checked, the Bay Board aircraft is marked cleared and archived.
 - 4-Hour Aircraft Search Rule: If an aircraft remains on the ground for >= 4 hours between arrival and departure, VECTA displays an amber warning requiring a mandatory full aircraft security search (SEC 029).
 
-## Overtime (OT) Request & Approval
-- Who can submit: ASO staff members can submit OT requests via Duty -> Overtime Request.
-- Submission fields: Select Branch (Operation AVSEC, IFC AVSEC, Hub AVSEC), Date, Total Hours, and detailed Reason.
-- Approval workflow: DSE (Duty Security Executive) of the matching branch reviews and approves or rejects requests. SO (Security Officer) is bypassed in the approval chain.
+## Overtime (OT) — Automatic Calculation & Approval
+- There is no manual "submit an OT request" step in the current system — this replaced the old manual-request flow entirely. OT is calculated automatically from your actual Duty Check-In and Check-Out timestamps.
+- Early check-in OT: checking in 30+ minutes before your scheduled shift start automatically creates a pending OT request the moment you check in.
+- Late check-out OT: checking out 30+ minutes after your scheduled shift end (or, on an off-day with no scheduled shift, for the full worked duration) automatically creates a pending OT request the moment you check out.
+- Approval workflow: your DSE (Duty Security Executive) endorses the auto-generated request for their own station/team; DSE or Management then approves or rejects it. You can withdraw your own request only while it's still pending, under Duty -> Overtime.
+- SO (Security Officer) does not endorse or approve OT — only DSE and Management do.
 
 ## Duty Check-In & Check-Out
 - Check-In: Tap 'Duty Check-In' on the home screen at the start of your shift. Scans your location/station.
@@ -329,9 +343,9 @@ export const WOIS_KNOWLEDGE_DOCUMENTS: KnowledgeDocumentSeed[] = [
         keywords: ["how to fill sec016", "sec016", "aircraft attend", "arrival departure toggle", "smart parse", "ocr", "4 hour rule", "bay board link"],
       },
       {
-        section_title: "Overtime (OT) Request & Approval Guide",
-        content: "ASO staff can submit Overtime requests under Duty -> Overtime Request. Specify Branch (Operation/IFC/Hub AVSEC), Date, Hours, and Reason. DSE of the matching branch reviews and approves or rejects the OT request. SO does not approve OT.",
-        keywords: ["how to submit ot", "overtime", "submit ot", "ot request", "dse approval", "ot approval", "apply ot"],
+        section_title: "Overtime (OT) Automatic Calculation Guide",
+        content: "OT is fully automatic — there is no manual 'submit an OT request' step; that older flow has been replaced. Checking in 30+ minutes early or checking out 30+ minutes late automatically creates a pending OT request from your actual check-in/check-out timestamps. Your DSE endorses it for your station/team, then DSE or Management approves or rejects it. You can withdraw your own request only while it's still pending, under Duty -> Overtime. SO does not endorse or approve OT.",
+        keywords: ["how to submit ot", "overtime", "submit ot", "ot request", "dse approval", "ot approval", "apply ot", "automatic overtime", "auto ot", "ot calculation"],
       },
       {
         section_title: "Duty Check-In and Timesheet Guide",
