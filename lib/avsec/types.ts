@@ -153,8 +153,13 @@ export interface Sec029Row {
   assisted_by_name: string;
   assisted_by_id: string;
 
-  aircraft_type: AircraftType;
+  /** "Others" is SEC029-specific (see aircraft_type_other) — not part of the shared
+   *  AircraftType list used by SEC018/Bay Board. */
+  aircraft_type: AircraftType | "Others";
+  aircraft_type_other: string | null;
   flight_no: string;
+  /** Optional — added Rev.03, right after Flight No. */
+  flight_destination: string | null;
   aircraft_registration: string;
   std: string;
   parking_bay: string;

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { REPORT_META, REPORT_TYPES, type ReportType } from "@/lib/avsec/reference-data";
 import type { ReportListItem, BayBoardRow } from "@/lib/avsec/types";
 import { hoursSince } from "@/lib/avsec/datetime";
@@ -172,4 +173,40 @@ export async function getReportById(type: ReportType, id: string) {
     return { ...data, profiling_duties: profilingDuties ?? [] };
   }
   return data;
+}
+
+export interface EligibleOfficer {
+  id: string;
+  name: string;
+  staff_no: string;
+}
+
+/** SEC029's Supervising Officer dropdown: only SO/DSE profiles on the *same* team,
+ *  station, and ops_group as the signed-in ASO — an Alpha (Operation AVSEC) officer
+ *  must never see Bravo's or IFC AVSEC's SO/DSE names, even if a team of the same
+ *  name exists in another branch. Also used server-side to re-verify the selected
+ *  officer on submit, since the client-side dropdown is not itself a security
+ *  boundary. */
+export async function getEligibleSupervisingOfficers(
+  station: string,
+  team: string,
+  opsGroup: string | null,
+): Promise<EligibleOfficer[]> {
+  // profiles' own RLS ("profiles self select") only lets an ASO read their own row —
+  // by design, not a bug to work around loosely. This lookup needs the admin client
+  // specifically because the query itself is already tightly scoped (own station +
+  // own team + own ops_group + SO/DSE role only), so it can never surface anyone
+  // outside the caller's own team regardless of the elevated client.
+  const supabase = createAdminClient();
+  let query = supabase
+    .from("profiles")
+    .select("id, name, staff_no")
+    .eq("station", station)
+    .eq("team", team)
+    .eq("status", "approved")
+    .in("role", ["SO", "DSE"])
+    .order("name");
+  if (opsGroup) query = query.eq("ops_group", opsGroup);
+  const { data } = await query;
+  return (data ?? []) as EligibleOfficer[];
 }

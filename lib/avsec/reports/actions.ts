@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentProfile } from "@/lib/avsec/auth";
 import { hasOpenDutyCheckIn } from "@/lib/avsec/duty/checkin-queries";
 import { sec016Schema } from "@/lib/avsec/schemas/sec016";
@@ -270,6 +271,31 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
   const v = parsed.data;
 
   const supabase = await createClient();
+
+  // Re-verify the selected Supervising Officer server-side — the dropdown itself is
+  // just UI, not a security boundary. Must be an SO/DSE on the submitter's own team,
+  // station, and ops_group (see getEligibleSupervisingOfficers). Admin client here for
+  // the same reason as that function: profiles' own RLS only lets the ASO read their
+  // own row, so a plain RLS-bound read would never find the officer to check against.
+  const { data: officer } = await createAdminClient()
+    .from("profiles")
+    .select("id, name, staff_no, role, station, team, ops_group, status")
+    .eq("id", v.supervising_officer_profile_id)
+    .maybeSingle();
+  const officerEligible =
+    officer &&
+    officer.status === "approved" &&
+    (officer.role === "SO" || officer.role === "DSE") &&
+    officer.station === profile.station &&
+    officer.team === profile.team &&
+    (profile.ops_group ? officer.ops_group === profile.ops_group : true);
+  if (!officerEligible) {
+    return {
+      ok: false,
+      error: "Selected Supervising Officer is not a valid SO/DSE on your team — please re-select.",
+    };
+  }
+
   const { data: report, error } = await supabase
     .from("report_sec029")
     .insert({
@@ -277,14 +303,16 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
       status: "submitted",
       station: v.station,
       team: v.team,
-      supervising_officer_name: v.supervising_officer_name,
-      supervising_officer_id: v.supervising_officer_id,
+      supervising_officer_name: officer.name,
+      supervising_officer_id: officer.staff_no,
       staff_name: v.staff_name,
       staff_id: v.staff_id,
       assisted_by_name: v.assisted_by_name,
       assisted_by_id: v.assisted_by_id,
       aircraft_type: v.aircraft_type,
+      aircraft_type_other: v.aircraft_type === "Others" ? v.aircraft_type_other : null,
       flight_no: v.flight_no,
+      flight_destination: v.flight_destination || null,
       aircraft_registration: v.aircraft_registration,
       std: v.std,
       parking_bay: v.parking_bay,
@@ -324,7 +352,7 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
     submittedAt: report.submitted_at ?? new Date().toISOString(),
     submittedByName: v.staff_name,
     submittedByStaffNo: v.staff_id,
-    fields: sec029EmailFields(v),
+    fields: sec029EmailFields({ ...v, supervising_officer_name: officer.name, supervising_officer_id: officer.staff_no }),
   });
   revalidatePath("/avsec/history");
   revalidatePath("/avsec/bay-board");

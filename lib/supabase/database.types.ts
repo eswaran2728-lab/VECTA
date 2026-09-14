@@ -2698,12 +2698,14 @@ export type Database = {
           acknowledgement: boolean
           aircraft_registration: string
           aircraft_type: string
+          aircraft_type_other: string | null
           amendment_of: string | null
           assisted_by_id: string
           assisted_by_name: string
           created_at: string
           d_remark: string | null
           declaration: string
+          flight_destination: string | null
           flight_no: string
           id: string
           parking_bay: string
@@ -2727,12 +2729,14 @@ export type Database = {
           acknowledgement?: boolean
           aircraft_registration: string
           aircraft_type: string
+          aircraft_type_other?: string | null
           amendment_of?: string | null
           assisted_by_id: string
           assisted_by_name: string
           created_at?: string
           d_remark?: string | null
           declaration: string
+          flight_destination?: string | null
           flight_no: string
           id?: string
           parking_bay: string
@@ -2756,12 +2760,14 @@ export type Database = {
           acknowledgement?: boolean
           aircraft_registration?: string
           aircraft_type?: string
+          aircraft_type_other?: string | null
           amendment_of?: string | null
           assisted_by_id?: string
           assisted_by_name?: string
           created_at?: string
           d_remark?: string | null
           declaration?: string
+          flight_destination?: string | null
           flight_no?: string
           id?: string
           parking_bay?: string

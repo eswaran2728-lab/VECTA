@@ -25,15 +25,22 @@ export const sec029Schema = z
   .object({
     station: requiredText("Station"),
     team: requiredText("Team"),
-    supervising_officer_name: requiredText("Supervising Officer Name"),
-    supervising_officer_id: requiredText("Supervising Officer ID Number"),
+    // The dropdown's selected value — the officer's actual profile id. Server-side,
+    // name/ID Number are always re-derived from this record (never trusted from the
+    // client), see submitSec029.
+    supervising_officer_profile_id: requiredText("Supervising Officer Name"),
+    supervising_officer_name: z.string().trim().optional().default(""),
+    supervising_officer_id: z.string().trim().optional().default(""),
     staff_name: requiredText("Staff Name"),
     staff_id: requiredText("Staff ID"),
     assisted_by_name: requiredText("Assisted By (Name)"),
     assisted_by_id: requiredText("Assisted By (ID Number)"),
 
-    aircraft_type: z.enum(["A320", "A321", "A330"]),
+    aircraft_type: z.enum(["A320", "A321", "A330", "Others"]),
+    aircraft_type_other: z.string().trim().optional().default(""),
     flight_no: requiredText("Flight No"),
+    // Optional — added Rev.03, right after Flight No.
+    flight_destination: z.string().trim().optional().default(""),
     aircraft_registration: requiredText("Aircraft Registration"),
     std: timeString("STD"),
     parking_bay: requiredText("Parking Bay"),
@@ -44,8 +51,8 @@ export const sec029Schema = z
 
     pic_informed: yesNo,
     declaration: z.enum([
-      "I CERTIFY THAT THE ABOVE CHECKS HAVE BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.",
-      "DISCREPANCIES FOUND AND DUTY OFFICER IS NOTIFIED (PROVIDE DETAILS BELOW)",
+      "I CERTIFY THAT THE ABOVE SEARCH HAS BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.",
+      "DISCREPANCIES FOUND AND DUTY SECURITY EXECUTIVE / DUTY OFFICER IS NOTIFIED (PROVIDE DETAILS BELOW).",
     ]),
     d_remark: z.string().trim().optional().default(""),
     acknowledgement: z
@@ -53,9 +60,16 @@ export const sec029Schema = z
       .refine((v) => v === true, { message: "Acknowledgement is required" }),
   })
   .superRefine((val, ctx) => {
+    if (val.aircraft_type === "Others" && !val.aircraft_type_other.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["aircraft_type_other"],
+        message: "Specify aircraft type",
+      });
+    }
     if (
       val.declaration ===
-        "DISCREPANCIES FOUND AND DUTY OFFICER IS NOTIFIED (PROVIDE DETAILS BELOW)" &&
+        "DISCREPANCIES FOUND AND DUTY SECURITY EXECUTIVE / DUTY OFFICER IS NOTIFIED (PROVIDE DETAILS BELOW)." &&
       !val.d_remark?.trim()
     ) {
       ctx.addIssue({
@@ -64,6 +78,11 @@ export const sec029Schema = z
         message: "Remark / detection detail is required when discrepancies are found",
       });
     }
+    // Photo evidence requirement (spec item 6): distinct from the PIC confirmation —
+    // at least one photo attachment is mandatory when discrepancies are declared. Not
+    // enforced here (attachments aren't part of this schema — they upload separately
+    // after the report row is inserted, same as SEC016); the gate lives in
+    // Sec029Form's onSubmit right before calling submit().
   });
 
 export type Sec029FormValues = z.infer<typeof sec029Schema>;
@@ -71,6 +90,7 @@ export type Sec029FormValues = z.infer<typeof sec029Schema>;
 export const sec029Defaults: Sec029FormValues = {
   station: "",
   team: "",
+  supervising_officer_profile_id: "",
   supervising_officer_name: "",
   supervising_officer_id: "",
   staff_name: "",
@@ -78,7 +98,9 @@ export const sec029Defaults: Sec029FormValues = {
   assisted_by_name: "",
   assisted_by_id: "",
   aircraft_type: "A320",
+  aircraft_type_other: "",
   flight_no: "",
+  flight_destination: "",
   aircraft_registration: "",
   std: "",
   parking_bay: "",
@@ -92,7 +114,7 @@ export const sec029Defaults: Sec029FormValues = {
   })),
   pic_informed: "YES",
   declaration:
-    "I CERTIFY THAT THE ABOVE CHECKS HAVE BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.",
+    "I CERTIFY THAT THE ABOVE SEARCH HAS BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.",
   d_remark: "",
   acknowledgement: false,
 };
