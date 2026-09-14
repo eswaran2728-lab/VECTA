@@ -1468,6 +1468,7 @@ export type Database = {
           hours: number | null
           id: string
           linked_duty_id: string | null
+          ops_group: string | null
           payable_hours: number | null
           profile_id: string
           reason: string
@@ -1496,6 +1497,7 @@ export type Database = {
           hours?: number | null
           id?: string
           linked_duty_id?: string | null
+          ops_group?: string | null
           payable_hours?: number | null
           profile_id: string
           reason: string
@@ -1524,6 +1526,7 @@ export type Database = {
           hours?: number | null
           id?: string
           linked_duty_id?: string | null
+          ops_group?: string | null
           payable_hours?: number | null
           profile_id?: string
           reason?: string

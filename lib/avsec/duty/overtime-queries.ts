@@ -7,6 +7,7 @@ export interface OvertimeRequestRow {
   profile_id: string;
   station: string;
   team: string | null;
+  ops_group: string | null;
   work_date: string;
   shift_code: string | null;
   start_at: string;
@@ -31,7 +32,7 @@ export interface OvertimeRequestRow {
 }
 
 const ROW_FIELDS =
-  "id, profile_id, station, team, work_date, shift_code, start_at, end_at, hours, payable_hours, category, reason, status, endorsed_by, endorsed_at, approved_by, approved_at, rejection_reason, linked_duty_id, created_at, actual_check_in, actual_check_out, scheduled_start, scheduled_end, calculated_at";
+  "id, profile_id, station, team, ops_group, work_date, shift_code, start_at, end_at, hours, payable_hours, category, reason, status, endorsed_by, endorsed_at, approved_by, approved_at, rejection_reason, linked_duty_id, created_at, actual_check_in, actual_check_out, scheduled_start, scheduled_end, calculated_at";
 
 /** RLS returns the union of the caller's own requests plus anything they may monitor
  * (rank above submitter, same station+team or org-wide) — same shape as report visibility. */
