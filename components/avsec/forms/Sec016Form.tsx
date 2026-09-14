@@ -103,6 +103,43 @@ function buildDefaults(profile: Profile, serverDraft?: UIValues | null): UIValue
   };
 }
 
+/** Which guided-flow step (0-indexed) each field lives in, so a validation
+ * error on a hidden step jumps the user there instead of failing silently. */
+const FIELD_STEP: Record<string, number> = {
+  station: 0,
+  team: 0,
+  staff_name: 0,
+  staff_no: 0,
+  duty_date: 0,
+  duty_hour: 0,
+  flight: 1,
+  origin_arr_dep: 1,
+  assisted_by: 1,
+  aircraft_type: 1,
+  aircraft_type_other: 1,
+  reg_no: 1,
+  sta_std: 1,
+  ata_atd: 1,
+  bay_no: 1,
+  reason_for_delay: 1,
+  do_infmd: 1,
+  inbound_baggage: 1,
+  outbound_baggage: 1,
+  inbound_cargo: 1,
+  outbound_cargo: 1,
+  inbound_co_mail: 1,
+  outbound_co_mail: 1,
+  shift_leader: 1,
+  ramp_agents_baggage: 1,
+  ramp_agents_cargo: 1,
+  cargo_hold_checked: 2,
+  staff_frisked: 2,
+  cabin_check: 2,
+  discrepancies: 2,
+  offload_baggage_tag_no: 2,
+  offload_remark: 2,
+};
+
 const DISCREPANCY_QUICK_ADDS = ["Nil discrepancy", "Incident reported", "Baggage discrepancy"] as const;
 const OFFLOAD_QUICK_ADDS = [
   "Passenger no show at the departure gate",
@@ -186,6 +223,14 @@ export function Sec016Form({
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [photoRequiredError, setPhotoRequiredError] = useState(false);
 
+  // Guided multi-section flow: Staff → Flight → Security Checks → Attachments →
+  // Review. All sections stay mounted (hidden via CSS, not unmounted) so
+  // react-hook-form registration, values, and validation are completely
+  // unaffected by which step is showing — this is a UX restructure only,
+  // not a change to what's required or how it's validated.
+  const STEP_LABELS = ["STAFF", "FLIGHT", "SECURITY CHECKS", "ATTACHMENTS", "REVIEW"] as const;
+  const [step, setStep] = useState(0);
+
   const {
     register,
     handleSubmit,
@@ -212,7 +257,10 @@ export function Sec016Form({
     // report row itself (see useOfflineSubmit / uploadAttachments).
     if (requiresDiscrepancyPhoto && !hasPhoto) {
       setPhotoRequiredError(true);
-      document.getElementById("sec016-attachments")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setStep(3);
+      requestAnimationFrame(() =>
+        document.getElementById("sec016-attachments")?.scrollIntoView({ behavior: "smooth", block: "center" }),
+      );
       return;
     }
 
@@ -237,6 +285,10 @@ export function Sec016Form({
       parsed.error.issues.forEach((issue) => {
         setError(issue.path.join(".") as never, { message: issue.message });
       });
+      // Jump back to the first section containing an invalid field so the
+      // error isn't silently sitting behind a hidden step.
+      const firstField = parsed.error.issues[0]?.path[0] as string | undefined;
+      setStep(firstField ? (FIELD_STEP[firstField] ?? 0) : 0);
       return;
     }
 
@@ -280,6 +332,7 @@ export function Sec016Form({
           reset(buildDefaults(profile));
           setAutoFilledFields(new Set());
           setPhotoRequiredError(false);
+          setStep(0);
           setResult(null);
         }}
       />
@@ -288,14 +341,19 @@ export function Sec016Form({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
-      {/* 1. Report name and draft status */}
+      {/* Report name, draft status, and section progress */}
       <FormStepIndicator
         code={meta.code}
         draftNote={savedAt ? `DRAFT SAVED ${savedAt.toLocaleTimeString()}` : "AUTOSAVING…"}
-        activeIndex={1}
+        steps={STEP_LABELS}
+        activeIndex={step}
       />
+      <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider text-center -mt-2.5">
+        Step {step + 1} of {STEP_LABELS.length} — {STEP_LABELS[step]}
+      </p>
 
-      {/* 2. Flight Direction */}
+      {/* Step 1 — Staff: Flight Direction, Smart Input, Staff Details */}
+      <div className={cn("space-y-5", step !== 0 && "hidden")}>
       <div className="card p-4 space-y-3 border-primary/40 bg-surface/80">
         <div className="flex items-center justify-between">
           <label className="field-label block font-semibold text-xs tracking-wider uppercase text-foreground">
@@ -375,6 +433,11 @@ export function Sec016Form({
         </FieldRow>
       </FormSection>
 
+      <StepNavButtons step={step} setStep={setStep} lastStep={STEP_LABELS.length - 1} />
+      </div>
+
+      {/* Step 2 — Flight: Aircraft details, Ramp Loading Supervisor */}
+      <div className={cn("space-y-5", step !== 1 && "hidden")}>
       {/* 5. Aircraft details */}
       <FormSection title="Aircraft">
         <FieldRow>
@@ -461,6 +524,11 @@ export function Sec016Form({
         <RampAgentsField name="ramp_agents_cargo" label="Ramp agent details (cargo)" register={register} error={errors.ramp_agents_cargo} />
       </FormSection>
 
+      <StepNavButtons step={step} setStep={setStep} lastStep={STEP_LABELS.length - 1} />
+      </div>
+
+      {/* Step 3 — Security Checks: checks, discrepancies, offload info */}
+      <div className={cn("space-y-5", step !== 2 && "hidden")}>
       {/* 10. Security Checks */}
       <FormSection title="Security Checks">
         <div>
@@ -569,6 +637,11 @@ export function Sec016Form({
         </FormSection>
       )}
 
+      <StepNavButtons step={step} setStep={setStep} lastStep={STEP_LABELS.length - 1} />
+      </div>
+
+      {/* Step 4 — Attachments */}
+      <div className={cn("space-y-5", step !== 3 && "hidden")}>
       {/* 14. Attachments */}
       <div id="sec016-attachments">
         <AttachmentUpload value={attachments} onChange={setAttachments} disabled={isSubmitting} />
@@ -579,13 +652,78 @@ export function Sec016Form({
         )}
       </div>
 
-      {/* 15. Submit report and immutability notice */}
-      <button type="submit" className="btn-primary w-full" disabled={isSubmitting}>
-        {isSubmitting ? "Submitting…" : "Submit report ▸"}
-      </button>
-      <p className="text-center font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
-        SUBMITTED REPORTS ARE IMMUTABLE · CORRECTIONS ARE FILED AS AMENDMENTS
-      </p>
+      <StepNavButtons step={step} setStep={setStep} lastStep={STEP_LABELS.length - 1} />
+      </div>
+
+      {/* Step 5 — Review: read-only summary before submit */}
+      <div className={cn("space-y-5", step !== 4 && "hidden")}>
+        <FormSection title="Review" note="Check the details below, then submit. Go back to any section to make changes.">
+          <ReviewRow label="Flight Direction" value={isArrival ? "Arrival (ARR)" : "Departure (DEP)"} />
+          <ReviewRow label="Station / Team" value={`${values.station || "—"} / ${values.team || "—"}`} />
+          <ReviewRow label="Staff" value={`${values.staff_name || "—"} (${values.staff_no || "—"})`} />
+          <ReviewRow label="Date / Duty Hour" value={`${values.duty_date || "—"} ${values.duty_hour || ""}`} />
+          <ReviewRow label="Flight" value={values.flight || "—"} />
+          <ReviewRow label={isArrival ? "Origin" : "Destination"} value={values.origin_arr_dep || "—"} />
+          <ReviewRow label="Aircraft Type" value={values.aircraft_type === "Other" ? values.aircraft_type_other || "—" : values.aircraft_type} />
+          <ReviewRow label="Reg No / Bay No" value={`${values.reg_no || "—"} / ${values.bay_no || "—"}`} />
+          <ReviewRow label="Ramp Loading Supervisor" value={values.shift_leader || "—"} />
+          <ReviewRow label="Cargo Hold Checked" value={values.cargo_hold_checked} />
+          <ReviewRow label="Staff Frisked" value={values.staff_frisked} />
+          <ReviewRow label="Discrepancies" value={values.discrepancies || "—"} />
+          <ReviewRow label="Attachments" value={`${attachments.length} file${attachments.length === 1 ? "" : "s"}`} />
+        </FormSection>
+
+        {Object.keys(errors).length > 0 && (
+          <p className="text-xs text-red-400 font-mono text-center">
+            Some required fields are incomplete — submitting will jump back to the first one.
+          </p>
+        )}
+
+        {/* 15. Submit report and immutability notice */}
+        <button type="submit" className="btn-primary w-full" disabled={isSubmitting}>
+          {isSubmitting ? "Submitting…" : "Submit report ▸"}
+        </button>
+        <p className="text-center font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
+          SUBMITTED REPORTS ARE IMMUTABLE · CORRECTIONS ARE FILED AS AMENDMENTS
+        </p>
+        <button type="button" className="btn-secondary w-full" onClick={() => setStep(3)}>
+          ← Back
+        </button>
+      </div>
     </form>
+  );
+}
+
+function ReviewRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex items-start justify-between gap-3 py-1.5 border-b border-border/40 last:border-0">
+      <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider shrink-0">{label}</span>
+      <span className="text-sm text-foreground text-right">{value || "—"}</span>
+    </div>
+  );
+}
+
+function StepNavButtons({
+  step,
+  setStep,
+  lastStep,
+}: {
+  step: number;
+  setStep: (s: number) => void;
+  lastStep: number;
+}) {
+  return (
+    <div className="flex gap-3">
+      {step > 0 && (
+        <button type="button" className="btn-secondary flex-1" onClick={() => setStep(step - 1)}>
+          ← Back
+        </button>
+      )}
+      {step < lastStep && (
+        <button type="button" className="btn-primary flex-1" onClick={() => setStep(step + 1)}>
+          Next →
+        </button>
+      )}
+    </div>
   );
 }
