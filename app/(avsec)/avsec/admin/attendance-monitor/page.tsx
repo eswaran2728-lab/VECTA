@@ -338,12 +338,25 @@ export default async function AttendanceMonitorPage({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3">
                     <div>
                       <div className="flex items-center gap-2.5">
-                        <span className="font-semibold text-base text-foreground">
-                          {staff.staffName}
-                        </span>
-                        <span className="font-mono text-xs text-muted-foreground">
-                          ({staff.staffNo})
-                        </span>
+                        {staff.staffName ? (
+                          <>
+                            <span className="font-semibold text-base text-foreground">
+                              {staff.staffName}
+                            </span>
+                            <span className="font-mono text-xs text-muted-foreground">
+                              ({staff.staffNo || "no staff no."})
+                            </span>
+                          </>
+                        ) : (
+                          // profile.name is missing — surface this explicitly rather than
+                          // silently rendering a blank name with an empty "()" next to it.
+                          <span
+                            className="rounded bg-brand/15 px-2 py-0.5 font-mono text-xs font-semibold text-brand"
+                            title="This profile has no name on file — needs attention."
+                          >
+                            ⚠ Incomplete Profile — {staff.staffNo || staff.profileId.slice(0, 8)}
+                          </span>
+                        )}
                         <span className="rounded bg-muted px-2 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground">
                           {staff.role}
                         </span>
@@ -399,7 +412,7 @@ export default async function AttendanceMonitorPage({
                         <tr>
                           <th className="py-2.5 px-3">Date</th>
                           <th className="py-2.5 px-3">Scheduled Shift</th>
-                          <th className="py-2.5 px-3">Actual Check-In / Out</th>
+                          <th className="py-2.5 px-3">Actual Check-In / Out (MYT)</th>
                           <th className="py-2.5 px-3">Hours Worked</th>
                           <th className="py-2.5 px-3">Leave Status</th>
                           <th className="py-2.5 px-3">Auto OT Status</th>

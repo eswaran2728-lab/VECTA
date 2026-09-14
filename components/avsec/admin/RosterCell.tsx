@@ -22,6 +22,7 @@ export function RosterCell({
   shifts,
   cell,
   leaveInfo,
+  teammates = [],
 }: {
   station: string;
   team: string;
@@ -30,6 +31,10 @@ export function RosterCell({
   shifts: Shift[];
   cell?: RosterCellRow;
   leaveInfo?: LeaveInfoProp;
+  /** Other officers on this same team — a save here sets the shift for all
+   *  of them too, not just the row it was clicked from, so show that before
+   *  the edit is committed rather than as a surprise afterward. */
+  teammates?: string[];
 }) {
   const [editing, setEditing] = useState(false);
   const [shiftCode, setShiftCode] = useState(cell?.shift_code ?? "");
@@ -126,6 +131,15 @@ export function RosterCell({
         <input type="hidden" name="team" value={team} />
         <input type="hidden" name="roster_date" value={date} />
         <input type="hidden" name="week" value={week} />
+
+        {teammates.length > 0 && (
+          <p
+            className="t-mono text-[8.5px] rounded px-1.5 py-1"
+            style={{ color: "var(--amber, #d97706)", background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.3)" }}
+          >
+            ⚠ Also sets this shift for {teammates.length} teammate{teammates.length > 1 ? "s" : ""} on {team}: {teammates.join(", ")}
+          </p>
+        )}
 
         {shiftCode !== "OFF" && (
           <div>
