@@ -2,7 +2,7 @@ import { z } from "zod";
 import { requiredText } from "./common";
 
 export const sec014PatrolEntrySchema = z.object({
-  location: z.enum(["Aircraft", "Terminal", "Premises"]).nullable(),
+  location: z.enum(["Apron", "Terminal", "Premises"]).nullable(),
   time_from: z.string().trim().nullable(),
   time_to: z.string().trim().nullable(),
   description: requiredText("Description / Report"),
@@ -18,7 +18,8 @@ export const sec014Schema = z.object({
   date_time_in: requiredText("Date & Time In"),
   date_time_out: requiredText("Date & Time Out"),
 
-  patrols: z.array(sec014PatrolEntrySchema).max(15, "Maximum 15 patrol entries"),
+  // No cap — staff may log as many patrol entries as actually happened during the shift.
+  patrols: z.array(sec014PatrolEntrySchema),
 
   remark: requiredText("Issue(s) / Event(s) / Equipment(s)"),
   acknowledgement: z

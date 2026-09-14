@@ -29,17 +29,19 @@ export function Sec014Pdf({
 
         <View style={s.section} wrap>
           <Text style={s.sectionTitle}>Patrolling</Text>
-          {Array.from({ length: 15 }).map((_, i) => {
-            const entry = report.patrols?.find((p) => p.entry_no === i + 1);
-            return (
-              <View key={i} style={s.checklistRow}>
+          {/* No entry cap — every logged patrol prints, however many there are. */}
+          {(report.patrols ?? [])
+            .slice()
+            .sort((a, b) => a.entry_no - b.entry_no)
+            .map((entry) => (
+              <View key={entry.entry_no} style={s.checklistRow}>
                 <Text>
-                  {i + 1}. {entry?.location ?? "-"} ({entry?.time_from ?? "-"}–{entry?.time_to ?? "-"})
+                  {entry.entry_no}. {entry.location ?? "-"} ({entry.time_from ?? "-"}–{entry.time_to ?? "-"})
                 </Text>
-                <Text style={{ maxWidth: 280 }}>{entry?.description ?? ""}</Text>
+                <Text style={{ maxWidth: 280 }}>{entry.description ?? ""}</Text>
               </View>
-            );
-          })}
+            ))}
+          {(!report.patrols || report.patrols.length === 0) && <Text>No patrol entries logged.</Text>}
         </View>
 
         <PdfSection title="Remark">

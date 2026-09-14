@@ -97,7 +97,8 @@ export interface Sec016Row {
 
 export interface Sec014PatrolEntry {
   entry_no: number;
-  location: "Aircraft" | "Terminal" | "Premises" | null;
+  /** "Aircraft" kept for historical rows only — new entries use Apron/Terminal/Premises. */
+  location: "Apron" | "Terminal" | "Premises" | "Aircraft" | null;
   time_from: string | null;
   time_to: string | null;
   description: string;
