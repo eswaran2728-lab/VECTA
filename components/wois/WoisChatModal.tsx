@@ -142,6 +142,8 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
         source_type: data.response.source_type,
         sources: data.response.sources,
         attachment: data.response.attachment,
+        actionHref: data.response.actionHref,
+        actionLabel: data.response.actionLabel,
         created_at: new Date().toISOString(),
       };
 
