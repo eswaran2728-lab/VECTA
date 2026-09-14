@@ -4,8 +4,14 @@ import { formatAbsenceGap, LEAVE_TYPE_LABELS, LEAVE_TYPE_ICONS } from "@/lib/avs
 import { getAbsenceNotices } from "@/lib/avsec/duty/absence-queries";
 import { ROLE_LABELS, ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { LeaveReviewControls, RequestLeaveCancellationControl } from "@/components/avsec/duty/LeaveReviewControls";
+import { HighlightTarget } from "@/components/dashboard/HighlightTarget";
 
-export default async function StaffLeavePortalPage() {
+export default async function StaffLeavePortalPage({
+  searchParams: searchParamsPromise,
+}: {
+  searchParams: Promise<{ highlight?: string }>;
+}) {
+  const searchParams = await searchParamsPromise;
   const profile = await requireProfile();
   const isManagement = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
   const isDSE = profile.role === "DSE";
@@ -136,8 +142,10 @@ export default async function StaffLeavePortalPage() {
                   const isEscalated = isAnnual && isPending && overlappingApprovedCount >= 3;
 
                   return (
-                    <div
+                    <HighlightTarget
                       key={item.id}
+                      id={item.id}
+                      highlightId={searchParams.highlight}
                       className={`card p-4 border-l-4 transition-all ${
                         isPendingCancel
                           ? "border-l-amber-500 bg-amber-500/5"
@@ -257,7 +265,7 @@ export default async function StaffLeavePortalPage() {
                           mode="cancellation"
                         />
                       )}
-                    </div>
+                    </HighlightTarget>
                   );
                 })}
               </div>
