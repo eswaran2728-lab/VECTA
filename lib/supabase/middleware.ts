@@ -171,8 +171,17 @@ export async function updateSession(request: NextRequest) {
       userEmail.includes("vendor") ||
       userEmail.includes("caterlink");
 
-    // Seamless URL remapping: redirect drivers visiting /icms to /caterlink
-    if (isCaterLinkUser && path.startsWith("/icms")) {
+    // Seamless URL remapping: redirect drivers visiting /icms to /caterlink —
+    // but only for the paths next.config.ts actually rewrites back
+    // (dashboard, transactions, vendor-transactions). A driver hitting an
+    // unmapped ICMS path (e.g. /icms/admin/users, which they have no access
+    // to anyway) must NOT be remapped to a /caterlink/* URL that has no
+    // matching rewrite — that produced a genuine 404 instead of a
+    // forbidden/redirect response. Falling through here lets the page's own
+    // requireRole() check redirect to /icms/dashboard?error=forbidden,
+    // which IS a remapped path and resolves correctly on the next pass.
+    const CATERLINK_REMAPPED_PREFIXES = ["/icms/dashboard", "/icms/transactions", "/icms/vendor-transactions"];
+    if (isCaterLinkUser && CATERLINK_REMAPPED_PREFIXES.some((p) => path === p || path.startsWith(p + "/"))) {
       const url = request.nextUrl.clone();
       url.pathname = path.replace(/^\/icms/, "/caterlink");
       return NextResponse.redirect(url);
