@@ -1,7 +1,12 @@
 import { notFound } from "next/navigation";
 import { requireProfile } from "@/lib/avsec/auth";
 import { getOvertimeRequestById } from "@/lib/avsec/duty/overtime-queries";
-import { approveOvertimeRequest, rejectOvertimeRequest, withdrawOvertimeRequest } from "@/lib/avsec/duty/overtime-actions";
+import {
+  approveOvertimeRequest,
+  endorseOvertimeRequest,
+  rejectOvertimeRequest,
+  withdrawOvertimeRequest,
+} from "@/lib/avsec/duty/overtime-actions";
 import { createClient } from "@/lib/supabase/server";
 import { ROLE_RANK, type UserRole } from "@/lib/avsec/reference-data";
 import { formatDateMY, formatDateTimeMY } from "@/lib/avsec/datetime";
@@ -47,9 +52,19 @@ export default async function OvertimeDetailPage({
   const submitter = profileById.get(request.profile_id);
   const mine = request.profile_id === profile.id;
   const viewerRank = ROLE_RANK[profile.role] ?? 0;
-  const canReview = !mine && (profile.role === "DSE" ? (profile.station === request.station) : viewerRank >= ROLE_RANK.MANAGEMENT) && request.status === "pending";
-  const canApprove = canReview;
-  const canReject = canReview;
+  const isDse = profile.role === "DSE";
+  const isMgmt = viewerRank >= ROLE_RANK.MANAGEMENT;
+  const dseOwnStation = isDse && profile.station === request.station;
+
+  // PENDING -> DSE ENDORSED -> MANAGEMENT APPROVED. DSE endorses a pending
+  // request for their own station; only Management gives final approval,
+  // and only once it's been endorsed. Either can reject, DSE only while
+  // still pending.
+  const canEndorse = !mine && dseOwnStation && request.status === "pending";
+  const canApprove = !mine && isMgmt && request.status === "endorsed";
+  const canReject =
+    !mine &&
+    ((dseOwnStation && request.status === "pending") || (isMgmt && ["pending", "endorsed"].includes(request.status)));
   const canWithdraw = mine && request.status === "pending";
 
   const statusClass = STATUS_CLASS[request.status] ?? "text-muted-foreground border-border";
@@ -95,6 +110,22 @@ export default async function OvertimeDetailPage({
           </div>
         </div>
 
+        <div className="vecta-panel space-y-2 !py-4">
+          <p className="vecta-eyebrow">Calculation Basis</p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 font-mono text-[11px]">
+            <span className="text-muted-foreground">Scheduled start</span>
+            <span className="text-foreground/90">{request.scheduled_start ? formatDateTimeMY(request.scheduled_start) : "—"}</span>
+            <span className="text-muted-foreground">Scheduled end</span>
+            <span className="text-foreground/90">{request.scheduled_end ? formatDateTimeMY(request.scheduled_end) : "—"}</span>
+            <span className="text-muted-foreground">Actual check-in</span>
+            <span className="text-foreground/90">{request.actual_check_in ? formatDateTimeMY(request.actual_check_in) : "—"}</span>
+            <span className="text-muted-foreground">Actual check-out</span>
+            <span className="text-foreground/90">{request.actual_check_out ? formatDateTimeMY(request.actual_check_out) : "—"}</span>
+            <span className="text-muted-foreground">Calculated at</span>
+            <span className="text-foreground/90">{formatDateTimeMY(request.calculated_at)}</span>
+          </div>
+        </div>
+
         {request.status === "rejected" && request.rejection_reason && (
           <div className="vecta-panel space-y-1 border-l-[3px] border-l-brand !py-4">
             <p className="font-mono text-[10px] font-bold text-brand">REJECTION REASON</p>
@@ -102,10 +133,18 @@ export default async function OvertimeDetailPage({
           </div>
         )}
 
-        {(canApprove || canReject || canWithdraw) && (
+        {(canEndorse || canApprove || canReject || canWithdraw) && (
           <div className="vecta-panel space-y-3 !py-4">
             <p className="vecta-eyebrow">Actions</p>
             <div className="flex flex-wrap gap-2">
+              {canEndorse && (
+                <form action={endorseOvertimeRequest}>
+                  <input type="hidden" name="id" value={request.id} />
+                  <button type="submit" className="vecta-btn-primary !h-11 !w-auto px-6">
+                    Endorse Overtime
+                  </button>
+                </form>
+              )}
               {canApprove && (
                 <form action={approveOvertimeRequest}>
                   <input type="hidden" name="id" value={request.id} />

@@ -24,7 +24,9 @@ export default async function NewOvertimeRequestPage() {
             </span>
             <div>
               <h2 className="text-base font-bold text-foreground">Overtime is Auto-Calculated</h2>
-              <p className="text-xs text-muted-foreground">No manual request submission is required.</p>
+              <p className="text-xs text-muted-foreground">
+                Overtime is calculated automatically from your recorded duty attendance. Manual submission is not required.
+              </p>
             </div>
           </div>
 
@@ -55,12 +57,12 @@ export default async function NewOvertimeRequestPage() {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3 pt-2">
-            <Link href="/avsec/duty" className="vecta-btn-primary flex-1 text-center flex items-center justify-center gap-2">
-              <span>Go to Duty Check-Out</span>
+            <Link href="/avsec/duty/overtime" className="vecta-btn-primary flex-1 text-center flex items-center justify-center gap-2">
+              <span>My Overtime Records</span>
               <ArrowRight className="h-4 w-4" />
             </Link>
-            <Link href="/avsec/duty/overtime" className="btn-secondary flex-1 text-center">
-              View Overtime History
+            <Link href="/avsec/duty" className="btn-secondary flex-1 text-center">
+              Attendance / Back to Duty Dashboard
             </Link>
           </div>
         </div>
