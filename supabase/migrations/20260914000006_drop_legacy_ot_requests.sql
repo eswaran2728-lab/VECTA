@@ -1,0 +1,30 @@
+-- Legacy cleanup: drop the deprecated manual OT-request table.
+-- Applied directly against vecta-prod on 2026-09-14; recorded here for
+-- migration history.
+--
+-- SAFETY: this touches ONLY ot_requests. overtime_requests (the active
+-- automatic OT system) is untouched by this migration.
+--
+-- Verified immediately before this drop (live, read-only):
+--   - 0 rows in ot_requests
+--   - no views reference it (information_schema.view_table_usage)
+--   - no triggers on it
+--   - no incoming foreign keys to it
+--   - no functions reference it (pg_proc.prosrc scan)
+--   - no RLS policies on it
+--   - no cron/scheduled jobs reference it (cron.job scan)
+--   - no application code references it (grep across app/, components/,
+--     lib/, tests/ — only the database.types.ts type entry remained,
+--     removed in the same change that adds this migration)
+--
+-- ot_requests was already dead code before this: RLS had zero policies
+-- (every insert/select silently failed for every user), it was unlinked
+-- from all navigation, and the app code that wrote to it
+-- (lib/avsec/duty/ot-actions.ts, app/(avsec)/avsec/duty/ot/**) was removed
+-- in a prior pass. This migration removes the now-orphaned table itself.
+--
+-- CASCADE drops its own indexes (ot_requests_pkey, idx_ot_requests_org_id,
+-- idx_ot_requests_requester, idx_ot_requests_branch_status) and
+-- constraints along with it — none of those are shared with any other
+-- table.
+DROP TABLE IF EXISTS public.ot_requests CASCADE;

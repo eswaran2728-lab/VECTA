@@ -703,6 +703,19 @@ CREATE POLICY "absence_notices_owner_cancellation_request" ON public.absence_not
   USING (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid());
 
+-- ============================================================================
+-- Legacy cleanup (added retroactively 2026-09-14, see
+-- 20260914000006_drop_legacy_ot_requests.sql): section 4 above
+-- (20260911000004_ot_requests.sql) created the manual OT-request table,
+-- which was later fully superseded by the automatic attendance-based
+-- overtime_requests workflow and dropped in production. A fresh
+-- environment provisioned from this consolidated script must end in the
+-- same state production is actually in — table created, then dropped —
+-- not leave the deprecated table present for a future migration run to
+-- discover and get confused by.
+-- ============================================================================
+DROP TABLE IF EXISTS public.ot_requests CASCADE;
+
 COMMIT;
 
 -- ============================================================================

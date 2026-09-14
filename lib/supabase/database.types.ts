@@ -233,57 +233,6 @@ export type Database = {
         }
         Relationships: []
       }
-      ot_requests: {
-        Row: {
-          id: string
-          org_id: string
-          requester_id: string
-          branch: "operation_avsec" | "ifc_avsec" | "hub_avsec"
-          work_date: string
-          hours: number
-          reason: string
-          status: "pending" | "approved" | "rejected"
-          requested_at: string
-          reviewed_by: string | null
-          reviewed_at: string | null
-          notes: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          org_id?: string
-          requester_id: string
-          branch: "operation_avsec" | "ifc_avsec" | "hub_avsec"
-          work_date: string
-          hours: number
-          reason: string
-          status?: "pending" | "approved" | "rejected"
-          requested_at?: string
-          reviewed_by?: string | null
-          reviewed_at?: string | null
-          notes?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          org_id?: string
-          requester_id?: string
-          branch?: "operation_avsec" | "ifc_avsec" | "hub_avsec"
-          work_date?: string
-          hours?: number
-          reason?: string
-          status?: "pending" | "approved" | "rejected"
-          requested_at?: string
-          reviewed_by?: string | null
-          reviewed_at?: string | null
-          notes?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
       feedback_threads: {
         Row: {
           id: string
