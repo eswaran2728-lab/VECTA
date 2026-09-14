@@ -200,7 +200,7 @@ export function AppSidebar({
       });
       attendanceItems.push({
         href: "/avsec/duty/overtime",
-        label: "My Overtime Claims",
+        label: "My Overtime Records",
         icon: Clock,
       });
       attendanceItems.push({

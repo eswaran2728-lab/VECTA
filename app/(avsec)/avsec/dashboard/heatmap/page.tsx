@@ -42,7 +42,7 @@ function buildZoneTotals(
       const roster = rosterMap.get(`${p.team}|${p.duty_date}`);
       if (!roster?.start_time || !roster?.end_time) continue;
       const { end } = scheduledWindow(p.duty_date, roster.start_time, roster.end_time);
-      otHours += calcOtHours(end, new Date(p.check_out_at));
+      otHours += calcOtHours(end, new Date(p.check_in_at), new Date(p.check_out_at));
     }
     totals.push({
       zoneId: key,

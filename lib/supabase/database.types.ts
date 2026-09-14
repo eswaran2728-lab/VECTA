@@ -1506,8 +1506,11 @@ export type Database = {
       }
       overtime_requests: {
         Row: {
+          actual_check_in: string | null
+          actual_check_out: string | null
           approved_at: string | null
           approved_by: string | null
+          calculated_at: string
           category: string
           created_at: string
           end_at: string
@@ -1520,6 +1523,8 @@ export type Database = {
           profile_id: string
           reason: string
           rejection_reason: string | null
+          scheduled_end: string | null
+          scheduled_start: string | null
           shift_code: string | null
           start_at: string
           station: string
@@ -1529,8 +1534,11 @@ export type Database = {
           work_date: string
         }
         Insert: {
+          actual_check_in?: string | null
+          actual_check_out?: string | null
           approved_at?: string | null
           approved_by?: string | null
+          calculated_at?: string
           category: string
           created_at?: string
           end_at: string
@@ -1543,6 +1551,8 @@ export type Database = {
           profile_id: string
           reason: string
           rejection_reason?: string | null
+          scheduled_end?: string | null
+          scheduled_start?: string | null
           shift_code?: string | null
           start_at: string
           station: string
@@ -1552,8 +1562,11 @@ export type Database = {
           work_date: string
         }
         Update: {
+          actual_check_in?: string | null
+          actual_check_out?: string | null
           approved_at?: string | null
           approved_by?: string | null
+          calculated_at?: string
           category?: string
           created_at?: string
           end_at?: string
@@ -1566,6 +1579,8 @@ export type Database = {
           profile_id?: string
           reason?: string
           rejection_reason?: string | null
+          scheduled_end?: string | null
+          scheduled_start?: string | null
           shift_code?: string | null
           start_at?: string
           station?: string

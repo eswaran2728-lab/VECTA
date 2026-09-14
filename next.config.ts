@@ -16,6 +16,22 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/**": ["./templates/forms/**/*.pdf"],
   },
+  async redirects() {
+    return [
+      // Legacy manual OT-request flow, removed — preserves old bookmarks/
+      // links/notifications instead of 404ing.
+      {
+        source: "/avsec/duty/ot",
+        destination: "/avsec/duty/overtime",
+        permanent: true,
+      },
+      {
+        source: "/avsec/duty/ot/new",
+        destination: "/avsec/duty/overtime/new",
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

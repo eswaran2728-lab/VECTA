@@ -7,6 +7,7 @@ import { todayISODateMY } from "@/lib/avsec/datetime";
 import { dutyCheckInSchema, dutyCheckOutSchema } from "@/lib/avsec/schemas/duty";
 import { pointInPolygon } from "./geofence";
 import { scheduledWindow, computeLateMinutes, computeEarlyMinutes } from "./lateness";
+import { calculateOvertime } from "./overtime";
 import type { DutyZone } from "./types";
 
 export interface ActionResult {
@@ -22,10 +23,6 @@ const MAX_CLIENT_DRIFT_MS = 30 * 60 * 1000;
 // Defensive ceiling only — duty_records ties check-in and check-out to the same row
 // (unlike a raw punch-clock event log), so a single shift can't legitimately span days.
 const MAX_SHIFT_MINUTES = 20 * 60;
-
-// Below this, it's not worth a claim — matches the "even 30 minutes counts" rule without
-// generating noise for a two-minute overrun.
-const OT_THRESHOLD_MINUTES = 30;
 
 function driftError(clientTimestamp: string): string | null {
   const drift = Math.abs(Date.now() - new Date(clientTimestamp).getTime());
@@ -157,37 +154,62 @@ export async function submitDutyCheckIn(input: unknown): Promise<ActionResult> {
   if (error) return { ok: false, error: error.message };
 
   // Checking in well ahead of the scheduled shift start is itself overtime, claimable
-  // right away rather than waiting for checkout — same threshold/behavior as the
-  // auto-OT block in submitDutyCheckOut() below: best-effort, never surfaces as a
-  // check-in error, and dedups on linked_duty_id so a retried/replayed check-in can't
-  // create a second request for the same duty record.
+  // right away rather than waiting for checkout. Uses the same calculateOvertime()
+  // used at checkout, so early-arrival OT is computed identically everywhere. This is
+  // the "early_arrival" segment for this duty record — a distinct category from the
+  // "late_departure"/"off_day_work" segment checkout may add later, so the two never
+  // collide (see the category-scoped unique index on overtime_requests). Best-effort:
+  // the check-in above has already succeeded, so a failure here must never surface as
+  // a check-in error — but it IS logged, not silently swallowed.
   try {
-    if (scheduledStart && earlyInMinutes >= OT_THRESHOLD_MINUTES) {
-      const { data: existingOt } = await supabase
-        .from("overtime_requests")
-        .select("id")
-        .eq("linked_duty_id", data.id)
-        .maybeSingle();
+    const scheduledEndAtCheckIn =
+      scheduledStart && roster.end_time ? scheduledWindow(dutyDate, roster.start_time!, roster.end_time).end : null;
+    if (scheduledStart) {
+      const otCalc = calculateOvertime({
+        scheduledStart,
+        scheduledEnd: scheduledEndAtCheckIn,
+        actualCheckIn: now,
+        actualCheckOut: now, // late segment isn't knowable yet — only earlyMinutes is used below
+      });
 
-      if (!existingOt) {
-        const earlyHours = (earlyInMinutes / 60).toFixed(1);
-        await supabase.from("overtime_requests").insert({
-          profile_id: profile.id,
-          station: profile.station,
-          team: profile.team || null,
-          work_date: dutyDate,
-          shift_code: roster.shift_code,
-          start_at: now.toISOString(),
-          end_at: scheduledStart.toISOString(),
-          category: "adhoc",
-          reason: `Auto-recorded from check-in — checked in ${earlyHours}h early ahead of the scheduled shift.`,
-          linked_duty_id: data.id,
-        });
-        revalidatePath("/avsec/duty/overtime");
+      if (otCalc.earlyEligible) {
+        const earlyHours = (otCalc.earlyMinutes / 60).toFixed(1);
+        const { error: otError } = await supabase.from("overtime_requests").upsert(
+          {
+            profile_id: profile.id,
+            station: profile.station,
+            team: profile.team || null,
+            work_date: dutyDate,
+            shift_code: roster.shift_code,
+            start_at: now.toISOString(),
+            end_at: scheduledStart.toISOString(),
+            category: "early_arrival",
+            reason: `Auto-recorded from check-in — checked in ${earlyHours}h early ahead of the scheduled shift.`,
+            linked_duty_id: data.id,
+            actual_check_in: now.toISOString(),
+            scheduled_start: scheduledStart.toISOString(),
+            scheduled_end: scheduledEndAtCheckIn?.toISOString() ?? null,
+          },
+          { onConflict: "linked_duty_id,category", ignoreDuplicates: true },
+        );
+
+        if (otError) {
+          console.error("[submitDutyCheckIn] early-arrival OT upsert failed", {
+            dutyId: data.id,
+            profileId: profile.id,
+            error: otError.message,
+          });
+        } else {
+          revalidatePath("/avsec/duty/overtime");
+        }
       }
     }
-  } catch {
-    // Swallowed — the check-in itself already succeeded above.
+  } catch (err) {
+    console.error("[submitDutyCheckIn] early-arrival OT calculation failed", {
+      dutyId: data.id,
+      profileId: profile.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   revalidatePath("/avsec/duty");
@@ -292,51 +314,86 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
   if (error) return { ok: false, error: error.message };
 
   // Auto-detect overtime from actual worked time vs the roster's scheduled shift — never
-  // something the officer has to remember to file. 30+ minutes past the scheduled end (or,
-  // with no scheduled shift at all, the entire duration) becomes a pending OT request DSE
-  // can endorse and Management/Admin approve, linked straight back to this duty record.
-  // Best-effort: the checkout above has already succeeded, so a failure here must never
-  // surface as a checkout error.
+  // something the officer has to remember to file. Goes through the same
+  // calculateOvertime() used at check-in, which bounds the OT window to
+  // max(scheduledEnd, actualCheckIn) so a very-late check-in followed by an
+  // immediate checkout can never be miscounted as hours of "late OT" that
+  // were never worked. Uses a distinct category ("late_departure" /
+  // "off_day_work") from check-in's "early_arrival" record, and a
+  // category-scoped upsert, so this can never be blocked by — or collide
+  // with — an early-arrival OT record already created for the same duty.
+  // Best-effort: the checkout above has already succeeded, so a failure
+  // here must never surface as a checkout error — but it IS logged, not
+  // silently swallowed, and never corrupts the attendance row already saved.
   try {
     if (record.check_in_at) {
       const checkInAt = new Date(record.check_in_at);
       const hasScheduledShift = !!(roster?.start_time && roster?.end_time && roster.shift_code !== "OFF");
-      const scheduledEnd = hasScheduledShift
+      const scheduledEndForOt = hasScheduledShift
         ? scheduledWindow(dutyDate, roster!.start_time!, roster!.end_time!).end
+        : null;
+      const scheduledStartForOt = hasScheduledShift
+        ? scheduledWindow(dutyDate, roster!.start_time!, roster!.end_time!).start
+        : null;
+
+      const otCalc = calculateOvertime({
+        scheduledStart: scheduledStartForOt,
+        scheduledEnd: scheduledEndForOt,
+        actualCheckIn: checkInAt,
+        actualCheckOut: now,
+      });
+
+      const eligible = hasScheduledShift ? otCalc.lateEligible : otCalc.offDayEligible;
+      const minutes = hasScheduledShift ? otCalc.lateMinutes : otCalc.offDayMinutes;
+      const otStart = hasScheduledShift
+        ? new Date(Math.max(scheduledEndForOt!.getTime(), checkInAt.getTime()))
         : checkInAt;
-      const overageMinutes = Math.round((now.getTime() - scheduledEnd.getTime()) / 60000);
 
-      if (overageMinutes >= OT_THRESHOLD_MINUTES) {
-        const { data: existingOt } = await supabase
-          .from("overtime_requests")
-          .select("id")
-          .eq("linked_duty_id", record.id)
-          .maybeSingle();
+      if (eligible) {
+        const overageHours = (minutes / 60).toFixed(1);
+        const trimmedLateOutRemark = lateOutMinutes > 0 ? values.late_out_remark.trim() : "";
+        const reason = trimmedLateOutRemark
+          ? `Auto-recorded from check-out — worked ${overageHours}h beyond the scheduled shift. Officer's remark: ${trimmedLateOutRemark}`
+          : `Auto-recorded from check-out — worked ${overageHours}h beyond the scheduled shift.`;
+        const category = hasScheduledShift ? "late_departure" : "off_day_work";
 
-        if (!existingOt) {
-          const overageHours = (overageMinutes / 60).toFixed(1);
-          const trimmedLateOutRemark = lateOutMinutes > 0 ? values.late_out_remark.trim() : "";
-          const reason = trimmedLateOutRemark
-            ? `Auto-recorded from check-out — worked ${overageHours}h beyond the scheduled shift. Officer's remark: ${trimmedLateOutRemark}`
-            : `Auto-recorded from check-out — worked ${overageHours}h beyond the scheduled shift.`;
-          await supabase.from("overtime_requests").insert({
+        const { error: otError } = await supabase.from("overtime_requests").upsert(
+          {
             profile_id: profile.id,
             station: profile.station,
             team: profile.team || null,
             work_date: dutyDate,
             shift_code: roster?.shift_code ?? null,
-            start_at: scheduledEnd.toISOString(),
+            start_at: otStart.toISOString(),
             end_at: now.toISOString(),
-            category: hasScheduledShift ? "adhoc" : "off_day_work",
+            category,
             reason,
             linked_duty_id: record.id,
+            actual_check_in: record.check_in_at,
+            actual_check_out: now.toISOString(),
+            scheduled_start: scheduledStartForOt?.toISOString() ?? null,
+            scheduled_end: scheduledEndForOt?.toISOString() ?? null,
+          },
+          { onConflict: "linked_duty_id,category", ignoreDuplicates: true },
+        );
+
+        if (otError) {
+          console.error("[submitDutyCheckOut] late-departure OT upsert failed", {
+            dutyId: record.id,
+            profileId: profile.id,
+            error: otError.message,
           });
+        } else {
           revalidatePath("/avsec/duty/overtime");
         }
       }
     }
-  } catch {
-    // Swallowed — the checkout itself already succeeded above.
+  } catch (err) {
+    console.error("[submitDutyCheckOut] OT calculation failed", {
+      dutyId: record.id,
+      profileId: profile.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   revalidatePath("/avsec/duty");

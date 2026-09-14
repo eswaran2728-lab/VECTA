@@ -23,10 +23,15 @@ export interface OvertimeRequestRow {
   rejection_reason: string | null;
   linked_duty_id: string | null;
   created_at: string;
+  actual_check_in: string | null;
+  actual_check_out: string | null;
+  scheduled_start: string | null;
+  scheduled_end: string | null;
+  calculated_at: string;
 }
 
 const ROW_FIELDS =
-  "id, profile_id, station, team, work_date, shift_code, start_at, end_at, hours, payable_hours, category, reason, status, endorsed_by, endorsed_at, approved_by, approved_at, rejection_reason, linked_duty_id, created_at";
+  "id, profile_id, station, team, work_date, shift_code, start_at, end_at, hours, payable_hours, category, reason, status, endorsed_by, endorsed_at, approved_by, approved_at, rejection_reason, linked_duty_id, created_at, actual_check_in, actual_check_out, scheduled_start, scheduled_end, calculated_at";
 
 /** RLS returns the union of the caller's own requests plus anything they may monitor
  * (rank above submitter, same station+team or org-wide) — same shape as report visibility. */
@@ -88,7 +93,7 @@ export async function getSuggestedOvertimeShifts(
   const [{ data: dutyRows }, { data: rosterRows }] = await Promise.all([
     supabase
       .from("duty_records")
-      .select("id, duty_date, shift_code, check_out_at")
+      .select("id, duty_date, shift_code, check_in_at, check_out_at")
       .eq("profile_id", profileId)
       .not("check_out_at", "is", null)
       .gte("duty_date", since)
@@ -106,10 +111,11 @@ export async function getSuggestedOvertimeShifts(
   const suggestions: SuggestedShift[] = [];
   for (const duty of dutyRows ?? []) {
     const roster = rosterByDate.get(duty.duty_date);
-    if (!roster?.start_time || !roster?.end_time || !duty.check_out_at) continue;
+    if (!roster?.start_time || !roster?.end_time || !duty.check_out_at || !duty.check_in_at) continue;
     const { end } = scheduledWindow(duty.duty_date, roster.start_time, roster.end_time);
+    const checkIn = new Date(duty.check_in_at);
     const checkOut = new Date(duty.check_out_at);
-    const hours = calcOtHours(end, checkOut);
+    const hours = calcOtHours(end, checkIn, checkOut);
     if (hours <= 0) continue;
     suggestions.push({
       duty_id: duty.id,
