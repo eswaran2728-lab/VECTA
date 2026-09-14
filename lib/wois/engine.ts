@@ -197,11 +197,7 @@ function isMissingPolicyProbe(query: string): boolean {
 
 function handleRequiresSop(): WoisEngineResponse {
   return {
-    body: `**Assessment**: Query requires company-specific administrative or operational policy.
-**Status**: The requested procedure is not currently available in the W.O.I.S operational knowledge base.
-**Recommended Action**: Please contact your Duty Security Executive (DSE) or station management to verify the applicable policy.
-**Confidence**: 🟡 REQUIRES SOP
-**Source**: Knowledge Base Missing Reference`,
+    body: `That's a company-specific administrative question and I don't have that policy in my knowledge base — best to check with your Duty Security Executive (DSE) or station management directly.`,
     confidence_tag: "REQUIRES_SOP",
     source_type: "general",
     sources: [],
@@ -209,18 +205,13 @@ function handleRequiresSop(): WoisEngineResponse {
 }
 
 export function handleEscalation(query: string): WoisEngineResponse {
-  const body = `### 🚨 URGENT OPERATIONAL ESCALATION REQUIRED
+  const body = `🚨 This isn't something to work through here — "${query}" describes an active high-risk safety or security emergency. Stop and act now:
 
-**Assessment**: The query describes an active high-risk safety or security emergency (${query}).
-**Immediate Action Required**:
-1. **DO NOT** attempt to resolve this via Q&A or standard documentation.
-2. Immediately notify your **Duty Security Executive (DSE)**, **Security Officer (SO)**, and **Enforcement**.
-3. For in-flight or cabin incidents, notify the **Pilot-in-Command (PIC)** immediately.
-4. For terminal or ramp security threats, contact **Airport Police** and activate local emergency response protocols.
-5. Once contained, file a mandatory **SEC 014 Incident Report** in VECTA.
-
-**Confidence**: 🔴 ESCALATE
-**Source**: AirAsia Emergency Response & Security SOP Protocol`;
+1. Don't try to resolve this via Q&A or documentation.
+2. Immediately notify your Duty Security Executive (DSE), Security Officer (SO), and Enforcement.
+3. In-flight or cabin incident — notify the Pilot-in-Command (PIC) immediately.
+4. Terminal or ramp security threat — contact Airport Police and activate local emergency response.
+5. Once contained, file a mandatory SEC 014 Incident Report in VECTA.`;
 
   return {
     body,
@@ -238,9 +229,7 @@ export function handleEscalation(query: string): WoisEngineResponse {
 
 export function handleHierarchyDeflection(): WoisEngineResponse {
   return {
-    body: `I am W.O.I.S, your operational intelligence assistant. I am designed to assist you with standard operating procedures (SOPs), dangerous goods limits, security screening checks, and VECTA app features for your assigned station duties. 
-
-For inquiries regarding specific departmental organization, please consult with your Duty Security Executive (DSE).`,
+    body: `That's not something I go into — I'm here for SOPs, dangerous goods limits, security screening, and VECTA app features, not departmental structure. For anything about role hierarchy or reporting lines, check with your Duty Security Executive (DSE).`,
     confidence_tag: "GENERAL_KNOWLEDGE",
     source_type: "general",
     sources: [],
@@ -391,13 +380,7 @@ function handleAppHelpResponse(
     }
   }
 
-  const body = `### 📋 VECTA App Guide: ${match.chunk.section_title}
-
-${match.chunk.content}${branchContextNote}
-
----
-**Confidence**: 🟢 VERIFIED
-**Source**: VECTA Operations Suite In-App Documentation`;
+  const body = `${match.chunk.content}${branchContextNote}`;
 
   return {
     body,
@@ -413,40 +396,29 @@ function handleOperationalResponse(
   citations: WoisSourceCitation[],
   _userContext: UserContext
 ): WoisEngineResponse {
-  // Check specific search timings or procedures
-  let recommendedAction = "Adhere strictly to the approved procedural sequence outlined in the relevant SOP.";
+  // A short, natural follow-on sentence for the topics where there's a concrete action
+  // worth calling out — left empty for everything else rather than forcing generic filler.
+  let followOn = "";
   if (match.chunk.section_title.includes("Aircraft Search")) {
-    recommendedAction = "Ensure aircraft is searched according to type: A320 (>=30 min), A321 (>=35 min), A330 (>=45 min). Seal all doors/hatches if left unattended.";
+    followOn = " In practice: A320 needs at least 30 minutes, A321 at least 35, and A330 at least 45 — seal all doors/hatches if the aircraft is left unattended.";
   } else if (match.chunk.section_title.includes("Disruptive")) {
-    recommendedAction = "Assess incident severity level. For Level 2 and above, issue written warning and ensure AVSEC standby upon touchdown.";
+    followOn = " Assess the severity level first — Level 2 and above means a written warning and AVSEC standby on touchdown.";
   } else if (match.chunk.section_title.includes("Lithium") || match.chunk.section_title.includes("Dangerous Goods")) {
-    recommendedAction = "Verify power bank / dangerous goods capacity in Wh (Wh = mAh * V / 1000). Ensure loose batteries/power banks are in carry-on baggage only.";
+    followOn = " To check: Wh = mAh × V / 1000, and loose batteries/power banks must stay in carry-on baggage only.";
   }
 
   const isOfficialSop = match.source_type === "sop" && match.is_official !== false;
   const tag: WoisConfidenceTag = isOfficialSop ? "VERIFIED" : "GENERAL_KNOWLEDGE";
-  const disclaimerText =
-    match.docTitle === "General Aviation Knowledge Base"
-      ? "General aviation knowledge base — verify against current AirAsia policy/SOP for anything operationally consequential"
-      : "General aviation reference (industry-standard, not official AirAsia policy) — verify with your SOP/DSE";
+  const pageLabel = match.chunk.page_number ? `, p.${match.chunk.page_number}` : "";
 
   const caveat =
     tag === "GENERAL_KNOWLEDGE"
-      ? `\n*Note: ${disclaimerText}.*`
+      ? match.docTitle === "General Aviation Knowledge Base" || match.docTitle.startsWith("ICAO Annex 17")
+        ? " This is general/industry-standard knowledge, not confirmed AirAsia policy — verify with your SOP/DSE for anything operationally consequential."
+        : " This is a general aviation reference, not official AirAsia policy — verify with your SOP/DSE."
       : "";
 
-  const pageLabel = match.chunk.page_number ? ` · Page ${match.chunk.page_number}` : "";
-  const sourceSuffix =
-    tag === "GENERAL_KNOWLEDGE"
-      ? ` — ${disclaimerText}`
-      : "";
-
-  const body = `**Assessment**: Inquiries regarding ${match.chunk.section_title.toLowerCase()} and operational compliance.
-**Verified Information**: ${match.chunk.content}
-**Relevant Procedure**: ${match.docTitle}${pageLabel} — Section: ${match.chunk.section_title}
-**Recommended Action**: ${recommendedAction}
-**Confidence**: ${tag === "VERIFIED" ? "🟢 VERIFIED" : "🔵 GENERAL KNOWLEDGE"}
-**Source**: ${match.docTitle}${pageLabel} (${match.chunk.section_title})${sourceSuffix}${caveat}`;
+  const body = `${match.chunk.content}${followOn}${caveat}\n\n(${match.docTitle}${pageLabel} — ${match.chunk.section_title})`;
 
   return {
     body,
@@ -466,14 +438,9 @@ function handleFallbackReasoning(query: string, _userContext: UserContext): Wois
     query.includes("battery")
   ) {
     return {
-      body: `**Assessment**: General aviation question regarding regulatory or industry standards.
-**Verified Information**: General civil aviation security guidelines permit small electronic devices and power banks up to 100Wh in carry-on baggage. Devices between 100Wh and 160Wh require airline operator approval.
-**Relevant Procedure**: International Civil Aviation Organization (ICAO) / IATA DGR Standard Reference.
-**Recommended Action**: Advise passenger to keep battery devices in carry-on baggage only.
-**Confidence**: 🔵 GENERAL KNOWLEDGE
-**Source**: Authoritative General Aviation Reference
+      body: `General civil aviation security guidelines allow small electronic devices and power banks up to 100Wh in carry-on baggage. Between 100Wh and 160Wh needs airline operator approval, and anything above that isn't permitted. Keep battery devices in carry-on only, never in checked baggage.
 
-*Note: This guidance is based on general international aviation regulatory standards. It is not confirmed AirAsia policy; please verify with your DSE/SOP for local station implementation.*`,
+This is based on general ICAO/IATA DGR standards, not confirmed AirAsia policy — verify with your DSE/SOP for local station implementation.`,
       confidence_tag: "GENERAL_KNOWLEDGE",
       source_type: "general",
       sources: [
@@ -495,11 +462,7 @@ function handleFallbackReasoning(query: string, _userContext: UserContext): Wois
     query.includes("per diem")
   ) {
     return {
-      body: `**Assessment**: Query requires company-specific administrative or operational policy.
-**Status**: The requested procedure is not currently available in the W.O.I.S operational knowledge base.
-**Recommended Action**: Please contact your Duty Security Executive (DSE) or station management to verify the applicable policy.
-**Confidence**: 🟡 REQUIRES SOP
-**Source**: Knowledge Base Missing Reference`,
+      body: `That's a company-specific administrative question and I don't have that policy in my knowledge base — best to check with your Duty Security Executive (DSE) or station management directly.`,
       confidence_tag: "REQUIRES_SOP",
       source_type: "general",
       sources: [],
@@ -508,10 +471,7 @@ function handleFallbackReasoning(query: string, _userContext: UserContext): Wois
 
   // Insufficient information / Uncertain
   return {
-    body: `**Assessment**: Insufficient information provided to determine the applicable security or operational procedure.
-**Recommended Action**: Please rephrase your question with specific operational context (e.g., aircraft type, duty area, or report code).
-**Confidence**: 🟠 UNCERTAIN
-**Source**: N/A`,
+    body: `I'm not sure what you're asking — could you give me a bit more to go on? Naming the aircraft type, duty area, or report code usually helps me find the right procedure.`,
     confidence_tag: "UNCERTAIN",
     source_type: "general",
     sources: [],

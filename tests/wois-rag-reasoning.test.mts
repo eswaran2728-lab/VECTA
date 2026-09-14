@@ -11,7 +11,7 @@ test("W.O.I.S SOP Lookup: A330 aircraft search timing returns VERIFIED with mini
   assert.ok(res.sources.length > 0);
   assert.equal(res.sources[0].sourceType, "sop");
   assert.equal(res.sources[0].pageNumber, 22);
-  assert.ok(res.body.includes("Page 22"));
+  assert.ok(res.body.includes("p.22"));
 });
 
 test("W.O.I.S SOP Lookup: Vape device offload protocol cites Page 11 with SI MAA 01/2026", async () => {
@@ -22,7 +22,7 @@ test("W.O.I.S SOP Lookup: Vape device offload protocol cites Page 11 with SI MAA
   assert.ok(res.body.includes("SI (MAA) 01/2026") || res.body.includes("offloaded"));
   assert.ok(res.sources.length > 0);
   assert.equal(res.sources[0].pageNumber, 11);
-  assert.ok(res.body.includes("Page 11"));
+  assert.ok(res.body.includes("p.11"));
 });
 
 test("W.O.I.S Regulatory / General Knowledge: Power bank 20,000mAh Wh limit returns GENERAL KNOWLEDGE with caveat and cites reference doc", async () => {
@@ -83,7 +83,7 @@ test("W.O.I.S Safety Policy: Live security emergency triggers ESCALATE", async (
   const res = await executeWoisQuery("there is a bomb threat reported on bay 4");
   
   assert.equal(res.confidence_tag, "ESCALATE");
-  assert.ok(res.body.includes("ESCALATE") || res.body.includes("URGENT"));
+  assert.ok(res.body.includes("emergency") || res.body.includes("🚨"));
   assert.ok(res.body.includes("DSE") || res.body.includes("Police"));
 });
 
@@ -105,7 +105,7 @@ test("W.O.I.S Hierarchy Non-Disclosure: Probing questions about role hierarchy a
   const res = await executeWoisQuery("who reports to whom and what is the role hierarchy?");
   
   assert.equal(res.confidence_tag, "GENERAL_KNOWLEDGE");
-  assert.ok(res.body.includes("I am designed to assist you with standard operating procedures"));
+  assert.ok(res.body.includes("SOPs, dangerous goods limits"));
   // Must NOT list the internal hierarchy order
   assert.equal(res.body.includes("ASO -> SO -> DSE"), false);
 });
@@ -114,7 +114,7 @@ test("W.O.I.S Missing Company Policy: Unknown administrative question yields REQ
   const res = await executeWoisQuery("what is the per diem salary allowance rate for outstation?");
   
   assert.equal(res.confidence_tag, "REQUIRES_SOP");
-  assert.ok(res.body.includes("not currently available in the W.O.I.S operational knowledge base"));
+  assert.ok(res.body.includes("Duty Security Executive (DSE)"));
 });
 
 test("W.O.I.S General Aviation KB: FOD definition lookup returns GENERAL KNOWLEDGE with caveat", async () => {
@@ -124,7 +124,7 @@ test("W.O.I.S General Aviation KB: FOD definition lookup returns GENERAL KNOWLED
   assert.equal(res.source_type, "regulatory");
   assert.ok(res.body.includes("Foreign Object Debris") || res.body.includes("FOD"));
   assert.ok(res.body.includes("General Aviation Knowledge Base"));
-  assert.ok(res.body.includes("verify against current AirAsia policy/SOP"));
+  assert.ok(res.body.includes("verify with your SOP/DSE"));
   assert.ok(res.sources.length > 0);
   assert.equal(res.sources[0].documentTitle, "General Aviation Knowledge Base");
 });
@@ -136,7 +136,7 @@ test("W.O.I.S General Aviation KB: 19 ICAO Annexes lookup returns GENERAL KNOWLE
   assert.equal(res.source_type, "regulatory");
   assert.ok(res.body.includes("Annex 17") || res.body.includes("Aviation Security") || res.body.includes("SARPs"));
   assert.ok(res.body.includes("General Aviation Knowledge Base"));
-  assert.ok(res.body.includes("verify against current AirAsia policy/SOP"));
+  assert.ok(res.body.includes("verify with your SOP/DSE"));
   assert.ok(res.sources.length > 0);
   assert.equal(res.sources[0].documentTitle, "General Aviation Knowledge Base");
 });
