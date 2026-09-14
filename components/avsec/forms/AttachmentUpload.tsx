@@ -1,11 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { compressImage } from "@/lib/avsec/image-compression";
 
 const MAX_ATTACHMENTS = 5;
 const MAX_BYTES = 10 * 1024 * 1024;
-const MAX_DIMENSION = 1600;
-const JPEG_QUALITY = 0.8;
 const ACCEPTED_MIME = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 
 export interface PendingAttachment {
@@ -15,25 +14,6 @@ export interface PendingAttachment {
   size: number;
   blob: Blob;
   previewUrl: string;
-}
-
-async function compressImage(file: File): Promise<Blob> {
-  try {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
-    const w = Math.max(1, Math.round(bitmap.width * scale));
-    const h = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return file;
-    ctx.drawImage(bitmap, 0, 0, w, h);
-    const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY));
-    return blob && blob.size < file.size ? blob : file;
-  } catch {
-    return file;
-  }
 }
 
 /** Releases the blob: URLs behind a set of pending previews — call after a successful
@@ -117,7 +97,7 @@ export function AttachmentUpload({
     <div className="space-y-2.5">
       <div className="flex items-center justify-between">
         <span className="field-label">Attachments (optional)</span>
-        <span className="t-mono text-[9.5px]" style={{ color: "var(--faint)" }}>
+        <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
           {value.length}/{MAX_ATTACHMENTS} · PHOTO OR PDF
         </span>
       </div>
@@ -125,18 +105,17 @@ export function AttachmentUpload({
       {value.length > 0 && (
         <div className="grid grid-cols-3 gap-2">
           {value.map((a) => (
-            <div key={a.id} className="relative card p-1.5 aspect-square flex items-center justify-center overflow-hidden">
+            <div key={a.id} className="relative card p-1.5 aspect-square flex items-center justify-center overflow-hidden border border-border/80 bg-surface/70 rounded-lg">
               {a.previewUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={a.previewUrl} alt={a.name} className="w-full h-full object-cover" />
+                <img src={a.previewUrl} alt={a.name} className="w-full h-full object-cover rounded" />
               ) : (
-                <span className="t-mono text-[8.5px] text-center px-1 break-all" style={{ color: "var(--soft)" }}>
+                <span className="font-mono text-[9px] text-center px-1 break-all text-muted-foreground">
                   {a.name}
                 </span>
               )}
               <span
-                className="absolute bottom-0 left-0 right-0 t-mono text-[7.5px] text-center py-[2px]"
-                style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}
+                className="absolute bottom-0 left-0 right-0 font-mono text-[8px] text-center py-[2px] bg-black/75 text-foreground/90 backdrop-blur-xs"
               >
                 {formatSize(a.size)}
               </span>
@@ -144,8 +123,7 @@ export function AttachmentUpload({
                 type="button"
                 onClick={() => remove(a.id)}
                 disabled={disabled}
-                className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center text-[11px] font-bold leading-none"
-                style={{ background: "var(--red)", color: "#fff", borderRadius: "50%" }}
+                className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center text-xs font-bold leading-none bg-red-500 hover:bg-red-600 text-white rounded-full transition-colors cursor-pointer"
                 aria-label={`Remove ${a.name}`}
               >
                 ×
@@ -158,7 +136,7 @@ export function AttachmentUpload({
       {value.length < MAX_ATTACHMENTS && (
         <button
           type="button"
-          className="btn-secondary w-full"
+          className="btn-secondary w-full text-xs"
           disabled={disabled || busy}
           onClick={() => inputRef.current?.click()}
         >

@@ -239,7 +239,7 @@ export function OffloadForm({
       <button type="submit" className="btn-primary w-full" disabled={isSubmitting}>
         {isSubmitting ? "Submitting…" : "Submit report ▸"}
       </button>
-      <p className="text-center t-mono text-[9.5px]" style={{ color: "var(--faintest)" }}>
+      <p className="text-center font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
         SUBMITTED REPORTS ARE IMMUTABLE · CORRECTIONS ARE FILED AS AMENDMENTS
       </p>
     </form>

@@ -1,5 +1,3 @@
-import "server-only";
-
 import type { Role } from "./database.types";
 
 /**
@@ -34,11 +32,10 @@ import type { Role } from "./database.types";
 export function mapAvsecRoleToIcmsRole(avsecRole: string): Role {
   switch (avsecRole) {
     case "ADMIN":
-      return "supervisor";
-    case "ENFORCEMENT":
-      return "enforcement";
     case "MANAGEMENT":
       return "management";
+    case "ENFORCEMENT":
+      return "enforcement";
     case "SO":
     case "ASO":
     case "DSE":
@@ -57,11 +54,10 @@ export function mapAvsecRoleToIcmsRole(avsecRole: string): Role {
 export function mapAvsecRoleToUnifiedRole(avsecRole: string): string {
   switch (avsecRole) {
     case "ADMIN":
-      return "admin";
-    case "ENFORCEMENT":
-      return "enforcement";
     case "MANAGEMENT":
       return "management";
+    case "ENFORCEMENT":
+      return "enforcement";
     case "SO":
       return "so";
     case "ASO":

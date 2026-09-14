@@ -27,13 +27,15 @@ export default async function ProfileSetupPage({
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-md card p-6">
-        <h1 className="section-title mb-1">Complete your profile</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-          This auto-fills your details on every report — Email, Name, Staff No, Station and Team.
-          Your role request needs Admin approval before you can access the app.
-        </p>
+    <main className="min-h-screen flex items-center justify-center p-4 bg-background">
+      <div className="w-full max-w-md card p-6 md:p-8 space-y-6">
+        <div>
+          <h1 className="font-display text-xl font-bold tracking-[0.03em] text-foreground">Complete your profile</h1>
+          <p className="font-mono text-xs text-muted-foreground mt-1">
+            This auto-fills your details on every report — Email, Name, Staff No, Station and Team.
+            Your role request needs Admin approval before you can access the app.
+          </p>
+        </div>
 
         {searchParams.error && (
           <p className="field-error mb-4">
@@ -44,7 +46,7 @@ export default async function ProfileSetupPage({
         <form action={updateProfile} className="space-y-4">
           <div>
             <label className="field-label">Email</label>
-            <input className="input-base" value={user.email ?? ""} disabled />
+            <input className="input-base text-muted-foreground" value={user.email ?? ""} disabled />
           </div>
 
           <div>

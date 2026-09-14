@@ -130,25 +130,21 @@ export default async function HeatmapPage({
         <div className="flex gap-1.5">
           <Link
             href={qs({ mode: "live" })}
-            className="t-mono text-[10px] font-semibold px-3 py-2"
-            style={{
-              letterSpacing: "0.1em",
-              border: `1px solid ${mode === "live" ? "var(--gold-fill)" : "var(--line3)"}`,
-              background: mode === "live" ? "var(--gold-soft)" : "transparent",
-              color: mode === "live" ? "var(--gold)" : "var(--mid)",
-            }}
+            className={`rounded-full border px-3.5 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+              mode === "live"
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-muted-foreground hover:text-foreground"
+            }`}
           >
             LIVE
           </Link>
           <Link
             href={qs({ mode: "history" })}
-            className="t-mono text-[10px] font-semibold px-3 py-2"
-            style={{
-              letterSpacing: "0.1em",
-              border: `1px solid ${mode === "history" ? "var(--gold-fill)" : "var(--line3)"}`,
-              background: mode === "history" ? "var(--gold-soft)" : "transparent",
-              color: mode === "history" ? "var(--gold)" : "var(--mid)",
-            }}
+            className={`rounded-full border px-3.5 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+              mode === "history"
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-muted-foreground hover:text-foreground"
+            }`}
           >
             HISTORY
           </Link>
@@ -222,63 +218,63 @@ export default async function HeatmapPage({
         </form>
 
         <div className="flex items-center justify-between">
-          <p className="t-mono text-[10px]" style={{ color: "var(--soft)" }}>
+          <p className="font-mono text-xs text-muted-foreground">
             {mode === "live" ? `${points.length} currently on duty` : `${points.length} records · ${from} – ${to}`}
           </p>
           <div className="flex gap-1.5">
             <Link
               href={qs({ view: "heat" })}
-              className="t-mono text-[9px] font-semibold px-2 py-1"
-              style={{
-                border: `1px solid ${view === "heat" ? "var(--gold-fill)" : "var(--line3)"}`,
-                color: view === "heat" ? "var(--gold)" : "var(--mid)",
-              }}
+              className={`rounded px-2.5 py-1 font-mono text-[9px] font-bold uppercase tracking-wider transition-colors border ${
+                view === "heat"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:text-foreground"
+              }`}
             >
               HEAT
             </Link>
             <Link
               href={qs({ view: "pins" })}
-              className="t-mono text-[9px] font-semibold px-2 py-1"
-              style={{
-                border: `1px solid ${view === "pins" ? "var(--gold-fill)" : "var(--line3)"}`,
-                color: view === "pins" ? "var(--gold)" : "var(--mid)",
-              }}
+              className={`rounded px-2.5 py-1 font-mono text-[9px] font-bold uppercase tracking-wider transition-colors border ${
+                view === "pins"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:text-foreground"
+              }`}
             >
               PINS
             </Link>
           </div>
         </div>
 
-        <div className="card overflow-hidden">
+        <div className="card overflow-hidden !p-0">
           <HeatMapLoader points={mapPoints} zones={zones} view={view} />
         </div>
 
         <div className="space-y-2">
           {zoneTotals.length === 0 && (
-            <p className="text-sm" style={{ color: "var(--soft)" }}>
+            <p className="font-mono text-sm text-muted-foreground text-center py-4">
               {mode === "live" ? "No one currently checked in for these filters." : "No duty records in this range."}
             </p>
           )}
           {zoneTotals.map((zt) => (
             <details key={zt.zoneId} className="card p-4">
               <summary className="flex items-center justify-between cursor-pointer list-none">
-                <span className="font-semibold text-[13px]" style={{ color: "var(--ink2)" }}>
+                <span className="font-semibold text-xs text-foreground">
                   {zt.zoneName}
                 </span>
-                <span className="t-mono text-[10px]" style={{ color: "var(--gold)" }}>
+                <span className="font-mono text-[10px] text-primary">
                   {mode === "live" ? `${zt.people.length} on duty` : `${zt.people.length} records`}
                   {zt.lateCount > 0 ? ` · ${zt.lateCount} late` : ""}
                   {zt.earlyOutCount > 0 ? ` · ${zt.earlyOutCount} early-out` : ""}
                   {mode === "history" && zt.otHours > 0 ? ` · ${zt.otHours}h OT` : ""}
                 </span>
               </summary>
-              <div className="mt-3 space-y-1.5" style={{ borderTop: "1px solid var(--line2)", paddingTop: "10px" }}>
+              <div className="mt-3 space-y-1.5 border-t border-border pt-2.5">
                 {zt.people.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between text-[12.5px]">
-                    <span style={{ color: "var(--ink2)" }}>
+                  <div key={p.id} className="flex items-center justify-between text-xs">
+                    <span className="text-foreground">
                       {p.name} {p.team ? `· ${p.team}` : ""}
                     </span>
-                    <span className="t-mono text-[10px]" style={{ color: "var(--soft)" }}>
+                    <span className="font-mono text-[10px] text-muted-foreground">
                       {formatTimeMY(p.check_in_at)}
                       {p.check_out_at ? ` → ${formatTimeMY(p.check_out_at)}` : mode === "live" ? " → now" : ""}
                     </span>

@@ -11,7 +11,7 @@ export default async function ReportLookupPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const profile = await requireRole([...ORG_WIDE_ROLES]);
+  await requireRole([...ORG_WIDE_ROLES]);
   const q = (searchParams.q || "").trim();
 
   const results = q ? await searchByReportNoPrefix(q) : [];
@@ -25,48 +25,53 @@ export default async function ReportLookupPage({
   return (
     <main className="min-h-screen pb-32">
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-        <p className="text-[13px]" style={{ color: "var(--soft)" }}>
-          Paste or type a report number from a paper form — full or partial (e.g.{" "}
-          <span className="t-mono">AASEC16-20260818</span> finds every SEC016 filed that day).
-        </p>
+        <div>
+          <h1 className="text-xl font-bold font-display">Report Lookup</h1>
+          <p className="text-xs text-muted-foreground mt-1">
+            Paste or type a report number from a paper form — full or partial (e.g.{" "}
+            <span className="font-mono text-primary">AASEC16-20260818</span> finds every SEC016 filed that day).
+          </p>
+        </div>
 
         <form method="get" className="flex gap-2">
           <input
             type="text"
             name="q"
             defaultValue={q}
-            placeholder="AASEC16-20260818-001"
+            placeholder="e.g. AASEC16-20260818-001"
             autoCapitalize="characters"
-            className="input-base flex-1 t-mono"
+            className="input-base flex-1 font-mono text-xs"
           />
-          <button type="submit" className="btn-primary shrink-0">
+          <button type="submit" className="btn-primary shrink-0 text-xs">
             Search
           </button>
         </form>
 
         {q && (
-          <div className="space-y-2">
+          <div className="space-y-2.5 pt-2">
             {results.length === 0 && (
-              <div className="disclaimer-band">No report found with that number.</div>
+              <div className="card p-6 text-center border-dashed text-xs text-muted-foreground">
+                No reports found matching &quot;{q}&quot;.
+              </div>
             )}
             {results.map((r) => (
               <Link
                 key={`${r.type}-${r.id}`}
                 href={`/avsec/reports/view/${r.type}/${r.id}`}
-                className="card p-4 flex items-center justify-between gap-3 block"
+                className="card p-4 flex items-center justify-between gap-3 border-border/80 bg-surface/80 hover:border-primary/60 transition-all block"
               >
-                <div className="min-w-0">
-                  <p className="t-mono text-[11px] font-bold" style={{ color: "var(--gold)" }}>
+                <div className="min-w-0 space-y-1">
+                  <p className="font-mono text-xs font-bold text-primary">
                     {r.report_no}
                   </p>
-                  <p className="font-semibold text-[13px] mt-1" style={{ color: "var(--ink2)" }}>
+                  <p className="font-semibold text-sm text-foreground">
                     {REPORT_META[r.type].name}
                   </p>
-                  <p className="t-mono text-[10.5px] mt-1" style={{ color: "var(--soft)" }}>
+                  <p className="font-mono text-xs text-muted-foreground">
                     {r.summary}
                   </p>
                 </div>
-                <span className="t-mono text-[9.5px] shrink-0 text-right" style={{ color: "var(--faint)" }}>
+                <span className="font-mono text-[11px] shrink-0 text-right text-muted-foreground">
                   {formatDateTimeMY(r.submitted_at ?? r.created_at)}
                 </span>
               </Link>

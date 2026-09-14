@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { DUTY_ROLES } from "@/lib/avsec/auth";
+import type { LeaveType } from "./absence-logic";
 
 export interface Shift {
   code: string;
@@ -32,6 +33,19 @@ export interface RosterCell {
   notes: string | null;
   set_by: string;
   updated_at: string;
+}
+
+export interface ApprovedLeaveRosterItem {
+  id: string;
+  user_id: string;
+  staff_name: string;
+  staff_id: string | null;
+  station: string | null;
+  team: string | null;
+  leave_type: LeaveType;
+  start_date: string;
+  end_date: string;
+  approval_status: string;
 }
 
 export async function getShifts(): Promise<Shift[]> {
@@ -76,3 +90,29 @@ export async function getRosterWeek(station: string, weekStart: string, weekEnd:
     .lte("roster_date", weekEnd);
   return (data as unknown as RosterCell[]) ?? [];
 }
+
+/**
+ * Fetches all APPROVED leave applications overlapping the given date range for a station.
+ * Pending, rejected, and cancelled applications are strictly excluded.
+ */
+export async function getApprovedLeavesForRoster(
+  station: string,
+  weekStart: string,
+  weekEnd: string
+): Promise<ApprovedLeaveRosterItem[]> {
+  const supabase = await createClient();
+  let query = supabase
+    .from("absence_notices")
+    .select("id, user_id, staff_name, staff_id, station, team, leave_type, start_date, end_date, approval_status")
+    .eq("approval_status", "approved")
+    .lte("start_date", weekEnd)
+    .gte("end_date", weekStart);
+
+  if (station) {
+    query = query.eq("station", station);
+  }
+
+  const { data } = await query;
+  return (data as ApprovedLeaveRosterItem[]) ?? [];
+}
+

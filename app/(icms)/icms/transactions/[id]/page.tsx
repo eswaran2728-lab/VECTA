@@ -306,8 +306,8 @@ export default async function TransactionDetailPage({
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <span className="font-mono text-xs font-semibold uppercase tracking-wider text-amber-500 block mb-0.5">
-            CATERLINK DISPATCH PASS
+          <span className="font-mono text-xs font-semibold uppercase tracking-wider text-primary block mb-0.5">
+            CATERING DISPATCH PASS
           </span>
           <h1 className="font-mono text-2xl font-bold tracking-tight">
             {transaction.transaction_number}

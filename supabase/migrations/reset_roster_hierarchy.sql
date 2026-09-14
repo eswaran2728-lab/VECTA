@@ -206,20 +206,20 @@ begin
 
   -- Ensure profile in profiles and users
   insert into public.profiles (id, email, name, staff_no, station, team, role, status, unified_role, ops_group)
-  values (v_admin_id, 'eswaranp@airasia.com', 'Eswaran Padmanathan', 'ADM-0001', null, null, 'ADMIN', 'approved', 'admin', null)
+  values (v_admin_id, 'eswaranp@airasia.com', 'Eswaran Padmanathan', 'MGT-0001', null, null, 'MANAGEMENT', 'approved', 'management', null)
   on conflict (id) do update set
     name = 'Eswaran Padmanathan',
-    role = 'ADMIN',
+    role = 'MANAGEMENT',
     status = 'approved',
-    unified_role = 'admin';
+    unified_role = 'management';
 
   insert into public.users (id, name, staff_id, email, role, status, preferred_language, unified_role, ops_group, duty_post)
-  values (v_admin_id, 'Eswaran Padmanathan', 'ADM-0001', 'eswaranp@airasia.com', 'supervisor', 'active', 'en', 'admin', null, null)
+  values (v_admin_id, 'Eswaran Padmanathan', 'MGT-0001', 'eswaranp@airasia.com', 'management', 'active', 'en', 'management', null, null)
   on conflict (id) do update set
     name = 'Eswaran Padmanathan',
-    role = 'supervisor',
+    role = 'management',
     status = 'active',
-    unified_role = 'admin';
+    unified_role = 'management';
 end $$;
 
 -- 5. Provision the Fresh Hierarchy Roster
@@ -227,7 +227,7 @@ do $$
 declare
   v_pw text := 'Vecta2026!';
   v_accounts jsonb := '[
-    {"id":"b0000000-0000-4000-8000-000000000002","email":"admin@vecta.local","name":"VECTA Admin","staff_no":"ADM-9002","station":null,"team":null,"role":"ADMIN","unified_role":"admin","ops_group":null,"is_driver":false},
+    {"id":"b0000000-0000-4000-8000-000000000002","email":"admin@vecta.local","name":"VECTA Management","staff_no":"MGT-9000","station":null,"team":null,"role":"MANAGEMENT","unified_role":"management","ops_group":null,"is_driver":false},
     {"id":"b0000000-0000-4000-8000-000000000003","email":"management@vecta.local","name":"VECTA Management","staff_no":"MGT-9001","station":null,"team":null,"role":"MANAGEMENT","unified_role":"management","ops_group":null,"is_driver":false},
     {"id":"b0000000-0000-4000-8000-000000000004","email":"enforcement@vecta.local","name":"VECTA Enforcement","staff_no":"ENF-9001","station":null,"team":null,"role":"ENFORCEMENT","unified_role":"enforcement","ops_group":null,"is_driver":false},
 

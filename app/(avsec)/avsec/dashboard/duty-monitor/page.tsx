@@ -54,34 +54,34 @@ export default async function DutyMonitorPage({
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
         <div className="grid grid-cols-4 gap-2">
           <div className="card p-3 text-center">
-            <p className="text-xl font-bold" style={{ color: "var(--green)" }}>
+            <p className="font-mono text-xl font-bold text-success">
               {checkedIn}
             </p>
-            <p className="t-mono text-[8.5px] mt-1" style={{ color: "var(--soft)" }}>
+            <p className="font-mono text-[8.5px] uppercase tracking-wider mt-1 text-muted-foreground">
               ON DUTY
             </p>
           </div>
           <div className="card p-3 text-center">
-            <p className="text-xl font-bold" style={{ color: "var(--red)" }}>
+            <p className="font-mono text-xl font-bold text-destructive">
               {late}
             </p>
-            <p className="t-mono text-[8.5px] mt-1" style={{ color: "var(--soft)" }}>
+            <p className="font-mono text-[8.5px] uppercase tracking-wider mt-1 text-muted-foreground">
               LATE
             </p>
           </div>
           <div className="card p-3 text-center">
-            <p className="text-xl font-bold" style={{ color: "var(--red)" }}>
+            <p className="font-mono text-xl font-bold text-destructive">
               {earlyOut}
             </p>
-            <p className="t-mono text-[8.5px] mt-1" style={{ color: "var(--soft)" }}>
+            <p className="font-mono text-[8.5px] uppercase tracking-wider mt-1 text-muted-foreground">
               EARLY-OUT
             </p>
           </div>
           <div className="card p-3 text-center">
-            <p className="text-xl font-bold" style={{ color: "var(--red)" }}>
+            <p className="font-mono text-xl font-bold text-destructive">
               {missed}
             </p>
-            <p className="t-mono text-[8.5px] mt-1" style={{ color: "var(--soft)" }}>
+            <p className="font-mono text-[8.5px] uppercase tracking-wider mt-1 text-muted-foreground">
               MISSED
             </p>
           </div>
@@ -121,36 +121,55 @@ export default async function DutyMonitorPage({
         </form>
 
         <div className="flex items-center justify-between">
-          <p className="t-mono text-[10px] flex items-center gap-1.5" style={{ color: "var(--soft)" }}>
+          <p className="font-mono text-[10px] flex items-center gap-1.5 text-muted-foreground uppercase tracking-wider">
             {rows.length} staff · {date === today ? "Today" : date}
             {date === today && (
-              <span className="t-mono text-[8.5px] font-bold" style={{ color: "var(--green)" }}>
+              <span className="font-mono text-[8.5px] font-bold text-success animate-pulse">
                 ● LIVE
               </span>
             )}
           </p>
-          <Link href="/avsec/dashboard/heatmap" className="t-mono text-[10px]" style={{ color: "var(--gold)" }}>
+          <Link href="/avsec/dashboard/heatmap" className="font-mono text-[10px] font-semibold text-primary hover:underline uppercase tracking-wider">
             View on map →
           </Link>
         </div>
 
         <div className="space-y-2">
           {rows.length === 0 && (
-            <p className="text-sm" style={{ color: "var(--soft)" }}>
+            <p className="font-mono text-sm text-muted-foreground text-center py-4">
               No ASO/SO/DSE staff found for these filters.
             </p>
           )}
           {rows.map((r) => {
-            const color = STATUS_COLOR[r.status];
+            const statusTheme = {
+              checked_in: "border-l-4 border-l-success border-border bg-card",
+              checked_out: "border-l-4 border-l-cyan border-border bg-card",
+              off: "border-l-4 border-l-muted-foreground/40 border-border bg-card/60",
+              no_roster: "border-l-4 border-l-border border-border bg-card/40",
+              missed: "border-l-4 border-l-destructive border-border bg-destructive/5",
+              pending: "border-l-4 border-l-muted-foreground/40 border-border bg-card",
+              upcoming: "border-l-4 border-l-border border-border bg-card/40",
+            }[r.status];
+
+            const pillTheme = {
+              checked_in: "border-success/40 bg-success/10 text-success",
+              checked_out: "border-cyan/40 bg-cyan/10 text-cyan",
+              off: "border-border text-muted-foreground",
+              no_roster: "border-border text-muted-foreground/60",
+              missed: "border-destructive/40 bg-destructive/10 text-destructive",
+              pending: "border-border text-muted-foreground",
+              upcoming: "border-border text-muted-foreground/60",
+            }[r.status];
+
             const flagged = r.lateMinutes > 0 || r.earlyOutMinutes > 0;
             return (
-              <div key={r.profileId} className="card p-4" style={{ borderLeft: `3px solid ${color}` }}>
+              <div key={r.profileId} className={`card p-4 ${statusTheme}`}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-semibold text-[13px]" style={{ color: "var(--ink2)" }}>
+                    <p className="font-semibold text-xs text-foreground">
                       {r.name}
                     </p>
-                    <p className="t-mono text-[10px]" style={{ color: "var(--soft)" }}>
+                    <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
                       {r.role} · {r.team || "—"}
                       {r.shiftCode ? ` · ${r.shiftCode}` : ""}
                       {r.scheduledStart && r.scheduledEnd
@@ -159,18 +178,17 @@ export default async function DutyMonitorPage({
                     </p>
                   </div>
                   <span
-                    className="t-mono text-[8.5px] font-bold px-2 py-1 shrink-0"
-                    style={{ letterSpacing: "0.06em", color, border: `1px solid ${color}` }}
+                    className={`font-mono text-[8.5px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider shrink-0 ${pillTheme}`}
                   >
                     {STATUS_LABEL[r.status]}
                   </span>
                 </div>
 
                 {(r.checkInAt || r.checkOutAt) && (
-                  <p className="text-[12px] mt-2" style={{ color: "var(--ink2)" }}>
+                  <p className="font-mono text-xs text-foreground/90 mt-2">
                     {r.checkInAt ? `In ${formatTimeMY(r.checkInAt)}` : "—"}
                     {r.checkInInsideFence === false && (
-                      <span className="t-mono text-[9px] ml-1.5" style={{ color: "var(--red)" }}>
+                      <span className="font-mono text-[9px] font-bold ml-1.5 text-destructive">
                         OUT OF FENCE
                       </span>
                     )}
@@ -180,16 +198,15 @@ export default async function DutyMonitorPage({
                 )}
 
                 {flagged && (
-                  <details className="mt-2">
+                  <details className="mt-2 border-t border-border/40 pt-1.5">
                     <summary
-                      className="cursor-pointer t-mono text-[9px] font-semibold"
-                      style={{ color: "var(--red)" }}
+                      className="cursor-pointer font-mono text-[9px] font-semibold text-destructive uppercase tracking-wider"
                     >
                       {r.lateMinutes > 0 ? `LATE ${r.lateMinutes} MIN` : ""}
                       {r.lateMinutes > 0 && r.earlyOutMinutes > 0 ? " · " : ""}
                       {r.earlyOutMinutes > 0 ? `EARLY-OUT ${r.earlyOutMinutes} MIN` : ""} — tap for remark
                     </summary>
-                    <div className="mt-1.5 space-y-1 text-[11.5px]" style={{ color: "var(--soft)" }}>
+                    <div className="mt-1.5 space-y-1 font-mono text-xs text-muted-foreground">
                       {r.lateMinutes > 0 && <p>{r.lateRemark}</p>}
                       {r.earlyOutMinutes > 0 && <p>{r.earlyOutRemark}</p>}
                     </div>

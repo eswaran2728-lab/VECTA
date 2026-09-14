@@ -44,6 +44,138 @@ export type Database = {
         }
         Relationships: []
       }
+      absence_notices: {
+        Row: {
+          id: string
+          org_id: string | null
+          user_id: string
+          staff_name: string
+          staff_id: string | null
+          role: string
+          station: string | null
+          team: string | null
+          ops_group: string | null
+          shift_code: string | null
+          duty_date: string
+          leave_type:
+            | "absent"
+            | "mc"
+            | "emergency"
+            | "annual"
+            | "compassionate"
+            | "hospitalization"
+            | "maternity_paternity"
+            | "parental"
+            | "unpaid"
+            | "representative"
+          start_date: string
+          end_date: string
+          shift_start_time: string
+          submitted_at: string
+          gap_minutes: number | null
+          status: "green" | "red" | null
+          approval_status:
+            | "pending"
+            | "approved"
+            | "rejected"
+            | "pending_cancellation"
+            | "cancelled"
+          reviewed_by: string | null
+          reviewed_at: string | null
+          review_notes: string | null
+          cancellation_reason: string | null
+          cancel_requested_at: string | null
+          remarks: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string | null
+          user_id: string
+          staff_name: string
+          staff_id?: string | null
+          role: string
+          station?: string | null
+          team?: string | null
+          ops_group?: string | null
+          shift_code?: string | null
+          duty_date?: string
+          leave_type?:
+            | "absent"
+            | "mc"
+            | "emergency"
+            | "annual"
+            | "compassionate"
+            | "hospitalization"
+            | "maternity_paternity"
+            | "parental"
+            | "unpaid"
+            | "representative"
+          start_date?: string
+          end_date?: string
+          shift_start_time: string
+          submitted_at?: string
+          gap_minutes?: number | null
+          status?: "green" | "red" | null
+          approval_status?:
+            | "pending"
+            | "approved"
+            | "rejected"
+            | "pending_cancellation"
+            | "cancelled"
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          review_notes?: string | null
+          cancellation_reason?: string | null
+          cancel_requested_at?: string | null
+          remarks: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string | null
+          user_id?: string
+          staff_name?: string
+          staff_id?: string | null
+          role?: string
+          station?: string | null
+          team?: string | null
+          ops_group?: string | null
+          shift_code?: string | null
+          duty_date?: string
+          leave_type?:
+            | "absent"
+            | "mc"
+            | "emergency"
+            | "annual"
+            | "compassionate"
+            | "hospitalization"
+            | "maternity_paternity"
+            | "parental"
+            | "unpaid"
+            | "representative"
+          start_date?: string
+          end_date?: string
+          shift_start_time?: string
+          submitted_at?: string
+          gap_minutes?: number | null
+          status?: "green" | "red" | null
+          approval_status?:
+            | "pending"
+            | "approved"
+            | "rejected"
+            | "pending_cancellation"
+            | "cancelled"
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          review_notes?: string | null
+          cancellation_reason?: string | null
+          cancel_requested_at?: string | null
+          remarks?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       ot_requests: {
         Row: {
           id: string
@@ -92,6 +224,294 @@ export type Database = {
           notes?: string | null
           created_at?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      feedback_threads: {
+        Row: {
+          id: string
+          org_id: string
+          submitter_id: string
+          category: "safety_concern" | "complaint" | "suggestion" | "other"
+          status: "open" | "closed"
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string
+          submitter_id?: string
+          category: "safety_concern" | "complaint" | "suggestion" | "other"
+          status?: "open" | "closed"
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          submitter_id?: string
+          category?: "safety_concern" | "complaint" | "suggestion" | "other"
+          status?: "open" | "closed"
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      feedback_threads_management_view: {
+        Row: {
+          id: string
+          org_id: string
+          category: "safety_concern" | "complaint" | "suggestion" | "other"
+          status: "open" | "closed"
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string
+          category?: "safety_concern" | "complaint" | "suggestion" | "other"
+          status?: "open" | "closed"
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          category?: "safety_concern" | "complaint" | "suggestion" | "other"
+          status?: "open" | "closed"
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      feedback_messages: {
+        Row: {
+          id: string
+          thread_id: string
+          sender_role: "submitter" | "management"
+          body: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          thread_id: string
+          sender_role: "submitter" | "management"
+          body: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          thread_id?: string
+          sender_role?: "submitter" | "management"
+          body?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      announcements: {
+        Row: {
+          id: string
+          org_id: string | null
+          created_by: string
+          title: string
+          body: string
+          photo_url: string | null
+          is_pop: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string | null
+          created_by: string
+          title: string
+          body: string
+          photo_url?: string | null
+          is_pop?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string | null
+          created_by?: string
+          title?: string
+          body?: string
+          photo_url?: string | null
+          is_pop?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
+      announcement_targets: {
+        Row: {
+          id: string
+          announcement_id: string
+          branch: "operation_avsec" | "ifc_avsec" | "hub_avsec" | null
+          station: string | null
+          team: string | null
+        }
+        Insert: {
+          id?: string
+          announcement_id: string
+          branch?: "operation_avsec" | "ifc_avsec" | "hub_avsec" | null
+          station?: string | null
+          team?: string | null
+        }
+        Update: {
+          id?: string
+          announcement_id?: string
+          branch?: "operation_avsec" | "ifc_avsec" | "hub_avsec" | null
+          station?: string | null
+          team?: string | null
+        }
+        Relationships: []
+      }
+      announcement_acknowledgements: {
+        Row: {
+          id: string
+          announcement_id: string
+          user_id: string
+          acknowledged_at: string
+        }
+        Insert: {
+          id?: string
+          announcement_id: string
+          user_id: string
+          acknowledged_at?: string
+        }
+        Update: {
+          id?: string
+          announcement_id?: string
+          user_id?: string
+          acknowledged_at?: string
+        }
+        Relationships: []
+      }
+      kb_documents: {
+        Row: {
+          id: string
+          org_id: string | null
+          title: string
+          source_type: "sop" | "regulatory" | "app_help"
+          version: string
+          content: string
+          metadata: Json
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string | null
+          title: string
+          source_type: "sop" | "regulatory" | "app_help"
+          version?: string
+          content: string
+          metadata?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string | null
+          title?: string
+          source_type?: "sop" | "regulatory" | "app_help"
+          version?: string
+          content?: string
+          metadata?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      kb_chunks: {
+        Row: {
+          id: string
+          document_id: string
+          chunk_index: number
+          section_title: string
+          content: string
+          source_type: "sop" | "regulatory" | "app_help"
+          metadata: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          document_id: string
+          chunk_index: number
+          section_title: string
+          content: string
+          source_type: "sop" | "regulatory" | "app_help"
+          metadata?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          document_id?: string
+          chunk_index?: number
+          section_title?: string
+          content?: string
+          source_type?: "sop" | "regulatory" | "app_help"
+          metadata?: Json
+          created_at?: string
+        }
+        Relationships: []
+      }
+      wois_conversations: {
+        Row: {
+          id: string
+          org_id: string | null
+          user_id: string
+          title: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string | null
+          user_id: string
+          title?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string | null
+          user_id?: string
+          title?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      wois_messages: {
+        Row: {
+          id: string
+          conversation_id: string
+          sender: "user" | "assistant"
+          body: string
+          confidence_tag: "VERIFIED" | "GENERAL_KNOWLEDGE" | "REQUIRES_SOP" | "UNCERTAIN" | "ESCALATE" | null
+          source_type: "sop" | "regulatory" | "app_help" | "general" | null
+          sources: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          conversation_id: string
+          sender: "user" | "assistant"
+          body: string
+          confidence_tag?: "VERIFIED" | "GENERAL_KNOWLEDGE" | "REQUIRES_SOP" | "UNCERTAIN" | "ESCALATE" | null
+          source_type?: "sop" | "regulatory" | "app_help" | "general" | null
+          sources?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          conversation_id?: string
+          sender?: "user" | "assistant"
+          body?: string
+          confidence_tag?: "VERIFIED" | "GENERAL_KNOWLEDGE" | "REQUIRES_SOP" | "UNCERTAIN" | "ESCALATE" | null
+          source_type?: "sop" | "regulatory" | "app_help" | "general" | null
+          sources?: Json
+          created_at?: string
         }
         Relationships: []
       }

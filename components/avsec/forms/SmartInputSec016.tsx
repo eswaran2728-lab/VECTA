@@ -55,37 +55,37 @@ export function SmartInputSec016<T extends FieldValues>({
   };
 
   return (
-    <section className="card-inset p-4 sm:p-5 space-y-3">
+    <section className="card-inset p-4 sm:p-5 space-y-3 rounded-lg border border-border/70 bg-surface/50">
       <div>
         <h2 className="section-title">Smart Input</h2>
-        <p className="field-hint">
+        <p className="field-hint text-xs text-muted-foreground font-mono mt-1">
           Paste the WhatsApp aircraft report message below and tap Parse &amp; Fill —
           recognized fields will be filled in automatically. Anything it can&apos;t confidently
           read stays blank for you to complete.
         </p>
       </div>
       <textarea
-        className="input-base font-mono text-sm"
-        rows={8}
+        className="input-base font-mono text-xs leading-relaxed"
+        rows={6}
         placeholder="Paste WhatsApp message here…"
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          className="btn-primary"
+          className="btn-primary text-xs"
           onClick={handleParse}
           disabled={parsing || !text.trim()}
         >
           {parsing ? "Parsing…" : "Parse & Fill"}
         </button>
         {summary && (
-          <p className="text-sm font-medium" style={{ color: "var(--green)" }}>
+          <p className="text-xs font-mono font-semibold text-emerald-400">
             {summary}
           </p>
         )}
-        {errorMsg && <p className="field-error">{errorMsg}</p>}
+        {errorMsg && <p className="text-xs text-red-400 font-mono">{errorMsg}</p>}
       </div>
     </section>
   );

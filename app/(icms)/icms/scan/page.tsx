@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { requireRole } from "@/lib/icms/auth";
-import { QrScanner } from "@/components/icms/qr-scanner";
+import { UnifiedScanner } from "@/components/scan/UnifiedScanner";
 
-export const metadata: Metadata = { title: "Scan QR" };
+export const metadata: Metadata = { title: "Scan — VECTA" };
 export const dynamic = "force-dynamic";
 
 export default async function ScanPage() {
@@ -21,8 +21,10 @@ export default async function ScanPage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-lg space-y-4">
-      <QrScanner />
+    <div className="flex flex-1 flex-col items-center justify-center p-4 sm:p-8">
+      <div className="w-full max-w-[460px]">
+        <UnifiedScanner />
+      </div>
     </div>
   );
 }

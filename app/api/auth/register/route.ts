@@ -126,7 +126,7 @@ export async function POST(request: Request) {
           email,
           name,
           staff_no: staffId,
-          role: (avsecRole ?? "ASO") as "ASO" | "SO" | "DSE" | "ADMIN" | "ENFORCEMENT" | "MANAGEMENT",
+          role: (safeAvsecRole ?? "ASO") as "ASO" | "SO" | "DSE" | "ENFORCEMENT" | "MANAGEMENT",
           unified_role: unifiedRole,
           ops_group: opsGroup,
           team,

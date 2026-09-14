@@ -45,10 +45,12 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
   try {
     const supabase = await createClient();
 
+    const mappedUnifiedRole =
+      avsecRole.toLowerCase() === "admin" ? "management" : avsecRole.toLowerCase();
     const unifiedRole =
       systemType === "caterlink"
         ? "vendor"
-        : (avsecRole.toLowerCase() as "admin" | "management" | "enforcement" | "so" | "aso" | "dse" | "vendor");
+        : (mappedUnifiedRole as "management" | "enforcement" | "so" | "aso" | "dse" | "vendor");
 
     const { data: created, error: authError } = await supabase.auth.signUp({
       email,
@@ -60,7 +62,7 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
           staff_id: staffId,
           phone,
           system_type: systemType,
-          role: systemType === "caterlink" ? "vendor" : avsecRole,
+          role: systemType === "caterlink" ? "vendor" : (avsecRole === "ADMIN" ? "MANAGEMENT" : avsecRole),
           unified_role: unifiedRole,
           ops_group: opsGroup,
           team,
@@ -78,13 +80,14 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
 
     if (systemType === "avsec") {
       // Insert into AVSEC profiles table with 'pending' status
+      const safeRole = avsecRole === "ADMIN" ? "MANAGEMENT" : (avsecRole ?? "ASO");
       const { error: profileError } = await supabase.from("profiles").upsert(
         {
           id: created.user.id,
           email,
           name,
           staff_no: staffId,
-          role: (avsecRole ?? "ASO") as "ASO" | "SO" | "DSE" | "ADMIN" | "ENFORCEMENT" | "MANAGEMENT",
+          role: safeRole as "ASO" | "SO" | "DSE" | "ENFORCEMENT" | "MANAGEMENT",
           unified_role: unifiedRole,
           ops_group: opsGroup,
           team,

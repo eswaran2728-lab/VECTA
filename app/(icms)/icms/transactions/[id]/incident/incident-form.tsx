@@ -10,6 +10,7 @@ import { Textarea } from "@/components/icms/ui/textarea";
 import { INCIDENT_TYPE_LABELS } from "@/lib/icms/constants";
 import { formDataToPayload, queueSubmission } from "@/lib/icms/offline-queue";
 import { cn } from "@/lib/icms/utils";
+import { compressImage } from "@/lib/avsec/image-compression";
 
 const initialState: ActionState = { error: null };
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -32,7 +33,7 @@ export function IncidentForm({ transactionId }: { transactionId: string }) {
     }
   };
 
-  const handlePhotos = (files: FileList | null) => {
+  const handlePhotos = async (files: FileList | null) => {
     setPhotoError(null);
     setPhotos([]);
     if (!files || files.length === 0) return;
@@ -41,19 +42,22 @@ export function IncidentForm({ transactionId }: { transactionId: string }) {
       setPhotoError("Each photo must be under 5MB (max 5 photos).");
       return;
     }
-    Promise.all(
-      list.map(
-        (file) =>
-          new Promise<string>((resolve, reject) => {
+    try {
+      const dataUrls = await Promise.all(
+        list.map(async (file) => {
+          const compressed = await compressImage(file, { maxDimension: 1600, quality: 0.8 });
+          return new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => resolve(String(reader.result ?? ""));
             reader.onerror = () => reject(new Error("read failed"));
-            reader.readAsDataURL(file);
-          })
-      )
-    )
-      .then(setPhotos)
-      .catch(() => setPhotoError("Could not read the selected photos."));
+            reader.readAsDataURL(compressed);
+          });
+        })
+      );
+      setPhotos(dataUrls);
+    } catch {
+      setPhotoError("Could not process and compress the selected photos.");
+    }
   };
 
   return (

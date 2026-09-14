@@ -52,7 +52,7 @@ export async function createUser(
   // stay null).
   const dutyPost = DUTY_POST_BY_ROLE[role] ?? null;
   const opsGroup = dutyPost ? OPS_GROUP_BY_DUTY_POST[dutyPost] : null;
-  const unifiedRole = role === "supervisor" ? "admin" : role === "enforcement" ? "enforcement" : "aso";
+  const unifiedRole = role === "supervisor" || role === "management" ? "management" : role === "enforcement" ? "enforcement" : "aso";
 
   const { error: profileError } = await admin.from("users").insert({
     id: created.user.id,
@@ -94,7 +94,7 @@ export async function updateUserRole(
 
   const dutyPost = DUTY_POST_BY_ROLE[role] ?? null;
   const opsGroup = dutyPost ? OPS_GROUP_BY_DUTY_POST[dutyPost] : null;
-  const unifiedRole = role === "supervisor" ? "admin" : role === "enforcement" ? "enforcement" : "aso";
+  const unifiedRole = role === "supervisor" || role === "management" ? "management" : role === "enforcement" ? "enforcement" : "aso";
 
   const admin = createAdminClient();
   const { error } = await admin

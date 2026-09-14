@@ -239,10 +239,10 @@ export function Sec029Form({
           if (itemsInSection.length === 0) return null;
           return (
             <div key={section} className="space-y-3">
-              <h3 className="font-semibold text-sm" style={{ color: "var(--ink3)" }}>
+              <h3 className="font-bold text-xs font-mono uppercase tracking-wider text-foreground">
                 {section}
                 {section === "COCKPIT AREA" && (
-                  <span className="block text-xs font-normal mt-0.5" style={{ color: "var(--gold)" }}>
+                  <span className="block text-[11px] font-mono font-normal mt-0.5 text-amber-400">
                     NOTE: DO NOT TOUCH THE INSTRUMENT PANEL
                   </span>
                 )}
@@ -272,7 +272,7 @@ export function Sec029Form({
           if (itemsInSection.length === 0) return null;
           return (
             <div key={section} className="space-y-3">
-              <h3 className="font-semibold text-sm text-slate-600 dark:text-slate-300">{section}</h3>
+              <h3 className="font-bold text-xs font-mono uppercase tracking-wider text-foreground">{section}</h3>
               {itemsInSection.map((item) => (
                 <Sec029ChecklistItem
                   key={item.code}
@@ -302,21 +302,21 @@ export function Sec029Form({
 
         <div>
           <label className="field-label">
-            Declaration <span style={{ color: "var(--red)" }}>*</span>
+            Declaration <span className="text-red-400">*</span>
           </label>
           <div className="space-y-2">
             {[DECLARATION_CLEAN, DECLARATION_DISCREPANCY].map((opt) => (
               <label
                 key={opt}
-                className="flex items-start gap-3 border border-[var(--line3)] p-3 cursor-pointer
-                  has-[:checked]:border-[var(--gold-fill)] has-[:checked]:bg-[var(--gold-soft)]"
+                className="flex items-start gap-3 border border-border/80 bg-surface/60 rounded-lg p-3 cursor-pointer transition-all
+                  has-[:checked]:border-primary has-[:checked]:bg-primary/5 hover:border-border"
               >
-                <input type="radio" value={opt} className="mt-1 accent-[var(--gold)]" {...register("declaration")} />
-                <span className="text-sm" style={{ color: "var(--ink2)" }}>{opt}</span>
+                <input type="radio" value={opt} className="mt-1 text-primary focus:ring-primary" {...register("declaration")} />
+                <span className="text-xs text-foreground leading-relaxed">{opt}</span>
               </label>
             ))}
           </div>
-          {errors.declaration && <p className="field-error">{errors.declaration.message}</p>}
+          {errors.declaration && <p className="text-xs text-red-400 font-mono mt-1">{errors.declaration.message}</p>}
         </div>
 
         {values.declaration === DECLARATION_DISCREPANCY && (
@@ -342,7 +342,7 @@ export function Sec029Form({
       <button type="submit" className="btn-primary w-full" disabled={isSubmitting}>
         {isSubmitting ? "Submitting…" : "Submit report ▸"}
       </button>
-      <p className="text-center t-mono text-[9.5px]" style={{ color: "var(--faintest)" }}>
+      <p className="text-center font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
         SUBMITTED REPORTS ARE IMMUTABLE · CORRECTIONS ARE FILED AS AMENDMENTS
       </p>
     </form>

@@ -19,9 +19,9 @@ export const ROLE_LABELS: Record<Role, string> = {
   post2_avsec: "AVSEC In-flight Post (Post 2)",
   post6_avsec: "AVSEC Airport Post (Post 6)",
   receiver: "SRA / Aircraft Receiver",
-  // Internal DB role value stays 'supervisor' (RLS, policies, seed data all
-  // key off it) — only the user-facing label changes to "Admin".
-  supervisor: "Admin",
+  // Internal DB role value stays 'supervisor' for legacy compatibility,
+  // user-facing label is "Management".
+  supervisor: "Management",
   // Full read visibility + incident lifecycle power, same as supervisor,
   // but no whitelist/user/archive admin access and no checkpoint actions.
   enforcement: "Enforcement",
