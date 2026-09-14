@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireRole } from "@/lib/icms/auth";
 import type { ProfileStatus } from "@/lib/avsec/reference-data";
 
 export interface RegisterState {
@@ -133,6 +134,18 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
 }
 
 export async function approveStaff(_prev: ApprovalState, formData: FormData): Promise<ApprovalState> {
+  // The page that renders the approve/reject buttons already gates on this
+  // role, but a server action is its own reachable endpoint — without this
+  // check here, any authenticated (even pending/unapproved) account could
+  // call approveStaff directly with their own user_id and self-approve,
+  // since the underlying RLS "self update" policies on users/profiles have
+  // no column-level restriction blocking a status change on your own row.
+  try {
+    await requireRole(["supervisor"]);
+  } catch {
+    return { error: "Not authorized to approve accounts." };
+  }
+
   const userId = String(formData.get("user_id") ?? "").trim();
   if (!userId) return { error: "User ID is required." };
 
@@ -152,6 +165,12 @@ export async function approveStaff(_prev: ApprovalState, formData: FormData): Pr
 }
 
 export async function rejectStaff(_prev: ApprovalState, formData: FormData): Promise<ApprovalState> {
+  try {
+    await requireRole(["supervisor"]);
+  } catch {
+    return { error: "Not authorized to reject accounts." };
+  }
+
   const userId = String(formData.get("user_id") ?? "").trim();
   if (!userId) return { error: "User ID is required." };
 
