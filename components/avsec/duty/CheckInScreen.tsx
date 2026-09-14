@@ -209,10 +209,9 @@ export function CheckInScreen({
     const outcome = await submitCheckIn({
       lat: fresh.lat,
       lng: fresh.lng,
-      accuracy: fresh.accuracy,
-      inside_fence: !!zone,
-      zone_id: zone?.id,
-      late_remark: remark,
+      accuracy_m: fresh.accuracy,
+      late_remark: predictedLate > 0 ? remark : "",
+      early_in_remark: predictedLate <= 0 ? remark : "",
       offline,
       client_timestamp: new Date().toISOString(),
     });
