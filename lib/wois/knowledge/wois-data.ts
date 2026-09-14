@@ -652,4 +652,145 @@ Vehicle identification, Authorized drivers, Permits, Vehicle inspections, Escort
       },
     ],
   },
+  {
+    id: "doc-icao-annex17",
+    title: "ICAO Annex 17 — Aviation Security Knowledge Base",
+    source_type: "regulatory",
+    version: "2026.1",
+    is_official: false,
+    metadata: {
+      is_official: false,
+      summary_type: "icao_annex17_training_summary",
+      note: "Structured training/knowledge summary of ICAO Annex 17 SARPs (Safeguarding International Civil Aviation Against Acts of Unlawful Interference) — not the verbatim/complete legal text. For exact Standard numbers, wording or compliance decisions, the authorized current edition of Annex 17 must be consulted.",
+    },
+    content: `# ICAO Annex 17 — Aviation Security Knowledge Base
+
+Annex 17 to the Chicago Convention is titled "Aviation Security — Safeguarding International Civil Aviation Against Acts of Unlawful Interference." Its SARPs (Standards and Recommended Practices) establish the international framework for preventing and responding to unlawful interference with civil aviation, first adopted in 1974 and continually amended as threats evolve.
+
+This is a structured training summary, not the complete legal text — for exact Standard numbers, wording, applicability, or compliance decisions, the authorized current edition of Annex 17 must be retrieved rather than generated from memory.
+
+Source hierarchy for applying this knowledge: Level 1 ICAO (Annex 17 SARPs) -> Level 2 State (Malaysia's national aviation-security legislation/CAAM requirements) -> Level 3 Airport (KLIA/KUL requirements and procedures) -> Level 4 Aircraft Operator (AirAsia AOSP/SSP/company procedures) -> Level 5 Post/SOP (checkpoint, aircraft search, baggage reconciliation, access-control and incident procedures). Always answer using the most specific authorized rule applicable, and identify whether the source is ICAO, State, airport, operator, or local SOP.`,
+    chunks: [
+      {
+        section_title: "Annex 17 Purpose & Safety vs Security Distinction",
+        content: "Annex 17's purpose is to protect passengers, crew, ground personnel, airport workers, aircraft, airports/facilities, cargo and mail, civil aviation infrastructure, and the general public against acts of unlawful interference. The overriding priority is the security of passengers, crew, ground personnel and the general public. Key distinction: Safety = protection against accidental harm; Security/AVSEC = protection against intentional or unlawful acts.",
+        keywords: ["annex 17 purpose", "safety vs security", "unlawful interference", "aviation security definition", "safeguarding civil aviation"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Acts of Unlawful Interference",
+        content: "An act of unlawful interference is an intentional act or attempted act that threatens civil aviation security, including: unlawful seizure/hijacking of aircraft, destruction of an aircraft in service, hostage-taking on board aircraft or at aerodromes, forcible intrusion into an aircraft or airport/aviation facility, introduction of weapons or hazardous devices/material for criminal purposes, using an aircraft to cause death/serious injury/major damage, and communicating false information that endangers aircraft, passengers, crew, ground personnel or the public. Classification principle: accidental event = safety; intentional malicious/unlawful act = security; some events involve both.",
+        keywords: ["acts of unlawful interference", "hijacking", "hostage taking", "forcible intrusion", "bomb threat classification", "false information threat"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Annex 17 Structure — Five Chapters",
+        content: "Annex 17 is organized around: Chapter 1 Definitions, Chapter 2 General Principles, Chapter 3 Organization, Chapter 4 Preventive Security Measures, Chapter 5 Management of Response to Acts of Unlawful Interference. Chapter 4 is especially important for operational AVSEC personnel as it covers preventive controls affecting airports, aircraft, passengers, baggage, cargo, access and other aviation operations.",
+        keywords: ["annex 17 structure", "annex 17 chapters", "preventive security measures chapter", "response chapter"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Annex 17 Key Definitions",
+        content: "Key terms: Aviation Security — protection of civil aviation against unlawful interference through measures and human/material resources. Screening — technical/other means to identify weapons, explosives or dangerous devices/articles/substances. Security Control — means preventing introduction of weapons/explosives/dangerous devices. Security Restricted Area (SRA) — airside priority-risk areas with additional controls. Background Check — checking a person's identity, previous experience/history including permissible criminal history, to assess suitability. Unidentified Baggage — baggage without an identifiable owner/passenger. Unaccompanied Baggage — hold baggage where the passenger who checked it in is not aboard. Note: unaccompanied baggage is NOT the same as unidentified baggage.",
+        keywords: ["aviation security definition", "screening definition", "security control definition", "security restricted area", "sra definition", "background check definition", "unidentified baggage", "unaccompanied baggage", "unaccompanied vs unidentified baggage"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "General Principles & Risk-Based Security",
+        content: "Every Contracting State must establish measures to safeguard civil aviation against unlawful interference. Security measures should protect passengers/crew/public, be appropriate to the assessed threat, be coordinated among responsible organizations, allow rapid response when threats increase, minimize unnecessary interference with aviation operations where practicable, and be continuously reviewed and improved. Security should be risk-based rather than assuming every airport, flight, person or situation presents the same threat. Reasoning model: Threat -> Vulnerability -> Consequence -> Risk -> Mitigation. Example: insider introduces prohibited item (threat) -> weak staff access controls (vulnerability) -> unauthorized item reaches aircraft (consequence) -> risk assessment -> mitigation via access control, screening, background checks, random checks, monitoring.",
+        keywords: ["risk based security", "threat vulnerability consequence risk mitigation", "security risk management", "general principles annex 17", "contracting state obligations"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "National Organization — NCASP, AOSP & SSP",
+        content: "Each State establishes a National Civil Aviation Security Programme (NCASP) defining national requirements, responsibilities and measures. Responsibilities are allocated among the national authority, airport operators, aircraft operators, police, immigration, customs, security organizations, ground handlers, cargo operators, catering organizations, mail operators, and contractors/tenants — ultimate responsibility for civil aviation security rests with States. Commercial aircraft operators establish, implement and maintain an Aircraft Operator Security Programme (AOSP) meeting the State of the Operator's requirements. Where another State's requirements aren't covered by the AOSP, the operator uses Supplementary Station Procedures (SSP) — written station-specific procedures (strengthened by Amendment 18).",
+        keywords: ["ncasp", "national civil aviation security programme", "aosp", "aircraft operator security programme", "ssp", "supplementary station procedures", "national organization annex 17"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Security Training & Security Culture",
+        content: "Personnel performing aviation-security functions must receive training matching their duties: security awareness, access control, screening, aircraft security/search, baggage security, cargo security, incident response, recognition of suspicious behaviour/items, reporting, and emergency procedures. Personnel must demonstrate competency before independently performing security duties. Security is not solely an AVSEC officer responsibility — an effective security environment needs a positive security culture organization-wide: Observe -> Recognize -> Challenge where appropriate -> Report -> Respond. Unusual behaviour, unattended items, access violations, tampering and security weaknesses must not be ignored. Amendment 18 strengthened provisions on integrating effective security culture.",
+        keywords: ["security training requirements", "security culture", "observe recognize challenge report respond", "amendment 18 security culture", "avsec training topics"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Insider Threat",
+        content: "An insider exploits legitimate access, knowledge or authority — potential insiders include airport/airline employees, security personnel, ground handlers, cleaners, catering personnel, maintenance staff, contractors, vendors, and cargo personnel. Mitigation: background checks + access control + screening + supervision + random checks + security culture + reporting + information sharing + vulnerability assessment. Amendment 17 strengthened insider-threat provisions including background checks, vulnerability assessments, information sharing and screening of persons other than passengers.",
+        keywords: ["insider threat", "insider threat mitigation", "amendment 17 insider threat", "persons with legitimate access risk"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Airport, Access Control & Persons Other Than Passengers",
+        content: "Airports distinguish landside from airside; higher-risk airside locations may be designated Security Restricted Areas (SRA) with controlled entry. Access control ensures only authorized persons/vehicles enter controlled/restricted areas via airport ID/pass, authorization, identity verification, screening, vehicle permits, physical barriers, electronic access systems, security personnel, CCTV, and random checks. Holding a pass does not automatically mean unrestricted access everywhere — authorization must correspond to operational need (Need + Authorization + Verification = Access). Persons other than passengers (airline/airport staff, contractors, cleaners, engineers, vendors, catering personnel, ground handlers) may still present security risks and are subject to identity verification, access authorization, screening, inspection of carried articles, and random/security checks.",
+        keywords: ["airside vs landside", "security restricted area sra", "access control principles", "persons other than passengers", "need authorization verification access", "staff screening"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Vehicle Security & Aircraft Security/Protection",
+        content: "Vehicles entering sensitive airside areas are subject to driver authorization, vehicle permit/identity checks, purpose of entry, occupant checks, vehicle search/inspection where required, and cargo/load verification — unauthorized vehicles must not gain access. Aircraft must be protected against unauthorized interference via aircraft security checks, aircraft security searches, access control, monitoring, protection during turnaround, verification of persons accessing the aircraft, and protection following security-sensitive events. An Aircraft Security Check and an Aircraft Security Search are related but not interchangeable — the required procedure depends on applicable requirements and circumstances. Once an aircraft has received its required security control, protection must be maintained through turnaround, cleaning, catering, engineering, baggage/cargo loading, and boarding; if security integrity may have been compromised, appropriate action per applicable procedures is required.",
+        keywords: ["vehicle security checks", "aircraft security check", "aircraft security search", "aircraft security check vs search", "aircraft protection during turnaround"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Passenger, Cabin Baggage, Transfer/Transit & One-Stop Security",
+        content: "Originating passengers undergo required security screening before entering security restricted areas/boarding, to prevent prohibited weapons/explosives/dangerous devices from reaching an aircraft. Cabin baggage must undergo applicable security controls before entering the cabin; prohibited items found are handled per applicable national/operator procedures — not every unusual object is automatically prohibited, the determination follows applicable prohibited-items rules. Transfer and transit operations must ensure passengers/baggage without equivalent security controls cannot compromise a secure environment — related to One-Stop Security (OSS), where States may recognize equivalent security measures under appropriate arrangements.",
+        keywords: ["passenger screening requirements", "cabin baggage security", "prohibited items screening", "transfer transit passenger security", "one stop security", "oss"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Hold Baggage Security & Passenger-Baggage Reconciliation",
+        content: "Hold baggage must be subjected to applicable security controls (including screening capable of detecting explosives/explosive devices, strengthened by Amendment 18) before loading. Core principle: passenger boards + baggage cleared = normal carriage; passenger becomes a no-show = baggage security status must be addressed before departure per applicable requirements — this does NOT automatically mean every no-show bag must be physically removed; the exact treatment depends on whether the baggage has been appropriately identified and subjected to the security controls required for unaccompanied baggage. Correct reasoning: no-show detected -> identify associated baggage -> determine security status -> apply required security procedure -> only then permit carriage if requirements are satisfied. After screening, baggage must be protected from unauthorized interference until loaded (acceptance -> screening -> sortation -> baggage makeup -> transport -> aircraft loading); a break in security integrity may require additional action.",
+        keywords: ["hold baggage security", "baggage reconciliation", "no show passenger baggage", "unaccompanied baggage procedure", "passenger baggage reconciliation", "baggage security integrity chain"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Cargo, Mail, Secure Supply Chain & Catering/Stores Security",
+        content: "Cargo and mail must receive appropriate security controls before loading, achieved through physical screening or an appropriately secure supply chain — unknown/unsecured cargo and cargo from an approved secure supply chain may require different treatment. Secure supply chain concept: known origin -> controlled handling -> security controls -> protection -> transport -> loading, involving approved/regulated participants; if security integrity is lost, additional controls may be required. Catering supplies, aircraft stores, cleaning supplies, airport supplies and maintenance items entering aircraft/security-sensitive environments can create vulnerabilities and require appropriate controls to prevent introduction of prohibited items.",
+        keywords: ["cargo security", "mail security", "secure supply chain", "known shipper concept", "catering security controls", "aircraft stores security"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Weapons/Dangerous Articles, Special Categories & In-Flight Security",
+        content: "Annex 17 requires measures preventing unauthorized weapons, explosives and dangerous devices/articles/substances from being introduced into aircraft or security restricted environments, distinguishing unauthorized carriage from legally authorized carriage under controlled procedures (per national law and applicable operator/security procedures). Persons in custody/special categories may require prior coordination between authorities and operators on risk, escort requirements, notification, seating/security arrangements and operational precautions — operational decisions defer to applicable State/operator procedures. Security responsibilities continue in flight: protection of flight crew, communication, incident procedures, handling disruptive/security-threatening persons, and response to suspected unlawful interference — the pilot-in-command remains central to aircraft command and operational decisions.",
+        keywords: ["weapons dangerous articles carriage", "persons in custody transport", "escorted prisoner transport", "in-flight security", "disruptive passenger handling", "pilot in command authority"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Cybersecurity (Standard 4.9)",
+        content: "Modern aviation security includes protection of critical information and communications technology (ICT) systems and data. Annex 17 Standard 4.9.1 requires States to ensure relevant operators/entities identify critical ICT systems and data used for civil aviation purposes and implement appropriate protection based on risk assessment. Recommended Practice 4.9.2 addresses protection of confidentiality, integrity and availability, via measures such as security-by-design, supply-chain security, network separation, and protection/limitation of remote access. AVSEC is therefore not only physical security — it also covers protection against cyber-enabled unlawful interference.",
+        keywords: ["aviation cybersecurity", "annex 17 standard 4.9", "ict systems protection", "confidentiality integrity availability aviation", "cyber enabled unlawful interference"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Quality Control & Corrective Action",
+        content: "Security systems must be tested and monitored through audits, inspections, surveys and tests to determine whether security measures are actually implemented and remain effective — training teaches personnel, quality control checks whether requirements are being implemented effectively. When a deficiency is found: Identify -> Record -> Analyse -> Correct -> Verify -> Prevent recurrence. ICAO's security oversight framework emphasizes analysis of deficiencies, corrective recommendations, tracking rectification, and effective implementation of corrective actions.",
+        keywords: ["security quality control", "security audits inspections", "corrective action process", "security deficiency handling", "security oversight framework"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Chapter 5 — Response, Contingency Planning & Suspicious Items",
+        content: "States must prepare for situations where preventive measures fail or an attack is attempted, covering communication, coordination, command arrangements, emergency response, police/security involvement, airport and operator response, information management, and protection of passengers/personnel. Contingency plans should cover foreseeable incidents (hijacking, bomb threat, suspicious item, unauthorized access, hostage situation, security breach, aircraft threat, attack against facilities) — personnel should know who to contact, immediate actions, who holds command authority, and what to report; sensitive procedures are only provided to authorized personnel. Bomb threats follow established threat-assessment and response procedures — never improvise search or explosive-handling instructions. For suspicious items: DO NOT TOUCH, DO NOT MOVE, DO NOT OPEN, KEEP PEOPLE AWAY, REPORT IMMEDIATELY, then follow the airport/operator security and emergency procedure — never provide improvised explosive-disposal instructions.",
+        keywords: ["chapter 5 response annex 17", "contingency planning aviation security", "bomb threat procedure", "suspicious item procedure", "do not touch do not move do not open", "security incident response plan"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Security Breach Response, Reporting & International Cooperation",
+        content: "Example security breach response logic (e.g. unauthorized person enters an SRA): Detect -> prevent further unauthorized movement where safe/authorized -> notify appropriate security authority -> protect affected area -> assess security integrity -> apply required recovery measures -> document/report; exact response follows local procedures. States must report acts/attempted acts of unlawful interference to ICAO, which analyzes trends and develops improved security measures. Aviation security depends on international cooperation — sharing threat/security information, best practices, requirements, recognition of equivalent measures, assistance/training, and incident information — since a vulnerability in one part of the network can affect the wider international aviation system.",
+        keywords: ["security breach response", "unauthorized area entry response", "icao incident reporting obligation", "international aviation security cooperation"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Human Factors, Layered Security & Standards vs Recommended Practices",
+        content: "Technology alone cannot provide aviation security — it depends on People + Procedures + Technology + Intelligence/Information + Oversight; human factors include fatigue, distraction, complacency, communication failures, inadequate training, procedural shortcuts, and poor security culture. Layered security uses multiple sequential layers (intelligence -> background checks -> perimeter -> access control -> staff screening -> passenger screening -> baggage screening -> aircraft protection -> in-flight security) so that if one layer fails, another may still prevent an attack. Security should balance effectiveness with facilitation — proportionate to risk, avoiding unnecessary disruption to legitimate aviation activity. Terminology: a STANDARD (usually 'shall') is a specification recognized as necessary for international aviation security under the Chicago Convention framework; a RECOMMENDED PRACTICE (usually 'should') is recognized as desirable for uniform application — 'shall' must never be treated as equivalent to 'should'.",
+        keywords: ["human factors aviation security", "layered security concept", "security vs facilitation", "icao standard vs recommended practice", "shall vs should icao"],
+        metadata: { section: "Annex 17" },
+      },
+      {
+        section_title: "Annex 17 vs ICAO Doc 8973 (Restricted) & Prevent-Detect-Protect-Respond-Recover-Improve",
+        content: "Annex 17 defines the international aviation-security SARPs; ICAO Doc 8973 (Aviation Security Manual) provides implementation guidance supporting Annex 17 and is classified Restricted with distribution limited to authorized entities/individuals — restricted Doc 8973 content must never be reconstructed, exposed, or claimed as accessible unless legitimately supplied and the requester is authorized. Public/general questions should be answered with Annex 17 concepts and non-sensitive guidance; authorized AVSEC environments use approved internal procedures. Overall Annex 17 model: PREVENT unauthorized access and introduction of threats -> DETECT weapons/explosives/prohibited items/suspicious activity -> PROTECT passengers, aircraft, baggage, cargo, facilities and critical systems -> RESPOND to security incidents -> RECOVER security integrity after an incident/breach -> IMPROVE through audits, inspections, testing, training and corrective action.",
+        keywords: ["annex 17 vs doc 8973", "icao doc 8973 restricted", "aviation security manual", "prevent detect protect respond recover improve", "restricted document handling"],
+        metadata: { section: "Annex 17" },
+      },
+    ],
+  },
 ];

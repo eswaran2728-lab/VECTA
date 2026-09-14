@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { executeWoisQuery } from "@/lib/wois/engine";
+import { executeWoisQueryConversational } from "@/lib/wois/llm";
 
 export async function POST(req: Request) {
   try {
@@ -20,8 +21,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 });
     }
 
-    // Execute engine reasoning
-    const engineResponse = await executeWoisQuery(message, userContext || {});
+    // Pull recent turns (if any) so the conversational layer has context, same as
+    // a real chat assistant — the rule-based fallback below ignores history entirely.
+    let priorMessages: { sender: "user" | "assistant"; body: string }[] = [];
+    if (conversationId) {
+      const { data: history } = await supabase
+        .from("wois_messages")
+        .select("sender, body")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: true })
+        .limit(20);
+      priorMessages = history ?? [];
+    }
+
+    const engineResponse = await executeWoisQueryConversational(
+      message,
+      priorMessages,
+      userContext || {},
+      () => executeWoisQuery(message, userContext || {}),
+    );
 
     // Save to conversation if conversationId is provided or created
     let convId = conversationId;
