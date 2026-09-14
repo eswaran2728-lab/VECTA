@@ -44,6 +44,13 @@ export const metadata: Metadata = {
     "VECTA — unified AirAsia operations platform: IFC catering security workflow and AVSEC duty & reporting.",
   manifest: "/manifest.json",
   appleWebApp: { capable: true, title: "VECTA", statusBarStyle: "default" },
+  icons: {
+    icon: [
+      { url: "/favicon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
