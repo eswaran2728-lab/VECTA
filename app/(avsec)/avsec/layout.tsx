@@ -10,6 +10,7 @@ import { ORG_WIDE_ROLES, ROLE_LABELS } from "@/lib/avsec/reference-data";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { AppSidebar } from "@/components/layout/AppSidebar";
+import { NotificationsBell } from "@/components/layout/NotificationsBell";
 
 export const metadata: Metadata = {
   title: APP_NAME,
@@ -39,6 +40,7 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
         <OfflineStatusBadge />
         {showChrome && profile ? (
           <AppSidebar
+            userId={profile.id}
             name={profile.name}
             role={profile.role}
             roleLabel={ROLE_LABELS[profile.role] ?? null}
@@ -56,6 +58,7 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
                 name={profile.name}
                 roleLabel={ROLE_LABELS[profile.role] ?? null}
                 signOutAction={authSignOut}
+                extra={<NotificationsBell userId={profile.id} />}
               />
             </div>
           ) : null}

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
+import { NotificationsBell } from "@/components/layout/NotificationsBell";
 import { WoisChatModal } from "@/components/wois/WoisChatModal";
 import {
   LayoutDashboard,
@@ -43,6 +44,7 @@ interface NavGroup {
 }
 
 export function AppSidebar({
+  userId,
   name,
   role,
   roleLabel,
@@ -52,6 +54,7 @@ export function AppSidebar({
   unifiedRole,
   signOutAction,
 }: {
+  userId?: string | null;
   name: string;
   role: string | null;
   roleLabel: string | null;
@@ -305,7 +308,10 @@ export function AppSidebar({
             </div>
           </Link>
 
-          <ThemeToggle />
+          <div className="flex items-center gap-1">
+            {userId ? <NotificationsBell userId={userId} /> : null}
+            <ThemeToggle />
+          </div>
         </div>
 
         {/* User Context Banner */}
