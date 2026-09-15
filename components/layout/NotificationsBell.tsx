@@ -65,8 +65,11 @@ export function NotificationsBell({ userId }: { userId: string }) {
         setItems((data ?? []) as AppNotification[]);
       });
 
+    // Channel name must be unique per mounted instance — the bell can be
+    // mounted twice at once (desktop AppSidebar + mobile UnifiedHeader), and
+    // Supabase realtime throws if two channels share a name.
     const channel = supabase
-      .channel("vecta-notifications")
+      .channel(`vecta-notifications-${userId}-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         {
