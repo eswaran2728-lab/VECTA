@@ -10,6 +10,7 @@ import { StatusDot, type OpsStatus } from "@/components/layout/StatusDot";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { AppSidebar } from "@/components/layout/AppSidebar";
+import { NotificationsBell } from "@/components/layout/NotificationsBell";
 import { TransactionStageBar } from "@/components/layout/TransactionStageBar";
 import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries";
 import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
@@ -192,6 +193,7 @@ export default async function LandingPage({
     <main className="relative min-h-screen bg-background pb-28 lg:pb-8">
       {/* Desktop Persistent Left Sidebar */}
       <AppSidebar
+        userId={user.id}
         name={profile.name}
         role={role}
         roleLabel={roleChip}
@@ -205,7 +207,12 @@ export default async function LandingPage({
       <div className="relative z-10 flex min-h-screen flex-col lg:pl-64">
         {/* Mobile Header (Hidden on Desktop since AppSidebar has brand and user card) */}
         <div className="lg:hidden">
-          <UnifiedHeader name={profile.name} roleLabel={roleChip} signOutAction={signOut} />
+          <UnifiedHeader
+            name={profile.name}
+            roleLabel={roleChip}
+            signOutAction={signOut}
+            extra={<NotificationsBell userId={user.id} />}
+          />
         </div>
 
         <div className="flex flex-col gap-6 px-4 py-6 sm:px-8 sm:py-8">
