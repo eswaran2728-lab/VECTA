@@ -125,6 +125,7 @@ export function PartAForm({
   const [searchDone, setSearchDone] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [vehicleNumber, setVehicleNumber] = useState("");
+  const [station, setStation] = useState("");
   // Reduce repeated typing: if the signed-in PIC has a matching driver
   // record, default to "it's me" (auto-filled, read-only) instead of
   // making them retype their own name/ID. If someone else is actually
@@ -329,6 +330,8 @@ export function PartAForm({
                 placeholder="e.g. KUL"
                 autoCapitalize="characters"
                 required
+                value={station}
+                onChange={(e) => setStation(e.target.value)}
               />
             </div>
             <div className="space-y-2">
@@ -560,10 +563,11 @@ export function PartAForm({
           <input type="hidden" name="signature" value={signature ?? ""} />
 
           {/* Validation Checklist / Help */}
-          {!searchDone || !signature || !sealsReady || cargoTypes.length === 0 || !hubDestinationReady ? (
+          {!searchDone || !signature || !sealsReady || cargoTypes.length === 0 || !hubDestinationReady || !station.trim() ? (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
               <p className="font-semibold mb-1">Required before submission:</p>
               <ul className="list-disc pl-4 space-y-0.5">
+                {!station.trim() ? <li>Enter Station</li> : null}
                 {cargoTypes.length === 0 ? <li>Select at least one Cargo Type</li> : null}
                 {!sealsReady ? <li>Enter seal number and select seal colour for all seals</li> : null}
                 {!searchDone ? <li>Check &quot;Vehicle search completed&quot;</li> : null}
@@ -596,6 +600,7 @@ export function PartAForm({
                 disabled={pending}
                 onClick={(e) => {
                   if (
+                    !station.trim() ||
                     !searchDone ||
                     !signature ||
                     !sealsReady ||
@@ -605,7 +610,8 @@ export function PartAForm({
                     !escortComplete ||
                     !hubDestinationReady
                   ) {
-                    if (!searchDone) alert("Please complete and check 'Vehicle search completed'.");
+                    if (!station.trim()) alert("Please enter the Station.");
+                    else if (!searchDone) alert("Please complete and check 'Vehicle search completed'.");
                     else if (!signature) alert("Please sign the signature field before submitting.");
                     else if (!sealsReady) alert("Please fill in seal number and select seal colour.");
                     else if (cargoTypes.length === 0) alert("Please select at least one cargo type.");
