@@ -8,7 +8,7 @@ import {
 
 // Fields worth a second pass from Claude when the regex parser can't confidently pull
 // them out — currently just the one true free-text field in the parseable set.
-const AI_ASSIST_FIELDS: (keyof Sec016ParsedFields)[] = ["reason_for_delay"];
+const AI_ASSIST_FIELDS: (keyof Sec016ParsedFields)[] = ["reason_for_delay", "discrepancies", "offload_remark"];
 
 export async function POST(request: Request) {
   await requireProfile();

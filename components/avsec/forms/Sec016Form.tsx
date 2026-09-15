@@ -451,7 +451,7 @@ export function Sec016Form({
             autoFilled={autoFilledFields.has("origin_arr_dep")}
           />
         </FieldRow>
-        <TextField name="assisted_by" register={register} label="Assisted By" required error={errors.assisted_by} />
+        <TextField name="assisted_by" register={register} label="Assisted By" required error={errors.assisted_by} autoFilled={autoFilledFields.has("assisted_by")} />
 
         <RadioGroupField
           name="aircraft_type"
@@ -461,6 +461,7 @@ export function Sec016Form({
           columns={4}
           options={["A 320", "A 321", "A 330", "Other"]}
           error={errors.aircraft_type as never}
+          autoFilled={autoFilledFields.has("aircraft_type")}
         />
         {values.aircraft_type === "Other" && (
           <TextField
@@ -497,27 +498,27 @@ export function Sec016Form({
           />
         </FieldRow>
         <TextField name="reason_for_delay" register={register} label="Reason for Delay" error={errors.reason_for_delay} autoFilled={autoFilledFields.has("reason_for_delay")} />
-        <RadioGroupField name="do_infmd" register={register} label="D/O INFMD" required options={["YES", "NO"]} error={errors.do_infmd as never} />
+        <RadioGroupField name="do_infmd" register={register} label="D/O INFMD" required options={["YES", "NO"]} error={errors.do_infmd as never} autoFilled={autoFilledFields.has("do_infmd")} />
 
         {/* 6. Direction-specific baggage, cargo, and Co-Mail / Comat */}
         {isArrival ? (
           <>
-            <TextField name="inbound_baggage" register={register} label="Inbound Baggage" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.inbound_baggage} />
-            <TextField name="inbound_cargo" register={register} label="Inbound Cargo" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.inbound_cargo} />
-            <TextField name="inbound_co_mail" register={register} label="Inbound Co-Mail / Comat" required naFillable setValue={setValue} error={errors.inbound_co_mail} />
+            <TextField name="inbound_baggage" register={register} label="Inbound Baggage" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.inbound_baggage} autoFilled={autoFilledFields.has("inbound_baggage")} />
+            <TextField name="inbound_cargo" register={register} label="Inbound Cargo" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.inbound_cargo} autoFilled={autoFilledFields.has("inbound_cargo")} />
+            <TextField name="inbound_co_mail" register={register} label="Inbound Co-Mail / Comat" required naFillable setValue={setValue} error={errors.inbound_co_mail} autoFilled={autoFilledFields.has("inbound_co_mail")} />
           </>
         ) : (
           <>
-            <TextField name="outbound_baggage" register={register} label="Outbound Baggage" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.outbound_baggage} />
-            <TextField name="outbound_cargo" register={register} label="Outbound Cargo" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.outbound_cargo} />
-            <TextField name="outbound_co_mail" register={register} label="Outbound Co-Mail / Comat" required naFillable setValue={setValue} error={errors.outbound_co_mail} />
+            <TextField name="outbound_baggage" register={register} label="Outbound Baggage" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.outbound_baggage} autoFilled={autoFilledFields.has("outbound_baggage")} />
+            <TextField name="outbound_cargo" register={register} label="Outbound Cargo" hint="Trolley / Container(s)" required naFillable setValue={setValue} error={errors.outbound_cargo} autoFilled={autoFilledFields.has("outbound_cargo")} />
+            <TextField name="outbound_co_mail" register={register} label="Outbound Co-Mail / Comat" required naFillable setValue={setValue} error={errors.outbound_co_mail} autoFilled={autoFilledFields.has("outbound_co_mail")} />
           </>
         )}
       </FormSection>
 
       {/* 7. Ramp Loading Supervisor (RLS) */}
       <FormSection title="Ramp Loading Supervisor">
-        <TextField name="shift_leader" register={register} label="Ramp Loading Supervisor (RLS)" hint="Name & ID" required error={errors.shift_leader} />
+        <TextField name="shift_leader" register={register} label="Ramp Loading Supervisor (RLS)" hint="Name & ID" required error={errors.shift_leader} autoFilled={autoFilledFields.has("shift_leader")} />
 
         {/* 8 & 9. Ramp agent details */}
         <RampAgentsField name="ramp_agents_baggage" label="Ramp agent details (baggage)" register={register} error={errors.ramp_agents_baggage} />
@@ -532,7 +533,7 @@ export function Sec016Form({
       {/* 10. Security Checks */}
       <FormSection title="Security Checks">
         <div>
-          <RadioGroupField name="cargo_hold_checked" register={register} label="Cargo Hold Checked" required options={["YES", "NO"]} error={errors.cargo_hold_checked as never} />
+          <RadioGroupField name="cargo_hold_checked" register={register} label="Cargo Hold Checked" required options={["YES", "NO"]} error={errors.cargo_hold_checked as never} autoFilled={autoFilledFields.has("cargo_hold_checked")} />
           <p className="field-hint text-[11px] text-muted-foreground font-mono mt-1.5">
             {isArrival
               ? "Ensure baggage, cargo, mail, courier bags, etc. are offloaded from the aircraft hold."
@@ -540,7 +541,7 @@ export function Sec016Form({
           </p>
         </div>
         <RadioGroupField name="staff_frisked" register={register} label="Staff Frisked" required options={["YES", "NO"]} error={errors.staff_frisked as never} autoFilled={autoFilledFields.has("staff_frisked")} />
-        <RadioGroupField name="cabin_check" register={register} label="Cabin Check" options={["YES", "NO"]} error={errors.cabin_check as never} />
+        <RadioGroupField name="cabin_check" register={register} label="Cabin Check" options={["YES", "NO"]} error={errors.cabin_check as never} autoFilled={autoFilledFields.has("cabin_check")} />
       </FormSection>
 
       {/* 11. Discrepancies */}
