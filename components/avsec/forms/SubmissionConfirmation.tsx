@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import QRCode from "qrcode";
 import { formatDateTimeMY } from "@/lib/avsec/datetime";
 import { cn } from "@/lib/avsec/utils";
 
@@ -28,25 +27,6 @@ export function SubmissionConfirmation({
   onSubmitAnother: () => void;
 }) {
   const [copied, setCopied] = useState(false);
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!reportNo) {
-      setQrDataUrl(null);
-      return;
-    }
-    let cancelled = false;
-    QRCode.toDataURL(reportNo, { margin: 1, width: 160 })
-      .then((url) => {
-        if (!cancelled) setQrDataUrl(url);
-      })
-      .catch(() => {
-        if (!cancelled) setQrDataUrl(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [reportNo]);
 
   async function copyReportNo() {
     if (!reportNo) return;
@@ -117,10 +97,6 @@ export function SubmissionConfirmation({
             <p className="font-mono text-xs font-semibold text-amber-400">
               Write this number on the paper form
             </p>
-            {qrDataUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={qrDataUrl} alt={`QR code for ${reportNo}`} className="mx-auto rounded-lg p-1 bg-white" width={130} height={130} />
-            )}
             <button type="button" className="btn-secondary w-full text-xs" onClick={copyReportNo}>
               {copied ? "Copied ✓" : "Copy Report Number"}
             </button>
