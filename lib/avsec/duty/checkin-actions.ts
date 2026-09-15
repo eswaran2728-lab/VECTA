@@ -132,6 +132,7 @@ export async function submitDutyCheckIn(input: unknown): Promise<ActionResult> {
       profile_id: profile.id,
       station: profile.station,
       team: profile.team || null,
+      ops_group: profile.ops_group || null,
       duty_date: dutyDate,
       shift_code: roster.shift_code,
       zone_id: gpsMatch?.id ?? null,

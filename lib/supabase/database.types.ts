@@ -183,6 +183,7 @@ export type Database = {
           outgoing_profile_id: string
           station: string
           team: string | null
+          ops_group: string | null
           staff_name: string
           staff_id: string
           place_category: "Bay" | "Premises" | "Terminal"
@@ -201,6 +202,7 @@ export type Database = {
           outgoing_profile_id: string
           station: string
           team?: string | null
+          ops_group?: string | null
           staff_name: string
           staff_id: string
           place_category: "Bay" | "Premises" | "Terminal"
@@ -219,6 +221,7 @@ export type Database = {
           outgoing_profile_id?: string
           station?: string
           team?: string | null
+          ops_group?: string | null
           staff_name?: string
           staff_id?: string
           place_category?: "Bay" | "Premises" | "Terminal"
@@ -991,6 +994,7 @@ export type Database = {
           station: string
           status: string
           team: string | null
+          ops_group: string | null
           total_minutes: number | null
           updated_at: string
           zone_id: string | null
@@ -1029,6 +1033,7 @@ export type Database = {
           station: string
           status?: string
           team?: string | null
+          ops_group?: string | null
           total_minutes?: number | null
           updated_at?: string
           zone_id?: string | null
@@ -1067,6 +1072,7 @@ export type Database = {
           station?: string
           status?: string
           team?: string | null
+          ops_group?: string | null
           total_minutes?: number | null
           updated_at?: string
           zone_id?: string | null
@@ -1385,6 +1391,7 @@ export type Database = {
           std: string | null
           submitted_at: string | null
           team: string
+          ops_group: string | null
           total_bags: number
           updated_at: string
           verified_by_dse_id: string | null
@@ -1408,6 +1415,7 @@ export type Database = {
           std?: string | null
           submitted_at?: string | null
           team: string
+          ops_group: string | null
           total_bags?: number
           updated_at?: string
           verified_by_dse_id?: string | null
@@ -1431,6 +1439,7 @@ export type Database = {
           std?: string | null
           submitted_at?: string | null
           team?: string
+          ops_group?: string | null
           total_bags?: number
           updated_at?: string
           verified_by_dse_id?: string | null
@@ -2192,6 +2201,7 @@ export type Database = {
           status: Database["public"]["Enums"]["report_status"]
           submitted_at: string | null
           team: string
+          ops_group: string | null
           updated_at: string
         }
         Insert: {
@@ -2211,6 +2221,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["report_status"]
           submitted_at?: string | null
           team: string
+          ops_group: string | null
           updated_at?: string
         }
         Update: {
@@ -2230,6 +2241,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["report_status"]
           submitted_at?: string | null
           team?: string
+          ops_group?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -2313,6 +2325,7 @@ export type Database = {
           status: Database["public"]["Enums"]["report_status"]
           submitted_at: string | null
           team: string
+          ops_group: string | null
           updated_at: string
         }
         Insert: {
@@ -2331,6 +2344,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["report_status"]
           submitted_at?: string | null
           team: string
+          ops_group: string | null
           updated_at?: string
         }
         Update: {
@@ -2349,6 +2363,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["report_status"]
           submitted_at?: string | null
           team?: string
+          ops_group?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -2467,6 +2482,7 @@ export type Database = {
           status: Database["public"]["Enums"]["report_status"]
           submitted_at: string | null
           team: string
+          ops_group: string | null
           updated_at: string
         }
         Insert: {
@@ -2522,6 +2538,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["report_status"]
           submitted_at?: string | null
           team: string
+          ops_group: string | null
           updated_at?: string
         }
         Update: {
@@ -2577,6 +2594,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["report_status"]
           submitted_at?: string | null
           team?: string
+          ops_group?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -2617,6 +2635,7 @@ export type Database = {
           status: Database["public"]["Enums"]["report_status"]
           submitted_at: string | null
           team: string
+          ops_group: string | null
           updated_at: string
         }
         Insert: {
@@ -2632,6 +2651,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["report_status"]
           submitted_at?: string | null
           team: string
+          ops_group: string | null
           updated_at?: string
         }
         Update: {
@@ -2647,6 +2667,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["report_status"]
           submitted_at?: string | null
           team?: string
+          ops_group?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -2745,6 +2766,7 @@ export type Database = {
           supervising_officer_id: string
           supervising_officer_name: string
           team: string
+          ops_group: string | null
           time_commence: string
           time_completed: string
           updated_at: string
@@ -2776,6 +2798,7 @@ export type Database = {
           supervising_officer_id: string
           supervising_officer_name: string
           team: string
+          ops_group: string | null
           time_commence: string
           time_completed: string
           updated_at?: string
@@ -2807,6 +2830,7 @@ export type Database = {
           supervising_officer_id?: string
           supervising_officer_name?: string
           team?: string
+          ops_group?: string | null
           time_commence?: string
           time_completed?: string
           updated_at?: string
@@ -2885,6 +2909,7 @@ export type Database = {
           status: Database["public"]["Enums"]["report_status"]
           submitted_at: string | null
           team: string
+          ops_group: string | null
           updated_at: string
         }
         Insert: {
@@ -2901,6 +2926,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["report_status"]
           submitted_at?: string | null
           team: string
+          ops_group: string | null
           updated_at?: string
         }
         Update: {
@@ -2917,6 +2943,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["report_status"]
           submitted_at?: string | null
           team?: string
+          ops_group?: string | null
           updated_at?: string
         }
         Relationships: [
