@@ -16,7 +16,7 @@ import { signOut } from "@/lib/icms/actions/auth";
 import { getLang } from "@/lib/icms/actions/language";
 import { LanguageToggle } from "@/components/icms/language-toggle";
 import { ROLE_LABELS } from "@/lib/icms/constants";
-import { NotificationsBell } from "@/components/icms/notifications-bell";
+import { NotificationsBell } from "@/components/layout/NotificationsBell";
 import { PwaProvider } from "@/components/icms/pwa-provider";
 import { InstallPrompt } from "@/components/icms/install-prompt";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
@@ -100,6 +100,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen bg-background text-foreground antialiased">
       <AppSidebar
+        userId={profile.id}
         name={profile.name}
         role={profile.role}
         roleLabel={ROLE_LABELS[profile.role] ?? null}
