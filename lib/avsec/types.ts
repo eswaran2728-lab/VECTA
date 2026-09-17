@@ -233,10 +233,15 @@ export interface Sec033Row {
 
 export interface Sec013ProfilingDutyEntry {
   entry_no: number;
-  duty_area: "Departure Gate" | "Terminal Area" | "Apron";
+  // Historical rows may hold "Terminal Area" / "Apron" from before Duty Area
+  // became a fixed "Departure Gate" value — kept as `string` so old submissions
+  // stay readable/compatible; new submissions always write "Departure Gate".
+  duty_area: string;
   time_from: string;
   time_to: string;
-  location: "Departure Gate Sector 5/6/7 (P-Q)" | "Departure Gate Sector 1 & 3 (J & L/K)" | "Terminal Area (Sector 2)";
+  // Free text (manually entered gate/location) — historical rows may hold one
+  // of the old fixed dropdown options, which remain valid strings.
+  location: string;
   sector_flight: string;
   description: string;
   incident_remark: string | null;

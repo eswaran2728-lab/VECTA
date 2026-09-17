@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
-import { REPORT_META, SEC013_DUTY_AREAS, SEC013_LOCATIONS, SEC013_CERTIFICATION_TEXT, SECURITY_DISCLAIMER } from "@/lib/avsec/reference-data";
+import { REPORT_META, SEC013_DUTY_AREA_VALUE, SEC013_CERTIFICATION_TEXT, SECURITY_DISCLAIMER } from "@/lib/avsec/reference-data";
 import { sec013Schema } from "@/lib/avsec/schemas/sec013";
 import { submitSec013 } from "@/lib/avsec/reports/actions";
 import { useOfflineSubmit } from "@/lib/avsec/offline/useOfflineSubmit";
@@ -11,7 +11,6 @@ import { combineDateTimeMY } from "@/lib/avsec/datetime";
 import {
   TextField,
   TextAreaField,
-  SelectField,
   CheckboxField,
   FieldRow,
   FormSection,
@@ -48,7 +47,7 @@ interface UIValues {
 
 function emptyDuty() {
   return {
-    duty_area: "",
+    duty_area: SEC013_DUTY_AREA_VALUE,
     time_from: "",
     time_to: "",
     location: "",
@@ -243,20 +242,24 @@ export function Sec013Form({
                 onRemove={fields.length > 1 ? () => remove(idx) : undefined}
               >
                 <FieldRow>
-                  <SelectField
-                    name={`profiling_duties.${idx}.duty_area`}
-                    register={register}
-                    label="Duty Area"
-                    required
-                    options={SEC013_DUTY_AREAS}
-                    error={errors.profiling_duties?.[idx]?.duty_area}
-                  />
-                  <SelectField
+                  <div>
+                    <label className="field-label" htmlFor={`profiling_duties.${idx}.duty_area`}>
+                      Duty Area <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      id={`profiling_duties.${idx}.duty_area`}
+                      type="text"
+                      readOnly
+                      className="input-base cursor-not-allowed bg-muted/40 text-muted-foreground"
+                      {...register(`profiling_duties.${idx}.duty_area`)}
+                    />
+                  </div>
+                  <TextField
                     name={`profiling_duties.${idx}.location`}
                     register={register}
                     label="Location"
                     required
-                    options={SEC013_LOCATIONS}
+                    placeholder="Enter location / gate"
                     error={errors.profiling_duties?.[idx]?.location}
                   />
                 </FieldRow>
@@ -265,7 +268,7 @@ export function Sec013Form({
                     name={`profiling_duties.${idx}.time_from`}
                     type="time"
                     register={register}
-                    label="Time From"
+                    label="Passport Check – Commencement Time"
                     required
                     error={errors.profiling_duties?.[idx]?.time_from as never}
                   />
@@ -273,9 +276,9 @@ export function Sec013Form({
                     name={`profiling_duties.${idx}.time_to`}
                     type="time"
                     register={register}
-                    label="Time To"
+                    label="Passport Check – Completion Time"
                     required
-                    hint={crossesMidnight ? "Time To is before Time From — OK if the shift crosses midnight." : undefined}
+                    hint={crossesMidnight ? "Completion Time is before Commencement Time — OK if the shift crosses midnight." : undefined}
                     error={errors.profiling_duties?.[idx]?.time_to as never}
                   />
                 </FieldRow>

@@ -1,12 +1,16 @@
 import { z } from "zod";
 import { requiredText, acknowledgementSchema } from "./common";
-import { SEC013_DUTY_AREAS, SEC013_LOCATIONS } from "@/lib/avsec/reference-data";
+import { SEC013_DUTY_AREA_VALUE } from "@/lib/avsec/reference-data";
 
 export const sec013ProfilingDutyEntrySchema = z.object({
-  duty_area: z.enum(SEC013_DUTY_AREAS, { errorMap: () => ({ message: "Duty Area is required" }) }),
-  time_from: requiredText("Time From"),
-  time_to: requiredText("Time To"),
-  location: z.enum(SEC013_LOCATIONS, { errorMap: () => ({ message: "Location is required" }) }),
+  // Duty Area is a fixed, pre-filled value (AA/SEC/F/013 Rev.03 currently only
+  // covers Departure Gate profiling) — stored the same way as before, just no
+  // longer user-selectable, so historical rows with the same value stay valid.
+  duty_area: z.literal(SEC013_DUTY_AREA_VALUE),
+  time_from: requiredText("Passport Check – Commencement Time"),
+  time_to: requiredText("Passport Check – Completion Time"),
+  // Manually typed free text (was a fixed dropdown of pre-set locations).
+  location: requiredText("Location"),
   sector_flight: requiredText("Sector Flight"),
   description: requiredText("Description / Daily Report"),
   incident_remark: z.string().trim().optional().default(""),
@@ -40,10 +44,10 @@ export const sec013Defaults: Sec013FormValues = {
   date_time_out: "",
   profiling_duties: [
     {
-      duty_area: "Departure Gate",
+      duty_area: SEC013_DUTY_AREA_VALUE,
       time_from: "",
       time_to: "",
-      location: "Departure Gate Sector 5/6/7 (P-Q)",
+      location: "",
       sector_flight: "",
       description: "",
       incident_remark: "",
