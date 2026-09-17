@@ -369,11 +369,6 @@ export function Sec029Form({
           return (
             <div key={section} className="space-y-3">
               <h3 className="font-bold text-xs font-mono uppercase tracking-wider text-foreground">{section}</h3>
-              {section === "CARGO HOLD (EXTERNAL)" && (
-                <p className="text-[11px] text-muted-foreground italic">
-                  Doors, walls, floor, and ceiling to be inspected thoroughly.
-                </p>
-              )}
               {itemsInSection.map((item) => (
                 <Sec029ChecklistItem
                   key={item.code}
