@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenBayBoard } from "@/lib/avsec/reports/queries";
 import { getShiftCompliance } from "@/lib/avsec/dashboard/queries";
 import { ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
-import { todayISODateMY } from "@/lib/avsec/datetime";
+import { todayISODateMY, formatDateTimeMY } from "@/lib/avsec/datetime";
 import type { Profile } from "@/lib/avsec/types";
 import type { UserProfile } from "@/lib/icms/database.types";
 
@@ -103,6 +103,44 @@ async function getAvsecActionItems(profile: Profile): Promise<ActionItem[]> {
           detail: `${c.profile.team ?? ""} · shift ended ${hoursSinceEnd.toFixed(1)}h ago, no patrol report filed`,
           href: `/avsec/dashboard`,
           overdue: true,
+        });
+      }
+    }
+  }
+
+  // ASO Daily Reports (SEC014) awaiting SO/DSE acknowledgement — the
+  // supervisor's own station/team scope, since that's exactly who
+  // can_acknowledge_report() (see supabase/migrations/20260917000001_*)
+  // actually lets acknowledge them. Org-wide roles aren't included: they
+  // already have full report search, and the rank-based acknowledgement
+  // rule doesn't grant them this action anyway.
+  if ((profile.role === "SO" || isDse) && station) {
+    const { data: pendingReports } = await supabase
+      .from("report_sec014")
+      .select("id, staff_name, staff_id, team, submitted_at")
+      .eq("status", "submitted")
+      .eq("station", station)
+      .eq("team", profile.team ?? "");
+    if (pendingReports && pendingReports.length > 0) {
+      const { data: acked } = await supabase
+        .from("report_acknowledgements")
+        .select("report_id")
+        .eq("report_type", "sec014")
+        .in(
+          "report_id",
+          pendingReports.map((r) => r.id),
+        );
+      const ackedIds = new Set((acked ?? []).map((a) => a.report_id));
+      for (const r of pendingReports) {
+        if (ackedIds.has(r.id)) continue;
+        items.push({
+          id: `sec014-ack-${r.id}`,
+          source: "avsec",
+          category: "Daily Report Awaiting Acknowledgement",
+          title: r.staff_name,
+          detail: `${r.staff_id} · ${r.team ?? ""} · submitted ${formatDateTimeMY(r.submitted_at, "HH:mm")}`,
+          href: `/avsec/reports/view/sec014/${r.id}`,
+          overdue: false,
         });
       }
     }

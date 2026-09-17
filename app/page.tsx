@@ -6,6 +6,7 @@ import { opsGroupForTransaction } from "@/lib/icms/ops-group";
 import { getFilteredSubmissions } from "@/lib/avsec/dashboard/queries";
 import { getOpenBayBoard } from "@/lib/avsec/reports/queries";
 import { REPORT_TYPES as AVSEC_REPORT_TYPES, REPORT_META } from "@/lib/avsec/reference-data";
+import { requiresDailyReport } from "@/lib/avsec/auth";
 import { StatusDot, type OpsStatus } from "@/components/layout/StatusDot";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
@@ -138,9 +139,16 @@ export default async function LandingPage({
     icmsProfile && ["supervisor", "enforcement", "management"].includes(icmsProfile.role ?? "")
   ) || orgWide;
 
-  const permittedAvsecReports = orgWide || (role === "aso" && (userOpsGroup === "operation_avsec" || userOpsGroup === "hub_avsec"))
+  // Daily Report (SEC014) filing is ASO-only — SO/DSE are supervisory roles
+  // that acknowledge an ASO's Daily Report instead of filing one, so they get
+  // no AVSEC report-filing cards here (see lib/avsec/auth.ts#requiresDailyReport).
+  const permittedAvsecReports = orgWide
     ? AVSEC_REPORT_TYPES
-    : (["sec014"] as readonly (typeof AVSEC_REPORT_TYPES)[number][]);
+    : requiresDailyReport(role)
+      ? (userOpsGroup === "operation_avsec" || userOpsGroup === "hub_avsec")
+        ? AVSEC_REPORT_TYPES
+        : (["sec014"] as readonly (typeof AVSEC_REPORT_TYPES)[number][])
+      : ([] as readonly (typeof AVSEC_REPORT_TYPES)[number][]);
 
   const activeTab: OpsGroup | "all" = orgWide && ops && OPS_GROUPS.includes(ops as OpsGroup) ? (ops as OpsGroup) : "all";
   // Effective ops_group scope for header counts / activity feed: the

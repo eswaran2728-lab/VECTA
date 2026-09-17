@@ -44,11 +44,22 @@ export default async function ReportViewPage({
     getReportAttachments(type, params.id),
   ]);
 
+  // SEC014 Daily Report: either SO or DSE may acknowledge an ASO's report
+  // directly (both are the ASO's operational supervisors), not only the
+  // immediate next rank up. Every other report type keeps the strict
+  // one-rank-up chain. Mirrors can_acknowledge_report() in the database,
+  // which is the actual server-side enforcement — this only controls
+  // whether the button renders.
+  const rankBasedEligible =
+    type === "sec014" && submitter?.role === "ASO"
+      ? profile.role === "SO" || profile.role === "DSE"
+      : submitter !== null && ROLE_RANK[profile.role] === ROLE_RANK[submitter.role] + 1;
+
   const canAcknowledge =
     reportRow.status === "submitted" &&
     !acknowledgement &&
     submitter !== null &&
-    ROLE_RANK[profile.role] === ROLE_RANK[submitter.role] + 1 &&
+    rankBasedEligible &&
     profile.station === submitter.station &&
     (profile.team ?? "") === (submitter.team ?? "");
 

@@ -56,7 +56,19 @@ export type ProfileRole = "ASO" | "SO" | "DSE" | "ADMIN" | "ENFORCEMENT" | "MANA
 
 // Rank hierarchy: ASO < SO < DSE < ENFORCEMENT < MANAGEMENT.
 export const MONITOR_ROLES: ProfileRole[] = ["SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"];
-export const DAILY_REPORT_ROLES: ProfileRole[] = ["ASO", "SO", "DSE"];
+
+/** Central rule for who is required to file the SEC 014 Daily Report. SO and
+ *  DSE are supervisory roles — they review/acknowledge an ASO's Daily Report
+ *  instead of submitting one. Case-insensitive so it also works against the
+ *  lowercase unified_role vocabulary used on the root dashboard. Use this
+ *  (or DAILY_REPORT_ROLES, derived from it) everywhere Daily Report
+ *  requirement/compliance is evaluated, rather than re-deriving the rule. */
+export function requiresDailyReport(role: string | null | undefined): boolean {
+  return (role ?? "").toUpperCase() === "ASO";
+}
+export const DAILY_REPORT_ROLES: ProfileRole[] = (["ASO", "SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"] as ProfileRole[]).filter(
+  requiresDailyReport,
+);
 export const MANAGEMENT_ROLES: ProfileRole[] = ["MANAGEMENT", "ADMIN"];
 export const ADMIN_ROLES: ProfileRole[] = MANAGEMENT_ROLES;
 // Only the team-scoped roles actually work a shift, so only they check in/out at /duty.
