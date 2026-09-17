@@ -134,7 +134,7 @@ export const REPORT_META: Record<
     route: "sec029",
   },
   sec018: {
-    name: "PATROLLING OF AIRCRAFT AT PARKING BAY SEC 018",
+    name: "Aircraft Security Patrol and Guarding Duty Log SEC 018",
     code: "AA/SEC/F/018 Rev.01",
     table: "report_sec018",
     route: "sec018",
