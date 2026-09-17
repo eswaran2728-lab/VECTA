@@ -164,6 +164,11 @@ export const SECURITY_DISCLAIMER =
 // "A. AIRCRAFT VISUAL INSPECTION (EXTERNAL)"; "B. CARGO HOLD (EXTERNAL)" -> "CARGO
 // HOLD (EXTERNAL)". See SEC029_LEGACY_ITEM_LABELS below for the removed items' labels
 // — historical reports that recorded them still display correctly.
+// Cargo Hold (External) update: B_EXT_V relabeled "(B) V. FLOOR & WALL CEILING" ->
+// "(B) V. DOOR, FLOOR & WALL CEILING" (same code, no data impact); added B_EXT_VII
+// "(C) Inspect any cavities, compartments inside the hold" — reports submitted before
+// this change simply have no B_EXT_VII row, which the existing report.items-driven
+// rendering already handles (nothing fabricated, the item just doesn't appear).
 export const SEC029_ITEMS: {
   code: string;
   section: string;
@@ -192,8 +197,9 @@ export const SEC029_ITEMS: {
   },
   { code: "A_EXT_II", section: "A. AIRCRAFT VISUAL INSPECTION (EXTERNAL)", label: "I. LANDING GEAR BAY" },
   { code: "A_EXT_III", section: "A. AIRCRAFT VISUAL INSPECTION (EXTERNAL)", label: "(A) III. WHEELS AND BODIES" },
-  { code: "B_EXT_V", section: "CARGO HOLD (EXTERNAL)", label: "(B) V. FLOOR & WALL CEILING" },
+  { code: "B_EXT_V", section: "CARGO HOLD (EXTERNAL)", label: "(B) V. DOOR, FLOOR & WALL CEILING" },
   { code: "B_EXT_VI", section: "CARGO HOLD (EXTERNAL)", label: "(B) VI. RESTRAINT NETS" },
+  { code: "B_EXT_VII", section: "CARGO HOLD (EXTERNAL)", label: "(C) Inspect any cavities, compartments inside the hold" },
 ];
 
 // Removed items' labels, kept only so a historical report that recorded them (before
