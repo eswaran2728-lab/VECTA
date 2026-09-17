@@ -226,12 +226,18 @@ export function AppSidebar({
           label: "Report Search & Lookup",
           icon: Search,
         },
-        {
+      ];
+      // DSE is a supervisory role — it acknowledges an ASO's Daily Report
+      // rather than filing one, so there's nothing for it at the report-
+      // filing entry point. Org-wide roles (Enforcement keeps SEC014 filing
+      // rights, Management/Admin see the full report list) still get it.
+      if (isOrgWide) {
+        reportsItems.push({
           href: "/?section=reports#reports",
           label: "File Security Report",
           icon: FileText,
-        },
-      ];
+        });
+      }
 
       groups.push({
         title: "SECURITY REPORTS",
