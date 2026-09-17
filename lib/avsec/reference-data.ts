@@ -94,15 +94,9 @@ export type ProfileStatus = (typeof PROFILE_STATUSES)[number];
 export const REPORT_TYPES = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013"] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];
 
-// SEC 013 Section 2 "Duty Area" options.
-export const SEC013_DUTY_AREAS = ["Departure Gate", "Terminal Area", "Apron"] as const;
-
-// SEC 013 Section 2 "Location" options.
-export const SEC013_LOCATIONS = [
-  "Departure Gate Sector 5/6/7 (P-Q)",
-  "Departure Gate Sector 1 & 3 (J & L/K)",
-  "Terminal Area (Sector 2)",
-] as const;
+// SEC 013 Section 2 "Duty Area" — fixed/pre-filled value (no longer user-selectable;
+// AA/SEC/F/013 Rev.03 profiling duty is always Departure Gate).
+export const SEC013_DUTY_AREA_VALUE = "Departure Gate" as const;
 
 export const SEC013_CERTIFICATION_TEXT =
   "I certify that the information provided in this report is true, complete and accurate to the best of my knowledge.";
