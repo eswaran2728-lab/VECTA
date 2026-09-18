@@ -68,15 +68,16 @@ export async function scanTransaction(raw: string): Promise<ScanResult> {
   // encodes this token verbatim, never a bare id/number). Checked before the
   // legacy id/number lookup below, which stays only for manually typed
   // references on VECTA's own transaction detail pages.
+  const userStation = (profile as { station?: string | null }).station ?? null;
   const tokenResult = verifyQrToken(ref);
   if (tokenResult.ok) {
     if (tokenResult.type === "VENDOR") {
       return resolveVendorTransaction(supabase, tokenResult.transactionId, orgWide, userOpsGroup);
     }
-    return resolveCateringTransaction(supabase, tokenResult.transactionId, orgWide, userOpsGroup);
+    return resolveCateringTransaction(supabase, tokenResult.transactionId, orgWide, userOpsGroup, userStation);
   }
 
-  let lookup = supabase.from("transactions").select("id, status, direction, route, transaction_number");
+  let lookup = supabase.from("transactions").select("id, status, direction, route, transaction_number, hub_destination");
   if (UUID_RE.test(ref)) {
     lookup = lookup.eq("id", ref);
   } else if (NUMBER_RE.test(ref)) {
@@ -94,20 +95,34 @@ export async function scanTransaction(raw: string): Promise<ScanResult> {
     direction: Direction;
     route: TransactionRoute;
     transaction_number: string;
-  }, orgWide, userOpsGroup);
+    hub_destination?: string | null;
+  }, orgWide, userOpsGroup, userStation);
 }
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
 function resolveCateringRow(
-  t: { id: string; status: TransactionStatus; direction: Direction; route: TransactionRoute; transaction_number: string },
+  t: { id: string; status: TransactionStatus; direction: Direction; route: TransactionRoute; transaction_number: string; hub_destination?: string | null },
   orgWide: boolean,
-  userOpsGroup: OpsGroup | null
+  userOpsGroup: OpsGroup | null,
+  userStation?: string | null
 ): ScanResult {
   if (!orgWide) {
     const txOpsGroup = opsGroupForTransaction(t.direction, t.status, t.route);
     if (!txOpsGroup || txOpsGroup !== userOpsGroup) {
       return { error: "This transaction is not in your ops group." };
+    }
+    if (
+      userOpsGroup === "hub_avsec" &&
+      userStation &&
+      ["PEN", "JHB", "NILAI"].includes(userStation) &&
+      t.route === "HUB" &&
+      t.hub_destination &&
+      userStation !== t.hub_destination
+    ) {
+      return {
+        error: `This Hub transaction is destined for ${t.hub_destination}, not your station (${userStation}).`,
+      };
     }
   }
 
@@ -128,18 +143,20 @@ async function resolveCateringTransaction(
   supabase: SupabaseClient,
   transactionId: string,
   orgWide: boolean,
-  userOpsGroup: OpsGroup | null
+  userOpsGroup: OpsGroup | null,
+  userStation?: string | null
 ): Promise<ScanResult> {
   const { data: tx } = await supabase
     .from("transactions")
-    .select("id, status, direction, route, transaction_number")
+    .select("id, status, direction, route, transaction_number, hub_destination")
     .eq("id", transactionId)
     .maybeSingle();
   if (!tx) return { error: "Transaction not found for this QR pass." };
   return resolveCateringRow(
-    tx as { id: string; status: TransactionStatus; direction: Direction; route: TransactionRoute; transaction_number: string },
+    tx as { id: string; status: TransactionStatus; direction: Direction; route: TransactionRoute; transaction_number: string; hub_destination?: string | null },
     orgWide,
-    userOpsGroup
+    userOpsGroup,
+    userStation
   );
 }
 

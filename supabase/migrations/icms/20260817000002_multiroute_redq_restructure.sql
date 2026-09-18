@@ -240,6 +240,17 @@ begin
     raise exception 'ICMS: confirmed destination % does not match the hub destination chosen at Part A (%)', new.confirmed_destination, v_hub_destination;
   end if;
 
+  -- Destination station isolation: If completing officer has a specific Hub station (PEN/JHB/NILAI),
+  -- it must match the transaction's hub_destination
+  if exists (
+    select 1 from public.profiles p
+    where p.id = new.completed_by
+      and p.station in ('PEN', 'JHB', 'NILAI')
+      and p.station <> v_hub_destination
+  ) then
+    raise exception 'ICMS: Hub station mismatch - officer station does not match hub destination (%)', v_hub_destination;
+  end if;
+
   -- Terminal step for HUB route — no Part C/D.
   update transactions set status = 'COMPLETED', completed_at = now() where id = new.transaction_id;
   return new;

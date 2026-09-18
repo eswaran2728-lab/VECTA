@@ -856,12 +856,20 @@ export async function completePartHub(
   if (!signature) return { error: "Signature is required." };
 
   const supabaseForCheck = await createClient();
-  const { data: txRow } = await supabaseForCheck
-    .from("transactions")
-    .select("direction, status, route, hub_destination")
-    .eq("id", transactionId)
-    .single();
+  const [txRes, officerRes] = await Promise.all([
+    supabaseForCheck
+      .from("transactions")
+      .select("direction, status, route, hub_destination")
+      .eq("id", transactionId)
+      .single(),
+    supabaseForCheck
+      .from("profiles")
+      .select("station")
+      .eq("id", profile.id)
+      .maybeSingle(),
+  ]);
 
+  const txRow = txRes.data;
   if (!txRow) return { error: "Transaction not found. / Transaksi tidak dijumpai." };
   const tx = txRow as Pick<Transaction, "direction" | "status" | "route" | "hub_destination">;
 
@@ -872,6 +880,17 @@ export async function completePartHub(
   if (orderError) return { error: orderError };
   if (!tx.hub_destination) {
     return { error: "No hub destination on file for this transaction." };
+  }
+
+  const officerStation = officerRes.data?.station;
+  if (
+    officerStation &&
+    ["PEN", "JHB", "NILAI"].includes(officerStation) &&
+    officerStation !== tx.hub_destination
+  ) {
+    return {
+      error: `HUB_STATION_MISMATCH: Your account is stationed at ${officerStation}, but this delivery is destined for ${tx.hub_destination}. Only Hub AVSEC at the destination station may confirm delivery. / Destinasi hab tidak sepadan dengan stesen anda.`,
+    };
   }
 
   let sig: { path: string; sha256: string };

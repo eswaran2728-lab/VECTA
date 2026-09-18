@@ -115,12 +115,16 @@ async function getAvsecActionItems(profile: Profile): Promise<ActionItem[]> {
   // already have full report search, and the rank-based acknowledgement
   // rule doesn't grant them this action anyway.
   if ((profile.role === "SO" || isDse) && station) {
-    const { data: pendingReports } = await supabase
+    let pendingReportsQuery = supabase
       .from("report_sec014")
       .select("id, staff_name, staff_id, team, submitted_at")
       .eq("status", "submitted")
       .eq("station", station)
       .eq("team", profile.team ?? "");
+    if (profile.ops_group) {
+      pendingReportsQuery = pendingReportsQuery.eq("ops_group", profile.ops_group);
+    }
+    const { data: pendingReports } = await pendingReportsQuery;
     if (pendingReports && pendingReports.length > 0) {
       const { data: acked } = await supabase
         .from("report_acknowledgements")

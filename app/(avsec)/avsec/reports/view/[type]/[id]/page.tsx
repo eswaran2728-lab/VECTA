@@ -37,10 +37,10 @@ export default async function ReportViewPage({
       ? Promise.resolve(null)
       : (await createClient())
           .from("profiles")
-          .select("role, station, team")
+          .select("role, station, team, ops_group")
           .eq("id", reportRow.profile_id)
           .maybeSingle()
-          .then((r) => r.data as { role: UserRole; station: string; team: string } | null),
+          .then((r) => r.data as { role: UserRole; station: string; team: string; ops_group?: string | null } | null),
     getReportAttachments(type, params.id),
   ]);
 
@@ -61,7 +61,8 @@ export default async function ReportViewPage({
     submitter !== null &&
     rankBasedEligible &&
     profile.station === submitter.station &&
-    (profile.team ?? "") === (submitter.team ?? "");
+    (profile.team ?? "") === (submitter.team ?? "") &&
+    (profile.ops_group ?? "") === (submitter.ops_group ?? "");
 
   const submittedAt = (report as { submitted_at: string | null }).submitted_at;
 

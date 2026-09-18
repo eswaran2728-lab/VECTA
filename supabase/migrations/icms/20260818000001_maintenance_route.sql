@@ -72,6 +72,12 @@ begin
     raise exception 'CSCS: transaction escalated, checkpoint processing suspended / transaksi dieskalasi, pemprosesan pusat pemeriksaan digantung';
   end if;
 
+  -- If this checkpoint was escalated by officer, transition directly to ESCALATED atomically
+  if new.result = 'ESCALATE' then
+    update transactions set status = 'ESCALATED' where id = new.transaction_id;
+    return new;
+  end if;
+
   if tg_table_name = 'part_b' then
     if v_direction = 'OUTBOUND' then
       if v_status <> 'CREATED' then
