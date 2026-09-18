@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>VECTA Ops</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #090d16;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .logo {
+      width: 96px;
+      height: 96px;
+      margin-bottom: 24px;
+    }
+    .title {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      margin-bottom: 8px;
+    }
+    .status {
+      font-size: 14px;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <img src="avsec-logo.png" alt="VECTA Logo" class="logo">
+  <div class="title">VECTA OPS</div>
+  <div class="status" id="status">Connecting to VECTA Network...</div>
+  <script>
+    if (navigator.onLine) {
+      window.location.replace('/');
+    } else {
+      document.getElementById('status').innerText = 'Offline. Please check network connection.';
+    }
+  </script>
+</body>
+</html>

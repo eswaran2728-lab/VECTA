@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">VECTA Ops</string>
+    <string name="title_activity_main">VECTA Ops</string>
+    <string name="package_name">com.airasia.vecta</string>
+    <string name="custom_url_scheme">com.airasia.vecta</string>
+</resources>
