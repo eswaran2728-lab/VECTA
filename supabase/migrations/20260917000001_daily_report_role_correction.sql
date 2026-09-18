@@ -36,16 +36,20 @@ create or replace function public.can_acknowledge_report(p_report_type text, p_r
 as $function$
 declare
   sub record;
+  sub_ops_group text;
   acker_role user_role;
   acker_station text;
   acker_team text;
+  acker_ops_group text;
 begin
   select * into sub from get_report_submitter(p_report_type, p_report_id);
   if sub is null then
     return false;
   end if;
 
-  select role, station, team into acker_role, acker_station, acker_team
+  select ops_group into sub_ops_group from profiles where id = sub.profile_id;
+
+  select role, station, team, ops_group into acker_role, acker_station, acker_team, acker_ops_group
   from profiles where id = auth.uid();
 
   return (
@@ -57,6 +61,7 @@ begin
     or role_rank(acker_role) = submitter_role_rank(sub.profile_id) + 1
   )
     and acker_station = sub.station
-    and coalesce(acker_team, '') = coalesce(sub.team, '');
+    and coalesce(acker_team, '') = coalesce(sub.team, '')
+    and coalesce(acker_ops_group, '') = coalesce(sub_ops_group, '');
 end;
 $function$;

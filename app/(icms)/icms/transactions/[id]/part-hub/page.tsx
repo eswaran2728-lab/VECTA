@@ -30,6 +30,20 @@ export default async function PartHubPage({ params }: { params: Promise<{ id: st
     redirect(`/icms/transactions/${id}`);
   }
 
+  const { data: avsecProfile } = await supabase
+    .from("profiles")
+    .select("station")
+    .eq("id", profile.id)
+    .maybeSingle();
+
+  if (
+    avsecProfile?.station &&
+    ["PEN", "JHB", "NILAI"].includes(avsecProfile.station) &&
+    avsecProfile.station !== transaction.hub_destination
+  ) {
+    redirect(`/icms/transactions/${id}?error=hub-station-mismatch`);
+  }
+
   const { data: partARow } = await supabase
     .from("part_a")
     .select("*")
