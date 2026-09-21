@@ -215,3 +215,43 @@ test("MANAGEMENT still cannot approve their own pending account end-to-end (self
   assert.equal(result.rowsAffected, 0);
   assert.equal(result.error, "Cannot change your own approval status.");
 });
+
+/**
+ * Third stage of this defect (found on the SECOND live production retest,
+ * 2026-09-21, after the RLS policy fix above): the backend approval
+ * actually succeeded (confirmed by direct DB query - status flipped,
+ * updated_at advanced) but the UI gave zero visible confirmation, so a
+ * genuine success was indistinguishable from a silent failure to the
+ * operator. Not an authorization bug - a missing success-feedback path.
+ * approveUser()/rejectUser() (lib/avsec/admin/actions.ts) must redirect
+ * with an explicit ?success= message on the success path, mirroring the
+ * existing ?error= path, so this redirect target's *shape* is what this
+ * models and locks in.
+ */
+function redirectTargetFor(outcome: { rowsAffected: number; error?: string }, action: "approved" | "rejected"): string {
+  if (outcome.error) return "/avsec/admin/users?error=" + encodeURIComponent(outcome.error);
+  if (outcome.rowsAffected === 0) {
+    return (
+      "/avsec/admin/users?error=" +
+      encodeURIComponent(
+        `${action === "approved" ? "Approval" : "Rejection"} did not apply — you may not be authorized to ${action === "approved" ? "approve" : "reject"} this account, or it was already reviewed.`,
+      )
+    );
+  }
+  return "/avsec/admin/users?success=" + encodeURIComponent(action === "approved" ? "Account approved." : "Account rejected.");
+}
+
+test("REGRESSION: a successful approval must redirect with an explicit ?success= confirmation, not silently", () => {
+  const outcome = attemptApproveOrReject("mgmt-1", "MANAGEMENT", pendingAso, "approved");
+  const target = redirectTargetFor(outcome, "approved");
+  assert.match(target, /\?success=/);
+  assert.doesNotMatch(target, /\?error=/);
+});
+
+test("REGRESSION: a no-op (already reviewed / unauthorized) redirect is distinguishable from a real success", () => {
+  const approved: ProfileRow = { ...pendingAso, status: "approved" };
+  const outcome = attemptApproveOrReject("mgmt-1", "MANAGEMENT", approved, "approved");
+  const target = redirectTargetFor(outcome, "approved");
+  assert.match(target, /\?error=/);
+  assert.doesNotMatch(target, /\?success=/);
+});

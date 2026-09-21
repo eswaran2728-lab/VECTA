@@ -10,7 +10,7 @@ import type { Profile } from "@/lib/avsec/types";
 export default async function AdminUsersPage({
   searchParams: searchParamsPromise,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; success?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
   const profile = await requireRole(ADMIN_ROLES);
@@ -45,6 +45,12 @@ export default async function AdminUsersPage({
         {searchParams.error && (
           <div className="card p-4 border-destructive/40 bg-destructive/10 text-destructive">
             <p className="text-sm font-medium">{searchParams.error}</p>
+          </div>
+        )}
+
+        {searchParams.success && (
+          <div className="card p-4 border-emerald-500/40 bg-emerald-500/10 text-emerald-400">
+            <p className="text-sm font-medium">{searchParams.success}</p>
           </div>
         )}
 
