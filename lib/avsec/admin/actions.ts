@@ -134,7 +134,16 @@ export async function approveUser(formData: FormData) {
   if (!profileId) return;
 
   const supabase = await createClient();
-  await supabase.from("profiles").update({ status: "approved" }).eq("id", profileId);
+  const { data, error } = await supabase.from("profiles").update({ status: "approved" }).eq("id", profileId).select("id");
+  if (error) {
+    redirect("/avsec/admin/users?error=" + encodeURIComponent(error.message));
+  }
+  if (!data || data.length === 0) {
+    redirect(
+      "/avsec/admin/users?error=" +
+        encodeURIComponent("Approval did not apply — you may not be authorized to approve this account, or it was already reviewed."),
+    );
+  }
   revalidatePath("/avsec/admin/users");
 }
 
@@ -144,7 +153,16 @@ export async function rejectUser(formData: FormData) {
   if (!profileId) return;
 
   const supabase = await createClient();
-  await supabase.from("profiles").update({ status: "rejected" }).eq("id", profileId);
+  const { data, error } = await supabase.from("profiles").update({ status: "rejected" }).eq("id", profileId).select("id");
+  if (error) {
+    redirect("/avsec/admin/users?error=" + encodeURIComponent(error.message));
+  }
+  if (!data || data.length === 0) {
+    redirect(
+      "/avsec/admin/users?error=" +
+        encodeURIComponent("Rejection did not apply — you may not be authorized to reject this account, or it was already reviewed."),
+    );
+  }
   revalidatePath("/avsec/admin/users");
 }
 
