@@ -316,22 +316,30 @@ None of the above are P0/P1 defects — no security compromise, authorization by
 
 ## ADDENDUM — 2026-09-21: Blocker Closure Pass
 
-### BLOCKER 1 — Supabase Backup/Recovery: **CLOSED, with a material finding**
+### BLOCKER 1 — Supabase Backup/Recovery: **BLOCKED → independent free solution engineered, awaiting first verified run**
 
-Programmatically confirmed via the Supabase Management API (`get_organization`):
-- **Organization plan: `free`.**
-- Project `vecta-prod` (`zsxneokqulktgnccxgkz`): region `ap-northeast-1`, Postgres 17.6, status `ACTIVE_HEALTHY`.
-- 29 migrations tracked and applied, latest `20260917071646_daily_report_role_correction` — consistent with this session's applied migrations.
+**Operator decision (2026-09-21): will not upgrade off the Supabase Free plan.** Per that decision, the requirement was reframed from "Supabase automatic backup must exist" to "VECTA must have *a* verified database backup and recovery mechanism" — and an independent one was designed and built this pass, since Supabase Free genuinely has no built-in backup/PITR (confirmed via `get_organization` → `plan: "free"`).
 
-**Finding: the Supabase Free tier has no automatic daily backups and no Point-in-Time Recovery (PITR).** Both are Pro-plan-and-above features. A Free-tier project also auto-pauses after 7 days of no API activity (unlikely for a live production app, but worth noting). **This is a genuine production-readiness gap for a system of record handling real security/operational data, not a tooling-access limitation** — the answer isn't "can't check," it's "checked, and there is currently no backup/recovery capability at all."
+**What was built** (full design rationale, limitations, and recovery procedure in [`docs/operations/BACKUP_RECOVERY.md`](../operations/BACKUP_RECOVERY.md)):
+- [`.github/workflows/db-backup.yml`](../../.github/workflows/db-backup.yml) — a GitHub Actions workflow, scheduled daily (`workflow_dispatch` also available for on-demand runs), that:
+  1. `pg_dump`s the production `public` schema in custom format, from inside an official `postgres:17` container (exact version match with the production server, no client/server drift).
+  2. **Validates** the dump is non-trivially sized and structurally readable via `pg_restore --list` (works with zero DB connection), and asserts 10 representative VECTA tables (`profiles`, `report_sec014`, `report_acknowledgements`, `transactions`, `duty_records`, etc.) are actually present in it — failing the run if not.
+  3. **Restores the dump into a throwaway Postgres 17 service container** that exists only for that job and is destroyed immediately after — a genuinely isolated, safe restore-test environment, at zero cost, never touching production.
+  4. Runs representative row-count and referential-integrity queries (e.g. every `report_acknowledgements.acknowledged_by` still resolves to a real `profiles` row) against that restored copy.
+  5. Uploads the validated dump as a GitHub Actions build artifact with **30-day rolling retention** — automatic, no third-party storage service or extra credential.
+- Credential handling: **one** new secret (`SUPABASE_DB_URL`, the Session Pooler connection string) added directly by the repository owner via GitHub's own Settings UI — never seen, stored, or passed through by me, never committed anywhere.
 
-**What I need from you to close this fully:**
-1. Navigate to **Supabase Dashboard → your organization → Billing/Settings → Plan**.
-2. Confirm the plan shown matches `free` (or tell me if it's since been upgraded).
-3. **Acceptable value for production go-live: Pro plan or higher**, which enables daily backups (7-day retention on Pro) and optionally PITR (paid add-on, recommended given this handles aviation-security records).
-4. If you upgrade, tell me the new plan tier and I'll re-verify backup config is actually enabled (Dashboard → Database → Backups) and update this record.
+**Explicitly documented limitation (per the task's own requirement not to overclaim):** this backs up the `public` Postgres schema only — it does **not** cover Supabase Auth (`auth.*` — a restored copy's `profiles`/`users` rows would not have matching login accounts without separate Auth recovery) or Storage (signature images, incident photos, completed-form PDFs — only their file-path *references* are backed up, not the files themselves). This is an application-data recovery mechanism, not full-fidelity Supabase disaster recovery — documented plainly, not glossed over.
 
-**Until upgraded, this remains a P1-level open item for a genuine production go-live** (not a P0 — nothing is currently broken — but "no way to recover from data loss" is a real production blocker for a security-of-record system, not a formality).
+**Why this is still BLOCKED, not PASS:** I cannot execute `pg_dump`/`pg_restore`/Docker from this session's own environment (none are installed here), and the workflow's first run requires the repository secret above, which only you can add. **A successful workflow run is the actual pass condition** — building correct automation is necessary but explicitly insufficient per your own instruction.
+
+**Exact next action required from you:**
+1. Supabase Dashboard → `vecta-prod` project → **Project Settings → Database → Connection string → Session pooler tab** → copy the URI, fill in the real DB password.
+2. GitHub → this repository → **Settings → Secrets and variables → Actions → New repository secret** → name `SUPABASE_DB_URL`, paste that value.
+3. Optionally trigger it immediately: **Actions tab → "VECTA Database Backup & Restore Verification" → Run workflow** (otherwise it runs automatically at the next scheduled 02:17 MYT).
+4. Tell me it's done (or share the Actions run URL/result) and I'll inspect the run output and fold the real pass/fail evidence into this document — closing this blocker to PASS only once a real green run exists.
+
+**Remains: BLOCKED** (automation real and committed; first executed, verified evidence still outstanding).
 
 ### BLOCKER 2 — Vercel Production Configuration: **CONFIRMED BLOCKED (tried, not merely assumed)**
 
@@ -369,18 +377,19 @@ Not freshly re-run as one consolidated live pass in this specific addendum. The 
 
 ---
 
-## Updated Final Decision (post-addendum)
+## Updated Final Decision (post-addendum, revised after the 2026-09-21 no-upgrade decision)
 
-P0 = 0. P1 = 0 known **application defects** — but **Supabase Backup/Recovery is a genuine, now-quantified production gap** (Free plan, no backup/PITR capability) that a security-of-record aviation system should not go live without addressing, so it is elevated to a **release-blocking item** pending your decision, not merely a documentation gap.
+P0 = 0. P1 = 0 known **application defects**. Backup/Recovery is no longer waiting on a plan-upgrade decision — an independent free mechanism was engineered this pass (`.github/workflows/db-backup.yml` + `docs/operations/BACKUP_RECOVERY.md`) — but remains **BLOCKED** until its first real run is observed to succeed, per the explicit rule that a built-but-unexecuted mechanism is not evidence.
 
 # VECTA RELEASE STATUS: NOT YET GO-LIVE CERTIFIED
 
 **Remaining blockers, in order of what's needed from you:**
-1. **Upgrade the Supabase organization off the Free plan** (or explicitly accept the no-backup risk in writing) — this is the one item that is a genuine business decision, not something further testing can resolve.
+1. **Add the `SUPABASE_DB_URL` GitHub Actions secret** (exact steps in the Backup/Recovery section above and in `docs/operations/BACKUP_RECOVERY.md`) and trigger or wait for the first backup run — send me the result.
 2. **Vercel dashboard confirmation** — 5 specific checks listed above, doable in ~5 minutes in the Vercel UI.
-3. Optional hardening (not release-blocking): enable leaked-password protection in Supabase Auth settings; consider moving `pg_net` out of `public` schema.
+3. Consolidated E2E (Blocker 5) and remaining ICMS movement UAT (Blocker 6) — still open, per your explicit instruction not to skip straight to certification once 1–2 are resolved. Not closed in this pass.
+4. Optional hardening (not release-blocking): enable leaked-password protection in Supabase Auth settings; consider moving `pg_net` out of `public` schema.
 
-Once you provide the Supabase plan decision and the 5 Vercel answers, I can close this out to full **VECTA PRODUCTION GO-LIVE CERTIFIED** without needing to repeat any of the already-certified phases.
+Once (1) and (2) are resolved, the remaining work is (3) — a fresh consolidated E2E and ICMS pass — before full **VECTA PRODUCTION GO-LIVE CERTIFIED** can be declared.
 
 ---
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
