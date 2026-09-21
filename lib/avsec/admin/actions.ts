@@ -145,6 +145,7 @@ export async function approveUser(formData: FormData) {
     );
   }
   revalidatePath("/avsec/admin/users");
+  redirect("/avsec/admin/users?success=" + encodeURIComponent("Account approved."));
 }
 
 export async function rejectUser(formData: FormData) {
@@ -164,6 +165,7 @@ export async function rejectUser(formData: FormData) {
     );
   }
   revalidatePath("/avsec/admin/users");
+  redirect("/avsec/admin/users?success=" + encodeURIComponent("Account rejected."));
 }
 
 export async function deactivateUser(formData: FormData) {
