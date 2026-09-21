@@ -377,19 +377,42 @@ Not freshly re-run as one consolidated live pass in this specific addendum. The 
 
 ---
 
-## Updated Final Decision (post-addendum, revised after the 2026-09-21 no-upgrade decision)
+## ADDENDUM 2 — 2026-09-21: Backup/Recovery Executed and Verified — **PASS**
 
-P0 = 0. P1 = 0 known **application defects**. Backup/Recovery is no longer waiting on a plan-upgrade decision — an independent free mechanism was engineered this pass (`.github/workflows/db-backup.yml` + `docs/operations/BACKUP_RECOVERY.md`) — but remains **BLOCKED** until its first real run is observed to succeed, per the explicit rule that a built-but-unexecuted mechanism is not evidence.
+**BLOCKER 1 closes as PASS this addendum, on real execution evidence — not on the mechanism's design alone.**
+
+Two runs of [`.github/workflows/db-backup.yml`](../../.github/workflows/db-backup.yml) were triggered by the operator via GitHub's own UI after adding the `SUPABASE_DB_URL` repository secret:
+
+- **Run #1** ([link](https://github.com/eswaran2728-lab/VECTA/actions/runs/35559759828)): **Failed in 15s** at the "Guard — required secret present" step (`SUPABASE_DB_URL secret is not set`). This proves the guard clause itself works correctly (fails safe, does not silently skip), and that the secret was genuinely absent at that point — not fabricated evidence of a false pass.
+- **Run #2** ([link](https://github.com/eswaran2728-lab/VECTA/actions/runs/35565575933), after the secret was correctly added): **Success**, 58s–1m3s total. Full step-by-step log evidence obtained directly from the GitHub Actions job:
+  - **Dump**: completed; produced `vecta_backup_20260921_054305Z.dump`.
+  - **Validate**: dump size and `pg_restore --list` structural checks passed (job would have failed at `exit 1` otherwise, and did not).
+  - **Restore into isolated throwaway container**: completed. 225 statements were rejected — every one a `CREATE POLICY ... auth.uid() ...` failing with `schema "auth" does not exist`, because the disposable `postgres:17` restore-target container has no Supabase Auth schema. This is the expected, already-documented consequence of the mechanism's scope (public schema only) — it affected only RLS **policy objects**, not the underlying **tables or rows**, confirmed by the next step.
+  - **Data verification** (live query results against the restored copy): `duty_records: 456`, `profiles: 31`, `report_acknowledgements: 1`, `report_sec014: 3`, `transactions: 6`, `users: 30` — all real, non-zero, matching expected production data shape. Referential integrity check: **0 orphaned `report_acknowledgements` rows** (every acknowledgement resolves to a real profile).
+  - **Artifact upload**: `vecta-db-backup-20260921_054305Z`, 112 KB / 114,546 bytes, SHA256 `905542a83a9a9c692acebdf0b4cf990a9383cde4da1ce0e9f2bc02963154bbe5`, uploaded successfully with 30-day retention.
+
+Full evidence transcribed into [`docs/operations/BACKUP_RECOVERY.md`](../operations/BACKUP_RECOVERY.md) under "Restore Test Result."
+
+**Assessment**: this satisfies the original requirement — a real backup was created AND a real, isolated restore was verified, with actual data and referential-integrity confirmation, not merely "the command exited 0." The Auth-schema policy-creation errors are a known, pre-documented limitation (this mechanism is application-data recovery, not full Supabase disaster recovery — stated plainly in "Known Limitations," not glossed over) and do not constitute a failure of the backup/restore of VECTA's actual data.
+
+**BLOCKER 1: BLOCKED → PASS.**
+
+---
+
+## Updated Final Decision (post-Addendum 2)
+
+P0 = 0. P1 = 0 known **application defects**. Backup/Recovery is now **PASS** with real execution evidence (Addendum 2 above) — no longer BLOCKED.
 
 # VECTA RELEASE STATUS: NOT YET GO-LIVE CERTIFIED
 
 **Remaining blockers, in order of what's needed from you:**
-1. **Add the `SUPABASE_DB_URL` GitHub Actions secret** (exact steps in the Backup/Recovery section above and in `docs/operations/BACKUP_RECOVERY.md`) and trigger or wait for the first backup run — send me the result.
-2. **Vercel dashboard confirmation** — 5 specific checks listed above, doable in ~5 minutes in the Vercel UI.
-3. Consolidated E2E (Blocker 5) and remaining ICMS movement UAT (Blocker 6) — still open, per your explicit instruction not to skip straight to certification once 1–2 are resolved. Not closed in this pass.
-4. Optional hardening (not release-blocking): enable leaked-password protection in Supabase Auth settings; consider moving `pg_net` out of `public` schema.
+1. ~~Backup/Recovery~~ — **CLOSED, PASS** (Addendum 2).
+2. **Vercel dashboard confirmation** — 5 specific checks listed under Blocker 2 above, doable in ~5 minutes in the Vercel UI. Still open.
+3. Consolidated E2E (Blocker 5) and remaining ICMS movement UAT (Blocker 6) — still open, per your explicit instruction not to skip straight to certification once earlier blockers are resolved. Not closed in this pass.
+4. Final security/regression suite re-run, production build re-verification, production deployment verification, production smoke test, and database reconciliation — not yet performed in this pass.
+5. Optional hardening (not release-blocking): enable leaked-password protection in Supabase Auth settings; consider moving `pg_net` out of `public` schema.
 
-Once (1) and (2) are resolved, the remaining work is (3) — a fresh consolidated E2E and ICMS pass — before full **VECTA PRODUCTION GO-LIVE CERTIFIED** can be declared.
+Once (2) is resolved (or you confirm the 5 Vercel answers directly), the remaining work is (3) and (4) before full **VECTA PRODUCTION GO-LIVE CERTIFIED** can be declared.
 
 ---
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

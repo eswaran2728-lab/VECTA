@@ -2,7 +2,7 @@
 
 Production Supabase project `zsxneokqulktgnccxgkz` ("vecta-prod") is on the **Supabase Free plan**, which provides **no automatic backups and no Point-in-Time Recovery (PITR)**. Per an explicit operator decision (2026-09-21), VECTA is **not** upgrading to a paid Supabase plan to obtain this. This document describes the independent, free, verified backup/recovery mechanism implemented instead.
 
-**Status as of this writing: automation built and committed, awaiting one operator action (a repository secret) before its first real run — see "Activation" below. Do not treat this as a verified backup until at least one scheduled/manual run has actually succeeded (see "How to verify a backup ran").**
+**Status as of this writing: VERIFIED. Run #2 (2026-09-21) completed the full pg_dump → validate → isolated restore → data/integrity verification → artifact upload sequence successfully — see "Restore Test Result" below for the actual evidence.**
 
 ---
 
@@ -70,7 +70,26 @@ pg_restore --no-owner --no-privileges \
 
 ## Restore Test Result
 
-Populated after the first real workflow run — see the linked GitHub Actions run URL and its "Verify restored data" step output once available. **Not yet populated as of this document's creation**, since the workflow requires the `SUPABASE_DB_URL` secret (operator action above) before it can execute for the first time.
+**Verified via real execution.**
+
+- **Run**: [`VECTA Database Backup & Restore Verification #2`](https://github.com/eswaran2728-lab/VECTA/actions/runs/35565575933) — 2026-09-21, manually triggered, branch `claude/merge-icms-avsec-aa-ops-67cnk0`, commit `15af816`. Status: **Success**, 58s.
+- **Dump**: `pg_dump` of the production `public` schema completed; artifact `vecta-db-backup-20260921_054305Z` uploaded, 112 KB / 114,546 bytes, SHA256 `905542a83a9a9c692acebdf0b4cf990a9383cde4da1ce0e9f2bc02963154bbe5`.
+- **Validation**: dump size check and `pg_restore --list` table-of-contents check both passed — all 10 representative tables (`profiles, users, report_sec014, report_sec016, report_sec029, report_acknowledgements, transactions, overtime_requests, shift_handovers, duty_records`) confirmed present in the dump's structure before any restore was attempted.
+- **Restore**: `pg_restore` into the throwaway `restore-target` Postgres 17 service container completed. 225 statements were rejected (`pg_restore: error: could not execute query: ERROR: schema "auth" does not exist`) — every one of these was a `CREATE POLICY ...` statement referencing `auth.uid()`/`auth.*`, because the isolated restore container is a bare `postgres:17` image with no Supabase `auth` schema. This is the exact, expected consequence of the Known Limitations documented below (this mechanism does not back up or restore Supabase Auth) — RLS **policy objects** could not be recreated in this throwaway container, but this did not affect the underlying **tables or data**, which restored completely (see next point). Restoring into a real recovery target — a new Supabase project, which already has the `auth` schema — would not hit this error.
+- **Data verification** (live query output against the restored copy):
+
+  | table | row count |
+  |---|---|
+  | duty_records | 456 |
+  | profiles | 31 |
+  | report_acknowledgements | 1 |
+  | report_sec014 | 3 |
+  | transactions | 6 |
+  | users | 30 |
+
+  Referential integrity check (`report_acknowledgements.acknowledged_by` → `profiles.id`): **0 orphaned rows** — every acknowledgement in the backup correctly links to a real profile.
+
+**Conclusion**: the backup mechanism is confirmed working end-to-end for its documented scope (schema + data in `public`). The 225 ignored errors are a documented, expected limitation (Auth schema not covered by this mechanism, per "Known Limitations" below), not a defect in the backup/restore of application data.
 
 ## Known Limitations
 
