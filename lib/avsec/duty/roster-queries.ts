@@ -33,6 +33,7 @@ export interface RosterCell {
   notes: string | null;
   set_by: string;
   updated_at: string;
+  ops_group: string | null;
 }
 
 export interface ApprovedLeaveRosterItem {
@@ -84,7 +85,7 @@ export async function getRosterWeek(station: string, weekStart: string, weekEnd:
   const supabase = await createClient();
   const { data } = await supabase
     .from("team_rosters")
-    .select("station, team, roster_date, shift_code, start_time, end_time, notes, set_by, updated_at")
+    .select("station, team, roster_date, shift_code, start_time, end_time, notes, set_by, updated_at, ops_group")
     .eq("station", station)
     .gte("roster_date", weekStart)
     .lte("roster_date", weekEnd);
