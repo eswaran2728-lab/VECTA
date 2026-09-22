@@ -24,29 +24,32 @@
 -- existing legitimate org-wide behavior to preserve here. (Org-wide
 -- oversight/read access to reports is granted elsewhere, via
 -- is_monitor_or_above() on the report SELECT policies - untouched.)
+--
+-- IMPLEMENTATION NOTE: get_report_submitter(text, uuid) is deliberately
+-- left completely untouched. Changing its RETURNS TABLE shape (to add an
+-- ops_group column) requires a DROP, and it turns out report_attachments
+-- and storage.objects RLS policies depend on its exact signature - a
+-- DROP CASCADE would have silently dropped and required recreating those
+-- unrelated policies, which is unnecessary risk for this fix. Instead, a
+-- small new helper supplies the submitter's ops_group, and
+-- can_acknowledge_report() calls both.
 
-create or replace function public.get_report_submitter(p_report_type text, p_report_id uuid)
-returns table(profile_id uuid, station text, team text, ops_group text)
+create or replace function public.get_report_submitter_ops_group(p_report_type text, p_report_id uuid)
+returns text
 language plpgsql
 stable security definer
 set search_path to 'public'
 as $function$
+declare
+  v_profile_id uuid;
+  v_ops_group text;
 begin
-  if p_report_type = 'sec016' then
-    return query select r.profile_id, r.station, r.team, p.ops_group from report_sec016 r join profiles p on p.id = r.profile_id where r.id = p_report_id;
-  elsif p_report_type = 'sec014' then
-    return query select r.profile_id, r.station, r.team, p.ops_group from report_sec014 r join profiles p on p.id = r.profile_id where r.id = p_report_id;
-  elsif p_report_type = 'sec029' then
-    return query select r.profile_id, r.station, r.team, p.ops_group from report_sec029 r join profiles p on p.id = r.profile_id where r.id = p_report_id;
-  elsif p_report_type = 'sec018' then
-    return query select r.profile_id, r.station, r.team, p.ops_group from report_sec018 r join profiles p on p.id = r.profile_id where r.id = p_report_id;
-  elsif p_report_type = 'sec033' then
-    return query select r.profile_id, r.station, r.team, p.ops_group from report_sec033 r join profiles p on p.id = r.profile_id where r.id = p_report_id;
-  elsif p_report_type = 'sec013' then
-    return query select r.profile_id, r.station, r.team, p.ops_group from report_sec013 r join profiles p on p.id = r.profile_id where r.id = p_report_id;
-  elsif p_report_type = 'offload' then
-    return query select r.profile_id, r.station, r.team, p.ops_group from offload_records r join profiles p on p.id = r.profile_id where r.id = p_report_id;
+  select profile_id into v_profile_id from get_report_submitter(p_report_type, p_report_id);
+  if v_profile_id is null then
+    return null;
   end if;
+  select ops_group into v_ops_group from profiles where id = v_profile_id;
+  return v_ops_group;
 end;
 $function$;
 
@@ -62,6 +65,7 @@ declare
   acker_station text;
   acker_team text;
   acker_ops_group text;
+  sub_ops_group text;
 begin
   select * into sub from get_report_submitter(p_report_type, p_report_id);
   if sub is null then
@@ -70,6 +74,8 @@ begin
 
   select role, station, team, ops_group into acker_role, acker_station, acker_team, acker_ops_group
   from profiles where id = auth.uid();
+
+  sub_ops_group := get_report_submitter_ops_group(p_report_type, p_report_id);
 
   return (
     (
@@ -85,6 +91,6 @@ begin
     -- ops_group is null, this evaluates to NULL (falsy in a boolean AND
     -- chain), so a missing ops_group can never satisfy the check and
     -- can never create a bypass.
-    and acker_ops_group = sub.ops_group;
+    and acker_ops_group = sub_ops_group;
 end;
 $function$;
