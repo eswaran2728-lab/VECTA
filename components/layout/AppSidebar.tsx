@@ -189,11 +189,12 @@ export function AppSidebar({
         label: "OT Approval Queue",
         icon: Clock,
       });
-      attendanceItems.push({
-        href: "/avsec/admin/roster",
-        label: "Team Duty Roster",
-        icon: CalendarDays,
-      });
+      // "Team Duty Roster" was removed: /avsec/admin/roster is
+      // Management/Admin-only (requireRole(ADMIN_ROLES)), so DSE hitting
+      // this link always got rejected. DSE roster writing is deferred —
+      // see lib/avsec/duty/roster-actions.ts resolveRosterOpsGroup() for
+      // the (currently unreachable) auto-derivation logic already in
+      // place for when a DSE-facing roster UI is built.
     } else {
       // ASO / SO
       attendanceItems.push({

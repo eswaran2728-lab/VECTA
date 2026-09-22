@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Shift, RosterCell as RosterCellRow } from "@/lib/avsec/duty/roster-queries";
 import { upsertRosterCell, clearRosterCell } from "@/lib/avsec/duty/roster-actions";
 import { LEAVE_TYPE_ICONS, type LeaveType } from "@/lib/avsec/duty/absence-logic";
+import { OPS_GROUP_LABELS, type OpsGroup } from "@/lib/avsec/reference-data";
 
 function hhmm(t: string | null | undefined) {
   return t ? t.slice(0, 5) : "";
@@ -17,6 +18,7 @@ export interface LeaveInfoProp {
 export function RosterCell({
   station,
   team,
+  opsGroup,
   date,
   week,
   shifts,
@@ -26,14 +28,19 @@ export function RosterCell({
 }: {
   station: string;
   team: string;
+  /** The team's AVSEC branch — Operation and IFC AVSEC can each have a
+   *  same-named team (e.g. "ALPHA") at the same station, so this scopes
+   *  which branch's roster this cell actually edits. */
+  opsGroup: OpsGroup;
   date: string;
   week: string;
   shifts: Shift[];
   cell?: RosterCellRow;
   leaveInfo?: LeaveInfoProp;
-  /** Other officers on this same team — a save here sets the shift for all
-   *  of them too, not just the row it was clicked from, so show that before
-   *  the edit is committed rather than as a surprise afterward. */
+  /** Other officers on this same team AND branch — a save here sets the
+   *  shift for all of them too, not just the row it was clicked from, so
+   *  show that before the edit is committed rather than as a surprise
+   *  afterward. Never includes the other branch's same-named team. */
   teammates?: string[];
 }) {
   const [editing, setEditing] = useState(false);
@@ -129,15 +136,21 @@ export function RosterCell({
       >
         <input type="hidden" name="station" value={station} />
         <input type="hidden" name="team" value={team} />
+        <input type="hidden" name="ops_group" value={opsGroup} />
         <input type="hidden" name="roster_date" value={date} />
         <input type="hidden" name="week" value={week} />
+
+        <p className="t-mono text-[8px] font-bold" style={{ color: "var(--primary, #2563eb)" }}>
+          {OPS_GROUP_LABELS[opsGroup]} · {team}
+        </p>
 
         {teammates.length > 0 && (
           <p
             className="t-mono text-[8.5px] rounded px-1.5 py-1"
             style={{ color: "var(--amber, #d97706)", background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.3)" }}
           >
-            ⚠ Also sets this shift for {teammates.length} teammate{teammates.length > 1 ? "s" : ""} on {team}: {teammates.join(", ")}
+            ⚠ Also sets this shift for {teammates.length} {OPS_GROUP_LABELS[opsGroup]} teammate{teammates.length > 1 ? "s" : ""} on{" "}
+            {team}: {teammates.join(", ")}
           </p>
         )}
 
@@ -224,6 +237,7 @@ export function RosterCell({
         >
           <input type="hidden" name="station" value={station} />
           <input type="hidden" name="team" value={team} />
+          <input type="hidden" name="ops_group" value={opsGroup} />
           <input type="hidden" name="roster_date" value={date} />
           <button type="submit" className="t-mono text-[10px] w-full text-center py-1" style={{ color: "var(--red)" }}>
             Clear cell
