@@ -2,8 +2,8 @@ import "server-only";
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { Role, UserProfile } from "@/lib/icms/database.types";
-import { opsGroupForCheckpointRole } from "@/lib/icms/ops-group";
+import type { Role, UserProfile, OpsGroup } from "@/lib/icms/database.types";
+import { opsGroupForCheckpointRole, opsGroupCanAccessCheckpoint } from "@/lib/icms/ops-group";
 
 /** Returns the signed-in user's profile or redirects to /login. */
 export async function requireProfile(): Promise<UserProfile> {
@@ -63,6 +63,9 @@ export async function requireCheckpointRole(role: Role): Promise<UserProfile> {
   const profile = await requireProfile();
   if (profile.role === role) return profile;
   const checkpointOpsGroup = opsGroupForCheckpointRole(role);
-  if (checkpointOpsGroup && profile.ops_group === checkpointOpsGroup) return profile;
+  // Unified AVSEC scanning model: Operation and IFC ops_groups are
+  // interchangeable for any non-Hub checkpoint (opsGroupCanAccessCheckpoint
+  // enforces the exact-match rule for Hub either way).
+  if (opsGroupCanAccessCheckpoint(profile.ops_group as OpsGroup | null, checkpointOpsGroup)) return profile;
   redirect("/icms/dashboard?error=forbidden");
 }
