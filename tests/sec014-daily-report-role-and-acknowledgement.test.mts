@@ -71,7 +71,11 @@ function canAcknowledgeReport(
   if ((acker.team ?? "") !== (submitter.team ?? "")) return false;
 
   if (enforceOpsGroup) {
-    if ((acker.ops_group ?? "") !== (submitter.ops_group ?? "")) return false;
+    // Plain equality, deliberately NOT coalesced -- matches the deployed
+    // SQL exactly (supabase/migrations/20260922000004_...): if either
+    // side's ops_group is null, this must be false, never a match.
+    if (acker.ops_group === null || submitter.ops_group === null) return false;
+    if (acker.ops_group !== submitter.ops_group) return false;
   }
 
   return true;
@@ -213,4 +217,111 @@ test("SEC014 Acknowledgement: Cross-branch acknowledgement (Ops DSE -> IFC ASO) 
     ops_group: "ifc_avsec",
   };
   assert.equal(canAcknowledgeReport("sec014", asoIfcAlphaSubmitter, dseOpsAlphaAcker, true), false);
+});
+
+// -------------------------------------------------------------------------
+// Confirmed authorization vulnerability, found + fixed 2026-09-22
+// (supabase/migrations/20260922000004_report_acknowledgement_ops_group_isolation.sql).
+// Live-proven against real production data before the fix: SO Alpha (IFC)
+// evaluated TRUE against ASO Alpha (Ops)'s real submitted SEC014 report,
+// because can_acknowledge_report() checked role-rank + station + team but
+// never ops_group, and team NAMES collide across branches ("Team ALPHA"
+// exists in both Operation and IFC AVSEC at the same station).
+// -------------------------------------------------------------------------
+
+const asoIfcAlphaSubmitter: SubmitterInfo = {
+  profile_id: "usr-aso-ifc-alpha",
+  role: "ASO",
+  station: "KUL - MAA",
+  team: "ALPHA",
+  ops_group: "ifc_avsec",
+};
+
+const soIfcAlphaAcker: AcknowledgerInfo = {
+  id: "usr-so-ifc-alpha",
+  role: "SO",
+  station: "KUL - MAA",
+  team: "ALPHA",
+  ops_group: "ifc_avsec",
+  status: "approved",
+};
+
+const dseIfcAlphaAcker: AcknowledgerInfo = {
+  id: "usr-dse-ifc-alpha",
+  role: "DSE",
+  station: "KUL - MAA",
+  team: "ALPHA",
+  ops_group: "ifc_avsec",
+  status: "approved",
+};
+
+test("REGRESSION: Operation SO cannot acknowledge IFC ASO reports", () => {
+  assert.equal(canAcknowledgeReport("sec014", asoIfcAlphaSubmitter, soOpsAlphaAcker), false);
+});
+
+test("REGRESSION: IFC SO cannot acknowledge Operation ASO reports (the exact live-proven case)", () => {
+  assert.equal(canAcknowledgeReport("sec014", asoOpsAlphaSubmitter, soIfcAlphaAcker), false);
+});
+
+test("REGRESSION: Operation DSE cannot acknowledge IFC ASO reports", () => {
+  assert.equal(canAcknowledgeReport("sec014", asoIfcAlphaSubmitter, dseOpsAlphaAcker), false);
+});
+
+test("REGRESSION: IFC DSE cannot acknowledge Operation ASO reports", () => {
+  assert.equal(canAcknowledgeReport("sec014", asoOpsAlphaSubmitter, dseIfcAlphaAcker), false);
+});
+
+test("REGRESSION: same-branch acknowledgement still succeeds (IFC SO -> IFC ASO)", () => {
+  assert.equal(canAcknowledgeReport("sec014", asoIfcAlphaSubmitter, soIfcAlphaAcker), true);
+});
+
+test("REGRESSION: same-branch acknowledgement still succeeds (IFC DSE -> IFC ASO)", () => {
+  assert.equal(canAcknowledgeReport("sec014", asoIfcAlphaSubmitter, dseIfcAlphaAcker), true);
+});
+
+test("REGRESSION: wrong station remains denied even when ops_group and team match", () => {
+  const soIfcAlphaPen: AcknowledgerInfo = { ...soIfcAlphaAcker, id: "usr-so-ifc-alpha-pen", station: "PEN" };
+  assert.equal(canAcknowledgeReport("sec014", asoIfcAlphaSubmitter, soIfcAlphaPen), false);
+});
+
+test("REGRESSION: wrong team remains denied even when ops_group and station match", () => {
+  const soIfcBravo: AcknowledgerInfo = { ...soIfcAlphaAcker, id: "usr-so-ifc-bravo", team: "BRAVO" };
+  assert.equal(canAcknowledgeReport("sec014", asoIfcAlphaSubmitter, soIfcBravo), false);
+});
+
+test("REGRESSION: null ops_group on the acknowledger cannot create a bypass", () => {
+  const soNullOpsGroup: AcknowledgerInfo = { ...soOpsAlphaAcker, id: "usr-so-null-ops", ops_group: null };
+  // Plain equality (not coalesced): a null acknowledger ops_group must
+  // never match a real submitter ops_group, in either direction.
+  assert.equal(canAcknowledgeReport("sec014", asoOpsAlphaSubmitter, soNullOpsGroup), false);
+});
+
+test("REGRESSION: null ops_group on the submitter cannot create a bypass", () => {
+  const asoNullOpsGroupSubmitter: SubmitterInfo = { ...asoOpsAlphaSubmitter, profile_id: "usr-aso-null-ops", ops_group: null };
+  assert.equal(canAcknowledgeReport("sec014", asoNullOpsGroupSubmitter, soOpsAlphaAcker), false);
+});
+
+test("REGRESSION: both sides null ops_group cannot create a bypass (deliberately NOT coalesced to '' === '')", () => {
+  const asoNullSubmitter: SubmitterInfo = { ...asoOpsAlphaSubmitter, profile_id: "usr-aso-null-both", ops_group: null };
+  const soNullAcker: AcknowledgerInfo = { ...soOpsAlphaAcker, id: "usr-so-null-both", ops_group: null };
+  assert.equal(canAcknowledgeReport("sec014", asoNullSubmitter, soNullAcker), false);
+});
+
+test("REGRESSION: MANAGEMENT/ADMIN (org-wide, station=null) have no acknowledgement authority through this function - unchanged by the fix", () => {
+  // Org-wide roles were never eligible here even before this fix: their
+  // station is null in profiles, and acker.station !== submitter.station
+  // already rejects a null-vs-real-station comparison. This test
+  // documents that the ops_group fix does not change that pre-existing
+  // (and correct) behavior - org-wide oversight is granted elsewhere
+  // (report SELECT policies via is_monitor_or_above()), not through
+  // can_acknowledge_report().
+  const managementOrgWideAcker: AcknowledgerInfo = {
+    id: "usr-management-01",
+    role: "MANAGEMENT" as UserRole,
+    station: "" as unknown as string,
+    team: null,
+    ops_group: null,
+    status: "approved",
+  };
+  assert.equal(canAcknowledgeReport("sec014", asoOpsAlphaSubmitter, managementOrgWideAcker), false);
 });
