@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
-import { STATIONS } from "@/lib/avsec/reference-data";
+import { STATIONS, OPS_GROUPS, OPS_GROUP_LABELS } from "@/lib/avsec/reference-data";
 import {
   getShifts,
   getRosterOfficers,
@@ -60,8 +60,11 @@ export default async function AdminRosterPage({
     getApprovedLeavesForRoster(station, weekStart, weekEnd),
   ]);
 
+  // Keyed by team + ops_group + date — team names collide across AVSEC
+  // branches (both Operation and IFC AVSEC can have a "Team ALPHA"), so a
+  // key on team+date alone would merge two different branches' cells.
   const cellMap = new Map<string, RosterCellRow>();
-  for (const row of rosterRows) cellMap.set(`${row.team}|${row.roster_date}`, row);
+  for (const row of rosterRows) cellMap.set(`${row.team}|${row.ops_group ?? ""}|${row.roster_date}`, row);
 
   // Map approved leaves to officer ID and date
   const officerLeaveMap = new Map<string, { leaveType: LeaveType; leaveLabel: string }>();
@@ -89,7 +92,7 @@ export default async function AdminRosterPage({
   for (const o of officers) {
     for (const date of days) {
       const leave = officerLeaveMap.get(`${o.id}|${date}`);
-      const cell = cellMap.get(`${o.team}|${date}`);
+      const cell = cellMap.get(`${o.team}|${o.ops_group ?? ""}|${date}`);
       if (leave && cell && cell.shift_code && cell.shift_code.toUpperCase() !== "OFF") {
         coverageConflicts.push({
           officerName: o.name,
@@ -106,18 +109,22 @@ export default async function AdminRosterPage({
   const totalPages = Math.max(1, Math.ceil(officers.length / PAGE_SIZE));
   const pageOfficers = officers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  // Every officer's cell edit actually applies to their whole team (see
-  // upsertRosterCell) — the rows just look per-officer for easy scanning.
-  // Rather than only explaining that once at the top of the page, tell each
-  // officer's cell exactly who else shares their team, from the FULL
-  // officers list (not just this page) so a teammate on another page still
-  // shows up.
+  // Every officer's cell edit actually applies to their whole team WITHIN
+  // THEIR OWN AVSEC BRANCH (see upsertRosterCell) — the rows just look
+  // per-officer for easy scanning. Rather than only explaining that once
+  // at the top of the page, tell each officer's cell exactly who else
+  // shares their team AND branch, from the FULL officers list (not just
+  // this page) so a teammate on another page still shows up. Keyed by
+  // team+ops_group, not team alone — team names collide across branches
+  // (both Operation and IFC AVSEC can have a "Team ALPHA"), so an
+  // IFC ALPHA edit must never warn about, or affect, Operation ALPHA.
   const teammatesByTeam = new Map<string, string[]>();
   for (const o of officers) {
     if (!o.team) continue;
-    const list = teammatesByTeam.get(o.team) ?? [];
+    const key = `${o.team}|${o.ops_group ?? ""}`;
+    const list = teammatesByTeam.get(key) ?? [];
     list.push(o.name);
-    teammatesByTeam.set(o.team, list);
+    teammatesByTeam.set(key, list);
   }
 
   const prevWeek = addDays(weekStart, -7);
@@ -278,6 +285,11 @@ export default async function AdminRosterPage({
                           </p>
                           <p className="font-mono text-[10px] text-muted-foreground">
                             {o.staff_no} · {o.team || "—"}
+                            {o.ops_group && (OPS_GROUPS as readonly string[]).includes(o.ops_group) && (
+                              <span className="ml-1 px-1 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-bold">
+                                {OPS_GROUP_LABELS[o.ops_group as keyof typeof OPS_GROUP_LABELS]}
+                              </span>
+                            )}
                           </p>
                         </div>
                       </div>
@@ -286,16 +298,17 @@ export default async function AdminRosterPage({
                       const leaveInfo = officerLeaveMap.get(`${o.id}|${date}`);
                       return (
                         <td key={date} className="p-1 align-top min-w-[140px]">
-                          {o.team ? (
+                          {o.team && o.ops_group ? (
                             <RosterCell
                               station={station}
                               team={o.team}
+                              opsGroup={o.ops_group as "operation_avsec" | "ifc_avsec" | "hub_avsec"}
                               date={date}
                               week={weekStart}
                               shifts={shifts}
-                              cell={cellMap.get(`${o.team}|${date}`)}
+                              cell={cellMap.get(`${o.team}|${o.ops_group}|${date}`)}
                               leaveInfo={leaveInfo}
-                              teammates={(teammatesByTeam.get(o.team) ?? []).filter((n) => n !== o.name)}
+                              teammates={(teammatesByTeam.get(`${o.team}|${o.ops_group}`) ?? []).filter((n) => n !== o.name)}
                             />
                           ) : (
                             <p className="font-mono text-[10px] p-2 text-muted-foreground/60">
@@ -370,6 +383,21 @@ export default async function AdminRosterPage({
                   </select>
                 </div>
                 <div>
+                  <label className="field-label">AVSEC Group</label>
+                  <select name="ops_group" required className="input-base" defaultValue="">
+                    <option value="" disabled>
+                      Select a group…
+                    </option>
+                    {OPS_GROUPS.map((g) => (
+                      <option key={g} value={g}>
+                        {OPS_GROUP_LABELS[g]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
                   <label className="field-label">Schedule</label>
                   <select name="shift_code" required className="input-base" defaultValue="">
                     <option value="" disabled>
@@ -382,6 +410,7 @@ export default async function AdminRosterPage({
                     ))}
                   </select>
                 </div>
+                <div />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

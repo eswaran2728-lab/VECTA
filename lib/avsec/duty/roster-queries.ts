@@ -15,6 +15,7 @@ export interface RosterOfficer {
   name: string;
   staff_no: string;
   team: string;
+  ops_group: string | null;
 }
 
 export interface StationTeam {
@@ -72,7 +73,7 @@ export async function getRosterOfficers(station: string, search?: string): Promi
   const supabase = await createClient();
   let query = supabase
     .from("profiles")
-    .select("id, name, staff_no, team")
+    .select("id, name, staff_no, team, ops_group")
     .eq("station", station)
     .eq("status", "approved")
     .in("role", DUTY_ROLES);
