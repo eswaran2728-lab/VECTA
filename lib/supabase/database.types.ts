@@ -3276,7 +3276,7 @@ export type Database = {
           end_time: string | null
           id: string
           notes: string | null
-          ops_group: string | null
+          ops_group: string
           roster_date: string
           set_by: string
           shift_code: string
@@ -3291,7 +3291,7 @@ export type Database = {
           end_time?: string | null
           id?: string
           notes?: string | null
-          ops_group?: string | null
+          ops_group: string
           roster_date: string
           set_by: string
           shift_code: string
