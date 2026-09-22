@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { ProfileStatus } from "@/lib/avsec/reference-data";
 
 export async function POST(request: Request) {
@@ -53,12 +53,22 @@ export async function POST(request: Request) {
     const allowedOperationalRoles = ["DSE", "SO", "ASO"];
     const safeAvsecRole = allowedOperationalRoles.includes(avsecRole) ? avsecRole : "SO";
 
-    const supabase = await createClient();
+    // Registrant has no session at this point (this is a public, pre-auth
+    // endpoint), so the auth user and its profile/shadow-user row must be
+    // created with the service-role admin client — mirroring the same
+    // proven pattern createStaffAccount() already uses for admin-created
+    // accounts (lib/avsec/admin/actions.ts). The ordinary session-bound
+    // client cannot see or write these rows here: RLS's "profiles self
+    // select"/"self update" policies both require auth.uid(), which is
+    // null for an anonymous request, so both the duplicate-email check and
+    // the profile-detail write would previously fail (or silently
+    // no-op) without ever surfacing an error to the caller.
+    const admin = createAdminClient();
 
     // Explicit duplicate check in database profiles & users
     const [profileMatch, userMatch] = await Promise.all([
-      supabase.from("profiles").select("id").eq("email", email).maybeSingle(),
-      supabase.from("users").select("id").eq("email", email).maybeSingle(),
+      admin.from("profiles").select("id").eq("email", email).maybeSingle(),
+      admin.from("users").select("id").eq("email", email).maybeSingle(),
     ]);
 
     if (profileMatch.data || userMatch.data) {
@@ -73,40 +83,34 @@ export async function POST(request: Request) {
         ? "vendor"
         : (safeAvsecRole.toLowerCase() as "so" | "aso" | "dse" | "vendor");
 
-    const { data: created, error: authError } = await supabase.auth.signUp({
+    // email_confirm: true - self-registered accounts are gated by admin
+    // approval (status = 'pending' below), not an email confirmation link
+    // this flow never sends. Without this, Supabase Auth blocks sign-in
+    // indefinitely even after approval.
+    const { data: created, error: authError } = await admin.auth.admin.createUser({
       email,
       password,
-      options: {
-        data: {
-          name,
-          full_name: name,
-          staff_id: staffId,
-          phone,
-          system_type: systemType,
-          role: systemType === "caterlink" ? "vendor" : safeAvsecRole,
-          unified_role: unifiedRole,
-          ops_group: opsGroup,
-          team,
-          station,
-          driver_type: driverType,
-          vendor_company: vendorCompany,
-          vehicle_plate: vehiclePlate,
-        },
+      email_confirm: true,
+      user_metadata: {
+        name,
+        full_name: name,
+        staff_id: staffId,
+        phone,
+        system_type: systemType,
+        role: systemType === "caterlink" ? "vendor" : safeAvsecRole,
+        unified_role: unifiedRole,
+        ops_group: opsGroup,
+        team,
+        station,
+        driver_type: driverType,
+        vendor_company: vendorCompany,
+        vehicle_plate: vehiclePlate,
       },
     });
 
-    if (
-      authError ||
-      !created.user ||
-      (created.user.identities && created.user.identities.length === 0)
-    ) {
+    if (authError || !created.user) {
       const errMsg = authError?.message?.toLowerCase() ?? "";
-      if (
-        errMsg.includes("already registered") ||
-        errMsg.includes("already in use") ||
-        errMsg.includes("user already") ||
-        (created.user && created.user.identities && created.user.identities.length === 0)
-      ) {
+      if (errMsg.includes("already registered") || errMsg.includes("already in use") || errMsg.includes("user already")) {
         return NextResponse.json(
           { error: "This email is already registered — contact your admin or try signing in instead." },
           { status: 400 }
@@ -120,7 +124,7 @@ export async function POST(request: Request) {
 
     if (systemType === "avsec") {
       // Insert into AVSEC profiles table with 'pending' status
-      const { error: profileError } = await supabase.from("profiles").upsert(
+      const { error: profileError } = await admin.from("profiles").upsert(
         {
           id: created.user.id,
           email,
@@ -137,11 +141,15 @@ export async function POST(request: Request) {
       );
 
       if (profileError) {
-        console.error("[api/auth/register] AVSEC profile insert note:", profileError.message);
+        await admin.auth.admin.deleteUser(created.user.id);
+        return NextResponse.json(
+          { error: `Could not save your profile details: ${profileError.message}. Please try again.` },
+          { status: 500 }
+        );
       }
     } else {
       // Insert into ICMS users table with 'pending' status
-      const { error: userError } = await supabase.from("users").upsert(
+      const { error: userError } = await admin.from("users").upsert(
         {
           id: created.user.id,
           name,
@@ -155,7 +163,11 @@ export async function POST(request: Request) {
       );
 
       if (userError) {
-        console.error("[api/auth/register] Driver user insert note:", userError.message);
+        await admin.auth.admin.deleteUser(created.user.id);
+        return NextResponse.json(
+          { error: `Could not save your driver details: ${userError.message}. Please try again.` },
+          { status: 500 }
+        );
       }
     }
 
