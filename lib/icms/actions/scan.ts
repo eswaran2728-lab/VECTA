@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { parseCaterLinkQrPayload } from "@/lib/icms/qr-payload";
-import { opsGroupForTransaction } from "@/lib/icms/ops-group";
+import { opsGroupForTransaction, opsGroupCanAccessCheckpoint, isAvsecScanGroup } from "@/lib/icms/ops-group";
 import { verifyQrToken } from "@/lib/icms/qr-token";
 import type { Direction, OpsGroup, TransactionRoute, TransactionStatus } from "@/lib/icms/database.types";
 
@@ -45,18 +45,15 @@ export async function scanTransaction(raw: string): Promise<ScanResult> {
 
   const orgWide = ORG_WIDE_UNIFIED_ROLES.includes(profile.unified_role ?? "");
   const userOpsGroup = profile.ops_group as OpsGroup | null;
-  const role = profile.unified_role;
 
-  if (!orgWide) {
-    if (!userOpsGroup) {
-      return { error: "Your account has no ops group assigned — contact an admin." };
-    }
-    if (role === "so" && (userOpsGroup === "operation_avsec" || userOpsGroup === "hub_avsec")) {
-      return { error: "SO in Operation AVSEC does not clear CaterLink movements." };
-    }
-    if (role === "dse") {
-      return { error: "DSE does not perform movement scans." };
-    }
+  // Unified AVSEC scanning model: any approved ASO/SO/DSE in Operation or
+  // IFC AVSEC may scan/process non-Hub CaterLink checkpoints — the
+  // per-role denials that used to block SO (Operation branch) and DSE
+  // outright were specific to the old two-group model and no longer
+  // apply. Hub AVSEC keeps its own exact-match scope, enforced below by
+  // opsGroupCanAccessCheckpoint / the transaction-specific checks.
+  if (!orgWide && !userOpsGroup) {
+    return { error: "Your account has no ops group assigned — contact an admin." };
   }
 
   const payload = parseCaterLinkQrPayload(raw);
@@ -109,7 +106,7 @@ function resolveCateringRow(
 ): ScanResult {
   if (!orgWide) {
     const txOpsGroup = opsGroupForTransaction(t.direction, t.status, t.route);
-    if (!txOpsGroup || txOpsGroup !== userOpsGroup) {
+    if (!opsGroupCanAccessCheckpoint(userOpsGroup, txOpsGroup)) {
       return { error: "This transaction is not in your ops group." };
     }
     if (
@@ -162,10 +159,11 @@ async function resolveCateringTransaction(
 
 /**
  * Vendor Supply transactions (vendor_transactions/vendor_part_a-c) have no
- * direction/route of their own — the whole route is Post 2 -> Warehouse,
- * IFC territory throughout (see the CaterLink route table: "Vendor supply
- * ... Signs off ... AVSEC IFC"), so scope is fixed rather than derived from
- * opsGroupForTransaction (which only knows the catering-flow tables).
+ * direction/route of their own — the whole route is Post 2 -> Warehouse.
+ * Historically fixed to IFC territory only; under the unified AVSEC
+ * scanning model any Operation or IFC ASO/SO/DSE may process it (scope is
+ * fixed to the AVSEC scan group rather than derived from
+ * opsGroupForTransaction, which only knows the catering-flow tables).
  */
 async function resolveVendorTransaction(
   supabase: SupabaseClient,
@@ -180,7 +178,7 @@ async function resolveVendorTransaction(
     .maybeSingle();
   if (!tx) return { error: "Vendor transaction not found for this QR pass." };
 
-  if (!orgWide && userOpsGroup !== "ifc_avsec") {
+  if (!orgWide && !isAvsecScanGroup(userOpsGroup)) {
     return { error: "This transaction is not in your ops group." };
   }
 

@@ -9,9 +9,13 @@ export const dynamic = "force-dynamic";
 
 const ORG_WIDE_UNIFIED_ROLES = ["admin", "management", "enforcement"];
 
+// Unified AVSEC scanning model: Operation and IFC branches scan under one
+// label here (they're interchangeable for CaterLink checkpoints — see
+// lib/icms/ops-group.ts). Hub AVSEC keeps its own distinct label; it
+// remains a separate, unmerged scanning scope.
 const OPS_GROUP_LABELS: Record<OpsGroup, string> = {
-  operation_avsec: "Operation AVSEC",
-  ifc_avsec: "IFC AVSEC",
+  operation_avsec: "AVSEC",
+  ifc_avsec: "AVSEC",
   hub_avsec: "Hub AVSEC",
 };
 

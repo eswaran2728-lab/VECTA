@@ -52,3 +52,40 @@ export function opsGroupForTransaction(
   if (route === "MAINTENANCE") return "operation_avsec";
   return "ifc_avsec";
 }
+
+/**
+ * Unified AVSEC scanning model (operator decision, 2026-09-22): every
+ * approved ASO/SO/DSE — regardless of whether their stored ops_group is
+ * 'operation_avsec' or 'ifc_avsec' — may scan and process any non-Hub
+ * CaterLink checkpoint. Hub AVSEC stays a fully separate, unaffected
+ * group with its existing exact-match restriction.
+ *
+ * Deliberately code-level only: the underlying `ops_group` column is
+ * NEVER renamed or migrated, so reporting/acknowledgement/leave/overtime/
+ * roster scoping (which also key off ops_group, specifically to
+ * disambiguate Operation vs IFC teams that otherwise share team NAMES
+ * like "ALPHA" at the same station — see can_acknowledge_report() and the
+ * cross-branch OT/leak fixes) are completely unaffected by this.
+ */
+const AVSEC_SCAN_GROUPS: readonly OpsGroup[] = ["operation_avsec", "ifc_avsec"];
+
+export function isAvsecScanGroup(group: OpsGroup | null | undefined): boolean {
+  return group != null && (AVSEC_SCAN_GROUPS as readonly string[]).includes(group);
+}
+
+/**
+ * Whether `userOpsGroup` may scan/complete a checkpoint that requires
+ * `requiredOpsGroup` (as returned by opsGroupForTransaction /
+ * opsGroupForCheckpointRole). Operation and IFC are interchangeable for
+ * this purpose only; Hub requires an exact match either way.
+ */
+export function opsGroupCanAccessCheckpoint(
+  userOpsGroup: OpsGroup | null | undefined,
+  requiredOpsGroup: OpsGroup | null | undefined,
+): boolean {
+  if (!userOpsGroup || !requiredOpsGroup) return false;
+  if (requiredOpsGroup === "hub_avsec" || userOpsGroup === "hub_avsec") {
+    return userOpsGroup === requiredOpsGroup;
+  }
+  return isAvsecScanGroup(userOpsGroup) && isAvsecScanGroup(requiredOpsGroup);
+}
