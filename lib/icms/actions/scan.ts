@@ -11,6 +11,8 @@ import {
 import { verifyQrToken } from "@/lib/icms/qr-token";
 import { nextStepFor } from "@/lib/icms/workflow";
 import { vendorNextStepFor } from "@/lib/icms/workflow-vendor";
+import { hasOpenDutyCheckIn } from "@/lib/avsec/duty/checkin-queries";
+import { NOT_ON_DUTY_ERROR } from "@/lib/icms/checkpoint-duty";
 import type { Direction, OpsGroup, TransactionRoute, TransactionStatus, VendorTransactionStatus } from "@/lib/icms/database.types";
 
 export interface ScanResult {
@@ -73,12 +75,26 @@ export async function scanTransaction(raw: string): Promise<ScanResult> {
   // legacy id/number lookup below, which stays only for manually typed
   // references on VECTA's own transaction detail pages.
   const userStation = (profile as { station?: string | null }).station ?? null;
+  // On-duty gate (2026-09-23): "Approved ASO/SO/DSE users from both AVSEC
+  // groups may complete non-Hub checkpoints only while checked in." Scoped
+  // to isAvsecScanGroup (operation_avsec/ifc_avsec) — the exact grant this
+  // task scopes the requirement to — mirroring requireCheckpointRole()'s
+  // own scoping (lib/icms/auth.ts). Org-wide viewers hold no checkpoint at
+  // all, and Hub AVSEC's own exact-match scope is untouched (out of scope
+  // here; task says "non-Hub checkpoints"), so both are treated as
+  // trivially "on duty" here — computed only where it can actually gate
+  // anything. Reuses the exact same duty source of truth as
+  // requireCheckpointRole() and report submission
+  // (lib/avsec/reports/actions.ts), so "can I be routed to the form" and
+  // "can I actually submit it" never disagree.
+  const onDuty = orgWide || !isAvsecScanGroup(userOpsGroup) ? true : await hasOpenDutyCheckIn(user.id);
+
   const tokenResult = verifyQrToken(ref);
   if (tokenResult.ok) {
     if (tokenResult.type === "VENDOR") {
-      return resolveVendorTransaction(supabase, tokenResult.transactionId, orgWide, userOpsGroup);
+      return resolveVendorTransaction(supabase, tokenResult.transactionId, orgWide, userOpsGroup, onDuty);
     }
-    return resolveCateringTransaction(supabase, tokenResult.transactionId, orgWide, userOpsGroup, userStation);
+    return resolveCateringTransaction(supabase, tokenResult.transactionId, orgWide, userOpsGroup, userStation, onDuty);
   }
 
   let lookup = supabase.from("transactions").select("id, status, direction, route, transaction_number, hub_destination");
@@ -100,7 +116,7 @@ export async function scanTransaction(raw: string): Promise<ScanResult> {
     route: TransactionRoute;
     transaction_number: string;
     hub_destination?: string | null;
-  }, orgWide, userOpsGroup, userStation);
+  }, orgWide, userOpsGroup, userStation, onDuty);
 }
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
@@ -109,7 +125,8 @@ function resolveCateringRow(
   t: { id: string; status: TransactionStatus; direction: Direction; route: TransactionRoute; transaction_number: string; hub_destination?: string | null },
   orgWide: boolean,
   userOpsGroup: OpsGroup | null,
-  userStation?: string | null
+  userStation: string | null | undefined,
+  onDuty: boolean
 ): ScanResult {
   // Which checkpoint slug (if any) this scan should land the user on
   // directly, instead of the read-only transaction page. Previously this
@@ -144,6 +161,12 @@ function resolveCateringRow(
 
     const next = nextStepFor(t.direction, t.status, t.route);
     if (next && opsGroupCanAccessCheckpoint(userOpsGroup, opsGroupForCheckpointRole(next.role))) {
+      // On-duty gate: this checkpoint IS this officer's to complete, but
+      // they have no open duty check-in — reject the scan outright rather
+      // than silently falling back to the read-only page, so "off duty"
+      // reads as a clear, actionable rejection instead of an unexplained
+      // missing form.
+      if (!onDuty) return { error: NOT_ON_DUTY_ERROR };
       actionableSlug = next.slug;
     }
   }
@@ -168,7 +191,8 @@ async function resolveCateringTransaction(
   transactionId: string,
   orgWide: boolean,
   userOpsGroup: OpsGroup | null,
-  userStation?: string | null
+  userStation: string | null | undefined,
+  onDuty: boolean
 ): Promise<ScanResult> {
   const { data: tx } = await supabase
     .from("transactions")
@@ -180,7 +204,8 @@ async function resolveCateringTransaction(
     tx as { id: string; status: TransactionStatus; direction: Direction; route: TransactionRoute; transaction_number: string; hub_destination?: string | null },
     orgWide,
     userOpsGroup,
-    userStation
+    userStation,
+    onDuty
   );
 }
 
@@ -196,7 +221,8 @@ async function resolveVendorTransaction(
   supabase: SupabaseClient,
   transactionId: string,
   orgWide: boolean,
-  userOpsGroup: OpsGroup | null
+  userOpsGroup: OpsGroup | null,
+  onDuty: boolean
 ): Promise<ScanResult> {
   const { data: tx } = await supabase
     .from("vendor_transactions")
@@ -218,6 +244,7 @@ async function resolveVendorTransaction(
   if (!orgWide) {
     const next = vendorNextStepFor(t.status);
     if (next && opsGroupCanAccessCheckpoint(userOpsGroup, opsGroupForCheckpointRole(next.role))) {
+      if (!onDuty) return { error: NOT_ON_DUTY_ERROR };
       actionableSlug = next.slug;
     }
   }

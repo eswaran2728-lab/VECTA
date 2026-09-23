@@ -3,7 +3,8 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Role, UserProfile, OpsGroup } from "@/lib/icms/database.types";
-import { opsGroupForCheckpointRole, opsGroupCanAccessCheckpoint } from "@/lib/icms/ops-group";
+import { opsGroupForCheckpointRole, opsGroupCanAccessCheckpoint, isAvsecScanGroup } from "@/lib/icms/ops-group";
+import { ensureOnDutyForCheckpoint } from "@/lib/icms/checkpoint-duty";
 
 /** Returns the signed-in user's profile or redirects to /login. */
 export async function requireProfile(): Promise<UserProfile> {
@@ -58,14 +59,34 @@ export async function requireRole(roles: Role[]): Promise<UserProfile> {
  * write-side counterpart to that read-side ops_group access, restoring
  * "every team member scans and does their part" for the actual checkpoint
  * actions, not just visibility.
+ *
+ * On-duty gate (2026-09-23): "Approved ASO/SO/DSE users from both AVSEC
+ * groups may complete non-Hub checkpoints only while checked in." Applies
+ * ONLY when access is granted via the unified operation_avsec/ifc_avsec
+ * scanning union (isAvsecScanGroup) — i.e. exactly the ASO/SO/DSE grant
+ * this task scopes the requirement to. It does NOT apply to: the literal
+ * single-purpose checkpoint-role accounts (`profile.role === role` above,
+ * no duty/roster concept of their own), or Hub AVSEC's own exact-match
+ * grant (out of scope here — task explicitly says "non-Hub checkpoints";
+ * Hub AVSEC's access is untouched, preserving Hub separation as-is).
+ * Reuses ensureOnDutyForCheckpoint / hasOpenDutyCheckIn — the SAME source
+ * of truth report submission already uses (lib/avsec/reports/actions.ts's
+ * ensureCheckedIn) — no new duty/attendance table or schema.
  */
 export async function requireCheckpointRole(role: Role): Promise<UserProfile> {
   const profile = await requireProfile();
   if (profile.role === role) return profile;
   const checkpointOpsGroup = opsGroupForCheckpointRole(role);
+  const viewerOpsGroup = profile.ops_group as OpsGroup | null;
   // Unified AVSEC scanning model: Operation and IFC ops_groups are
   // interchangeable for any non-Hub checkpoint (opsGroupCanAccessCheckpoint
   // enforces the exact-match rule for Hub either way).
-  if (opsGroupCanAccessCheckpoint(profile.ops_group as OpsGroup | null, checkpointOpsGroup)) return profile;
+  if (opsGroupCanAccessCheckpoint(viewerOpsGroup, checkpointOpsGroup)) {
+    if (isAvsecScanGroup(viewerOpsGroup)) {
+      const dutyError = await ensureOnDutyForCheckpoint(profile.id);
+      if (dutyError) redirect("/icms/dashboard?error=not-on-duty");
+    }
+    return profile;
+  }
   redirect("/icms/dashboard?error=forbidden");
 }
