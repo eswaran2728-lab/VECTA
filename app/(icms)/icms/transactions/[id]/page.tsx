@@ -13,7 +13,7 @@ import { WorkflowStepper } from "@/components/icms/workflow-stepper";
 import { Button } from "@/components/icms/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/icms/ui/card";
 import { getStep, nextStepFor, type CheckpointPart } from "@/lib/icms/workflow";
-import { opsGroupForCheckpointRole } from "@/lib/icms/ops-group";
+import { opsGroupForCheckpointRole, opsGroupCanAccessCheckpoint } from "@/lib/icms/ops-group";
 import type { OpsGroup } from "@/lib/icms/database.types";
 import { SegmentCountdown } from "@/components/icms/segment-countdown";
 import {
@@ -120,7 +120,7 @@ function PendingPartCard({
   const actionable =
     isCurrent &&
     (viewerRole === responsibleRole ||
-      (viewerOpsGroup !== null && viewerOpsGroup === opsGroupForCheckpointRole(responsibleRole)));
+      opsGroupCanAccessCheckpoint(viewerOpsGroup, opsGroupForCheckpointRole(responsibleRole)));
   const slug = part.replace("_", "-");
 
   return (
@@ -224,7 +224,7 @@ export default async function TransactionDetailPage({
   const nextAction =
     nextStep &&
     (profile.role === nextStep.role ||
-      (profile.ops_group !== null && profile.ops_group === opsGroupForCheckpointRole(nextStep.role)))
+      opsGroupCanAccessCheckpoint(profile.ops_group, opsGroupForCheckpointRole(nextStep.role)))
       ? {
           href: `/icms/transactions/${id}/${nextStep.slug}`,
           label: `Complete ${nextStep.shortLabel}`,
