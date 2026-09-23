@@ -481,7 +481,7 @@ test("Existing approved users are untouched by this migration: an unrelated fiel
 // team_rosters — asserted here as a scope check on the migration's own
 // text so a future edit that widens this file is caught. ---
 
-test("SCOPE: the containment migration does not touch CaterLink/checkpoint, report, or roster tables/policies", async () => {
+test("SCOPE: Parts 1-2 (C-01/C-02, public.profiles and public.users) of the migration do not touch CaterLink/checkpoint, report, or roster tables/policies", async () => {
   const fs = await import("node:fs");
   const path = await import("node:path");
   const { fileURLToPath } = await import("node:url");
@@ -493,8 +493,24 @@ test("SCOPE: the containment migration does not touch CaterLink/checkpoint, repo
     "20260923000003_super_admin_privilege_containment.sql",
   );
   const sql = fs.readFileSync(migrationPath, "utf8");
+  // Parts 1-2 only -- Part 3 (pending-Management containment,
+  // tests/pending-management-containment.test.mts covers its own scope)
+  // legitimately touches team_rosters and mentions report_sec0xx/
+  // duty-adjacent tables in its audit prose, by explicit later
+  // instruction. Slicing here keeps this test's original, narrower
+  // C-01/C-02 scope guarantee meaningful.
+  const part3Start = sql.indexOf("PART 3: pending-Management");
+  assert.ok(part3Start !== -1, "Part 3 marker must exist");
+  // Strip comments -- Part 1b's own header comment legitimately NAMES
+  // Part 3's tables when explaining why the helper is defined early;
+  // only actual statements matter for this scope guarantee.
+  const parts1and2Code = sql
+    .slice(0, part3Start)
+    .split("\n")
+    .map((line) => line.replace(/--.*$/, ""))
+    .join("\n");
   for (const forbidden of ["part_b", "part_c", "part_d", "part_hub", "part_redq", "vendor_transactions", "report_sec", "team_rosters", "duty_records"]) {
-    assert.ok(!sql.toLowerCase().includes(forbidden.toLowerCase()), `migration must not reference ${forbidden}`);
+    assert.ok(!parts1and2Code.toLowerCase().includes(forbidden.toLowerCase()), `Parts 1-2 must not reference ${forbidden} outside comments`);
   }
   assert.ok(sql.includes("public.profiles"), "migration must scope to public.profiles");
   assert.ok(sql.includes("public.users"), "migration must scope to public.users (C-02)");
