@@ -1,9 +1,15 @@
--- SECURITY CONTAINMENT (2026-09-23): C-01 -- self-promotion through
--- profiles.unified_role. This is temporary containment for the UNFINISHED
--- Super Admin feature, not an expansion of it -- it does NOT build the
--- planned Super Admin UI, multi-station, multi-hub, multi-AOC, or the
--- major Malaysia upgrade. It only prevents privilege escalation while
--- preserving current KUL functionality.
+-- SECURITY CONTAINMENT (2026-09-23): C-01 (public.profiles) and C-02
+-- (public.users) -- self-promotion through unified_role and other
+-- server-controlled identity/authorization fields. This is temporary
+-- containment for the UNFINISHED Super Admin feature, not an expansion of
+-- it -- it does NOT build the planned Super Admin UI, multi-station,
+-- multi-hub, multi-AOC, or the major Malaysia upgrade. It only prevents
+-- privilege escalation while preserving current KUL functionality.
+--
+-- Single combined migration covering both tables -- extends the original
+-- C-01-only version of this file (never applied/pushed) rather than
+-- adding a second migration, per instruction to avoid duplicate/
+-- conflicting migrations for the same unapplied change.
 --
 -- CONFIRMED ROOT CAUSE (verified by direct policy/trigger/grant/CHECK
 -- inspection against vecta-prod, no data changed, no exploit attempted):
@@ -35,18 +41,52 @@
 -- only 3 legitimate 'management' rows (role='MANAGEMENT'), matching known
 -- accounts. No data is changed by this migration.
 --
--- RELATED FINDING, OUT OF SCOPE HERE: public.users (the ICMS-origin
--- shadow table) has an analogous "users: own language preference" RLS
--- policy (id = auth.uid(), no column restriction) and NO trigger at all --
--- an equivalent, currently-unprotected self-promotion surface. Flagged in
--- the report for a separate authorized fix; not touched by this
--- migration (task scope is profiles only).
+-- C-02 (public.users, the ICMS-origin shadow/driver/vendor/warehouse
+-- table) -- FOLLOW-UP INVESTIGATION (2026-09-23, read-only, no exploit
+-- attempted, no data changed):
+--   1. "users: own language preference" RLS policy: USING/WITH CHECK
+--      (id = auth.uid()), same row-only shape as profiles' old policy.
+--   2. NO trigger exists on public.users at all (0 rows in pg_trigger for
+--      this table) -- no column-level validation of any kind.
+--   3. HOWEVER: table_privileges/column_privileges show `authenticated`
+--      has UPDATE granted on EXACTLY ONE column of public.users:
+--      preferred_language. `anon` has NO UPDATE grant on this table at
+--      all. This is the ONLY reason C-02 is not immediately exploitable
+--      today the same way C-01 was -- it is a single, un-reinforced
+--      control (the GRANT), with no RLS column check and no trigger
+--      backing it up. A single future migration that broadens the GRANT
+--      (an easy, unreviewed mistake -- profiles itself had exactly this
+--      broad default before this migration) would silently reopen the
+--      identical self-promotion path with zero remaining defense. This
+--      migration closes that latent gap with the same defense-in-depth
+--      pattern as C-01: an explicit-allowlist trigger, independent of the
+--      GRANT being correct.
+--   4. No INSERT policy exists on public.users (0 policies with cmd='a'),
+--      so despite broad INSERT column grants to anon/authenticated (used,
+--      not fixed here, by lib/icms/actions/registration.ts's CaterLink
+--      self-registration upsert), RLS already default-denies every such
+--      INSERT attempt today -- a separate, pre-existing FUNCTIONAL bug
+--      (registerUser's users-table upsert silently fails; the error is
+--      swallowed and "success" is still returned), not a security hole,
+--      and NOT fixed by this migration (out of scope -- fixing it would
+--      require adding a permissive INSERT policy, which is a feature
+--      change, not containment).
+--   5. lib/icms/actions/registration.ts's approveStaff/rejectStaff
+--      (supervisor-gated) also write public.users.status via the
+--      request-scoped (non-service-role) client, but no RLS UPDATE policy
+--      permits a supervisor to write another user's row on this table
+--      either -- that write also already silently fails today. Also
+--      pre-existing, also not fixed here (same reasoning as #4).
+-- EXISTING DATA CHECKED: public.users.unified_role has no 'super_admin'
+-- value today -- aso x8, dse x8, enforcement x1, management x2, so x9,
+-- vendor x2. No data is changed by this migration.
 --
 -- Does not touch: CaterLink/checkpoint policies, reports, rosters, duty,
--- leave, overtime, transactions, or the profiles_unified_role_check CHECK
--- constraint (super_admin remains a valid domain value -- service_role
--- must retain the ability to set it; only self/Management writes are
--- restricted).
+-- leave, overtime, transactions, the profiles_unified_role_check /
+-- users_unified_role_check CHECK constraints (super_admin remains a valid
+-- domain value on both tables -- service_role must retain the ability to
+-- set it; only self/Management writes are restricted), or the (already
+-- RLS-default-denied) INSERT paths on public.users.
 
 -- ---------------------------------------------------------------------
 -- 1. Grants: anon has no legitimate reason to write profiles at all (RLS
@@ -221,3 +261,85 @@ begin
   raise exception 'Not authorized to modify this profile.';
 end;
 $function$;
+
+-- =======================================================================
+-- C-02: public.users (ICMS-origin shadow / driver / vendor / warehouse
+-- accounts)
+-- =======================================================================
+
+-- ---------------------------------------------------------------------
+-- 4. Grants: anon has no legitimate reason to write public.users at all.
+--    authenticated's UPDATE grant is already correctly narrowed to just
+--    preferred_language (verified above) -- re-affirmed here, not
+--    widened, so this migration is also idempotent/self-documenting if
+--    re-run.
+-- ---------------------------------------------------------------------
+revoke update, delete, truncate on public.users from anon;
+
+-- ---------------------------------------------------------------------
+-- 5. RLS: keep the existing row-scoping (id = auth.uid()) -- the real
+--    column enforcement is the trigger below (RLS can't cleanly diff
+--    OLD vs NEW without a subquery per column). Re-created here only so
+--    this migration is the single source of truth for the policy's
+--    current definition.
+-- ---------------------------------------------------------------------
+drop policy if exists "users: own language preference" on public.users;
+create policy "users: own language preference" on public.users
+for update
+using (id = auth.uid())
+with check (id = auth.uid());
+
+-- ---------------------------------------------------------------------
+-- 6. Trigger: explicit allowlist, mirroring enforce_profile_self_update().
+--    public.users has no station/team/approval-audit columns (those are
+--    profiles-only), so the protected set here is: role, unified_role,
+--    status, ops_group, org_id, duty_post, email, staff_id, name. The
+--    ONLY self-editable field is preferred_language -- the one already
+--    granted at the column level, and the only field
+--    lib/icms/actions/language.ts's setLanguage() ever writes.
+-- ---------------------------------------------------------------------
+create or replace function public.enforce_users_self_update()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  -- Trusted backend writes: createUser/updateUserRole
+  -- (lib/icms/actions/users.ts), the AVSEC->ICMS shadow sync in
+  -- approveUserWithAssignment/updateUserAssignment
+  -- (lib/avsec/admin/actions.ts, via createAdminClient()), and
+  -- backfill_icms_shadow_users -- all use the service-role client.
+  if auth.role() = 'service_role' then
+    return new;
+  end if;
+
+  if old.id = auth.uid() then
+    if new.role is distinct from old.role
+       or new.unified_role is distinct from old.unified_role
+       or new.status is distinct from old.status
+       or new.ops_group is distinct from old.ops_group
+       or new.org_id is distinct from old.org_id
+       or new.duty_post is distinct from old.duty_post
+       or new.email is distinct from old.email
+       or new.staff_id is distinct from old.staff_id
+       or new.name is distinct from old.name
+    then
+      raise exception 'Not authorized to modify this field on your own account.';
+    end if;
+    return new;
+  end if;
+
+  -- No other actor (including a "supervisor") currently has a matching
+  -- RLS policy to write another user's row on this table -- this trigger
+  -- fires after RLS/GRANT already gate the statement, so reaching here
+  -- with old.id <> auth.uid() should be unreachable in practice; deny
+  -- explicitly rather than silently falling through.
+  raise exception 'Not authorized to modify this account.';
+end;
+$function$;
+
+drop trigger if exists users_enforce_self_update on public.users;
+create trigger users_enforce_self_update
+  before update on public.users
+  for each row execute function public.enforce_users_self_update();
