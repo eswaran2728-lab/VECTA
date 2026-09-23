@@ -34,7 +34,9 @@ export async function updateProfile(formData: FormData) {
     redirect(`/avsec/profile-setup?error=${encodeURIComponent(error.message)}`);
   }
 
-  redirect("/");
+  // Submitting the profile sets it to pending review — never route
+  // straight to "/" (an operational route) from here.
+  redirect("/avsec/pending-approval");
 }
 
 export async function signOut() {

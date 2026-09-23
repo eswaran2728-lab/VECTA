@@ -22,7 +22,7 @@ export default async function ProfileSetupPage({
     const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
     const complete = profile.name && profile.station && (isOrgWide || profile.team);
     if (complete) {
-      redirect(profile.status === "approved" ? landingPathForRole(profile.role) : "/pending-approval");
+      redirect(profile.status === "approved" ? landingPathForRole(profile.role) : "/avsec/pending-approval");
     }
   }
 
