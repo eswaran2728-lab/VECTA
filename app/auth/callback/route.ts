@@ -10,6 +10,22 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
+    if (error) {
+      // Diagnostic only — server-side log, never exposed to the client
+      // or the redirect URL. Message/status only, no code/token/secret
+      // values. Without this, "auth-code-error" gives no signal at all
+      // about WHY the exchange failed (missing/expired code, PKCE
+      // verifier cookie mismatch, provider misconfiguration, etc.) —
+      // added while investigating a reported production OAuth failure
+      // (2026-09-23) that could not be root-caused from code inspection
+      // alone, pending log access.
+      console.error("[auth/callback] exchangeCodeForSession failed", {
+        message: error.message,
+        status: error.status,
+        name: error.name,
+      });
+    }
+
     if (!error) {
       const {
         data: { user },
