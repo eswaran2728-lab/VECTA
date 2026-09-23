@@ -2,9 +2,16 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { parseCaterLinkQrPayload } from "@/lib/icms/qr-payload";
-import { opsGroupForTransaction, opsGroupCanAccessCheckpoint, isAvsecScanGroup } from "@/lib/icms/ops-group";
+import {
+  opsGroupForTransaction,
+  opsGroupForCheckpointRole,
+  opsGroupCanAccessCheckpoint,
+  isAvsecScanGroup,
+} from "@/lib/icms/ops-group";
 import { verifyQrToken } from "@/lib/icms/qr-token";
-import type { Direction, OpsGroup, TransactionRoute, TransactionStatus } from "@/lib/icms/database.types";
+import { nextStepFor } from "@/lib/icms/workflow";
+import { vendorNextStepFor } from "@/lib/icms/workflow-vendor";
+import type { Direction, OpsGroup, TransactionRoute, TransactionStatus, VendorTransactionStatus } from "@/lib/icms/database.types";
 
 export interface ScanResult {
   error: string | null;
@@ -104,6 +111,19 @@ function resolveCateringRow(
   userOpsGroup: OpsGroup | null,
   userStation?: string | null
 ): ScanResult {
+  // Which checkpoint slug (if any) this scan should land the user on
+  // directly, instead of the read-only transaction page. Previously this
+  // action always returned the base transaction page — Part B/C/D/REDQ's
+  // form and submit button never rendered from a scan even when the
+  // scanning officer was fully authorized to complete that checkpoint
+  // (requireCheckpointRole() on the part-b/c/d/redq pages already accepted
+  // them; nothing ever linked there). Mirrors requireCheckpointRole's own
+  // unified-AVSEC-scanning check (opsGroupCanAccessCheckpoint) so "can view"
+  // here and "can submit" on the checkpoint page agree exactly. Org-wide
+  // roles (admin/management/enforcement) hold no checkpoint role and never
+  // get routed to a checkpoint form, same as before.
+  let actionableSlug: string | null = null;
+
   if (!orgWide) {
     const txOpsGroup = opsGroupForTransaction(t.direction, t.status, t.route);
     if (!opsGroupCanAccessCheckpoint(userOpsGroup, txOpsGroup)) {
@@ -121,13 +141,20 @@ function resolveCateringRow(
         error: `This Hub transaction is destined for ${t.hub_destination}, not your station (${userStation}).`,
       };
     }
+
+    const next = nextStepFor(t.direction, t.status, t.route);
+    if (next && opsGroupCanAccessCheckpoint(userOpsGroup, opsGroupForCheckpointRole(next.role))) {
+      actionableSlug = next.slug;
+    }
   }
 
   return {
     error: null,
     transactionId: t.id,
     transactionNumber: t.transaction_number,
-    redirectPath: `/icms/transactions/${t.id}`,
+    redirectPath: actionableSlug
+      ? `/icms/transactions/${t.id}/${actionableSlug}`
+      : `/icms/transactions/${t.id}`,
   };
 }
 
@@ -173,19 +200,34 @@ async function resolveVendorTransaction(
 ): Promise<ScanResult> {
   const { data: tx } = await supabase
     .from("vendor_transactions")
-    .select("id, transaction_number")
+    .select("id, transaction_number, status")
     .eq("id", transactionId)
     .maybeSingle();
   if (!tx) return { error: "Vendor transaction not found for this QR pass." };
+  const t = tx as { id: string; transaction_number: string; status: VendorTransactionStatus };
 
   if (!orgWide && !isAvsecScanGroup(userOpsGroup)) {
     return { error: "This transaction is not in your ops group." };
   }
 
+  // Only Part B (post2_avsec) is reachable through an AVSEC ops_group here —
+  // Part C is warehouse_pic's own ICMS role, unrelated to ops_group, and
+  // opsGroupForCheckpointRole("warehouse_pic") returns null, so it's never
+  // made actionable via this path.
+  let actionableSlug: string | null = null;
+  if (!orgWide) {
+    const next = vendorNextStepFor(t.status);
+    if (next && opsGroupCanAccessCheckpoint(userOpsGroup, opsGroupForCheckpointRole(next.role))) {
+      actionableSlug = next.slug;
+    }
+  }
+
   return {
     error: null,
-    transactionId: tx.id,
-    transactionNumber: tx.transaction_number,
-    redirectPath: `/icms/vendor-transactions/${tx.id}`,
+    transactionId: t.id,
+    transactionNumber: t.transaction_number,
+    redirectPath: actionableSlug
+      ? `/icms/vendor-transactions/${t.id}/${actionableSlug}`
+      : `/icms/vendor-transactions/${t.id}`,
   };
 }
