@@ -102,6 +102,25 @@ revoke update (org_id) on public.profiles from authenticated;
 revoke update (org_id) on public.profiles from anon;
 
 -- ---------------------------------------------------------------------
+-- 1b. Centralized helper for "is the acting user an APPROVED Management
+--     user" -- current_role_name() alone (raw profiles.role, no status
+--     check) is NOT sufficient; see Part 3 below for the full
+--     investigation this closes. Defined here, early, because it's
+--     referenced by policies created in both Part 1 (profiles) and
+--     Part 3 (team_rosters, absence_notices, announcements, feedback,
+--     enforcement_search_log).
+-- ---------------------------------------------------------------------
+create or replace function public.is_approved_management()
+returns boolean
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select current_role_name() = 'MANAGEMENT' and current_status() = 'approved';
+$function$;
+
+-- ---------------------------------------------------------------------
 -- 2. RLS: block the literal exploit value at the policy layer too, so
 --    protection does not depend solely on the trigger. Cheap and safe --
 --    no legitimate self-update or Management write has ever set
@@ -113,16 +132,26 @@ for update
 using (id = auth.uid())
 with check (id = auth.uid() and coalesce(unified_role, '') <> 'super_admin');
 
+-- PENDING-MANAGEMENT containment (see Part 3 below for the full
+-- investigation): these two policies previously authorized the acting
+-- Management user with `current_role_name() = 'MANAGEMENT'` alone --
+-- current_role_name() reads raw profiles.role with NO status check, so a
+-- pending role='MANAGEMENT' applicant (profile-setup explicitly allows
+-- requesting this role while status stays 'pending' -- see
+-- lib/avsec/reference-data.ts's REQUESTABLE_ROLES) satisfied this
+-- condition before ever being approved. Now requires
+-- is_approved_management() (defined in Part 3), which adds
+-- current_status() = 'approved' on the ACTOR.
 drop policy if exists "profiles management approve pending" on public.profiles;
 create policy "profiles management approve pending" on public.profiles
 for update
 using (
-  current_role_name() = 'MANAGEMENT'
+  is_approved_management()
   and status = 'pending'
   and id <> auth.uid()
 )
 with check (
-  current_role_name() = 'MANAGEMENT'
+  is_approved_management()
   and status in ('approved', 'rejected')
   and role <> 'ADMIN'
   and id <> auth.uid()
@@ -133,12 +162,12 @@ drop policy if exists "profiles management manage non-admin staff" on public.pro
 create policy "profiles management manage non-admin staff" on public.profiles
 for update
 using (
-  current_role_name() = 'MANAGEMENT'
+  is_approved_management()
   and role <> 'ADMIN'
   and id <> auth.uid()
 )
 with check (
-  current_role_name() = 'MANAGEMENT'
+  is_approved_management()
   and role <> 'ADMIN'
   and id <> auth.uid()
   and coalesce(unified_role, '') <> 'super_admin'
@@ -177,8 +206,22 @@ begin
     -- fields. None of them are ever legitimately written by a
     -- self-update (lib/avsec/profile-actions.ts's updateProfile() only
     -- ever writes name/staff_no/station/team/role) -- deny by default,
-    -- regardless of the row's current status.
-    if new.unified_role is distinct from old.unified_role
+    -- regardless of the row's current status. id and created_at are
+    -- listed explicitly even though "profiles self update"'s WITH CHECK
+    -- (id = auth.uid()) already makes id practically immutable here --
+    -- this is the trigger's own independent guarantee, not reliant on
+    -- that policy staying correct. updated_at is deliberately NOT in
+    -- this list: profiles_set_updated_at (a separate BEFORE UPDATE
+    -- trigger, name-ordered after this one -- Postgres fires same-table
+    -- BEFORE triggers in trigger-name order, "profiles_enforce_self_update"
+    -- < "profiles_set_updated_at") unconditionally sets NEW.updated_at =
+    -- now() on every update; comparing it here would reject that
+    -- legitimate, automatic write. This function only ever inspects OLD/
+    -- NEW as they stand when IT runs, before that second trigger touches
+    -- updated_at, so there is no ordering conflict either way.
+    if new.id is distinct from old.id
+       or new.created_at is distinct from old.created_at
+       or new.unified_role is distinct from old.unified_role
        or new.status is distinct from old.status
        or new.ops_group is distinct from old.ops_group
        or new.org_id is distinct from old.org_id
@@ -315,7 +358,12 @@ begin
   end if;
 
   if old.id = auth.uid() then
-    if new.role is distinct from old.role
+    -- public.users has no updated_at column and no other BEFORE UPDATE
+    -- trigger (verified: 0 other triggers on this table) -- no ordering
+    -- concern here, unlike profiles.
+    if new.id is distinct from old.id
+       or new.created_at is distinct from old.created_at
+       or new.role is distinct from old.role
        or new.unified_role is distinct from old.unified_role
        or new.status is distinct from old.status
        or new.ops_group is distinct from old.ops_group
@@ -343,3 +391,395 @@ drop trigger if exists users_enforce_self_update on public.users;
 create trigger users_enforce_self_update
   before update on public.users
   for each row execute function public.enforce_users_self_update();
+
+-- =======================================================================
+-- PART 3: pending-Management privilege-escalation containment
+-- =======================================================================
+--
+-- REMAINING RISK REPORTED (2026-09-23): the profile-setup workflow lets a
+-- new pending user request role='MANAGEMENT' (REQUESTABLE_ROLES in
+-- lib/avsec/reference-data.ts includes MANAGEMENT, by design -- Management
+-- applicants must be able to self-register the same as any other role).
+-- Multiple policies and functions authorize "is this user Management"
+-- using ONLY current_role_name() = 'MANAGEMENT' -- and current_role_name()
+-- (select role from profiles where id = auth.uid()) has NO status check.
+-- Blocking unified_role in Parts 1-2 does not close this: it's the
+-- LEGACY role='MANAGEMENT' column, not unified_role, that these checks
+-- read.
+--
+-- CONFIRMED: yes. A profile with role='MANAGEMENT', status='pending'
+-- satisfies current_role_name() = 'MANAGEMENT' today, and therefore every
+-- policy/function listed below, via direct PostgREST/RPC calls, before
+-- any Management approval ever happens.
+--
+-- current_status() (select status from profiles where id = auth.uid())
+-- already exists and correctly reads status -- it was simply never
+-- combined with current_role_name() at any of these call sites. Fixed
+-- here with a single centralized helper, is_approved_management()
+-- (Part 1b above: current_role_name() = 'MANAGEMENT' and current_status()
+-- = 'approved'), substituted into every policy/function found below that
+-- grants Management-specific authority. Middleware
+-- (lib/supabase/middleware.ts) was NOT the only protection -- it never
+-- was the protection for the DATABASE layer at all; it only gates which
+-- pages a pending user's own BROWSER can navigate to, and was never
+-- involved in any RLS/RPC decision.
+--
+-- COMPLETE AUDIT RESULTS (read-only inspection, 2026-09-23, no exploit
+-- attempted):
+--
+-- Already correctly required approved status (no change needed) --
+-- confirms current_status() was already the established pattern for
+-- SELF-submission checks, just never reused for MANAGEMENT-acting-on-
+-- others checks:
+--   report_sec013/014/016/018/029/033 "own insert" policies
+--     (current_role_name() = ... AND current_status() = 'approved')
+--   offload_records "offload own insert"
+--
+-- VULNERABLE (fixed below) -- direct current_role_name() = 'MANAGEMENT'
+-- or an EXISTS-subquery equivalent, with NO status check on the actor:
+--   1. profiles "profiles management approve pending" (Part 1, fixed above)
+--   2. profiles "profiles management manage non-admin staff" (Part 1, fixed above)
+--   3. team_rosters "roster management manage" (ALL commands -- full CRUD
+--      on rosters)
+--   4. enforcement_search_log "search log select"
+--   5. absence_notices "absence_notices_dse_management_update"
+--   6. absence_notices "absence_notices_select_elevated"
+--   7. announcement_acknowledgements "announcement_acks_management_select"
+--   8. announcement_targets "announcement_targets_management_all" (ALL commands)
+--   9. announcements "announcements_management_all" (ALL commands)
+--   10. feedback_messages "feedback_messages_management_insert"
+--   11. feedback_messages "feedback_messages_management_select"
+--   12. feedback_threads "feedback_threads_management_select"
+--   13. feedback_threads "feedback_threads_management_update"
+--   14. function public.search_flight_attendance() -- privileged RPC,
+--       "if current_role_name() not in ('ENFORCEMENT','MANAGEMENT')"
+--   15. function public.enforce_overtime_transition() -- the 'approved'
+--       and 'rejected' transitions both gate on
+--       "role_rank(actor_role) >= role_rank('MANAGEMENT')", which is
+--       equally blind to status (role_rank() takes a bare role value)
+--
+-- DELIBERATELY NOT TOUCHED (each is either not Management-specific, has
+-- no live pending-Management path, or is explicitly out of scope per
+-- instruction 8 -- "do not touch unrelated CaterLink scanning, Hub
+-- separation, report acknowledgement or roster group-isolation logic"):
+--   - is_monitor_or_above() / current_role_rank() / role_rank() /
+--     duty_records "duty monitor select" / shift_handovers / the
+--     report_sec0xx "rank select" (visibility) policies / offload rank
+--     select / overtime_requests "monitor select" -- these are the
+--     numeric role-rank family used for SO/DSE/ENFORCEMENT/MANAGEMENT
+--     READ visibility and roster/report group-isolation across the whole
+--     app. A pending Management applicant does inherit rank=5 read
+--     visibility through these (see "Remaining risks" in the report) --
+--     but rewriting this shared family risks regressing the SO/DSE/
+--     ENFORCEMENT behavior those exact policies also enforce, which
+--     instruction 8 explicitly protects. Flagged, not fixed.
+--   - duty_zones "duty_zones admin write" -- gated on role='ADMIN', not
+--     MANAGEMENT; a pending Management applicant already fails this
+--     regardless of status.
+--   - guard_transaction_update() / unescalate_transaction() /
+--     "incidents: supervisor resolves" / the transactions/
+--     vendor_transactions "checkpoint roles read" policies -- these read
+--     current_user_role() from public.users (the ICMS-origin shadow
+--     table), not profiles. Verified: there is no live path that creates
+--     a public.users row with unified_role='management' and
+--     status='pending' -- the AVSEC profile-setup path (the one that
+--     actually offers "request Management") only ever writes to
+--     profiles; the ICMS shadow row is created post-approval, already
+--     status='active', via approveUserWithAssignment's service-role sync.
+--     No exploitable pending-Management surface exists on public.users
+--     today. Also CaterLink/ICMS transaction logic, explicitly protected
+--     by instruction 8.
+--
+-- No production data was changed by this investigation or this fix.
+-- =======================================================================
+
+-- ---------------------------------------------------------------------
+-- 7. team_rosters: full CRUD for Management was gated on
+--    current_role_name() = 'MANAGEMENT' alone.
+-- ---------------------------------------------------------------------
+drop policy if exists "roster management manage" on public.team_rosters;
+create policy "roster management manage" on public.team_rosters
+for all
+using (is_approved_management())
+with check (is_approved_management());
+
+-- ---------------------------------------------------------------------
+-- 8. enforcement_search_log: read access to who searched what flight
+--    attendance data. ENFORCEMENT/ADMIN branches untouched (no live
+--    pending-privilege path for either -- ADMIN is unused, and this task
+--    is scoped to Management).
+-- ---------------------------------------------------------------------
+drop policy if exists "search log select" on public.enforcement_search_log;
+create policy "search log select" on public.enforcement_search_log
+for select
+using (
+  current_role_name() = ANY (ARRAY['ENFORCEMENT'::user_role, 'ADMIN'::user_role])
+  or is_approved_management()
+);
+
+-- ---------------------------------------------------------------------
+-- 9. absence_notices: leave/absence management. Each policy's DSE branch
+--    (station/team/ops_group-scoped) and any ADMIN/SUPER_ADMIN branch are
+--    preserved verbatim -- only the Management membership test gains a
+--    status='approved' requirement, inlined against the same `p`/
+--    `profiles` row the EXISTS subquery already fetches (cheaper than a
+--    second lookup via the helper function, same effect).
+-- ---------------------------------------------------------------------
+drop policy if exists "absence_notices_dse_management_update" on public.absence_notices;
+create policy "absence_notices_dse_management_update" on public.absence_notices
+for update
+using (
+  ((org_id is null) or (org_id = current_org_id()))
+  and (exists (
+    select 1 from profiles p
+    where p.id = auth.uid()
+      and (
+        (p.role::text = any (array['ADMIN', 'SUPER_ADMIN']))
+        or (p.unified_role = 'super_admin')
+        or (((p.role::text = 'MANAGEMENT') or (p.unified_role = 'management')) and p.status = 'approved')
+        or (
+          (p.role = 'DSE'::user_role)
+          and ((absence_notices.station = p.station) or (absence_notices.station is null))
+          and (coalesce(p.team, '') = coalesce(absence_notices.team, ''))
+          and (coalesce(p.ops_group, '') = coalesce(absence_notices.ops_group, ''))
+        )
+      )
+  ))
+)
+with check (
+  ((org_id is null) or (org_id = current_org_id()))
+  and (exists (
+    select 1 from profiles p
+    where p.id = auth.uid()
+      and (
+        (p.role::text = any (array['ADMIN', 'SUPER_ADMIN']))
+        or (p.unified_role = 'super_admin')
+        or (((p.role::text = 'MANAGEMENT') or (p.unified_role = 'management')) and p.status = 'approved')
+        or (
+          (p.role = 'DSE'::user_role)
+          and ((absence_notices.station = p.station) or (absence_notices.station is null))
+          and (coalesce(p.team, '') = coalesce(absence_notices.team, ''))
+          and (coalesce(p.ops_group, '') = coalesce(absence_notices.ops_group, ''))
+        )
+      )
+  ))
+);
+
+drop policy if exists "absence_notices_select_elevated" on public.absence_notices;
+create policy "absence_notices_select_elevated" on public.absence_notices
+for select
+using (
+  ((org_id is null) or (org_id = current_org_id()))
+  and (exists (
+    select 1 from profiles p
+    where p.id = auth.uid()
+      and (
+        (p.role::text = any (array['ADMIN', 'ENFORCEMENT', 'SUPER_ADMIN']))
+        or (p.unified_role = any (array['super_admin', 'enforcement']))
+        or (((p.role::text = 'MANAGEMENT') or (p.unified_role = 'management')) and p.status = 'approved')
+        or (
+          (p.role = 'DSE'::user_role)
+          and ((p.station is null) or (p.station = absence_notices.station))
+          and (coalesce(p.team, '') = coalesce(absence_notices.team, ''))
+          and (coalesce(p.ops_group, '') = coalesce(absence_notices.ops_group, ''))
+        )
+      )
+  ))
+);
+
+-- ---------------------------------------------------------------------
+-- 10. Announcements: create/target/acknowledge visibility.
+-- ---------------------------------------------------------------------
+drop policy if exists "announcement_acks_management_select" on public.announcement_acknowledgements;
+create policy "announcement_acks_management_select" on public.announcement_acknowledgements
+for select
+using (
+  exists (
+    select 1 from profiles
+    where profiles.id = auth.uid()
+      and (
+        (profiles.role::text = any (array['ADMIN', 'SUPER_ADMIN']))
+        or (profiles.unified_role = 'super_admin')
+        or (((profiles.role::text = 'MANAGEMENT') or (profiles.unified_role = 'management')) and profiles.status = 'approved')
+      )
+  )
+);
+
+drop policy if exists "announcement_targets_management_all" on public.announcement_targets;
+create policy "announcement_targets_management_all" on public.announcement_targets
+for all
+using (
+  exists (
+    select 1 from profiles
+    where profiles.id = auth.uid()
+      and (
+        (profiles.role::text = any (array['ADMIN', 'SUPER_ADMIN']))
+        or (profiles.unified_role = 'super_admin')
+        or (((profiles.role::text = 'MANAGEMENT') or (profiles.unified_role = 'management')) and profiles.status = 'approved')
+      )
+  )
+);
+
+drop policy if exists "announcements_management_all" on public.announcements;
+create policy "announcements_management_all" on public.announcements
+for all
+using (
+  exists (
+    select 1 from profiles
+    where profiles.id = auth.uid()
+      and (
+        (profiles.role::text = any (array['ADMIN', 'SUPER_ADMIN']))
+        or (profiles.unified_role = 'super_admin')
+        or (((profiles.role::text = 'MANAGEMENT') or (profiles.unified_role = 'management')) and profiles.status = 'approved')
+      )
+  )
+);
+
+-- ---------------------------------------------------------------------
+-- 11. Management feedback inbox (no SUPER_ADMIN branch in the originals
+--     -- preserved as found, not added).
+-- ---------------------------------------------------------------------
+drop policy if exists "feedback_messages_management_insert" on public.feedback_messages;
+create policy "feedback_messages_management_insert" on public.feedback_messages
+for insert
+with check (
+  (sender_role = 'management'::text)
+  and exists (
+    select 1 from profiles
+    where profiles.id = auth.uid()
+      and (
+        (profiles.role::text = 'ADMIN')
+        or (((profiles.role::text = 'MANAGEMENT') or (profiles.unified_role = 'management')) and profiles.status = 'approved')
+      )
+  )
+);
+
+drop policy if exists "feedback_messages_management_select" on public.feedback_messages;
+create policy "feedback_messages_management_select" on public.feedback_messages
+for select
+using (
+  exists (
+    select 1 from profiles
+    where profiles.id = auth.uid()
+      and (
+        (profiles.role::text = 'ADMIN')
+        or (((profiles.role::text = 'MANAGEMENT') or (profiles.unified_role = 'management')) and profiles.status = 'approved')
+      )
+  )
+);
+
+drop policy if exists "feedback_threads_management_select" on public.feedback_threads;
+create policy "feedback_threads_management_select" on public.feedback_threads
+for select
+using (
+  exists (
+    select 1 from profiles
+    where profiles.id = auth.uid()
+      and (
+        (profiles.role::text = 'ADMIN')
+        or (((profiles.role::text = 'MANAGEMENT') or (profiles.unified_role = 'management')) and profiles.status = 'approved')
+      )
+  )
+);
+
+drop policy if exists "feedback_threads_management_update" on public.feedback_threads;
+create policy "feedback_threads_management_update" on public.feedback_threads
+for update
+using (
+  exists (
+    select 1 from profiles
+    where profiles.id = auth.uid()
+      and (
+        (profiles.role::text = 'ADMIN')
+        or (((profiles.role::text = 'MANAGEMENT') or (profiles.unified_role = 'management')) and profiles.status = 'approved')
+      )
+  )
+);
+
+-- ---------------------------------------------------------------------
+-- 12. search_flight_attendance(): privileged RPC, callable directly via
+--     /rest/v1/rpc/search_flight_attendance. ENFORCEMENT branch and every
+--     other line of this function are untouched.
+-- ---------------------------------------------------------------------
+create or replace function public.search_flight_attendance(p_flight_no text, p_date date default null::date)
+returns setof v_flight_attendance
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_flight_no text := trim(coalesce(p_flight_no, ''));
+  v_count int;
+begin
+  if not (current_role_name() = 'ENFORCEMENT' or is_approved_management()) then
+    raise exception 'Not authorized to search flight attendance.';
+  end if;
+  if v_flight_no = '' then
+    raise exception 'Flight number is required.';
+  end if;
+
+  select count(*) into v_count
+  from v_flight_attendance
+  where flight_no ilike ('%' || v_flight_no || '%')
+    and (p_date is null or flight_date = p_date);
+
+  insert into enforcement_search_log (searched_by, flight_no, search_date, result_count)
+  values (auth.uid(), v_flight_no, p_date, v_count);
+
+  return query
+    select * from v_flight_attendance
+    where flight_no ilike ('%' || v_flight_no || '%')
+      and (p_date is null or flight_date = p_date)
+    order by flight_date desc nulls last, submitted_at desc nulls last;
+end;
+$function$;
+
+-- ---------------------------------------------------------------------
+-- 13. enforce_overtime_transition(): overtime approval/rejection. Only
+--     the two role_rank(actor_role) >= role_rank('MANAGEMENT')
+--     comparisons are replaced, with an ADMIN-or-approved-Management
+--     boolean computed once. The DSE-endorsement branch (a separate,
+--     non-Management authorization) and the claimant-cancels branch are
+--     completely untouched.
+-- ---------------------------------------------------------------------
+create or replace function public.enforce_overtime_transition()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  actor_role user_role;
+  actor_is_admin_or_approved_management boolean;
+begin
+  if new.status = old.status then
+    return new;
+  end if;
+
+  actor_role := current_role_name();
+  actor_is_admin_or_approved_management := (actor_role = 'ADMIN') or is_approved_management();
+
+  if new.status = 'endorsed' then
+    if not (actor_role = 'DSE' and old.status = 'pending') then
+      raise exception 'Only DSE can endorse a pending overtime request.';
+    end if;
+  elsif new.status = 'approved' then
+    if not (actor_is_admin_or_approved_management and old.status = 'endorsed') then
+      raise exception 'Only Management/Admin can approve, and only once DSE has endorsed.';
+    end if;
+  elsif new.status = 'rejected' then
+    if not (
+      (actor_role = 'DSE' and old.status = 'pending')
+      or (actor_is_admin_or_approved_management and old.status in ('pending', 'endorsed'))
+    ) then
+      raise exception 'You are not authorized to reject this overtime request at its current stage.';
+    end if;
+  elsif new.status = 'cancelled' then
+    if not (old.profile_id = auth.uid() and old.status = 'pending') then
+      raise exception 'Only the claimant can withdraw their own pending request.';
+    end if;
+  end if;
+
+  return new;
+end;
+$function$;
