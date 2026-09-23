@@ -2,10 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 /**
- * Regression coverage for C-01 containment (2026-09-23):
- * self-promotion through profiles.unified_role.
+ * Regression coverage for the combined privilege-escalation containment
+ * package (2026-09-23): C-01 (public.profiles) and C-02 (public.users),
+ * both self-promotion through unified_role / other server-controlled
+ * identity-authorization fields.
  *
- * CONFIRMED ROOT CAUSE: the "profiles self update" RLS policy
+ * C-01 CONFIRMED ROOT CAUSE: the "profiles self update" RLS policy
  * (id = auth.uid(), no column restriction) plus
  * enforce_profile_self_update() (which never inspected new.unified_role
  * in any branch) plus profiles_unified_role_check (which allows
@@ -16,19 +18,26 @@ import assert from "node:assert/strict";
  * service-role client. No UI form ever sent this value; the gap was
  * DB-layer only, exploitable by bypassing the UI entirely.
  *
- * migrations/20260923000003_super_admin_privilege_containment.sql fixes
- * this at both the trigger layer (enforce_profile_self_update, rewritten
- * to an explicit allowlist) and the RLS layer (WITH CHECK on all three
- * writable policies now rejects unified_role='super_admin' outright,
- * independent of the trigger).
+ * C-02 CONFIRMED ROOT CAUSE (public.users — ICMS-origin driver/vendor/
+ * warehouse/shadow accounts): the "users: own language preference" RLS
+ * policy has the identical row-only shape, and public.users has ZERO
+ * triggers at all. Not immediately exploitable before this fix only
+ * because `authenticated`'s UPDATE grant happened to already be narrowed
+ * to exactly one column (preferred_language) — a latent, single-point-of-
+ * failure gap with no RLS column check and no trigger behind it.
  *
- * The trigger/policies are plpgsql/SQL, not importable into a plain Node
+ * migrations/20260923000003_super_admin_privilege_containment.sql fixes
+ * both: enforce_profile_self_update() (rewritten to an explicit
+ * allowlist) and the new enforce_users_self_update() (new, same pattern),
+ * plus RLS WITH CHECK / GRANT narrowing on both tables.
+ *
+ * The triggers/policies are plpgsql/SQL, not importable into a plain Node
  * test — this file mirrors their exact logic (same pattern as
  * tests/google-sso-callback.test.mts for "use server"/server-only files),
  * so a regression in either the mirror or the real migration's intent is
  * caught here, and the real SQL is re-verified against production via
- * direct policy/trigger inspection (see the migration's own header
- * comment for the verified before-state).
+ * direct policy/trigger/grant inspection (see the migration's own header
+ * comment for the verified before-state of both tables).
  */
 
 type ProfileRow = {
@@ -198,18 +207,131 @@ for (const role of ["ASO", "SO", "DSE"] as const) {
 
 // --- 6: driver/vendor — CONFIRMED GAP, not fixed by this migration ---
 
-test("CONFIRMED GAP (C-02, out of scope for this migration): public.users (ICMS-origin driver/vendor/shadow accounts) has NO trigger and a column-unrestricted self-update RLS policy — the identical vulnerability class remains open there. This test documents the gap as found, per the 2026-09-23 production inspection (0 triggers on public.users; 'users: own language preference' policy is USING/WITH CHECK id=auth.uid() only). Flagged in the report; requires separate authorization to fix.", () => {
-  // Mirrors the ACTUAL current public.users policy shape (no trigger, no
-  // column restriction) — this intentionally shows the write SUCCEEDING,
-  // because it currently would.
-  function usersSelfUpdateRlsCheck(actorId: string, rowId: string): boolean {
-    return rowId === actorId; // no column restriction at all, confirmed
+// --- C-02: public.users (ICMS-origin shadow/driver/vendor/warehouse
+// accounts). CONFIRMED as a latent gap (2026-09-23 production inspection:
+// 0 triggers on public.users; "users: own language preference" RLS policy
+// is USING/WITH CHECK id=auth.uid() with no column restriction). NOT
+// immediately exploitable pre-fix only because `authenticated` happened
+// to have UPDATE granted on exactly one column (preferred_language) —
+// a single unreviewed future GRANT widening would have silently reopened
+// it with zero other defense. Now fixed with the same explicit-allowlist
+// trigger pattern as C-01 (enforce_users_self_update, in the same
+// migration). Mirrors that trigger's exact logic. ---
+
+type UsersRow = {
+  id: string;
+  role: string;
+  unified_role: string | null;
+  status: string;
+  ops_group: string | null;
+  org_id: string | null;
+  duty_post: string | null;
+  email: string;
+  staff_id: string;
+  name: string;
+  preferred_language: string;
+};
+
+type UsersActor = { kind: "service_role" } | { kind: "self"; id: string } | { kind: "other"; id: string } | { kind: "anon" };
+
+/** Mirrors enforce_users_self_update() (post-migration). */
+function enforceUsersSelfUpdate(actor: UsersActor, old: UsersRow, next: UsersRow): { ok: true } | { ok: false; error: string } {
+  if (actor.kind === "service_role") return { ok: true };
+
+  if (actor.kind === "self" && old.id === actor.id) {
+    if (
+      next.role !== old.role ||
+      next.unified_role !== old.unified_role ||
+      next.status !== old.status ||
+      next.ops_group !== old.ops_group ||
+      next.org_id !== old.org_id ||
+      next.duty_post !== old.duty_post ||
+      next.email !== old.email ||
+      next.staff_id !== old.staff_id ||
+      next.name !== old.name
+    ) {
+      return { ok: false, error: "Not authorized to modify this field on your own account." };
+    }
+    return { ok: true };
   }
-  assert.equal(usersSelfUpdateRlsCheck("driver-1", "driver-1"), true);
-  // i.e. a driver/vendor row in public.users CAN currently have
-  // unified_role set to anything, including 'super_admin', because there
-  // is no trigger and no column check — unlike profiles as of this
-  // migration.
+
+  return { ok: false, error: "Not authorized to modify this account." };
+}
+
+/** Mirrors the "users: own language preference" RLS policy (row-scoping only; column enforcement is the trigger above). */
+function usersRlsWithCheckAllows(actor: UsersActor, next: { id: string }): boolean {
+  return actor.kind === "self" && next.id === actor.id;
+}
+
+function baseUsersRow(overrides: Partial<UsersRow> = {}): UsersRow {
+  return {
+    id: "u",
+    role: "ops_staff",
+    unified_role: "aso",
+    status: "active",
+    ops_group: "operation_avsec",
+    org_id: "00000000-0000-0000-0000-000000000001",
+    duty_post: null,
+    email: "u@example.com",
+    staff_id: "AA-3001",
+    name: "Test User",
+    preferred_language: "en",
+    ...overrides,
+  };
+}
+
+test("REGRESSION (C-02): a driver (role='driver_vendor') cannot self-promote their own unified_role to 'super_admin'", () => {
+  const old = baseUsersRow({ id: "driver-1", role: "driver_vendor", unified_role: "vendor" });
+  const next = { ...old, unified_role: "super_admin" };
+  const result = enforceUsersSelfUpdate({ kind: "self", id: "driver-1" }, old, next);
+  assert.equal(result.ok, false);
+});
+
+test("REGRESSION (C-02): a vendor (role='vendor') cannot self-promote their own unified_role", () => {
+  const old = baseUsersRow({ id: "vendor-1", role: "vendor", unified_role: "vendor" });
+  const next = { ...old, unified_role: "management" };
+  const result = enforceUsersSelfUpdate({ kind: "self", id: "vendor-1" }, old, next);
+  assert.equal(result.ok, false);
+});
+
+test("REGRESSION (C-02): a warehouse user (role='warehouse_pic') cannot self-promote their own unified_role or role", () => {
+  const old = baseUsersRow({ id: "wh-1", role: "warehouse_pic", unified_role: "aso" });
+  const next1 = { ...old, unified_role: "super_admin" };
+  assert.equal(enforceUsersSelfUpdate({ kind: "self", id: "wh-1" }, old, next1).ok, false);
+  const next2 = { ...old, role: "supervisor" };
+  assert.equal(enforceUsersSelfUpdate({ kind: "self", id: "wh-1" }, old, next2).ok, false);
+});
+
+test("REGRESSION (C-02): an ICMS shadow account (role='ops_staff', the generic ASO/SO/DSE shadow role) cannot modify any authorization/identity field on itself — status, ops_group, org_id, duty_post, email, staff_id, name all locked", () => {
+  const old = baseUsersRow({ id: "shadow-1" });
+  const fields: (keyof UsersRow)[] = ["status", "ops_group", "org_id", "duty_post", "email", "staff_id", "name"];
+  for (const field of fields) {
+    const next = { ...old, [field]: field === "status" ? "disabled" : field === "org_id" ? "other-org" : "changed" };
+    const result = enforceUsersSelfUpdate({ kind: "self", id: "shadow-1" }, old, next as UsersRow);
+    assert.equal(result.ok, false, `expected ${field} to be protected`);
+  }
+});
+
+test("Anonymous update of public.users is denied (no policy matches an unauthenticated actor)", () => {
+  const old = baseUsersRow({ id: "u" });
+  assert.equal(usersRlsWithCheckAllows({ kind: "anon" }, old), false);
+});
+
+test("Allowed: preferred_language self-update still works, for every account type (driver/vendor/warehouse/shadow)", () => {
+  for (const role of ["driver_vendor", "vendor", "warehouse_pic", "ops_staff", "post2_avsec", "hub_avsec"]) {
+    const old = baseUsersRow({ id: "u", role, preferred_language: "en" });
+    const next = { ...old, preferred_language: "ms" };
+    const result = enforceUsersSelfUpdate({ kind: "self", id: "u" }, old, next);
+    assert.equal(result.ok, true, `expected preferred_language change to be allowed for role=${role}`);
+    assert.equal(usersRlsWithCheckAllows({ kind: "self", id: "u" }, next), true);
+  }
+});
+
+test("Service-role synchronization between approved profiles and the ICMS shadow account still works (approveUserWithAssignment's shadow sync: role/unified_role/ops_group/status via createAdminClient())", () => {
+  const old = baseUsersRow({ id: "target", role: "ops_staff", unified_role: null, status: "pending", ops_group: null });
+  const next = { ...old, role: "ops_staff", unified_role: "so", status: "active", ops_group: "ifc_avsec" };
+  const result = enforceUsersSelfUpdate({ kind: "service_role" }, old, next);
+  assert.equal(result.ok, true);
 });
 
 // --- 7-8: Management cannot promote to super_admin or legacy ADMIN ---
@@ -375,4 +497,30 @@ test("SCOPE: the containment migration does not touch CaterLink/checkpoint, repo
     assert.ok(!sql.toLowerCase().includes(forbidden.toLowerCase()), `migration must not reference ${forbidden}`);
   }
   assert.ok(sql.includes("public.profiles"), "migration must scope to public.profiles");
+  assert.ok(sql.includes("public.users"), "migration must scope to public.users (C-02)");
+});
+
+// --- updateUserAssignment() must surface a database rejection instead of
+// silently reporting success. Server actions can't be unit-invoked here
+// (no live Supabase/Next.js request context) — this asserts the fix's
+// shape directly in the source, the same way tests elsewhere in this
+// suite verify sw.js's bypass list from its real source rather than a
+// hand-written mirror. ---
+
+test("REGRESSION: updateUserAssignment() checks the profiles UPDATE result (error and empty-data) and redirects with a clear error instead of silently succeeding", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const actionsPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "admin", "actions.ts");
+  const src = fs.readFileSync(actionsPath, "utf8");
+
+  const fnStart = src.indexOf("export async function updateUserAssignment");
+  assert.ok(fnStart !== -1, "updateUserAssignment must exist");
+  const nextFnStart = src.indexOf("\nexport async function", fnStart + 1);
+  const fnBody = src.slice(fnStart, nextFnStart === -1 ? undefined : nextFnStart);
+
+  assert.match(fnBody, /\.select\(\s*["']id["']\s*\)/, "must select id back to detect a zero-row (RLS/trigger-rejected) update");
+  assert.match(fnBody, /if\s*\(\s*error\s*\)/, "must check the update's error");
+  assert.match(fnBody, /data\.length === 0/, "must check for a zero-row result (denied by RLS/trigger without an explicit error)");
+  assert.match(fnBody, /redirect\(/, "must surface the failure via the same ?error= redirect convention as the rest of this file");
 });

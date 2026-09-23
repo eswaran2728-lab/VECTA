@@ -377,7 +377,7 @@ export async function updateUserAssignment(formData: FormData) {
             ? "so"
             : "aso";
 
-  await supabase
+  const { data, error } = await supabase
     .from("profiles")
     .update({
       station,
@@ -386,7 +386,23 @@ export async function updateUserAssignment(formData: FormData) {
       unified_role: unifiedRole,
       ops_group: opsGroup,
     })
-    .eq("id", profileId);
+    .eq("id", profileId)
+    .select("id");
+
+  // Previously unchecked: a rejected write (RLS/trigger denial -- e.g. the
+  // super_admin/management containment migration blocking unified_role, or
+  // any other future policy tightening) silently reported success to the
+  // caller with no row actually changed. Surface it the same way every
+  // other admin action on this page already does.
+  if (error) {
+    redirect("/avsec/admin/users?error=" + encodeURIComponent(error.message));
+  }
+  if (!data || data.length === 0) {
+    redirect(
+      "/avsec/admin/users?error=" +
+        encodeURIComponent("Reassignment did not apply — you may not be authorized to modify this account, or the change was rejected."),
+    );
+  }
 
   // Sync to ICMS shadow users table if exists
   await createAdminClient()
@@ -398,4 +414,5 @@ export async function updateUserAssignment(formData: FormData) {
     .eq("id", profileId);
 
   revalidatePath("/avsec/admin/users");
+  redirect("/avsec/admin/users?success=" + encodeURIComponent("Assignment updated."));
 }
