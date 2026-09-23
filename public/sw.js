@@ -4,7 +4,7 @@
 // submissions (checkpoints, reports) are queued in IndexedDB by the app
 // itself (lib/icms/offline-queue.ts, lib/avsec/offline/db.ts) and replayed
 // on reconnect; this worker only handles asset/page caching.
-const CACHE = "aa-ops-shell-v1";
+const CACHE = "aa-ops-shell-v2";
 const SHELL = ["/manifest.json", "/icms/offline", "/icons/vecta-icon-192.png"];
 
 self.addEventListener("install", (event) => {
@@ -28,7 +28,17 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/icms/api/") || url.pathname.startsWith("/avsec/auth/")) return;
+  // /auth/ (specifically /auth/callback, the Google OAuth PKCE code
+  // exchange) MUST bypass this worker entirely. Found 2026-09-23: this
+  // was previously excluded only for /avsec/auth/ (an unrelated path),
+  // so the real callback navigation - carrying a one-time authorization
+  // code - was being intercepted and re-issued via this worker's own
+  // fetch() instead of passing through as a normal browser navigation,
+  // producing AuthPKCECodeVerifierMissingError on the server-side code
+  // exchange. Service-worker-mediated interception of auth callback URLs
+  // is a documented anti-pattern for exactly this reason - it must
+  // always be a direct, unmediated browser navigation.
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/icms/api/") || url.pathname.startsWith("/avsec/auth/") || url.pathname.startsWith("/auth/")) return;
 
   // Static build assets / icons: cache-first (immutable hashes).
   if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/icons/")) {
