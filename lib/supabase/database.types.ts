@@ -2003,12 +2003,15 @@ export type Database = {
       }
       profiles: {
         Row: {
+          approved_at: string | null
+          approved_by: string | null
           created_at: string
           duty_post: string | null
           email: string
           id: string
           name: string
           ops_group: string | null
+          rejection_reason: string | null
           role: Database["public"]["Enums"]["user_role"]
           staff_no: string
           station: string | null
@@ -2018,12 +2021,15 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
           created_at?: string
           duty_post?: string | null
           email: string
           id: string
           name?: string
           ops_group?: string | null
+          rejection_reason?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           staff_no?: string
           station?: string | null
@@ -2033,12 +2039,15 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          approved_at?: string | null
+          approved_by?: string | null
           created_at?: string
           duty_post?: string | null
           email?: string
           id?: string
           name?: string
           ops_group?: string | null
+          rejection_reason?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           staff_no?: string
           station?: string | null

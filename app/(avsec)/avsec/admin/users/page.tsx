@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
 import { createClient } from "@/lib/supabase/server";
-import { approveUser, rejectUser } from "@/lib/avsec/admin/actions";
 import { CreateAccountForm } from "@/components/avsec/admin/CreateAccountForm";
 import { UsersTable } from "@/components/avsec/admin/UsersTable";
-import { ROLE_LABELS } from "@/lib/avsec/reference-data";
+import { PendingApprovalRow } from "@/components/avsec/admin/PendingApprovalRow";
 import type { Profile } from "@/lib/avsec/types";
 
 export default async function AdminUsersPage({
@@ -64,31 +63,7 @@ export default async function AdminUsersPage({
             </div>
             <div className="divide-y divide-border">
               {pending.map((p) => (
-                <div key={p.id} className="py-3 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm text-foreground truncate">{p.name || p.email}</p>
-                    <p className="font-mono text-xs text-muted-foreground truncate">
-                      {p.email} · {p.staff_no} · {p.station} · {p.team}
-                    </p>
-                    <p className="font-mono text-xs text-primary font-semibold mt-1">
-                      Requested: {ROLE_LABELS[p.role]}
-                    </p>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <form action={approveUser}>
-                      <input type="hidden" name="profileId" value={p.id} />
-                      <button type="submit" className="btn-primary py-2 px-3 text-xs">
-                        Approve
-                      </button>
-                    </form>
-                    <form action={rejectUser}>
-                      <input type="hidden" name="profileId" value={p.id} />
-                      <button type="submit" className="btn-secondary py-2 px-3 text-xs">
-                        Reject
-                      </button>
-                    </form>
-                  </div>
-                </div>
+                <PendingApprovalRow key={p.id} profile={p} />
               ))}
             </div>
           </section>

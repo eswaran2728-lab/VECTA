@@ -14,6 +14,7 @@ import {
   type OpsGroup,
 } from "@/lib/avsec/reference-data";
 import { buildShadowUserRow } from "@/lib/icms/shadow-user";
+import { validateApprovalAssignment } from "@/lib/avsec/admin/validation";
 
 export async function createStaffAccount(formData: FormData) {
   await requireRole(MANAGEMENT_ROLES);
@@ -128,10 +129,19 @@ export async function createStaffAccount(formData: FormData) {
   revalidatePath("/avsec/admin/users");
 }
 
+/**
+ * Reactivates an already-reviewed (e.g. deactivated) user — status-only,
+ * no field reassignment. NOT used for the initial pending-registration
+ * approval flow (see approveUserWithAssignment below), which requires
+ * Management to explicitly (re-)select every field.
+ */
 export async function approveUser(formData: FormData) {
-  await requireRole(MANAGEMENT_ROLES);
+  const manager = await requireRole(MANAGEMENT_ROLES);
   const profileId = String(formData.get("profileId") || "");
   if (!profileId) return;
+  if (profileId === manager.id) {
+    redirect("/avsec/admin/users?error=" + encodeURIComponent("You cannot reactivate your own account."));
+  }
 
   const supabase = await createClient();
   const { data, error } = await supabase.from("profiles").update({ status: "approved" }).eq("id", profileId).select("id");
@@ -141,20 +151,104 @@ export async function approveUser(formData: FormData) {
   if (!data || data.length === 0) {
     redirect(
       "/avsec/admin/users?error=" +
+        encodeURIComponent("Reactivation did not apply — you may not be authorized, or the account is still pending initial review."),
+    );
+  }
+  revalidatePath("/avsec/admin/users");
+  redirect("/avsec/admin/users?success=" + encodeURIComponent("Account reactivated."));
+}
+
+export async function approveUserWithAssignment(formData: FormData) {
+  const manager = await requireRole(MANAGEMENT_ROLES);
+  const profileId = String(formData.get("profileId") || "");
+  const role = String(formData.get("role") || "").trim();
+  const station = String(formData.get("station") || "").trim();
+  const team = String(formData.get("team") || "").trim();
+  const opsGroupInput = String(formData.get("opsGroup") || "").trim();
+  if (!profileId) return;
+
+  // Defense in depth: RLS/the trigger already forbid a self-target write,
+  // but fail fast here too rather than rely on that alone.
+  if (profileId === manager.id) {
+    redirect("/avsec/admin/users?error=" + encodeURIComponent("You cannot approve your own account."));
+  }
+
+  const validation = validateApprovalAssignment({ role, station, team, opsGroup: opsGroupInput });
+  if (!validation.ok) {
+    redirect("/avsec/admin/users?error=" + encodeURIComponent(validation.error));
+  }
+
+  const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(role);
+  const needsOpsGroup = (OPS_GROUP_REQUIRED_ROLES as readonly string[]).includes(role);
+  const opsGroup: OpsGroup | null = needsOpsGroup ? (opsGroupInput as OpsGroup) : null;
+
+  const supabase = await createClient();
+  // Atomic: one UPDATE statement sets every final assignment, the
+  // approval status, and the approver/timestamp together — there is no
+  // intermediate state where status is "approved" but the assignment is
+  // still incomplete, because it's all in this single write or none of it
+  // is (RLS/the trigger reject the whole statement if anything about it
+  // is invalid, e.g. role='ADMIN' or a self-target).
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({
+      role: role as "ASO" | "SO" | "DSE" | "ENFORCEMENT" | "MANAGEMENT",
+      station,
+      team: isOrgWide ? "" : team,
+      ops_group: opsGroup,
+      status: "approved",
+      approved_by: manager.id,
+      approved_at: new Date().toISOString(),
+      rejection_reason: null,
+    })
+    .eq("id", profileId)
+    .eq("status", "pending")
+    .select("id");
+
+  if (error) {
+    redirect("/avsec/admin/users?error=" + encodeURIComponent(error.message));
+  }
+  if (!data || data.length === 0) {
+    redirect(
+      "/avsec/admin/users?error=" +
         encodeURIComponent("Approval did not apply — you may not be authorized to approve this account, or it was already reviewed."),
     );
   }
+
+  // Keep the ICMS shadow row in sync so the newly-approved account can
+  // actually use CaterLink/ICMS features immediately, same mapping
+  // createStaffAccount() uses.
+  const { mapAvsecRoleToIcmsRole, mapAvsecRoleToUnifiedRole } = await import("@/lib/icms/shadow-user");
+  await createAdminClient()
+    .from("users")
+    .update({
+      role: mapAvsecRoleToIcmsRole(role),
+      unified_role: mapAvsecRoleToUnifiedRole(role),
+      ops_group: opsGroup,
+      status: "active",
+    })
+    .eq("id", profileId);
+
   revalidatePath("/avsec/admin/users");
   redirect("/avsec/admin/users?success=" + encodeURIComponent("Account approved."));
 }
 
 export async function rejectUser(formData: FormData) {
-  await requireRole(MANAGEMENT_ROLES);
+  const manager = await requireRole(MANAGEMENT_ROLES);
   const profileId = String(formData.get("profileId") || "");
+  const reason = String(formData.get("reason") || "").trim();
   if (!profileId) return;
 
+  if (profileId === manager.id) {
+    redirect("/avsec/admin/users?error=" + encodeURIComponent("You cannot reject your own account."));
+  }
+
   const supabase = await createClient();
-  const { data, error } = await supabase.from("profiles").update({ status: "rejected" }).eq("id", profileId).select("id");
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ status: "rejected", rejection_reason: reason || null, approved_by: manager.id, approved_at: new Date().toISOString() })
+    .eq("id", profileId)
+    .select("id");
   if (error) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent(error.message));
   }

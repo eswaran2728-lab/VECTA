@@ -211,11 +211,27 @@ export async function updateSession(request: NextRequest) {
     ]);
     const profile = avsecProfile ?? icmsProfile;
 
+    // Pending/rejected/deactivated users must be routed to profile
+    // setup or the "awaiting approval" page — never to an operational
+    // route, and never bounced away from the very pages that explain
+    // their status (that page's own requireProfile()/getCurrentProfile()
+    // call does the precise incomplete-vs-pending-vs-rejected routing;
+    // this is only a coarse edge-level gate so a non-active AVSEC user
+    // can never reach an operational route at all, even for a moment).
     const activeStatuses = ["approved", "active"];
-    if (profile && profile.status && !activeStatuses.includes(profile.status as string)) {
+    const onOwnStatusPages = path.startsWith("/avsec/profile-setup") || path.startsWith("/avsec/pending-approval");
+    if (avsecProfile && avsecProfile.status && !activeStatuses.includes(avsecProfile.status as string) && !onOwnStatusPages) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/avsec/profile-setup";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+    // ICMS/CaterLink-origin non-active accounts keep their existing
+    // behavior (driver self-registration flow is out of scope here).
+    if (!avsecProfile && icmsProfile && icmsProfile.status && !activeStatuses.includes(icmsProfile.status as string)) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
-      url.searchParams.set("error", String(profile.status));
+      url.searchParams.set("error", String(icmsProfile.status));
       return NextResponse.redirect(url);
     }
 

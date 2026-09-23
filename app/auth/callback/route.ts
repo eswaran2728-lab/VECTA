@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-// Primary designated administrators
-const ADMIN_EMAILS = [
-  "eswaranp@airasia.com",
-];
-
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
@@ -21,75 +16,24 @@ export async function GET(request: Request) {
       } = await supabase.auth.getUser();
 
       if (user) {
-        const userEmail = (user.email ?? "").toLowerCase().trim();
-
+        // NOTE: no profile auto-provisioning happens here, deliberately.
+        // handle_new_user() (a DB trigger on auth.users AFTER INSERT,
+        // fires for every sign-up regardless of provider — email/password
+        // or Google OAuth) already inserts a bare (id, email) row into
+        // public.profiles with its column defaults: status = 'pending',
+        // role = 'ASO'. A brand-new Google user therefore always already
+        // has a real, unapproved, unprivileged profile row by the time
+        // this callback runs — there is nothing to auto-create, and
+        // critically nothing here ever sets status='approved' or guesses
+        // a role from the email address. Every non-approved AVSEC user is
+        // then routed to profile setup / awaiting-approval by
+        // lib/supabase/middleware.ts and lib/avsec/auth.ts requireProfile()
+        // — never an operational route, not even briefly.
         const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
-          supabase
-            .from("profiles")
-            .select("unified_role, status")
-            .eq("id", user.id)
-            .maybeSingle(),
-          supabase
-            .from("users")
-            .select("unified_role, status")
-            .eq("id", user.id)
-            .maybeSingle(),
+          supabase.from("profiles").select("unified_role, status").eq("id", user.id).maybeSingle(),
+          supabase.from("users").select("unified_role, status").eq("id", user.id).maybeSingle(),
         ]);
-
-        let profile = avsecProfile ?? icmsProfile;
-
-        // Auto-provision profile if signing in for the first time
-        if (!profile) {
-          const isManager =
-            ADMIN_EMAILS.includes(userEmail) ||
-            userEmail.startsWith("eswaran") ||
-            userEmail.includes("admin") ||
-            userEmail.includes("management");
-
-          const assignedRole = isManager ? "MANAGEMENT" : "SO";
-          const assignedUnifiedRole = isManager ? "management" : "so";
-          const fullName =
-            user.user_metadata?.full_name ??
-            user.user_metadata?.name ??
-            userEmail.split("@")[0] ??
-            "AirAsia User";
-
-          // Create/update AVSEC profile
-          const { error: profileErr } = await supabase.from("profiles").upsert(
-            {
-              id: user.id,
-              email: userEmail,
-              name: fullName,
-              role: assignedRole,
-              unified_role: assignedUnifiedRole,
-              status: "approved",
-              staff_no: "AA001",
-              station: "KUL",
-              ops_group: "operation_avsec",
-            },
-            { onConflict: "id" }
-          );
-
-          if (profileErr) {
-            console.error("[auth/callback] profile auto-provisioning note:", profileErr.message);
-          }
-
-          // Create/update ICMS user record
-          await supabase.from("users").upsert(
-            {
-              id: user.id,
-              email: userEmail,
-              name: fullName,
-              staff_id: "AA001",
-              role: isManager ? "management" : "hub_avsec",
-              unified_role: assignedUnifiedRole,
-              status: "active",
-            },
-            { onConflict: "id" }
-          );
-
-          profile = { unified_role: assignedUnifiedRole, status: "active" };
-        }
+        const profile = avsecProfile ?? icmsProfile;
 
         // Segregate access: Vendor / Driver accounts belong strictly in CaterLink
         if (profile?.unified_role === "vendor") {
