@@ -27,7 +27,7 @@ interface UIValues {
 }
 
 function buildDefaults(profile: Profile, serverDraft?: UIValues | null): UIValues {
-  const draft = readLocalDraft<UIValues>("sec033") ?? serverDraft;
+  const draft = readLocalDraft<UIValues>(profile.id, "sec033") ?? serverDraft;
   if (draft) return draft;
   return {
     station: profile.station ?? "",
@@ -68,8 +68,8 @@ export function Sec033Form({
 
   const { fields, append, remove } = useFieldArray({ control, name: "hold_checks" });
   const values = watch();
-  const { savedAt } = useDraftAutosave("sec033", values);
-  const { submit } = useOfflineSubmit("sec033", submitSec033);
+  const { savedAt } = useDraftAutosave(profile.id, "sec033", values);
+  const { submit } = useOfflineSubmit("sec033", submitSec033, profile.id);
 
   const lastIndex = fields.length - 1;
 
@@ -98,7 +98,7 @@ export function Sec033Form({
       attachments.map((a) => ({ name: a.name, mimeType: a.mimeType, size: a.size, blob: a.blob })),
     );
     if (outcome.kind === "submitted") {
-      clearLocalDraft("sec033");
+      clearLocalDraft(profile.id, "sec033");
       revokeAttachmentPreviews(attachments);
       setAttachments([]);
       setResult({
@@ -109,7 +109,7 @@ export function Sec033Form({
         attachmentErrors: outcome.attachmentErrors,
       });
     } else if (outcome.kind === "queued") {
-      clearLocalDraft("sec033");
+      clearLocalDraft(profile.id, "sec033");
       setResult({ kind: "queued", pendingAttachments: attachments.length });
       revokeAttachmentPreviews(attachments);
       setAttachments([]);

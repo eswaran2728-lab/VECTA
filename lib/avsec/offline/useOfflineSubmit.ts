@@ -32,7 +32,7 @@ async function uploadAttachments(reportType: string, reportId: string, attachmen
  * network is unavailable. Optional attachments ride along with the submission and are
  * only uploaded once the report itself has a real id — never before it exists.
  */
-export function useOfflineSubmit(type: QueueItemType, submitFn: SubmitFn) {
+export function useOfflineSubmit(type: QueueItemType, submitFn: SubmitFn, ownerId: string) {
   const [pending, setPending] = useState(false);
 
   const submit = useCallback(
@@ -40,7 +40,7 @@ export function useOfflineSubmit(type: QueueItemType, submitFn: SubmitFn) {
       setPending(true);
       try {
         if (typeof navigator !== "undefined" && !navigator.onLine) {
-          const localId = await enqueueSubmission(type, values, attachments);
+          const localId = await enqueueSubmission(ownerId, type, values, attachments);
           return { kind: "queued", localId };
         }
 
@@ -75,7 +75,7 @@ export function useOfflineSubmit(type: QueueItemType, submitFn: SubmitFn) {
           (err instanceof TypeError && /fetch|network/i.test(err.message));
 
         if (isNetworkFailure) {
-          const localId = await enqueueSubmission(type, values, attachments);
+          const localId = await enqueueSubmission(ownerId, type, values, attachments);
           return { kind: "queued", localId };
         }
 
@@ -90,7 +90,7 @@ export function useOfflineSubmit(type: QueueItemType, submitFn: SubmitFn) {
         setPending(false);
       }
     },
-    [submitFn, type],
+    [submitFn, type, ownerId],
   );
 
   return { submit, pending };

@@ -30,7 +30,7 @@ export default async function DutyPage() {
             {profile.team ? ` · ${profile.team}` : ""}
           </span>
         </div>
-        <CheckInScreen roster={roster} zones={zones} record={record} initialAbsence={todayAbsence} />
+        <CheckInScreen roster={roster} zones={zones} record={record} initialAbsence={todayAbsence} profileId={profile.id} />
 
         <div className="flex items-center justify-between gap-2 pt-2">
           <Link

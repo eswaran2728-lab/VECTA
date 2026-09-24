@@ -35,7 +35,7 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
 
   return (
     <div className="min-h-screen bg-background text-foreground antialiased">
-      <OfflineSyncProvider>
+      <OfflineSyncProvider ownerId={profile?.id ?? null}>
         <ServiceWorkerRegister />
         <OfflineStatusBadge />
         {showChrome && profile ? (

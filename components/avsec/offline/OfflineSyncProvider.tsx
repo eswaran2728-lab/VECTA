@@ -70,21 +70,29 @@ export function useOfflineStatus() {
   return useContext(OfflineContext);
 }
 
-export function OfflineSyncProvider({ children }: { children: React.ReactNode }) {
+export function OfflineSyncProvider({ children, ownerId }: { children: React.ReactNode; ownerId: string | null }) {
   const [isOnline, setIsOnline] = useState(true);
   const [queueCount, setQueueCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
 
   const refreshCount = useCallback(async () => {
-    const items = await listQueuedSubmissions();
+    if (!ownerId) {
+      setQueueCount(0);
+      return;
+    }
+    const items = await listQueuedSubmissions(ownerId);
     setQueueCount(items.length);
-  }, []);
+  }, [ownerId]);
 
   const syncNow = useCallback(async () => {
+    if (!ownerId) return;
     if (typeof navigator !== "undefined" && !navigator.onLine) return;
     setSyncing(true);
     try {
-      const items = await listQueuedSubmissions();
+      // Only THIS signed-in user's queued items — anything queued by a
+      // previous user on a shared device stays untouched (not synced, not
+      // shown, not deleted) until they sign back in themselves.
+      const items = await listQueuedSubmissions(ownerId);
       for (const item of items) {
         try {
           // A standalone attachment retry (the report it belongs to already synced) —
@@ -112,7 +120,7 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
           const result = await SUBMIT_FNS[item.type](item.payload);
           if (result.ok) {
             await removeQueuedSubmission(item.localId);
-            if (isReportType(item.type)) clearLocalDraft(item.type);
+            if (isReportType(item.type)) clearLocalDraft(ownerId, item.type);
 
             // Report synced — now upload any attachments queued alongside it. A failed
             // attachment never re-queues the report itself, only a standalone retry item.
@@ -121,6 +129,7 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
                 const res = await syncOneAttachment(item.type, result.id, att);
                 if (!res.ok) {
                   await enqueueSubmission(
+                    item.ownerId,
                     "attachment",
                     { reportType: item.type, reportId: result.id } as QueuedAttachmentPayload,
                     [att],
@@ -147,7 +156,7 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
       setSyncing(false);
       await refreshCount();
     }
-  }, [refreshCount]);
+  }, [refreshCount, ownerId]);
 
   useEffect(() => {
     setIsOnline(typeof navigator === "undefined" ? true : navigator.onLine);
@@ -171,7 +180,7 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
       clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ownerId]);
 
   return (
     <OfflineContext.Provider value={{ isOnline, queueCount, syncing, syncNow }}>

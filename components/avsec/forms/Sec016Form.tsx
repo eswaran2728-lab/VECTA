@@ -63,7 +63,7 @@ interface UIValues {
 }
 
 function buildDefaults(profile: Profile, serverDraft?: UIValues | null): UIValues {
-  const draft = readLocalDraft<UIValues>("sec016") ?? serverDraft;
+  const draft = readLocalDraft<UIValues>(profile.id, "sec016") ?? serverDraft;
   if (draft) return draft;
   return {
     flight_type: "arrival",
@@ -242,8 +242,8 @@ export function Sec016Form({
   } = useForm<UIValues>({ defaultValues: buildDefaults(profile, serverDraft) });
 
   const values = watch();
-  const { savedAt } = useDraftAutosave("sec016", values);
-  const { submit } = useOfflineSubmit("sec016", submitSec016);
+  const { savedAt } = useDraftAutosave(profile.id, "sec016", values);
+  const { submit } = useOfflineSubmit("sec016", submitSec016, profile.id);
 
   const isArrival = values.flight_type === "arrival";
   const requiresDiscrepancyPhoto = /baggage discrepancy/i.test(values.discrepancies || "");
@@ -297,7 +297,7 @@ export function Sec016Form({
       attachments.map((a) => ({ name: a.name, mimeType: a.mimeType, size: a.size, blob: a.blob })),
     );
     if (outcome.kind === "submitted") {
-      clearLocalDraft("sec016");
+      clearLocalDraft(profile.id, "sec016");
       revokeAttachmentPreviews(attachments);
       setAttachments([]);
       setResult({
@@ -308,7 +308,7 @@ export function Sec016Form({
         attachmentErrors: outcome.attachmentErrors,
       });
     } else if (outcome.kind === "queued") {
-      clearLocalDraft("sec016");
+      clearLocalDraft(profile.id, "sec016");
       setResult({ kind: "queued", pendingAttachments: attachments.length });
       revokeAttachmentPreviews(attachments);
       setAttachments([]);

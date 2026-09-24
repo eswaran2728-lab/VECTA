@@ -58,7 +58,7 @@ function emptyDuty() {
 }
 
 function buildDefaults(profile: Profile, serverDraft?: UIValues | null): UIValues {
-  const draft = readLocalDraft<UIValues>("sec013") ?? serverDraft;
+  const draft = readLocalDraft<UIValues>(profile.id, "sec013") ?? serverDraft;
   if (draft) return draft;
   return {
     station: profile.station ?? "",
@@ -105,8 +105,8 @@ export function Sec013Form({
 
   const { fields, append, remove } = useFieldArray({ control, name: "profiling_duties" });
   const values = watch();
-  const { savedAt } = useDraftAutosave("sec013", values);
-  const { submit } = useOfflineSubmit("sec013", submitSec013);
+  const { savedAt } = useDraftAutosave(profile.id, "sec013", values);
+  const { submit } = useOfflineSubmit("sec013", submitSec013, profile.id);
 
   const lastIndex = fields.length - 1;
 
@@ -152,7 +152,7 @@ export function Sec013Form({
       attachments.map((a) => ({ name: a.name, mimeType: a.mimeType, size: a.size, blob: a.blob })),
     );
     if (outcome.kind === "submitted") {
-      clearLocalDraft("sec013");
+      clearLocalDraft(profile.id, "sec013");
       revokeAttachmentPreviews(attachments);
       setAttachments([]);
       setResult({
@@ -163,7 +163,7 @@ export function Sec013Form({
         attachmentErrors: outcome.attachmentErrors,
       });
     } else if (outcome.kind === "queued") {
-      clearLocalDraft("sec013");
+      clearLocalDraft(profile.id, "sec013");
       setResult({ kind: "queued", pendingAttachments: attachments.length });
       revokeAttachmentPreviews(attachments);
       setAttachments([]);
