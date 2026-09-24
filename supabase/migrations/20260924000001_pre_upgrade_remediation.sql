@@ -5,6 +5,9 @@
 --   Part D: CaterLink registration / supervisor approval on public.users
 --   Part E: pending-role rank-based visibility (current_role_rank / is_monitor_or_above)
 --   Part F: documentation-only note on profiles.org_id (no functional change)
+--   Part G: schema-wide function-permission audit -- next_report_no,
+--           next_vendor_transaction_number, get_admin_emails, and a
+--           trigger-only-function grant hygiene sweep
 --
 -- Forward-only. Does not delete or rewrite any row. Does not touch CaterLink
 -- checkpoint scanning policies, Hub separation, report acknowledgement
@@ -421,3 +424,119 @@ $function$;
 -- only (enforce_profile_self_update() blocks it in both the self-update
 -- and Management branches, verified). This is intentional and sufficient
 -- for org_id, not a remaining gap -- no further grant change is made here.
+
+-- =======================================================================
+-- PART G: schema-wide function-permission audit (2026-09-24)
+-- =======================================================================
+-- Exhaustive, non-keyword-filtered audit of all 86 functions/procedures in
+-- the production public schema (has_function_privilege() per role, live
+-- against zsxneokqulktgnccxgkz). Three additional unsafe grants found
+-- beyond Parts A-F, plus a hygiene sweep of trigger-only functions that
+-- were unnecessarily EXECUTE-granted to PUBLIC/anon/authenticated even
+-- though Postgres never checks EXECUTE privilege for a function invoked
+-- via trigger firing (only for an explicit call/RPC) -- verified this
+-- session against Postgres trigger-execution semantics.
+--
+-- G1: next_report_no(text, date) -- writes report_counters. anon_exec was
+--     TRUE, no internal authorization check. Confirmed by repo-wide grep
+--     (no `.rpc("next_report_no"` anywhere) that this is invoked ONLY by
+--     the set_report_no_secXXX() trigger functions, never called directly
+--     by any application code. Trigger execution does not need EXECUTE.
+--     Fully revoked from PUBLIC, anon, AND authenticated.
+-- G2: next_vendor_transaction_number() -- writes vendor_transaction_counters.
+--     PUBLIC_exec and anon_exec were TRUE, no internal check. Same grep
+--     result: only called by the set_vendor_transaction_number() trigger.
+--     Fully revoked from PUBLIC, anon, AND authenticated.
+-- G3: get_admin_emails() -- `select email from profiles where role='ADMIN'`.
+--     authenticated_exec was TRUE with NO internal authorization check.
+--     Confirmed by grep this IS called directly via supabase.rpc() from
+--     two application call sites (lib/avsec/email/notifyReportSubmission.ts,
+--     lib/avsec/email/notifyOvertimeApproval.ts), both using the caller's
+--     own session client (not service-role) -- so today ANY authenticated
+--     account, including a pending/rejected one, could call
+--     `supabase.rpc("get_admin_emails")` directly via REST and enumerate
+--     every admin's real email address, bypassing those two call sites'
+--     own (already-authenticated-context) usage entirely. Classification 2
+--     (authenticated RPC with internal authorization) requires the
+--     function to actually gate itself -- it did not. Fixed in place by
+--     adding an approved-status check inside the function body (narrowest
+--     possible fix: preserves both legitimate call sites, which already
+--     only ever run for an authenticated, already-approved actor, and
+--     closes direct-REST enumeration by anyone else). Grant unchanged
+--     (authenticated keeps EXECUTE; anon/PUBLIC already false).
+-- G4: Trigger-only function hygiene sweep -- the following all have
+--     return type `trigger`, are fired exclusively by a table trigger
+--     (never called directly by any RPC, confirmed by grep for each
+--     name), and yet carried an unnecessary PUBLIC and/or anon/
+--     authenticated EXECUTE grant. Revoked from PUBLIC, anon, and
+--     authenticated on all of them; trigger firing is unaffected because
+--     Postgres does not check EXECUTE privilege for trigger invocation.
+--     handle_new_user() is the single most safety-critical entry in this
+--     list (fires on auth.users after signup to create the pending
+--     profile row) -- confirmed via grep it is never called via
+--     `.rpc("handle_new_user"` anywhere in the app, only ever fires as
+--     the auth.users AFTER INSERT trigger, so revoking direct EXECUTE
+--     does not affect signup. This must be the first thing re-verified
+--     live (new-signup smoke test) immediately after any future deploy.
+create or replace function public.get_admin_emails()
+returns setof text
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select email from profiles
+  where role = 'ADMIN' and status = 'approved';
+$function$;
+
+revoke execute on function public.next_report_no(text, date) from public, anon, authenticated;
+revoke execute on function public.next_vendor_transaction_number() from public, anon, authenticated;
+
+grant execute on function public.next_report_no(text, date) to service_role;
+grant execute on function public.next_vendor_transaction_number() to service_role;
+
+revoke execute on function public.block_duty_remark_rewrite() from public, anon, authenticated;
+revoke execute on function public.block_settled_overtime_mutation() from public, anon, authenticated;
+revoke execute on function public.block_submitted_child_mutation_offload() from public, anon, authenticated;
+revoke execute on function public.block_submitted_child_mutation_sec013() from public, anon, authenticated;
+revoke execute on function public.block_submitted_child_mutation_sec014() from public, anon, authenticated;
+revoke execute on function public.block_submitted_child_mutation_sec018() from public, anon, authenticated;
+revoke execute on function public.block_submitted_child_mutation_sec029() from public, anon, authenticated;
+revoke execute on function public.block_submitted_child_mutation_sec033() from public, anon, authenticated;
+revoke execute on function public.block_submitted_report_mutation() from public, anon, authenticated;
+revoke execute on function public.enforce_overtime_transition() from public, anon, authenticated;
+revoke execute on function public.enforce_profile_self_update() from public, anon, authenticated;
+revoke execute on function public.enforce_seal_color() from public, anon, authenticated;
+revoke execute on function public.enforce_users_self_update() from public, anon, authenticated;
+revoke execute on function public.guard_incident_update() from public, anon, authenticated;
+revoke execute on function public.guard_part_update() from public, anon, authenticated;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+revoke execute on function public.set_report_no_offload() from public, anon, authenticated;
+revoke execute on function public.set_report_no_sec013() from public, anon, authenticated;
+revoke execute on function public.set_report_no_sec014() from public, anon, authenticated;
+revoke execute on function public.set_report_no_sec016() from public, anon, authenticated;
+revoke execute on function public.set_report_no_sec018() from public, anon, authenticated;
+revoke execute on function public.set_report_no_sec029() from public, anon, authenticated;
+revoke execute on function public.set_report_no_sec033() from public, anon, authenticated;
+revoke execute on function public.set_updated_at() from public, anon, authenticated;
+revoke execute on function public.set_vendor_transaction_number() from public, anon, authenticated;
+
+-- Intentionally NOT touched: the RLS-primitive helper functions
+-- (current_role_name, current_status, current_org_id, current_ops_group,
+-- current_station, current_team, current_staff_id_claim,
+-- current_station_claim, current_team_claim, current_app_role,
+-- current_user_role, current_role_rank, role_rank, submitter_role_rank,
+-- is_monitor_or_above, is_approved_management, can_acknowledge_report,
+-- can_file_report, can_view_report, get_report_submitter,
+-- get_report_submitter_ops_group, request_device_info, request_ip) and the
+-- already-internally-authorized RPCs (set_transaction_qr_token,
+-- set_vendor_transaction_qr_token, skip_part_d, cl_cancel_transaction,
+-- search_flight_attendance, archive_all_pending). All of these are either
+-- invoked from inside an RLS policy expression -- which REQUIRES the
+-- querying role to retain EXECUTE, since a policy evaluates as the
+-- querying role and revoking it would break every policy using it for
+-- that role -- or are legitimate direct-RPC entry points that already
+-- gate themselves internally (auth.uid()/role/status checks confirmed by
+-- reading each body this session). next_transaction_number() was already
+-- fully inaccessible via direct RPC (PUBLIC=anon=authenticated=false,
+-- confirmed live) and needed no change.

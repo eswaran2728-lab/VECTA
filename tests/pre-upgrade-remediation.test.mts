@@ -425,8 +425,9 @@ test("Part F makes no functional change -- comment/documentation only", () => {
     .map((l) => l.replace(/--.*$/, ""))
     .join("\n");
   const partFStart = migrationSql.indexOf("PART F:");
-  const charsBeforePartF = migrationSql.slice(0, partFStart).replace(/\r\n/g, "\n").split("\n").length - 1;
-  const partF = strippedWhole.split("\n").slice(charsBeforePartF).join("\n").trim();
+  const partGStart = migrationSql.indexOf("PART G:");
+  const lineOf = (idx: number) => migrationSql.slice(0, idx).replace(/\r\n/g, "\n").split("\n").length - 1;
+  const partF = strippedWhole.split("\n").slice(lineOf(partFStart), lineOf(partGStart)).join("\n").trim();
   assert.equal(partF.length, 0, "Part F must contain no executable SQL, only comments");
 });
 
@@ -443,4 +444,117 @@ test("SCOPE: this migration never references part_b/c/d/hub/redq, vendor_transac
   // The super-admin/pending-management containment helper is reused where
   // needed (Parts B/E do not need it) but never redefined by this migration.
   assert.doesNotMatch(code, /create or replace function public\.is_approved_management/i);
+});
+
+// =======================================================================
+// PART G: schema-wide function-permission audit
+// =======================================================================
+
+/** Mirrors get_admin_emails()'s new internal gate: role='ADMIN' AND status='approved'. */
+function canReceiveAdminEmails(profile: { role: string; status: string }): boolean {
+  return profile.role === "ADMIN" && profile.status === "approved";
+}
+
+test("get_admin_emails() now excludes a pending or rejected ADMIN-role row (internal gate added, not just a grant)", () => {
+  assert.equal(canReceiveAdminEmails({ role: "ADMIN", status: "approved" }), true);
+  assert.equal(canReceiveAdminEmails({ role: "ADMIN", status: "pending" }), false);
+  assert.equal(canReceiveAdminEmails({ role: "ADMIN", status: "rejected" }), false);
+  assert.equal(canReceiveAdminEmails({ role: "MANAGEMENT", status: "approved" }), false);
+});
+
+test("Part G: get_admin_emails() is redefined with an approved-status filter in its SQL body", () => {
+  const code = migrationSql.replace(/\r\n/g, "\n");
+  const match = code.match(/create or replace function public\.get_admin_emails\(\)[\s\S]*?\$function\$;/);
+  assert.ok(match, "get_admin_emails() must be redefined in Part G");
+  assert.match(match![0], /role\s*=\s*'ADMIN'/);
+  assert.match(match![0], /status\s*=\s*'approved'/);
+});
+
+test("Part G: next_report_no and next_vendor_transaction_number are fully revoked from PUBLIC, anon, and authenticated (trigger-only callers, no direct RPC caller found)", () => {
+  const code = migrationSql.replace(/\r\n/g, "\n");
+  assert.match(
+    code,
+    /revoke execute on function public\.next_report_no\(text, date\) from public, anon, authenticated;/,
+  );
+  assert.match(
+    code,
+    /revoke execute on function public\.next_vendor_transaction_number\(\) from public, anon, authenticated;/,
+  );
+  assert.match(code, /grant execute on function public\.next_report_no\(text, date\) to service_role;/);
+  assert.match(code, /grant execute on function public\.next_vendor_transaction_number\(\) to service_role;/);
+});
+
+test("Part G: every listed trigger-only function is revoked from PUBLIC, anon, and authenticated", () => {
+  const code = migrationSql.replace(/\r\n/g, "\n");
+  const triggerOnlyFunctions = [
+    "block_duty_remark_rewrite",
+    "block_settled_overtime_mutation",
+    "block_submitted_child_mutation_offload",
+    "block_submitted_child_mutation_sec013",
+    "block_submitted_child_mutation_sec014",
+    "block_submitted_child_mutation_sec018",
+    "block_submitted_child_mutation_sec029",
+    "block_submitted_child_mutation_sec033",
+    "block_submitted_report_mutation",
+    "enforce_overtime_transition",
+    "enforce_profile_self_update",
+    "enforce_seal_color",
+    "enforce_users_self_update",
+    "guard_incident_update",
+    "guard_part_update",
+    "handle_new_user",
+    "set_report_no_offload",
+    "set_report_no_sec013",
+    "set_report_no_sec014",
+    "set_report_no_sec016",
+    "set_report_no_sec018",
+    "set_report_no_sec029",
+    "set_report_no_sec033",
+    "set_updated_at",
+    "set_vendor_transaction_number",
+  ];
+  for (const fn of triggerOnlyFunctions) {
+    const re = new RegExp(`revoke execute on function public\\.${fn}\\(\\) from public, anon, authenticated;`);
+    assert.match(code, re, `${fn}() must be revoked from public, anon, authenticated`);
+  }
+});
+
+test("Part G: RLS-primitive helper functions are never revoked (revoking them would break every policy that calls them as the querying role)", () => {
+  const code = migrationSql.replace(/\r\n/g, "\n");
+  const protectedHelpers = [
+    "current_role_name",
+    "current_status",
+    "current_org_id",
+    "current_ops_group",
+    "current_station",
+    "current_team",
+    "current_app_role",
+    "current_user_role",
+    "current_role_rank",
+    "role_rank",
+    "is_monitor_or_above",
+    "is_approved_management",
+    "can_acknowledge_report",
+    "can_file_report",
+    "can_view_report",
+  ];
+  for (const fn of protectedHelpers) {
+    const re = new RegExp(`revoke execute on function public\\.${fn}\\(`);
+    assert.doesNotMatch(code, re, `${fn}() must never be revoked -- it is used inside RLS policy predicates`);
+  }
+});
+
+test("REGRESSION: existing internally-authorized RPCs (set_transaction_qr_token, set_vendor_transaction_qr_token, skip_part_d, cl_cancel_transaction, search_flight_attendance, archive_all_pending) are untouched by Part G", () => {
+  const code = migrationSql.replace(/\r\n/g, "\n");
+  for (const fn of [
+    "set_transaction_qr_token",
+    "set_vendor_transaction_qr_token",
+    "skip_part_d",
+    "cl_cancel_transaction",
+    "search_flight_attendance",
+    "archive_all_pending",
+  ]) {
+    const re = new RegExp(`revoke execute on function public\\.${fn}\\(`);
+    assert.doesNotMatch(code, re, `${fn}() must not be touched by Part G -- already internally authorized`);
+  }
 });
