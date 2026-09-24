@@ -506,6 +506,7 @@ test("SCOPE: Parts 1-2 (C-01/C-02, public.profiles and public.users) of the migr
   // only actual statements matter for this scope guarantee.
   const parts1and2Code = sql
     .slice(0, part3Start)
+    .replace(/\r\n/g, "\n")
     .split("\n")
     .map((line) => line.replace(/--.*$/, ""))
     .join("\n");

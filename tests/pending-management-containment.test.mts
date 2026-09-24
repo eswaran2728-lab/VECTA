@@ -327,6 +327,7 @@ test("SCOPE: Part 3 of the migration does not touch CaterLink/checkpoint policie
   // touched; only actual statements (DROP POLICY/CREATE POLICY/CREATE
   // FUNCTION referencing them) would be a real violation.
   const part3Code = part3
+    .replace(/\r\n/g, "\n")
     .split("\n")
     .map((line) => line.replace(/--.*$/, ""))
     .join("\n");
