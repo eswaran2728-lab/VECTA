@@ -99,40 +99,76 @@ $function$;
 -- =======================================================================
 -- PART B: cron-only / SECURITY DEFINER function execute grants
 -- =======================================================================
--- CONFIRMED (2026-09-24, has_function_privilege against vecta-prod):
--- flag_attendance_anomalies(), escalate_timeouts(), and trigger_sheets_sync()
--- are invoked directly by pg_cron (cron.job: "flag-attendance-anomalies",
--- "cscs-timeout-monitor", "sheets-sync-every-2-min") AND are executable by
--- `anon` and `authenticated` via /rest/v1/rpc/<name>. None of the three has
--- ANY internal authorization check of its own (run_attendance_sweep() wraps
--- flag_attendance_anomalies() with a current_role_name()='ADMIN' check, but
--- pg_cron calls flag_attendance_anomalies() directly, bypassing that
--- wrapper entirely -- and no live account holds role='ADMIN' regardless).
--- Net effect: any anonymous or ordinary authenticated caller could trigger
--- a full attendance sweep (real INSERT/UPDATE on duty_records), an
--- escalate_timeouts() pass (real INSERT on incidents), or the Sheets sync
--- webhook, on demand, with no authorization and no rate limit beyond
--- Supabase's own API layer. enqueue_sheet_sync() is a trigger function
--- (references TG_ARGV, only valid inside a trigger context) -- harmless to
--- call directly (errors), but the EXECUTE grant is still unnecessary and
--- revoked here too, for the same reason.
+-- CORRECTED (2026-09-24, second pass): the first version of this Part
+-- only revoked from anon/authenticated. That is INCOMPLETE where a
+-- function was also granted to PUBLIC -- in Postgres, a PUBLIC grant is
+-- effective for every role regardless of any per-role revoke, since
+-- has_function_privilege checks ALL applicable grants, and PUBLIC is not
+-- "inherited via membership" (which a REVOKE FROM a specific role would
+-- defeat) -- it is a direct, independent grant to every role that exists.
+-- Verified live via has_function_privilege('public', oid, 'EXECUTE')
+-- against every SECURITY DEFINER function matching
+-- attendance/timeout/incident/sync/sweep/escalat/cron/admin/archive/audit:
 --
--- All of these already have `SET search_path TO 'public'` (verified against
--- the live definitions) -- no search_path change needed.
+--   proname                        | public | anon | authenticated
+--   enqueue_sheet_sync()           | true   | true | true   <- PUBLIC grant found
+--   trigger_sheets_sync()          | true   | true | true   <- PUBLIC grant found
+--   escalate_timeouts()            | true   | true | true   <- PUBLIC grant found
+--   log_audit_admin()              | true   | true | true   <- PUBLIC grant found (trigger-only)
+--   notify_supervisors_on_incident()| true  | true | true   <- PUBLIC grant found (trigger-only)
+--   flag_attendance_anomalies(int) | false  | true | true   (anon/authenticated grants, no PUBLIC)
+--   run_attendance_sweep()         | false  | true | true   (anon/authenticated grants, no PUBLIC)
+--   search_flight_attendance(...)  | false  | true | true   (untouched -- real app RPC, own auth check)
+--   archive_all_pending(text)      | false  | false| true   (untouched -- own supervisor check, not cron)
 --
--- pg_cron jobs run as `postgres` (the role that owns every cron.job entry
--- on this project), which is unaffected by revoking anon/authenticated --
--- confirmed scheduled execution keeps working. run_attendance_sweep()'s own
--- grants are untouched -- it already requires ADMIN internally and is not
--- itself cron-invoked; search_flight_attendance() is untouched (not
--- cron-only -- it's the Enforcement/Management RPC fixed for pending-status
--- in 20260923000003, called from the app by real signed-in users, and
+-- log_audit_admin() and notify_supervisors_on_incident() are TRIGGER
+-- functions (fired by BEFORE/AFTER triggers on data tables, never called
+-- directly by application code) -- confirmed by reading their bodies
+-- (log_audit_admin() references tg_table_name/tg_op/old/new; per
+-- Postgres semantics, EXECUTE privilege is never checked for a function
+-- invoked via trigger firing, only for a direct call/RPC) -- revoking
+-- direct RPC access from PUBLIC/anon/authenticated cannot break their
+-- trigger execution.
+--
+-- Every explicit revoke below uses the function's exact signature, per
+-- instruction, and targets PUBLIC, anon, AND authenticated together --
+-- omitting PUBLIC was exactly the gap found. All of these already have
+-- `SET search_path TO 'public'` (verified against the live definitions)
+-- -- no search_path change needed.
+--
+-- CRON EXECUTION IDENTITY -- verified live: `select jobname, username from
+-- cron.job` shows all three scheduled jobs (sheets-sync-every-2-min,
+-- flag-attendance-anomalies, cscs-timeout-monitor) run as username
+-- `postgres` -- the actual superuser role, unaffected by any REVOKE
+-- (has_function_privilege('postgres', ..., 'EXECUTE') = true regardless,
+-- confirmed). No role name is invented here -- `postgres` is the real,
+-- observed cron execution identity on this project, not assumed.
+-- service_role already holds EXECUTE on every one of these via its own
+-- broad ACL entry (confirmed live) -- the explicit grants below make that
+-- intentional and durable rather than incidental, so a future accidental
+-- broad re-grant is less likely to go unnoticed.
+revoke execute on function public.flag_attendance_anomalies(integer) from public, anon, authenticated;
+revoke execute on function public.escalate_timeouts() from public, anon, authenticated;
+revoke execute on function public.trigger_sheets_sync() from public, anon, authenticated;
+revoke execute on function public.enqueue_sheet_sync() from public, anon, authenticated;
+revoke execute on function public.run_attendance_sweep() from public, anon, authenticated;
+revoke execute on function public.log_audit_admin() from public, anon, authenticated;
+revoke execute on function public.notify_supervisors_on_incident() from public, anon, authenticated;
+
+grant execute on function public.flag_attendance_anomalies(integer) to service_role;
+grant execute on function public.escalate_timeouts() to service_role;
+grant execute on function public.trigger_sheets_sync() to service_role;
+grant execute on function public.enqueue_sheet_sync() to service_role;
+grant execute on function public.run_attendance_sweep() to service_role;
+grant execute on function public.log_audit_admin() to service_role;
+grant execute on function public.notify_supervisors_on_incident() to service_role;
+
+-- search_flight_attendance() is untouched (not cron-only -- it's the
+-- Enforcement/Management RPC fixed for pending-status in
+-- 20260923000003, called from the app by real signed-in users, and
 -- already carries its own is_approved_management()/ENFORCEMENT check).
-revoke execute on function public.flag_attendance_anomalies(integer) from anon, authenticated;
-revoke execute on function public.escalate_timeouts() from anon, authenticated;
-revoke execute on function public.trigger_sheets_sync() from anon, authenticated;
-revoke execute on function public.enqueue_sheet_sync() from anon, authenticated;
-revoke execute on function public.run_attendance_sweep() from anon;
+-- archive_all_pending() is untouched (not cron-invoked; already requires
+-- current_user_role()='supervisor' internally, and has no PUBLIC grant).
 
 -- =======================================================================
 -- PART C: feedback_threads_management_view -- anonymous metadata exposure
@@ -185,14 +221,39 @@ revoke select on public.feedback_threads_management_view from anon;
 -- other role/status, so registration can never grant immediate operational
 -- access (status is always 'pending' at insert; the enforce_users_self_update()
 -- trigger already blocks status ever changing via self-update afterward).
+-- CORRECTED (second pass): the first version only checked id = auth.uid(),
+-- which ties the ROW to the caller correctly but does not stop the caller
+-- from writing an arbitrary `email` value into their own new row (identity/
+-- contact spoofing of a different real email address, not a privilege
+-- escalation -- role/unified_role/status are still pinned below regardless).
+-- auth.jwt() ->> 'email' reads the verified email claim from the caller's
+-- own session JWT (set by Supabase Auth at sign-up/sign-in, not
+-- client-suppliable) -- confirmed available on this project
+-- (select auth.jwt() is not null -- the function exists and is callable).
+-- Comparing against it closes that gap without needing a separate
+-- service-role action for this specific field.
+-- Also pins org_id/ops_group/duty_post/approval-audit-shaped fields --
+-- WITH CHECK only constrains the columns it names; anything else in the
+-- INSERT statement is otherwise unconstrained by RLS. registerUser()'s
+-- actual write never sets org_id/ops_group/duty_post at all (they get
+-- their column defaults -- org_id's default is the single-tenant org id
+-- '00000000-0000-0000-0000-000000000001', ops_group/duty_post default to
+-- null) -- a caller bypassing the app entirely via a direct REST INSERT
+-- could otherwise set any of the three to an arbitrary value. public.users
+-- has no approved_by/approved_at/rejection_reason columns at all (those
+-- are profiles-only), so there is nothing further to pin there.
 drop policy if exists "users: self register pending vendor" on public.users;
 create policy "users: self register pending vendor" on public.users
 for insert
 with check (
   id = auth.uid()
+  and email = (auth.jwt() ->> 'email')
   and role = 'vendor'
   and unified_role = 'vendor'
   and status = 'pending'
+  and org_id = '00000000-0000-0000-0000-000000000001'::uuid
+  and ops_group is null
+  and duty_post is null
 );
 
 -- Supervisor approval: exactly approveStaff()/rejectStaff()'s write shape

@@ -89,16 +89,65 @@ test("SCOPE: Part A only edits flag_attendance_anomalies() -- no other attendanc
 });
 
 // --- Part B: cron-only function execute grants ---
+//
+// REGRESSION: the first version of Part B revoked only from anon and
+// authenticated, missing that several of these functions were ALSO
+// granted to PUBLIC — a PostgreSQL PUBLIC grant is effective for every
+// role independent of any per-role REVOKE, so anon/authenticated still
+// had effective EXECUTE via PUBLIC even after that first pass. Verified
+// live (has_function_privilege('public', oid, 'EXECUTE')) that
+// enqueue_sheet_sync(), trigger_sheets_sync(), escalate_timeouts(),
+// log_audit_admin(), and notify_supervisors_on_incident() all carried a
+// live PUBLIC grant; flag_attendance_anomalies()/run_attendance_sweep()
+// did not (anon/authenticated-only). Every revoke below now targets
+// PUBLIC explicitly regardless, so this can never regress silently again.
 
-test("REGRESSION: the migration revokes EXECUTE on every confirmed cron-only function from both anon and authenticated", () => {
-  for (const fn of ["flag_attendance_anomalies(integer)", "escalate_timeouts()", "trigger_sheets_sync()", "enqueue_sheet_sync()"]) {
-    const re = new RegExp(`revoke execute on function public\\.${fn.replace(/[()]/g, "\\$&")} from anon, authenticated`, "i");
-    assert.match(migrationSql, re, `expected a full anon+authenticated revoke for ${fn}`);
+test("REGRESSION: every confirmed cron-only / trigger-only function revokes EXECUTE from PUBLIC, anon, AND authenticated together — not just anon/authenticated", () => {
+  for (const fn of [
+    "flag_attendance_anomalies(integer)",
+    "escalate_timeouts()",
+    "trigger_sheets_sync()",
+    "enqueue_sheet_sync()",
+    "run_attendance_sweep()",
+    "log_audit_admin()",
+    "notify_supervisors_on_incident()",
+  ]) {
+    const re = new RegExp(`revoke execute on function public\\.${fn.replace(/[()]/g, "\\$&")} from public, anon, authenticated`, "i");
+    assert.match(migrationSql, re, `expected a PUBLIC+anon+authenticated revoke for ${fn}`);
   }
+});
+
+test("REGRESSION: the two functions with a confirmed live PUBLIC grant (enqueue_sheet_sync, trigger_sheets_sync) are explicitly covered, not just implicitly by the general anon/authenticated pattern used before", () => {
+  assert.match(migrationSql, /revoke execute on function public\.enqueue_sheet_sync\(\) from public, anon, authenticated/i);
+  assert.match(migrationSql, /revoke execute on function public\.trigger_sheets_sync\(\) from public, anon, authenticated/i);
+});
+
+test("Every restricted function is explicitly re-granted to service_role, making trusted execution durable rather than incidental", () => {
+  for (const fn of [
+    "flag_attendance_anomalies(integer)",
+    "escalate_timeouts()",
+    "trigger_sheets_sync()",
+    "enqueue_sheet_sync()",
+    "run_attendance_sweep()",
+    "log_audit_admin()",
+    "notify_supervisors_on_incident()",
+  ]) {
+    const re = new RegExp(`grant execute on function public\\.${fn.replace(/[()]/g, "\\$&")} to service_role`, "i");
+    assert.match(migrationSql, re, `expected an explicit service_role grant for ${fn}`);
+  }
+});
+
+test("Trigger-only functions (log_audit_admin, notify_supervisors_on_incident) are revoked too — Postgres never checks EXECUTE privilege for a trigger firing, only for a direct call, so this cannot break their trigger execution", () => {
+  assert.match(migrationSql, /revoke execute on function public\.log_audit_admin\(\) from public, anon, authenticated/i);
+  assert.match(migrationSql, /revoke execute on function public\.notify_supervisors_on_incident\(\) from public, anon, authenticated/i);
 });
 
 test("search_flight_attendance() (not cron-only, called by real signed-in Enforcement/Management users) is not revoked", () => {
   assert.doesNotMatch(migrationSql, /revoke execute on function public\.search_flight_attendance/i);
+});
+
+test("archive_all_pending() (own internal supervisor check, no PUBLIC grant, not cron-invoked) is not revoked", () => {
+  assert.doesNotMatch(migrationSql, /revoke execute on function public\.archive_all_pending/i);
 });
 
 // --- Part C: feedback_threads_management_view ---
@@ -148,21 +197,80 @@ test("Genuine feedback submission (insert on the base table, unrelated to this v
 
 type UsersRow = { id: string; role: string; unified_role: string | null; status: string; ops_group: string | null; org_id: string | null; duty_post: string | null; email: string; staff_id: string; name: string };
 
-/** Mirrors "users: self register pending vendor" WITH CHECK. */
-function canSelfRegisterVendor(next: { id: string; actorId: string; role: string; unified_role: string | null; status: string }): boolean {
-  return next.id === next.actorId && next.role === "vendor" && next.unified_role === "vendor" && next.status === "pending";
+/**
+ * Mirrors "users: self register pending vendor" WITH CHECK (post-fix,
+ * second pass). The first version only checked id = auth.uid() — this
+ * ties the ROW to the caller but does nothing to stop them writing an
+ * arbitrary `email` into their own new row. jwtEmail models
+ * auth.jwt() ->> 'email' — the verified email claim from the caller's own
+ * session, never client-suppliable, confirmed available on this project.
+ */
+const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001";
+
+function canSelfRegisterVendor(next: {
+  id: string;
+  actorId: string;
+  email: string;
+  jwtEmail: string;
+  role: string;
+  unified_role: string | null;
+  status: string;
+  org_id: string;
+  ops_group: string | null;
+  duty_post: string | null;
+}): boolean {
+  return (
+    next.id === next.actorId &&
+    next.email === next.jwtEmail &&
+    next.role === "vendor" &&
+    next.unified_role === "vendor" &&
+    next.status === "pending" &&
+    next.org_id === DEFAULT_ORG_ID &&
+    next.ops_group === null &&
+    next.duty_post === null
+  );
+}
+
+function baseRegistration(overrides: Partial<Parameters<typeof canSelfRegisterVendor>[0]> = {}) {
+  return {
+    id: "u1",
+    actorId: "u1",
+    email: "driver@example.com",
+    jwtEmail: "driver@example.com",
+    role: "vendor",
+    unified_role: "vendor",
+    status: "pending",
+    org_id: DEFAULT_ORG_ID,
+    ops_group: null,
+    duty_post: null,
+    ...overrides,
+  };
 }
 
 test("REGRESSION: driver/vendor self-registration produces a pending row and nothing else", () => {
-  assert.equal(canSelfRegisterVendor({ id: "u1", actorId: "u1", role: "vendor", unified_role: "vendor", status: "pending" }), true);
+  assert.equal(canSelfRegisterVendor(baseRegistration()), true);
 });
 
 test("Self-insert can never claim immediate operational access (status must be 'pending')", () => {
-  assert.equal(canSelfRegisterVendor({ id: "u1", actorId: "u1", role: "vendor", unified_role: "vendor", status: "active" }), false);
+  assert.equal(canSelfRegisterVendor(baseRegistration({ status: "active" })), false);
 });
 
 test("Self-insert can never claim a non-vendor role (blocks the self-approval-via-registration path)", () => {
-  assert.equal(canSelfRegisterVendor({ id: "u1", actorId: "u1", role: "management", unified_role: "management", status: "pending" }), false);
+  assert.equal(canSelfRegisterVendor(baseRegistration({ role: "management", unified_role: "management" })), false);
+});
+
+test("REGRESSION: self-registration cannot choose another user's id", () => {
+  assert.equal(canSelfRegisterVendor(baseRegistration({ id: "someone-else" })), false);
+});
+
+test("REGRESSION: self-registration cannot claim an email different from the caller's own verified JWT email (identity spoofing)", () => {
+  assert.equal(canSelfRegisterVendor(baseRegistration({ email: "someone-else@example.com" })), false);
+});
+
+test("REGRESSION: self-registration cannot assign an arbitrary org_id, ops_group, or duty_post via a direct REST INSERT that bypasses the app's own write shape", () => {
+  assert.equal(canSelfRegisterVendor(baseRegistration({ org_id: "some-other-org-id" })), false);
+  assert.equal(canSelfRegisterVendor(baseRegistration({ ops_group: "operation_avsec" })), false);
+  assert.equal(canSelfRegisterVendor(baseRegistration({ duty_post: "Post 2" })), false);
 });
 
 /** Mirrors "users: supervisor approves pending" + enforce_users_self_update()'s supervisor branch. */
