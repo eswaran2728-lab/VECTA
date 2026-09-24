@@ -231,14 +231,28 @@ revoke select on public.feedback_threads_management_view from anon, authenticate
 -- policies (confirmed live via pg_get_expr(polqual, ...) rather than
 -- assumed -- is_approved_management() alone would NOT have been
 -- equivalent: it checks only role = 'MANAGEMENT', but the live policy
--- also admits ADMIN unconditionally and unified_role = 'management' as
--- an alternate match). Returns every feedback thread's privacy-safe
--- columns (no submitter_id) for a caller matching that predicate, and an
--- empty set for anyone else -- pending/rejected/deactivated Management,
+-- also admits ADMIN and unified_role = 'management' as an alternate
+-- match). Returns every feedback thread's privacy-safe columns (no
+-- submitter_id) for a caller matching that predicate, and an empty set
+-- for anyone else -- pending/rejected/deactivated Management/ADMIN,
 -- every ASO/SO/DSE/Enforcement/vendor session, and anon (which cannot
 -- execute it at all) all get nothing. lib/avsec/feedback/queries.ts's
 -- getManagementFeedbackInbox() and getManagementFeedbackStats() now call
 -- this instead of querying the view directly.
+--
+-- CORRECTED (third pass, 2026-09-24): the live base-table policy admits
+-- ADMIN unconditionally, with no status check on that branch (confirmed
+-- via pg_get_expr -- a pre-existing characteristic of the base table's
+-- own policy, not introduced here). Requiring approved status for EVERY
+-- privileged role, including legacy ADMIN, is a genuine tightening this
+-- RPC now applies that the base-table policy itself does not -- a
+-- pending/rejected/deactivated legacy ADMIN account (production has none
+-- today, but the role is retained for compatibility) could otherwise
+-- read the Management feedback inbox through the RPC even though it
+-- could already do so through the base table via the wider policy. This
+-- RPC is intentionally stricter than the pre-existing base-table policy
+-- on this one point, per instruction: approved status is now required
+-- for every one of MANAGEMENT, ADMIN, and unified_role='management'.
 create or replace function public.get_management_feedback_threads()
 returns table (
   id uuid,
@@ -258,12 +272,10 @@ as $function$
   where exists (
     select 1 from profiles
     where profiles.id = auth.uid()
+      and profiles.status = 'approved'
       and (
-        profiles.role = 'ADMIN'
-        or (
-          (profiles.role = 'MANAGEMENT' or profiles.unified_role = 'management')
-          and profiles.status = 'approved'
-        )
+        profiles.role in ('MANAGEMENT', 'ADMIN')
+        or profiles.unified_role = 'management'
       )
   );
 $function$;
@@ -592,6 +604,24 @@ $function$;
 --     is itself pending/deactivated should not receive notification email
 --     either), not as the authorization boundary -- the grant itself is
 --     now the sole authorization boundary, per the model requested.
+--
+--     CORRECTED (third pass, 2026-09-24): `role = 'ADMIN'` alone is a
+--     functional regression, not just a naming one -- ADMIN was merged
+--     into Management, and production currently has zero ADMIN-role
+--     profiles, so report-submission and overtime-approval notifications
+--     would resolve ZERO recipients even though approved Management
+--     accounts exist to receive them. The function name is unchanged
+--     (get_admin_emails() remains the call site name in both callers) but
+--     it now documents and returns approved Management/legacy-ADMIN
+--     notification recipients: status='approved' AND (role IN
+--     ('MANAGEMENT','ADMIN') OR unified_role='management'), DISTINCT to
+--     avoid duplicate addresses (a profile could in principle match via
+--     unified_role while also holding a MANAGEMENT role value), and
+--     filtered against a null/empty email defensively even though
+--     profiles.email is NOT NULL live (confirmed via
+--     information_schema.columns) -- cheap, harmless, and future-proof if
+--     that constraint is ever relaxed. Execution remains service_role-only
+--     (grant unchanged from the second pass above).
 -- G4: Trigger-only function hygiene sweep -- the following all have
 --     return type `trigger`, are fired exclusively by a table trigger
 --     (never called directly by any RPC, confirmed by grep for each
@@ -613,8 +643,11 @@ stable
 security definer
 set search_path to 'public'
 as $function$
-  select email from profiles
-  where role = 'ADMIN' and status = 'approved';
+  select distinct email from profiles
+  where status = 'approved'
+    and (role in ('MANAGEMENT', 'ADMIN') or unified_role = 'management')
+    and email is not null
+    and email <> '';
 $function$;
 
 revoke execute on function public.get_admin_emails() from public, anon, authenticated;
@@ -699,22 +732,27 @@ revoke execute on function public.set_vendor_transaction_number() from public, a
 --   end;
 --   $function$
 --
--- It already requires the caller's role to be exactly 'ADMIN' (note: this
--- is stricter than the app layer's requireRole(ADMIN_ROLES), where
--- ADMIN_ROLES = ["MANAGEMENT", "ADMIN"] -- a pre-existing inconsistency
--- between the app's own role gate and the RPC's, NOT introduced or
--- widened by this migration and left exactly as-is here; changing which
--- role may sweep attendance is out of scope for this security pass). It
--- does NOT check current_status() at all -- a pending, rejected, or
+-- It already requires the caller's role to be exactly 'ADMIN'. It does
+-- NOT check current_status() at all -- a pending, rejected, or
 -- deactivated ADMIN-role account could already call this successfully.
 --
--- FIX (chosen design: internal authorization, preferred option): add the
--- missing approved-status check to the function body itself -- the grant
--- is not the authorization boundary here, matching how is_approved_management()
--- and Part E's current_role_rank()/is_monitor_or_above() already work.
--- EXECUTE is then explicitly re-granted to `authenticated` (Part B's
--- blanket cron-only revoke never should have applied to this function --
--- see the corrected note in Part B above), keeping PUBLIC and anon denied
+-- CORRECTED (second pass, 2026-09-24): requiring role = 'ADMIN' alone is
+-- a functional regression, not just a scope narrowing -- the app layer's
+-- own gate is requireRole(ADMIN_ROLES), where ADMIN_ROLES =
+-- ["MANAGEMENT", "ADMIN"], and production currently has ZERO legacy
+-- ADMIN-role profiles (ADMIN was merged into Management). An
+-- ADMIN-role-only check at the database layer would leave the
+-- Management attendance-sweep button permanently broken for every real
+-- account able to reach the page today. FIX (chosen design: internal
+-- authorization, preferred option): authorize approved Management via
+-- is_approved_management() OR the pre-existing approved-legacy-ADMIN
+-- check, retained for compatibility should that role ever be
+-- reintroduced -- the grant is not the authorization boundary here,
+-- matching how is_approved_management() and Part E's
+-- current_role_rank()/is_monitor_or_above() already work. EXECUTE is
+-- then explicitly re-granted to `authenticated` (Part B's blanket
+-- cron-only revoke never should have applied to this function -- see
+-- the corrected note in Part B above), keeping PUBLIC and anon denied
 -- (this function was never PUBLIC-granted live, and has no legitimate
 -- anonymous or pre-signup caller). lib/avsec/duty/attendance-actions.ts's
 -- runAttendanceSweep() server action is otherwise completely unchanged --
@@ -727,8 +765,11 @@ security definer
 set search_path to 'public'
 as $function$
 begin
-  if current_role_name() <> 'ADMIN' or current_status() <> 'approved' then
-    raise exception 'Only an approved Admin can run the attendance sweep.';
+  if not (
+    is_approved_management()
+    or (current_role_name() = 'ADMIN' and current_status() = 'approved')
+  ) then
+    raise exception 'Only approved Management or Admin can run the attendance sweep.';
   end if;
   perform flag_attendance_anomalies();
 end;

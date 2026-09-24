@@ -165,12 +165,12 @@ test("CORRECTED (second pass): SELECT on the feedback metadata view is now revok
   assert.match(migrationSql, /revoke select on public\.feedback_threads_management_view from anon, authenticated;/i);
 });
 
-test("Management inbox access now goes through get_management_feedback_threads(), gated in its own WHERE clause by the SAME predicate as the live feedback_threads_management_select/_update RLS policies (ADMIN unconditionally, or MANAGEMENT-role/unified_role approved-only) -- not the narrower is_approved_management()", () => {
+test("Management inbox access now goes through get_management_feedback_threads(), requiring status='approved' for EVERY privileged role including legacy ADMIN -- a deliberate tightening beyond the live base-table policy, which admits ADMIN unconditionally", () => {
   const match = migrationSql.match(/create or replace function public\.get_management_feedback_threads\(\)[\s\S]*?\$function\$;/);
   assert.ok(match, "get_management_feedback_threads() must be defined");
-  assert.match(match![0], /profiles\.role = 'ADMIN'/);
-  assert.match(match![0], /profiles\.role = 'MANAGEMENT' or profiles\.unified_role = 'management'/);
   assert.match(match![0], /profiles\.status = 'approved'/);
+  assert.match(match![0], /profiles\.role in \('MANAGEMENT', 'ADMIN'\)/);
+  assert.match(match![0], /profiles\.unified_role = 'management'/);
   assert.doesNotMatch(match![0], /submitter_id/i, "must never select submitter_id -- privacy-safe columns only");
 });
 
@@ -179,38 +179,39 @@ test("get_management_feedback_threads() is revoked from PUBLIC/anon and granted 
   assert.match(migrationSql, /grant execute on function public\.get_management_feedback_threads\(\) to authenticated;/);
 });
 
-/** Mirrors get_management_feedback_threads()'s WHERE EXISTS gate -- same predicate as the live RLS policy. */
-function canGetManagementFeedbackThreads(actor: { kind: "anon" } | { kind: "operational" } | { kind: "management"; status: string } | { kind: "admin"; status?: string }): boolean {
+/** Mirrors get_management_feedback_threads()'s WHERE EXISTS gate (third pass): status='approved' required for every privileged role. */
+function canGetManagementFeedbackThreads(actor: { kind: "anon" } | { kind: "operational" } | { kind: "management"; status: string } | { kind: "admin"; status: string } | { kind: "unified_management"; status: string }): boolean {
   if (actor.kind === "anon") return false; // cannot even execute the function
-  if (actor.kind === "operational") return false; // matches neither ADMIN nor MANAGEMENT/unified_role='management'
-  if (actor.kind === "admin") return true; // ADMIN matches unconditionally, no status check, exactly like the live policy
-  if (actor.kind === "management") return actor.status === "approved";
+  if (actor.kind === "operational") return false; // matches none of role in ('MANAGEMENT','ADMIN') or unified_role='management'
+  if (actor.kind === "admin" || actor.kind === "management" || actor.kind === "unified_management") return actor.status === "approved";
   return false;
 }
 
-test("REGRESSION: anonymous cannot read Management feedback metadata (cannot execute the RPC at all)", () => {
-  assert.equal(canGetManagementFeedbackThreads({ kind: "anon" }), false);
-});
-
-test("REGRESSION: an ordinary operational user cannot read the Management feedback inbox", () => {
-  assert.equal(canGetManagementFeedbackThreads({ kind: "operational" }), false);
-});
-
-test("Approved Management can still read the feedback inbox", () => {
+test("MANDATORY 20: approved Management can access the feedback RPC", () => {
   assert.equal(canGetManagementFeedbackThreads({ kind: "management", status: "approved" }), true);
 });
 
-test("A pending Management applicant cannot read the feedback inbox (consistent with the containment migration)", () => {
-  assert.equal(canGetManagementFeedbackThreads({ kind: "management", status: "pending" }), false);
+test("MANDATORY 21: approved legacy ADMIN can access the feedback RPC", () => {
+  assert.equal(canGetManagementFeedbackThreads({ kind: "admin", status: "approved" }), true);
 });
 
-test("A rejected or deactivated Management account cannot read the feedback inbox", () => {
-  assert.equal(canGetManagementFeedbackThreads({ kind: "management", status: "rejected" }), false);
-  assert.equal(canGetManagementFeedbackThreads({ kind: "management", status: "deactivated" }), false);
+test("MANDATORY 22: approved unified Management (unified_role='management') can access the feedback RPC", () => {
+  assert.equal(canGetManagementFeedbackThreads({ kind: "unified_management", status: "approved" }), true);
 });
 
-test("ADMIN retains feedback inbox access -- matches the live base-table RLS policy exactly, which the earlier is_approved_management()-only design would have silently broken", () => {
-  assert.equal(canGetManagementFeedbackThreads({ kind: "admin" }), true);
+test("MANDATORY 23: pending/rejected/deactivated Management AND pending/rejected/deactivated legacy ADMIN are both denied -- approved status is now required for every privileged role, not just Management", () => {
+  for (const status of ["pending", "rejected", "deactivated"]) {
+    assert.equal(canGetManagementFeedbackThreads({ kind: "management", status }), false, `Management/${status} must be denied`);
+    assert.equal(canGetManagementFeedbackThreads({ kind: "admin", status }), false, `ADMIN/${status} must be denied -- this is the exact gap the third-pass review found`);
+  }
+});
+
+test("MANDATORY 24: operational users cannot access the feedback RPC", () => {
+  assert.equal(canGetManagementFeedbackThreads({ kind: "operational" }), false);
+});
+
+test("MANDATORY 25: anonymous cannot access the feedback RPC (cannot execute it at all)", () => {
+  assert.equal(canGetManagementFeedbackThreads({ kind: "anon" }), false);
 });
 
 test("Submitters still see their own feedback through the unrelated, unchanged submitter-facing path (base table, not this view/RPC)", () => {
@@ -635,30 +636,69 @@ test("SCOPE: this migration never references part_b/c/d/hub/redq, vendor_transac
 // PART G: schema-wide function-permission audit
 // =======================================================================
 
-// get_admin_emails() authorization model (corrected, second pass): the
+// get_admin_emails() authorization model (corrected, third pass): the
 // grant itself is the sole authorization boundary -- PUBLIC, anon, and
 // EVERY authenticated session (regardless of role or status) are denied
 // direct execution. Only service_role may call it. The internal
-// role='ADMIN' AND status='approved' filter in its body is a correctness
-// filter on WHICH admins to notify, not an authz gate -- mirrored here as
-// that, not as a permission check.
-function adminEmailRecipientFilter(profile: { role: string; status: string }): boolean {
-  return profile.role === "ADMIN" && profile.status === "approved";
+// recipient filter is a correctness filter on WHO to notify, not an authz
+// gate -- mirrored here as that, not as a permission check. Corrected to
+// resolve approved Management/legacy-ADMIN recipients (role='ADMIN'
+// alone would resolve zero recipients live -- ADMIN was merged into
+// Management, and production has zero ADMIN-role profiles today).
+function adminEmailRecipientFilter(profile: { role: string; status: string; unified_role?: string | null; email?: string | null }): boolean {
+  const email = profile.email === undefined ? "notify@example.com" : profile.email;
+  return (
+    profile.status === "approved" &&
+    (["MANAGEMENT", "ADMIN"].includes(profile.role) || profile.unified_role === "management") &&
+    !!email
+  );
 }
 
-test("get_admin_emails()'s body-level recipient filter still excludes a pending/rejected/deactivated ADMIN-role row from the notification list", () => {
-  assert.equal(adminEmailRecipientFilter({ role: "ADMIN", status: "approved" }), true);
-  assert.equal(adminEmailRecipientFilter({ role: "ADMIN", status: "pending" }), false);
-  assert.equal(adminEmailRecipientFilter({ role: "ADMIN", status: "rejected" }), false);
-  assert.equal(adminEmailRecipientFilter({ role: "MANAGEMENT", status: "approved" }), false);
+test("MANDATORY 9: an approved Management email is returned", () => {
+  assert.equal(adminEmailRecipientFilter({ role: "MANAGEMENT", status: "approved" }), true);
 });
 
-test("Part G: get_admin_emails() body still filters to approved ADMIN rows", () => {
+test("MANDATORY 10: an approved legacy ADMIN email is returned", () => {
+  assert.equal(adminEmailRecipientFilter({ role: "ADMIN", status: "approved" }), true);
+});
+
+test("MANDATORY 11: an approved unified_role='management' email is returned even if role itself isn't MANAGEMENT/ADMIN", () => {
+  assert.equal(adminEmailRecipientFilter({ role: "SO", status: "approved", unified_role: "management" }), true);
+});
+
+test("MANDATORY 12: pending/rejected/deactivated privileged accounts are excluded", () => {
+  for (const status of ["pending", "rejected", "deactivated"]) {
+    assert.equal(adminEmailRecipientFilter({ role: "MANAGEMENT", status }), false, `Management/${status} must be excluded`);
+    assert.equal(adminEmailRecipientFilter({ role: "ADMIN", status }), false, `ADMIN/${status} must be excluded`);
+  }
+});
+
+test("MANDATORY 13: operational accounts (ASO/SO/DSE/Enforcement) are excluded", () => {
+  for (const role of ["ASO", "SO", "DSE", "ENFORCEMENT"]) {
+    assert.equal(adminEmailRecipientFilter({ role, status: "approved" }), false, `${role} must be excluded`);
+  }
+});
+
+test("MANDATORY 14: null and empty emails are excluded (defensive -- profiles.email is NOT NULL live, confirmed via information_schema.columns, but filtered anyway)", () => {
+  assert.equal(adminEmailRecipientFilter({ role: "MANAGEMENT", status: "approved", email: null }), false);
+  assert.equal(adminEmailRecipientFilter({ role: "MANAGEMENT", status: "approved", email: "" }), false);
+});
+
+test("MANDATORY 15: duplicate emails are deduplicated (SELECT DISTINCT)", () => {
+  const code = migrationSql.replace(/\r\n/g, "\n");
+  const match = code.match(/create or replace function public\.get_admin_emails\(\)[\s\S]*?\$function\$;/);
+  assert.match(match![0], /select distinct email from profiles/);
+});
+
+test("Part G: get_admin_emails() body resolves approved Management/legacy-ADMIN/unified-Management recipients, excluding null/empty emails", () => {
   const code = migrationSql.replace(/\r\n/g, "\n");
   const match = code.match(/create or replace function public\.get_admin_emails\(\)[\s\S]*?\$function\$;/);
   assert.ok(match, "get_admin_emails() must be redefined in Part G");
-  assert.match(match![0], /role\s*=\s*'ADMIN'/);
-  assert.match(match![0], /status\s*=\s*'approved'/);
+  assert.match(match![0], /status = 'approved'/);
+  assert.match(match![0], /role in \('MANAGEMENT', 'ADMIN'\)/);
+  assert.match(match![0], /unified_role = 'management'/);
+  assert.match(match![0], /email is not null/);
+  assert.match(match![0], /email <> ''/);
 });
 
 test("MANDATORY 1-4: PUBLIC, anon, and every ordinary authenticated role (ASO/SO/DSE/Enforcement) cannot execute get_admin_emails -- the revoke targets PUBLIC, anon, and authenticated as a whole, not a role subset", () => {
@@ -680,12 +720,12 @@ test("MANDATORY 7-8: pending/rejected/deactivated accounts and approved Manageme
   assert.equal(reGrantsToAuthenticated, null, "no grant to authenticated must exist for get_admin_emails, for any role");
 });
 
-test("MANDATORY 9: service_role can perform the trusted lookup", () => {
+test("MANDATORY 17: service_role retains execution of get_admin_emails", () => {
   const code = migrationSql.replace(/\r\n/g, "\n");
   assert.match(code, /grant execute on function public\.get_admin_emails\(\) to service_role;/);
 });
 
-test("MANDATORY 10 / caller change: notifyReportSubmission.ts resolves admin emails through the service-role client, not the user-session client", () => {
+test("MANDATORY 18a / caller change: notifyReportSubmission.ts resolves admin emails through the service-role client, not the user-session client", () => {
   const src = fs.readFileSync(
     new URL("../lib/avsec/email/notifyReportSubmission.ts", import.meta.url),
     "utf8",
@@ -696,7 +736,7 @@ test("MANDATORY 10 / caller change: notifyReportSubmission.ts resolves admin ema
   assert.match(src, /supabase\.rpc\("get_admin_emails"\)/);
 });
 
-test("MANDATORY 11 / caller change: notifyOvertimeApproval.ts resolves admin emails through the service-role client, not the user-session client", () => {
+test("MANDATORY 18b / caller change: notifyOvertimeApproval.ts resolves admin emails through the service-role client, not the user-session client", () => {
   const src = fs.readFileSync(
     new URL("../lib/avsec/email/notifyOvertimeApproval.ts", import.meta.url),
     "utf8",
@@ -707,7 +747,7 @@ test("MANDATORY 11 / caller change: notifyOvertimeApproval.ts resolves admin ema
   assert.match(src, /supabase\.rpc\("get_admin_emails"\)/);
 });
 
-test("MANDATORY 12 / import-boundary: lib/supabase/admin.ts (the service-role client) is guarded with \"server-only\" and its callers are \"use server\" files, so it can never be pulled into a client bundle", () => {
+test("MANDATORY 18c/19 / import-boundary: lib/supabase/admin.ts (the service-role client) is guarded with \"server-only\" and its callers are \"use server\" files, so it can never be pulled into a client bundle", () => {
   const adminSrc = fs.readFileSync(new URL("../lib/supabase/admin.ts", import.meta.url), "utf8");
   assert.match(adminSrc, /^import "server-only";/m);
   assert.match(adminSrc, /process\.env\.SUPABASE_SERVICE_ROLE_KEY!/);
@@ -840,30 +880,36 @@ test("REGRESSION: existing internally-authorized RPCs (set_transaction_qr_token,
 // sweep button, correctly authorized
 // =======================================================================
 
-/** Mirrors run_attendance_sweep()'s new internal gate. */
+/** Mirrors run_attendance_sweep()'s new internal gate (third pass): is_approved_management() OR approved legacy ADMIN. */
 function canRunAttendanceSweep(actor: { role: string; status: string } | { role: "anon" }): boolean {
   if (actor.role === "anon") return false; // cannot execute at all -- PUBLIC/anon revoked
-  return actor.role === "ADMIN" && actor.status === "approved";
+  const isApprovedManagement = actor.role === "MANAGEMENT" && actor.status === "approved";
+  const isApprovedLegacyAdmin = actor.role === "ADMIN" && actor.status === "approved";
+  return isApprovedManagement || isApprovedLegacyAdmin;
 }
 
-test("MANDATORY 1: approved Management (ADMIN role, matching the pre-existing role gate) can run the attendance sweep", () => {
+test("MANDATORY 1: approved Management can run the attendance sweep", () => {
+  assert.equal(canRunAttendanceSweep({ role: "MANAGEMENT", status: "approved" }), true);
+});
+
+test("MANDATORY 2: approved legacy ADMIN can run the attendance sweep", () => {
   assert.equal(canRunAttendanceSweep({ role: "ADMIN", status: "approved" }), true);
 });
 
-test("MANDATORY 2: pending Management/ADMIN cannot run the sweep", () => {
-  assert.equal(canRunAttendanceSweep({ role: "ADMIN", status: "pending" }), false);
+test("MANDATORY 3: pending/rejected/deactivated Management cannot run the sweep", () => {
+  for (const status of ["pending", "rejected", "deactivated"]) {
+    assert.equal(canRunAttendanceSweep({ role: "MANAGEMENT", status }), false, `Management/${status} must be denied`);
+  }
 });
 
-test("MANDATORY 3: rejected Management/ADMIN cannot run the sweep", () => {
-  assert.equal(canRunAttendanceSweep({ role: "ADMIN", status: "rejected" }), false);
+test("MANDATORY 4: pending/rejected/deactivated legacy ADMIN cannot run the sweep", () => {
+  for (const status of ["pending", "rejected", "deactivated"]) {
+    assert.equal(canRunAttendanceSweep({ role: "ADMIN", status }), false, `ADMIN/${status} must be denied`);
+  }
 });
 
-test("MANDATORY 4: deactivated Management/ADMIN cannot run the sweep", () => {
-  assert.equal(canRunAttendanceSweep({ role: "ADMIN", status: "deactivated" }), false);
-});
-
-test("MANDATORY 5: ASO/SO/DSE/Enforcement cannot run the sweep (role gate unchanged, pre-existing)", () => {
-  for (const role of ["ASO", "SO", "DSE", "ENFORCEMENT", "MANAGEMENT"]) {
+test("MANDATORY 5: ASO/SO/DSE/Enforcement cannot run the sweep", () => {
+  for (const role of ["ASO", "SO", "DSE", "ENFORCEMENT"]) {
     assert.equal(canRunAttendanceSweep({ role, status: "approved" }), false, `${role} must not be able to run the sweep`);
   }
 });
@@ -886,9 +932,10 @@ test("MANDATORY 8: attendance isolation (Part A's station/team/ops_group-strict 
   assert.match(match![0], /perform flag_attendance_anomalies\(\);/);
 });
 
-test("Part H: the pre-existing role check (current_role_name() <> 'ADMIN') is preserved exactly, with only an approved-status check added -- not a role-scope change", () => {
+test("Part H (third pass): the internal gate authorizes approved Management via is_approved_management() OR the pre-existing approved-legacy-ADMIN check -- the legacy ADMIN-only gate alone would leave the sweep broken since production has zero ADMIN-role profiles", () => {
   const match = migrationSql.match(/create or replace function public\.run_attendance_sweep\(\)[\s\S]*?\$function\$;/);
-  assert.match(match![0], /current_role_name\(\) <> 'ADMIN' or current_status\(\) <> 'approved'/);
+  assert.match(match![0], /is_approved_management\(\)/);
+  assert.match(match![0], /current_role_name\(\) = 'ADMIN' and current_status\(\) = 'approved'/);
 });
 
 // =======================================================================
