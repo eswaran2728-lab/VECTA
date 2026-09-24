@@ -448,22 +448,36 @@ $function$;
 --     result: only called by the set_vendor_transaction_number() trigger.
 --     Fully revoked from PUBLIC, anon, AND authenticated.
 -- G3: get_admin_emails() -- `select email from profiles where role='ADMIN'`.
---     authenticated_exec was TRUE with NO internal authorization check.
---     Confirmed by grep this IS called directly via supabase.rpc() from
---     two application call sites (lib/avsec/email/notifyReportSubmission.ts,
---     lib/avsec/email/notifyOvertimeApproval.ts), both using the caller's
---     own session client (not service-role) -- so today ANY authenticated
---     account, including a pending/rejected one, could call
---     `supabase.rpc("get_admin_emails")` directly via REST and enumerate
---     every admin's real email address, bypassing those two call sites'
---     own (already-authenticated-context) usage entirely. Classification 2
---     (authenticated RPC with internal authorization) requires the
---     function to actually gate itself -- it did not. Fixed in place by
---     adding an approved-status check inside the function body (narrowest
---     possible fix: preserves both legitimate call sites, which already
---     only ever run for an authenticated, already-approved actor, and
---     closes direct-REST enumeration by anyone else). Grant unchanged
---     (authenticated keeps EXECUTE; anon/PUBLIC already false).
+--     Live signature (confirmed, no arguments): public.get_admin_emails().
+--     Originally created in supabase/migrations/avsec/0004_admin_email_lookup.sql
+--     as `revoke ... from anon, public; grant execute ... to authenticated;` --
+--     an intentional-at-the-time authenticated-wide grant with NO internal
+--     authorization check at all.
+--
+--     CORRECTED (second pass, 2026-09-24): an approved-status-only internal
+--     gate is NOT sufficient -- it still lets every approved ASO, SO, DSE,
+--     Enforcement, driver/vendor/warehouse account call
+--     `supabase.rpc("get_admin_emails")` directly via REST/PostgREST and
+--     read every Management/ADMIN email address, which is real-name PII
+--     with no legitimate operational reason for those roles to see it.
+--     Confirmed by grep this is called from exactly two application sites
+--     (lib/avsec/email/notifyReportSubmission.ts,
+--     lib/avsec/email/notifyOvertimeApproval.ts), both of which have been
+--     changed this pass to use the service-role client
+--     (lib/supabase/admin.ts's createAdminClient(), a "server-only"-guarded
+--     module that never ships to the browser) instead of the caller's own
+--     session client -- so no legitimate application path needs
+--     authenticated-level access at all.
+--
+--     Direct EXECUTE is now revoked from PUBLIC, anon, AND authenticated
+--     (closing it for every operational role, approved or not, and for
+--     pending/rejected/deactivated accounts, which already had no access)
+--     and granted only to service_role. The internal
+--     `status = 'approved'` filter in the function body is kept as a
+--     correctness filter on WHICH admins to notify (an admin account that
+--     is itself pending/deactivated should not receive notification email
+--     either), not as the authorization boundary -- the grant itself is
+--     now the sole authorization boundary, per the model requested.
 -- G4: Trigger-only function hygiene sweep -- the following all have
 --     return type `trigger`, are fired exclusively by a table trigger
 --     (never called directly by any RPC, confirmed by grep for each
@@ -488,6 +502,9 @@ as $function$
   select email from profiles
   where role = 'ADMIN' and status = 'approved';
 $function$;
+
+revoke execute on function public.get_admin_emails() from public, anon, authenticated;
+grant execute on function public.get_admin_emails() to service_role;
 
 revoke execute on function public.next_report_no(text, date) from public, anon, authenticated;
 revoke execute on function public.next_vendor_transaction_number() from public, anon, authenticated;
