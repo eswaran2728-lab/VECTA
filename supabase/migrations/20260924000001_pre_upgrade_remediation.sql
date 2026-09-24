@@ -8,6 +8,10 @@
 --   Part G: schema-wide function-permission audit -- next_report_no,
 --           next_vendor_transaction_number, get_admin_emails, and a
 --           trigger-only-function grant hygiene sweep
+--   Part H: run_attendance_sweep() -- restore the Management attendance-page
+--           button (was mistakenly caught by Part B's cron-only pattern; it
+--           is a real application RPC, now gated by an approved-status check
+--           added inside the function, not by the grant)
 --
 -- Forward-only. Does not delete or rewrite any row. Does not touch CaterLink
 -- checkpoint scanning policies, Hub separation, report acknowledgement
@@ -120,7 +124,6 @@ $function$;
 --   log_audit_admin()              | true   | true | true   <- PUBLIC grant found (trigger-only)
 --   notify_supervisors_on_incident()| true  | true | true   <- PUBLIC grant found (trigger-only)
 --   flag_attendance_anomalies(int) | false  | true | true   (anon/authenticated grants, no PUBLIC)
---   run_attendance_sweep()         | false  | true | true   (anon/authenticated grants, no PUBLIC)
 --   search_flight_attendance(...)  | false  | true | true   (untouched -- real app RPC, own auth check)
 --   archive_all_pending(text)      | false  | false| true   (untouched -- own supervisor check, not cron)
 --
@@ -154,7 +157,6 @@ revoke execute on function public.flag_attendance_anomalies(integer) from public
 revoke execute on function public.escalate_timeouts() from public, anon, authenticated;
 revoke execute on function public.trigger_sheets_sync() from public, anon, authenticated;
 revoke execute on function public.enqueue_sheet_sync() from public, anon, authenticated;
-revoke execute on function public.run_attendance_sweep() from public, anon, authenticated;
 revoke execute on function public.log_audit_admin() from public, anon, authenticated;
 revoke execute on function public.notify_supervisors_on_incident() from public, anon, authenticated;
 
@@ -162,7 +164,6 @@ grant execute on function public.flag_attendance_anomalies(integer) to service_r
 grant execute on function public.escalate_timeouts() to service_role;
 grant execute on function public.trigger_sheets_sync() to service_role;
 grant execute on function public.enqueue_sheet_sync() to service_role;
-grant execute on function public.run_attendance_sweep() to service_role;
 grant execute on function public.log_audit_admin() to service_role;
 grant execute on function public.notify_supervisors_on_incident() to service_role;
 
@@ -172,6 +173,18 @@ grant execute on function public.notify_supervisors_on_incident() to service_rol
 -- already carries its own is_approved_management()/ENFORCEMENT check).
 -- archive_all_pending() is untouched (not cron-invoked; already requires
 -- current_user_role()='supervisor' internally, and has no PUBLIC grant).
+--
+-- CORRECTED (third pass): run_attendance_sweep() was WRONGLY included in
+-- this Part's cron-only pattern. It is not cron-invoked at all --
+-- lib/avsec/duty/attendance-actions.ts's runAttendanceSweep() server
+-- action calls it via the signed-in user's own session client, gated at
+-- the app layer by requireRole(ADMIN_ROLES) before the RPC call. Revoking
+-- its `authenticated` grant here would have silently broken the existing
+-- Management attendance-sweep button. It is handled separately in Part H
+-- below, with an internal approved-status authorization check added to
+-- the function itself instead of a grant-only fix -- the fix this task
+-- explicitly required (see Part H for the live pre-existing function body
+-- and what changed).
 
 -- =======================================================================
 -- PART C: feedback_threads_management_view -- anonymous metadata exposure
@@ -190,18 +203,78 @@ grant execute on function public.notify_supervisors_on_incident() to service_rol
 --
 -- The base table's own RLS is already correct (feedback_threads_submitter_select:
 -- submitter sees only their own; feedback_threads_management_select:
--- ADMIN or approved Management only, fixed in 20260923000003) -- turning on
--- security_invoker makes the view respect exactly those same policies for
--- whoever queries it, closing the bypass without changing what Management
--- itself can see.
+-- ADMIN or approved Management only, fixed in 20260923000003).
+--
+-- CORRECTED (second pass, 2026-09-24): turning on security_invoker alone
+-- is not sufficient while `authenticated` still holds SELECT on the view.
+-- With security_invoker on, the view evaluates the base table's RLS as
+-- the querying role -- and feedback_threads_submitter_select legitimately
+-- lets a submitter see THEIR OWN thread rows. Retaining a blanket
+-- authenticated SELECT on this specific view would let an ordinary
+-- operational user read their own feedback thread's metadata through a
+-- view whose name and purpose ("_management_view") is Management-only,
+-- contradicting that claim. Treated as Management-only per the required
+-- decision: authenticated SELECT on the view itself is now fully
+-- revoked, and Management access moves to a dedicated, explicitly
+-- approved-Management-gated RPC instead. Ordinary submitters continue to
+-- see only their own threads through the pre-existing, unrelated
+-- feedback_threads_submitter_select policy on the base table directly
+-- (lib/avsec/feedback/queries.ts's getMyFeedbackThreads(), unchanged).
 alter view public.feedback_threads_management_view set (security_invoker = true);
 
 revoke insert, update, delete, truncate on public.feedback_threads_management_view from anon, authenticated;
-revoke select on public.feedback_threads_management_view from anon;
--- authenticated keeps SELECT on the view -- now meaningless for anyone
--- without a matching feedback_threads RLS policy (ordinary operational
--- users get 0 rows; approved Management/ADMIN see their existing access,
--- unchanged).
+revoke select on public.feedback_threads_management_view from anon, authenticated;
+
+-- Management inbox access now goes through this RPC instead of the view.
+-- SECURITY DEFINER, with the exact same authorization predicate as the
+-- base table's own feedback_threads_management_select/_update RLS
+-- policies (confirmed live via pg_get_expr(polqual, ...) rather than
+-- assumed -- is_approved_management() alone would NOT have been
+-- equivalent: it checks only role = 'MANAGEMENT', but the live policy
+-- also admits ADMIN unconditionally and unified_role = 'management' as
+-- an alternate match). Returns every feedback thread's privacy-safe
+-- columns (no submitter_id) for a caller matching that predicate, and an
+-- empty set for anyone else -- pending/rejected/deactivated Management,
+-- every ASO/SO/DSE/Enforcement/vendor session, and anon (which cannot
+-- execute it at all) all get nothing. lib/avsec/feedback/queries.ts's
+-- getManagementFeedbackInbox() and getManagementFeedbackStats() now call
+-- this instead of querying the view directly.
+create or replace function public.get_management_feedback_threads()
+returns table (
+  id uuid,
+  org_id uuid,
+  category text,
+  status text,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select ft.id, ft.org_id, ft.category, ft.status, ft.created_at, ft.updated_at
+  from feedback_threads ft
+  where exists (
+    select 1 from profiles
+    where profiles.id = auth.uid()
+      and (
+        profiles.role = 'ADMIN'
+        or (
+          (profiles.role = 'MANAGEMENT' or profiles.unified_role = 'management')
+          and profiles.status = 'approved'
+        )
+      )
+  );
+$function$;
+
+revoke execute on function public.get_management_feedback_threads() from public, anon;
+grant execute on function public.get_management_feedback_threads() to authenticated;
+-- Granting EXECUTE to `authenticated` here is safe and intentional (unlike
+-- Part G's trigger-only sweep) -- the function is a real, direct
+-- application RPC every operational role legitimately needs to be able to
+-- CALL; the internal is_approved_management() WHERE clause is what
+-- actually gates the data, returning zero rows to everyone else.
 
 -- =======================================================================
 -- PART D: public.users -- CaterLink registration / supervisor approval
@@ -259,6 +332,31 @@ with check (
   and duty_post is null
 );
 
+-- CORRECTED (second pass, 2026-09-24): `current_user_role() = 'supervisor'`
+-- checks only the ROLE the caller currently claims, with no status check
+-- at all -- a pending, rejected, or deactivated account carrying the
+-- supervisor role could potentially approve/reject a CaterLink
+-- registration. Fixed with a centralized, narrowly-scoped predicate
+-- (mirrors is_approved_management()'s shape): reads only the CALLING
+-- user's own public.users row via auth.uid(), returns false for a
+-- missing row (exists() is false on no match) or any row that isn't
+-- role='supervisor' AND status='active', is STABLE (no writes possible),
+-- and grants no data access beyond a boolean -- safe to expose to RLS.
+create or replace function public.is_active_supervisor()
+returns boolean
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select exists (
+    select 1 from public.users
+    where id = auth.uid()
+      and role = 'supervisor'
+      and status = 'active'
+  );
+$function$;
+
 -- Supervisor approval: exactly approveStaff()/rejectStaff()'s write shape
 -- (status only, on someone else's still-pending row). Narrower than the
 -- profiles equivalent -- public.users has no role/ops_group/station/team
@@ -268,12 +366,12 @@ drop policy if exists "users: supervisor approves pending" on public.users;
 create policy "users: supervisor approves pending" on public.users
 for update
 using (
-  current_user_role() = 'supervisor'
+  is_active_supervisor()
   and id <> auth.uid()
   and status = 'pending'
 )
 with check (
-  current_user_role() = 'supervisor'
+  is_active_supervisor()
   and id <> auth.uid()
   and status in ('active', 'rejected')
 );
@@ -281,10 +379,17 @@ with check (
 -- The trigger itself must recognize this one narrow supervisor transition
 -- -- an RLS policy alone is not enough, since enforce_users_self_update()
 -- unconditionally raised for any old.id <> auth.uid() actor before this.
--- Every other protected column stays exactly as locked as before for this
--- branch too (a supervisor approving/rejecting a pending CaterLink account
--- can change status only -- never role, unified_role, ops_group, org_id,
--- duty_post, email, staff_id, or name through this path).
+--
+-- CORRECTED (second pass): the supervisor branch previously used a
+-- denylist (block role/unified_role/ops_group/org_id/duty_post/email/
+-- staff_id/name) that omitted id, created_at, and preferred_language --
+-- all three were left silently unenforced. Replaced with a genuine
+-- explicit ALLOWLIST: every column on public.users (confirmed live,
+-- information_schema.columns, 2026-09-24: id, name, staff_id, email,
+-- role, created_at, preferred_language, status, unified_role, duty_post,
+-- ops_group, org_id -- 12 total) is checked unchanged except status,
+-- matching the RLS policy above exactly. Any other field change in the
+-- same statement rejects the whole write.
 create or replace function public.enforce_users_self_update()
 returns trigger
 language plpgsql
@@ -321,10 +426,22 @@ begin
 
   -- Supervisor approving/rejecting a pending CaterLink registration --
   -- status only, matching the "users: supervisor approves pending" RLS
-  -- policy above exactly. Any other field change in the same statement
-  -- rejects the whole write.
-  if current_user_role() = 'supervisor' and old.id is distinct from auth.uid() then
-    if new.role is distinct from old.role
+  -- policy above exactly. Requires an ACTIVE supervisor row (not just a
+  -- claimed role), the target must be currently pending, and the new
+  -- status must be exactly 'active' or 'rejected'.
+  if is_active_supervisor() and old.id is distinct from auth.uid() then
+    if old.status is distinct from 'pending' then
+      raise exception 'Supervisor may only act on a pending account.';
+    end if;
+    if new.status not in ('active', 'rejected') then
+      raise exception 'Invalid status transition.';
+    end if;
+    -- Explicit allowlist: every column except status must be
+    -- byte-for-byte unchanged. Any single mismatch rejects the write.
+    if new.id is distinct from old.id
+       or new.created_at is distinct from old.created_at
+       or new.preferred_language is distinct from old.preferred_language
+       or new.role is distinct from old.role
        or new.unified_role is distinct from old.unified_role
        or new.ops_group is distinct from old.ops_group
        or new.org_id is distinct from old.org_id
@@ -334,9 +451,6 @@ begin
        or new.name is distinct from old.name
     then
       raise exception 'Supervisor may only change status on this table.';
-    end if;
-    if new.status not in ('active', 'rejected') then
-      raise exception 'Invalid status transition.';
     end if;
     return new;
   end if;
@@ -556,4 +670,74 @@ revoke execute on function public.set_vendor_transaction_number() from public, a
 -- gate themselves internally (auth.uid()/role/status checks confirmed by
 -- reading each body this session). next_transaction_number() was already
 -- fully inaccessible via direct RPC (PUBLIC=anon=authenticated=false,
--- confirmed live) and needed no change.
+-- confirmed live) and needed no change. is_active_supervisor() (Part D,
+-- above) is deliberately left with its default grant, the same as every
+-- other RLS-primitive boolean predicate in this file (current_role_rank,
+-- is_monitor_or_above, is_approved_management) -- it exposes no data
+-- (boolean only), reads only the CALLER's own row, and must remain
+-- callable by `authenticated` for the RLS policy that uses it to
+-- evaluate correctly for that role.
+
+-- =======================================================================
+-- PART H: run_attendance_sweep() -- restore the Management attendance
+-- sweep button, correctly authorized (not grant-only)
+-- =======================================================================
+-- CONFIRMED (2026-09-24, live pg_get_functiondef): the PRE-EXISTING,
+-- currently deployed function body is:
+--
+--   CREATE OR REPLACE FUNCTION public.run_attendance_sweep()
+--    RETURNS void
+--    LANGUAGE plpgsql
+--    SECURITY DEFINER
+--    SET search_path TO 'public'
+--   AS $function$
+--   begin
+--     if current_role_name() <> 'ADMIN' then
+--       raise exception 'Only Admin can run the attendance sweep.';
+--     end if;
+--     perform flag_attendance_anomalies();
+--   end;
+--   $function$
+--
+-- It already requires the caller's role to be exactly 'ADMIN' (note: this
+-- is stricter than the app layer's requireRole(ADMIN_ROLES), where
+-- ADMIN_ROLES = ["MANAGEMENT", "ADMIN"] -- a pre-existing inconsistency
+-- between the app's own role gate and the RPC's, NOT introduced or
+-- widened by this migration and left exactly as-is here; changing which
+-- role may sweep attendance is out of scope for this security pass). It
+-- does NOT check current_status() at all -- a pending, rejected, or
+-- deactivated ADMIN-role account could already call this successfully.
+--
+-- FIX (chosen design: internal authorization, preferred option): add the
+-- missing approved-status check to the function body itself -- the grant
+-- is not the authorization boundary here, matching how is_approved_management()
+-- and Part E's current_role_rank()/is_monitor_or_above() already work.
+-- EXECUTE is then explicitly re-granted to `authenticated` (Part B's
+-- blanket cron-only revoke never should have applied to this function --
+-- see the corrected note in Part B above), keeping PUBLIC and anon denied
+-- (this function was never PUBLIC-granted live, and has no legitimate
+-- anonymous or pre-signup caller). lib/avsec/duty/attendance-actions.ts's
+-- runAttendanceSweep() server action is otherwise completely unchanged --
+-- it already calls this RPC through the signed-in user's own session
+-- client, which is exactly what this fix preserves.
+create or replace function public.run_attendance_sweep()
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if current_role_name() <> 'ADMIN' or current_status() <> 'approved' then
+    raise exception 'Only an approved Admin can run the attendance sweep.';
+  end if;
+  perform flag_attendance_anomalies();
+end;
+$function$;
+
+revoke execute on function public.run_attendance_sweep() from public, anon;
+grant execute on function public.run_attendance_sweep() to authenticated;
+-- service_role already has EXECUTE via its broad ACL (unaffected by any
+-- revoke above, confirmed live) -- no separate grant needed for cron/
+-- backend use, and this function has no cron.job entry calling it
+-- directly in any case (only flag_attendance_anomalies() itself does,
+-- via the flag-attendance-anomalies daily job, unaffected by this Part).

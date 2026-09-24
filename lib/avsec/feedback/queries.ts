@@ -49,7 +49,11 @@ export async function getMyFeedbackThreads(
 }
 
 /**
- * Fetch Management Feedback Inbox from the privacy view (omits submitter_id entirely).
+ * Fetch Management Feedback Inbox via the approved-Management-gated RPC
+ * (omits submitter_id entirely). The underlying view is no longer directly
+ * SELECT-able by `authenticated` (2026-09-24) -- get_management_feedback_threads()
+ * returns rows only when is_approved_management() is true for the caller,
+ * empty otherwise, so this call site needs no role check of its own.
  */
 export async function getManagementFeedbackInbox(filters?: {
   category?: FeedbackCategory;
@@ -57,19 +61,17 @@ export async function getManagementFeedbackInbox(filters?: {
 }): Promise<ManagementFeedbackThreadView[]> {
   const supabase = await createClient();
 
-  let query = supabase
-    .from("feedback_threads_management_view")
-    .select("*")
-    .order("updated_at", { ascending: false });
+  const { data: rpcThreads } = await supabase.rpc("get_management_feedback_threads");
+  let threads = (rpcThreads ?? []) as ManagementFeedbackThreadView[];
 
   if (filters?.category) {
-    query = query.eq("category", filters.category);
+    threads = threads.filter((t) => t.category === filters.category);
   }
   if (filters?.status) {
-    query = query.eq("status", filters.status);
+    threads = threads.filter((t) => t.status === filters.status);
   }
+  threads = [...threads].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 
-  const { data: threads } = await query;
   if (!threads || threads.length === 0) return [];
 
   const threadIds = threads.map((t) => t.id);
@@ -124,12 +126,9 @@ export async function getManagementFeedbackStats(): Promise<{
 }> {
   const supabase = await createClient();
 
-  const { data } = await supabase
-    .from("feedback_threads_management_view")
-    .select("category, status")
-    .eq("status", "open");
+  const { data } = await supabase.rpc("get_management_feedback_threads");
 
-  const rows = data ?? [];
+  const rows = (data ?? []).filter((r) => r.status === "open");
   const totalOpen = rows.length;
   const urgentSafetyCount = rows.filter((r) => r.category === "safety_concern").length;
 

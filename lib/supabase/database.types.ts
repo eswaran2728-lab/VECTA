@@ -3923,6 +3923,17 @@ export type Database = {
         Returns: undefined
       }
       get_admin_emails: { Args: never; Returns: string[] }
+      get_management_feedback_threads: {
+        Args: never
+        Returns: {
+          id: string
+          org_id: string
+          category: string
+          status: string
+          created_at: string
+          updated_at: string
+        }[]
+      }
       get_report_submitter: {
         Args: { p_report_id: string; p_report_type: string }
         Returns: {
@@ -3931,6 +3942,7 @@ export type Database = {
           team: string
         }[]
       }
+      is_active_supervisor: { Args: never; Returns: boolean }
       is_monitor_or_above: { Args: never; Returns: boolean }
       next_report_no: {
         Args: { p_form_code: string; p_report_date: string }

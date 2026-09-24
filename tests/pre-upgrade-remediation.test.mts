@@ -108,7 +108,6 @@ test("REGRESSION: every confirmed cron-only / trigger-only function revokes EXEC
     "escalate_timeouts()",
     "trigger_sheets_sync()",
     "enqueue_sheet_sync()",
-    "run_attendance_sweep()",
     "log_audit_admin()",
     "notify_supervisors_on_incident()",
   ]) {
@@ -128,7 +127,6 @@ test("Every restricted function is explicitly re-granted to service_role, making
     "escalate_timeouts()",
     "trigger_sheets_sync()",
     "enqueue_sheet_sync()",
-    "run_attendance_sweep()",
     "log_audit_admin()",
     "notify_supervisors_on_incident()",
   ]) {
@@ -150,40 +148,82 @@ test("archive_all_pending() (own internal supervisor check, no PUBLIC grant, not
   assert.doesNotMatch(migrationSql, /revoke execute on function public\.archive_all_pending/i);
 });
 
+test("CORRECTED: run_attendance_sweep() is no longer caught by Part B's blanket cron-only revoke (it is a real signed-in-user RPC, not cron-invoked) -- handled separately in Part H with an internal auth fix instead", () => {
+  const partBStart = migrationSql.indexOf("PART B:");
+  const partCStart = migrationSql.indexOf("PART C:");
+  const partB = migrationSql.slice(partBStart, partCStart);
+  assert.doesNotMatch(partB, /revoke execute on function public\.run_attendance_sweep\(\) from public, anon, authenticated;/);
+});
+
 // --- Part C: feedback_threads_management_view ---
 
 test("REGRESSION: the view is switched to security_invoker so it respects the caller's own RLS instead of the owner's", () => {
   assert.match(migrationSql, /alter view public\.feedback_threads_management_view set \(security_invoker = true\)/i);
 });
 
-test("REGRESSION: anonymous SELECT on the feedback metadata view is revoked", () => {
-  assert.match(migrationSql, /revoke select on public\.feedback_threads_management_view from anon/i);
+test("CORRECTED (second pass): SELECT on the feedback metadata view is now revoked from BOTH anon and authenticated -- retaining authenticated would let a submitter read their own thread through a view the app treats as Management-only, once security_invoker makes the view respect the base table's submitter-select RLS", () => {
+  assert.match(migrationSql, /revoke select on public\.feedback_threads_management_view from anon, authenticated;/i);
 });
 
-/** Mirrors feedback_threads' own RLS (unchanged) which the view now respects under security_invoker. */
-function canSelectFeedbackThreadsView(actor: { kind: "anon" } | { kind: "submitter"; id: string } | { kind: "operational" } | { kind: "management"; status: string } | { kind: "admin" }, thread: { submitterId: string }): boolean {
-  if (actor.kind === "anon") return false; // no policy matches (auth.uid() is null)
-  if (actor.kind === "submitter") return actor.id === thread.submitterId;
-  if (actor.kind === "operational") return false; // no matching policy for an ordinary ASO/SO/DSE/ENFORCEMENT
-  if (actor.kind === "admin") return true;
+test("Management inbox access now goes through get_management_feedback_threads(), gated in its own WHERE clause by the SAME predicate as the live feedback_threads_management_select/_update RLS policies (ADMIN unconditionally, or MANAGEMENT-role/unified_role approved-only) -- not the narrower is_approved_management()", () => {
+  const match = migrationSql.match(/create or replace function public\.get_management_feedback_threads\(\)[\s\S]*?\$function\$;/);
+  assert.ok(match, "get_management_feedback_threads() must be defined");
+  assert.match(match![0], /profiles\.role = 'ADMIN'/);
+  assert.match(match![0], /profiles\.role = 'MANAGEMENT' or profiles\.unified_role = 'management'/);
+  assert.match(match![0], /profiles\.status = 'approved'/);
+  assert.doesNotMatch(match![0], /submitter_id/i, "must never select submitter_id -- privacy-safe columns only");
+});
+
+test("get_management_feedback_threads() is revoked from PUBLIC/anon and granted to authenticated (the internal WHERE clause, not the grant, is the data gate)", () => {
+  assert.match(migrationSql, /revoke execute on function public\.get_management_feedback_threads\(\) from public, anon;/);
+  assert.match(migrationSql, /grant execute on function public\.get_management_feedback_threads\(\) to authenticated;/);
+});
+
+/** Mirrors get_management_feedback_threads()'s WHERE EXISTS gate -- same predicate as the live RLS policy. */
+function canGetManagementFeedbackThreads(actor: { kind: "anon" } | { kind: "operational" } | { kind: "management"; status: string } | { kind: "admin"; status?: string }): boolean {
+  if (actor.kind === "anon") return false; // cannot even execute the function
+  if (actor.kind === "operational") return false; // matches neither ADMIN nor MANAGEMENT/unified_role='management'
+  if (actor.kind === "admin") return true; // ADMIN matches unconditionally, no status check, exactly like the live policy
   if (actor.kind === "management") return actor.status === "approved";
   return false;
 }
 
-test("REGRESSION: anonymous cannot read Management feedback metadata through the view (post-fix)", () => {
-  assert.equal(canSelectFeedbackThreadsView({ kind: "anon" }, { submitterId: "u1" }), false);
+test("REGRESSION: anonymous cannot read Management feedback metadata (cannot execute the RPC at all)", () => {
+  assert.equal(canGetManagementFeedbackThreads({ kind: "anon" }), false);
 });
 
 test("REGRESSION: an ordinary operational user cannot read the Management feedback inbox", () => {
-  assert.equal(canSelectFeedbackThreadsView({ kind: "operational" }, { submitterId: "u1" }), false);
+  assert.equal(canGetManagementFeedbackThreads({ kind: "operational" }), false);
 });
 
 test("Approved Management can still read the feedback inbox", () => {
-  assert.equal(canSelectFeedbackThreadsView({ kind: "management", status: "approved" }, { submitterId: "u1" }), true);
+  assert.equal(canGetManagementFeedbackThreads({ kind: "management", status: "approved" }), true);
 });
 
-test("A pending Management applicant cannot read the feedback inbox through the view either (consistent with the containment migration)", () => {
-  assert.equal(canSelectFeedbackThreadsView({ kind: "management", status: "pending" }, { submitterId: "u1" }), false);
+test("A pending Management applicant cannot read the feedback inbox (consistent with the containment migration)", () => {
+  assert.equal(canGetManagementFeedbackThreads({ kind: "management", status: "pending" }), false);
+});
+
+test("A rejected or deactivated Management account cannot read the feedback inbox", () => {
+  assert.equal(canGetManagementFeedbackThreads({ kind: "management", status: "rejected" }), false);
+  assert.equal(canGetManagementFeedbackThreads({ kind: "management", status: "deactivated" }), false);
+});
+
+test("ADMIN retains feedback inbox access -- matches the live base-table RLS policy exactly, which the earlier is_approved_management()-only design would have silently broken", () => {
+  assert.equal(canGetManagementFeedbackThreads({ kind: "admin" }), true);
+});
+
+test("Submitters still see their own feedback through the unrelated, unchanged submitter-facing path (base table, not this view/RPC)", () => {
+  function canSelectOwnFeedbackThreadDirect(actorId: string, submitterId: string): boolean {
+    return actorId === submitterId; // feedback_threads_submitter_select, untouched by this migration
+  }
+  assert.equal(canSelectOwnFeedbackThreadDirect("u1", "u1"), true);
+  assert.equal(canSelectOwnFeedbackThreadDirect("u1", "u2"), false);
+});
+
+test("get_management_feedback_threads() never returns another submitter's confidential message body -- it only ever selects id/org_id/category/status/created_at/updated_at, the same privacy-safe column set the view always exposed", () => {
+  const match = migrationSql.match(/create or replace function public\.get_management_feedback_threads\(\)[\s\S]*?\$function\$;/);
+  assert.match(match![0], /select ft\.id, ft\.org_id, ft\.category, ft\.status, ft\.created_at, ft\.updated_at/);
 });
 
 test("Genuine feedback submission (insert on the base table, unrelated to this view) still works -- unaffected, base table INSERT policy untouched", () => {
@@ -273,15 +313,37 @@ test("REGRESSION: self-registration cannot assign an arbitrary org_id, ops_group
   assert.equal(canSelfRegisterVendor(baseRegistration({ duty_post: "Post 2" })), false);
 });
 
-/** Mirrors "users: supervisor approves pending" + enforce_users_self_update()'s supervisor branch. */
+// CORRECTED (second pass, 2026-09-24): the actor is now modeled by their
+// OWN row on public.users (id/role/status), matched by auth.uid() against
+// old.id, exactly like is_active_supervisor() -- not a bare claimed role
+// string. created_at and preferred_language are now real columns on
+// UsersRow and checked in the allowlist, matching every column
+// confirmed live on public.users (12 total).
+type FullUsersRow = UsersRow & { created_at: string; preferred_language: string };
+
+/** Mirrors is_active_supervisor(): exists(id=auth.uid() AND role='supervisor' AND status='active'). */
+function isActiveSupervisor(actorRow: { id: string; role: string; status: string } | null): boolean {
+  if (!actorRow) return false; // missing row -- exists() is false
+  return actorRow.role === "supervisor" && actorRow.status === "active";
+}
+
+/** Mirrors "users: supervisor approves pending" + enforce_users_self_update()'s supervisor branch (allowlist). */
 function enforceUsersSupervisorApproval(
-  actor: { role: string },
-  old: UsersRow,
-  next: UsersRow,
+  actorRow: { id: string; role: string; status: string } | null,
+  old: FullUsersRow,
+  next: FullUsersRow,
 ): { ok: boolean; error?: string } {
-  if (actor.role !== "supervisor") return { ok: false, error: "Not authorized to modify this account." };
-  if (old.id === next.id && old.status !== "pending") return { ok: false, error: "Not authorized to modify this account." }; // RLS status='pending' gate
+  if (actorRow && actorRow.id === old.id) {
+    // old.id = auth.uid() branch takes priority -- self-update, not supervisor approval.
+    return { ok: false, error: "Not authorized to modify this field on your own account." };
+  }
+  if (!isActiveSupervisor(actorRow)) return { ok: false, error: "Not authorized to modify this account." };
+  if (old.status !== "pending") return { ok: false, error: "Supervisor may only act on a pending account." };
+  if (!["active", "rejected"].includes(next.status)) return { ok: false, error: "Invalid status transition." };
   if (
+    next.id !== old.id ||
+    next.created_at !== old.created_at ||
+    next.preferred_language !== old.preferred_language ||
     next.role !== old.role ||
     next.unified_role !== old.unified_role ||
     next.ops_group !== old.ops_group ||
@@ -293,48 +355,143 @@ function enforceUsersSupervisorApproval(
   ) {
     return { ok: false, error: "Supervisor may only change status on this table." };
   }
-  if (!["active", "rejected"].includes(next.status)) return { ok: false, error: "Invalid status transition." };
   return { ok: true };
 }
 
-function baseUsersRow(overrides: Partial<UsersRow> = {}): UsersRow {
-  return { id: "target", role: "vendor", unified_role: "vendor", status: "pending", ops_group: null, org_id: "org-1", duty_post: null, email: "d@example.com", staff_id: "AA-1", name: "Driver", ...overrides };
+function baseUsersRow(overrides: Partial<FullUsersRow> = {}): FullUsersRow {
+  return {
+    id: "target",
+    role: "vendor",
+    unified_role: "vendor",
+    status: "pending",
+    ops_group: null,
+    org_id: "org-1",
+    duty_post: null,
+    email: "d@example.com",
+    staff_id: "AA-1",
+    name: "Driver",
+    created_at: "2026-01-01T00:00:00Z",
+    preferred_language: "en",
+    ...overrides,
+  };
 }
+
+const ACTIVE_SUPERVISOR = { id: "sup-1", role: "supervisor", status: "active" };
 
 test("REGRESSION: self-approval is impossible -- a driver cannot approve their own pending account", () => {
   const old = baseUsersRow({ id: "self" });
   const next = { ...old, status: "active" };
-  const result = enforceUsersSupervisorApproval({ role: "vendor" }, old, next);
+  const result = enforceUsersSupervisorApproval({ id: "self", role: "vendor", status: "pending" }, old, next);
   assert.equal(result.ok, false);
 });
 
 test("REGRESSION: an unauthorized (non-supervisor) actor cannot approve or reject a pending registration", () => {
   const old = baseUsersRow();
   const next = { ...old, status: "active" };
-  const result = enforceUsersSupervisorApproval({ role: "ops_staff" }, old, next);
+  const result = enforceUsersSupervisorApproval({ id: "actor-1", role: "ops_staff", status: "active" }, old, next);
   assert.equal(result.ok, false);
 });
 
-test("Authorized supervisor approval works, changing status only", () => {
+test("MANDATORY 9: an active supervisor may approve a pending user", () => {
   const old = baseUsersRow();
   const next = { ...old, status: "active" };
-  const result = enforceUsersSupervisorApproval({ role: "supervisor" }, old, next);
+  const result = enforceUsersSupervisorApproval(ACTIVE_SUPERVISOR, old, next);
   assert.equal(result.ok, true);
 });
 
-test("Authorized supervisor rejection works", () => {
+test("MANDATORY 10: an active supervisor may reject a pending user", () => {
   const old = baseUsersRow();
   const next = { ...old, status: "rejected" };
-  const result = enforceUsersSupervisorApproval({ role: "supervisor" }, old, next);
+  const result = enforceUsersSupervisorApproval(ACTIVE_SUPERVISOR, old, next);
   assert.equal(result.ok, true);
 });
 
-test("REGRESSION: a supervisor cannot bundle a role/ops_group change into the same approval statement", () => {
+test("MANDATORY 11: a PENDING supervisor cannot approve or reject", () => {
   const old = baseUsersRow();
-  const next = { ...old, status: "active", role: "management" };
-  const result = enforceUsersSupervisorApproval({ role: "supervisor" }, old, next);
+  const next = { ...old, status: "active" };
+  const result = enforceUsersSupervisorApproval({ id: "sup-1", role: "supervisor", status: "pending" }, old, next);
+  assert.equal(result.ok, false);
+});
+
+test("MANDATORY 12: a REJECTED supervisor cannot approve or reject", () => {
+  const old = baseUsersRow();
+  const next = { ...old, status: "active" };
+  const result = enforceUsersSupervisorApproval({ id: "sup-1", role: "supervisor", status: "rejected" }, old, next);
+  assert.equal(result.ok, false);
+});
+
+test("MANDATORY 13: an INACTIVE (deactivated) supervisor cannot approve or reject", () => {
+  const old = baseUsersRow();
+  const next = { ...old, status: "active" };
+  const result = enforceUsersSupervisorApproval({ id: "sup-1", role: "supervisor", status: "deactivated" }, old, next);
+  assert.equal(result.ok, false);
+});
+
+test("MANDATORY 14: a caller with no matching public.users row at all cannot approve or reject (missing row -- exists() is false)", () => {
+  const old = baseUsersRow();
+  const next = { ...old, status: "active" };
+  const result = enforceUsersSupervisorApproval(null, old, next);
+  assert.equal(result.ok, false);
+});
+
+test("MANDATORY 15: a supervisor cannot modify their own row through this approval path (the self-update branch takes over, not the supervisor branch)", () => {
+  const old = baseUsersRow({ id: "sup-1", role: "supervisor", status: "active" });
+  const next = { ...old, status: "active", role: "vendor" };
+  const result = enforceUsersSupervisorApproval({ id: "sup-1", role: "supervisor", status: "active" }, old, next);
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "Not authorized to modify this field on your own account.");
+});
+
+test("MANDATORY 16: an active supervisor cannot act on a non-pending target", () => {
+  const old = baseUsersRow({ status: "active" });
+  const next = { ...old, status: "rejected" };
+  const result = enforceUsersSupervisorApproval(ACTIVE_SUPERVISOR, old, next);
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "Supervisor may only act on a pending account.");
+});
+
+test("MANDATORY 17: a supervisor cannot change id", () => {
+  const old = baseUsersRow();
+  const next = { ...old, status: "active", id: "different-id" };
+  const result = enforceUsersSupervisorApproval(ACTIVE_SUPERVISOR, old, next);
   assert.equal(result.ok, false);
   assert.equal(result.error, "Supervisor may only change status on this table.");
+});
+
+test("MANDATORY 18: a supervisor cannot change created_at", () => {
+  const old = baseUsersRow();
+  const next = { ...old, status: "active", created_at: "2020-01-01T00:00:00Z" };
+  const result = enforceUsersSupervisorApproval(ACTIVE_SUPERVISOR, old, next);
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "Supervisor may only change status on this table.");
+});
+
+test("MANDATORY 19: a supervisor cannot change preferred_language", () => {
+  const old = baseUsersRow();
+  const next = { ...old, status: "active", preferred_language: "ms" };
+  const result = enforceUsersSupervisorApproval(ACTIVE_SUPERVISOR, old, next);
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "Supervisor may only change status on this table.");
+});
+
+test("MANDATORY 20: a supervisor cannot bundle ANY non-status change into the same approval statement (exhaustive allowlist check across every live column)", () => {
+  const fields: Array<[keyof FullUsersRow, unknown]> = [
+    ["role", "management"],
+    ["unified_role", "management"],
+    ["ops_group", "operation_avsec"],
+    ["org_id", "some-other-org"],
+    ["duty_post", "Post 2"],
+    ["email", "changed@example.com"],
+    ["staff_id", "ZZ-9"],
+    ["name", "Changed Name"],
+  ];
+  for (const [field, value] of fields) {
+    const old = baseUsersRow();
+    const next = { ...old, status: "active", [field]: value };
+    const result = enforceUsersSupervisorApproval(ACTIVE_SUPERVISOR, old, next);
+    assert.equal(result.ok, false, `changing ${String(field)} must be rejected`);
+    assert.equal(result.error, "Supervisor may only change status on this table.");
+  }
 });
 
 test("Authorization/identity fields cannot be self-modified on public.users (C-02, unaffected by this pass)", () => {
@@ -344,6 +501,34 @@ test("Authorization/identity fields cannot be self-modified on public.users (C-0
   }
   assert.equal(usersSelfUpdateAllowed(["role"]), false);
   assert.equal(usersSelfUpdateAllowed(["status"]), false);
+});
+
+test("Part D: is_active_supervisor() is stable, security definer, has a fixed search_path, and reads only the CALLING user's own row (auth.uid()) -- returns false for a missing/non-matching row", () => {
+  const match = migrationSql.match(/create or replace function public\.is_active_supervisor\(\)[\s\S]*?\$function\$;/);
+  assert.ok(match, "is_active_supervisor() must be defined");
+  assert.match(match![0], /language sql/);
+  assert.match(match![0], /stable/);
+  assert.match(match![0], /security definer/);
+  assert.match(match![0], /set search_path to 'public'/);
+  assert.match(match![0], /where id = auth\.uid\(\)/);
+  assert.match(match![0], /and role = 'supervisor'/);
+  assert.match(match![0], /and status = 'active'/);
+});
+
+test("MANDATORY 21: registration self-service remains functional and pending-only (unaffected by the supervisor-branch allowlist fix -- covered above under self-registration)", () => {
+  assert.equal(canSelfRegisterVendor(baseRegistration()), true);
+  assert.equal(canSelfRegisterVendor(baseRegistration({ status: "active" })), false);
+});
+
+test("Both the RLS policy and the trigger now use is_active_supervisor() -- not the old current_user_role() = 'supervisor' -- so they cannot disagree", () => {
+  const executableOnly = migrationSql.replace(/\r\n/g, "\n").split("\n").map((l) => l.replace(/--.*$/, "")).join("\n");
+  assert.doesNotMatch(executableOnly, /current_user_role\(\) = 'supervisor'/);
+  const policyMatch = migrationSql.match(/create policy "users: supervisor approves pending"[\s\S]*?\);/);
+  assert.ok(policyMatch);
+  assert.match(policyMatch![0], /is_active_supervisor\(\)/);
+  const triggerMatch = migrationSql.match(/create or replace function public\.enforce_users_self_update\(\)[\s\S]*?\$function\$;/);
+  assert.ok(triggerMatch);
+  assert.match(triggerMatch![0], /is_active_supervisor\(\)/);
 });
 
 test("Service-role shadow synchronization still works (bypasses both the self and supervisor branches)", () => {
@@ -648,4 +833,88 @@ test("REGRESSION: existing internally-authorized RPCs (set_transaction_qr_token,
     const re = new RegExp(`revoke execute on function public\\.${fn}\\(`);
     assert.doesNotMatch(code, re, `${fn}() must not be touched by Part G -- already internally authorized`);
   }
+});
+
+// =======================================================================
+// PART H: run_attendance_sweep() -- restore the Management attendance
+// sweep button, correctly authorized
+// =======================================================================
+
+/** Mirrors run_attendance_sweep()'s new internal gate. */
+function canRunAttendanceSweep(actor: { role: string; status: string } | { role: "anon" }): boolean {
+  if (actor.role === "anon") return false; // cannot execute at all -- PUBLIC/anon revoked
+  return actor.role === "ADMIN" && actor.status === "approved";
+}
+
+test("MANDATORY 1: approved Management (ADMIN role, matching the pre-existing role gate) can run the attendance sweep", () => {
+  assert.equal(canRunAttendanceSweep({ role: "ADMIN", status: "approved" }), true);
+});
+
+test("MANDATORY 2: pending Management/ADMIN cannot run the sweep", () => {
+  assert.equal(canRunAttendanceSweep({ role: "ADMIN", status: "pending" }), false);
+});
+
+test("MANDATORY 3: rejected Management/ADMIN cannot run the sweep", () => {
+  assert.equal(canRunAttendanceSweep({ role: "ADMIN", status: "rejected" }), false);
+});
+
+test("MANDATORY 4: deactivated Management/ADMIN cannot run the sweep", () => {
+  assert.equal(canRunAttendanceSweep({ role: "ADMIN", status: "deactivated" }), false);
+});
+
+test("MANDATORY 5: ASO/SO/DSE/Enforcement cannot run the sweep (role gate unchanged, pre-existing)", () => {
+  for (const role of ["ASO", "SO", "DSE", "ENFORCEMENT", "MANAGEMENT"]) {
+    assert.equal(canRunAttendanceSweep({ role, status: "approved" }), false, `${role} must not be able to run the sweep`);
+  }
+});
+
+test("MANDATORY 6: anonymous cannot run the sweep -- PUBLIC and anon are explicitly revoked in Part H", () => {
+  assert.match(migrationSql, /revoke execute on function public\.run_attendance_sweep\(\) from public, anon;/);
+  assert.equal(canRunAttendanceSweep({ role: "anon" }), false);
+});
+
+test("MANDATORY 7: authenticated retains EXECUTE, so the existing Management attendance-page server action (runAttendanceSweep() in lib/avsec/duty/attendance-actions.ts, called via the signed-in user's own session client) is not silently broken", () => {
+  assert.match(migrationSql, /grant execute on function public\.run_attendance_sweep\(\) to authenticated;/);
+  const src = fs.readFileSync(new URL("../lib/avsec/duty/attendance-actions.ts", import.meta.url), "utf8");
+  assert.match(src, /supabase\.rpc\("run_attendance_sweep"\)/);
+  assert.doesNotMatch(src, /createAdminClient/, "the server action itself is unchanged -- still the user-session client, now safe because the function gates itself");
+});
+
+test("MANDATORY 8: attendance isolation (Part A's station/team/ops_group-strict join) is unaffected by Part H's authorization fix -- Part H only adds an authorization check ahead of the existing perform flag_attendance_anomalies() call", () => {
+  const match = migrationSql.match(/create or replace function public\.run_attendance_sweep\(\)[\s\S]*?\$function\$;/);
+  assert.ok(match);
+  assert.match(match![0], /perform flag_attendance_anomalies\(\);/);
+});
+
+test("Part H: the pre-existing role check (current_role_name() <> 'ADMIN') is preserved exactly, with only an approved-status check added -- not a role-scope change", () => {
+  const match = migrationSql.match(/create or replace function public\.run_attendance_sweep\(\)[\s\S]*?\$function\$;/);
+  assert.match(match![0], /current_role_name\(\) <> 'ADMIN' or current_status\(\) <> 'approved'/);
+});
+
+// =======================================================================
+// Non-regression (items 28-34): explicit pointers confirming this pass's
+// prior fixes and unrelated areas are untouched.
+// =======================================================================
+
+test("MANDATORY 28: get_admin_emails() remains service_role-only (Part G, unaffected by this round's Part B/C/D/H changes)", () => {
+  assert.match(migrationSql, /revoke execute on function public\.get_admin_emails\(\) from public, anon, authenticated;/);
+  assert.match(migrationSql, /grant execute on function public\.get_admin_emails\(\) to service_role;/);
+});
+
+test("MANDATORY 29: the Part G trigger-only-function hygiene sweep (25 functions) is unaffected by this round's changes", () => {
+  assert.match(migrationSql, /revoke execute on function public\.handle_new_user\(\) from public, anon, authenticated;/);
+  assert.match(migrationSql, /revoke execute on function public\.set_updated_at\(\) from public, anon, authenticated;/);
+});
+
+test("MANDATORY 30-33: this migration never touches Google SSO/handle_new_user's trigger wiring, CaterLink unified scanning, Hub separation, report acknowledgement, or roster isolation objects beyond what Parts A/D explicitly require", () => {
+  const code = migrationSql.replace(/\r\n/g, "\n").split("\n").map((l) => l.replace(/--.*$/, "")).join("\n");
+  for (const forbidden of ["part_hub", "part_redq", "checkpoint_scan", "roster_group_isolation"]) {
+    assert.ok(!code.toLowerCase().includes(forbidden.toLowerCase()), `must not reference ${forbidden}`);
+  }
+});
+
+test("MANDATORY 34: shared-browser draft isolation (lib/avsec/offline/useDraftAutosave.ts) remains fixed -- unrelated to this round's SQL changes, verified by the existing draft-isolation test file", () => {
+  const src = fs.readFileSync(new URL("../lib/avsec/offline/useDraftAutosave.ts", import.meta.url), "utf8");
+  assert.match(src, /export function readLocalDraft/);
+  assert.match(src, /scopedKey\(userId, type\)/);
 });
