@@ -450,24 +450,115 @@ test("SCOPE: this migration never references part_b/c/d/hub/redq, vendor_transac
 // PART G: schema-wide function-permission audit
 // =======================================================================
 
-/** Mirrors get_admin_emails()'s new internal gate: role='ADMIN' AND status='approved'. */
-function canReceiveAdminEmails(profile: { role: string; status: string }): boolean {
+// get_admin_emails() authorization model (corrected, second pass): the
+// grant itself is the sole authorization boundary -- PUBLIC, anon, and
+// EVERY authenticated session (regardless of role or status) are denied
+// direct execution. Only service_role may call it. The internal
+// role='ADMIN' AND status='approved' filter in its body is a correctness
+// filter on WHICH admins to notify, not an authz gate -- mirrored here as
+// that, not as a permission check.
+function adminEmailRecipientFilter(profile: { role: string; status: string }): boolean {
   return profile.role === "ADMIN" && profile.status === "approved";
 }
 
-test("get_admin_emails() now excludes a pending or rejected ADMIN-role row (internal gate added, not just a grant)", () => {
-  assert.equal(canReceiveAdminEmails({ role: "ADMIN", status: "approved" }), true);
-  assert.equal(canReceiveAdminEmails({ role: "ADMIN", status: "pending" }), false);
-  assert.equal(canReceiveAdminEmails({ role: "ADMIN", status: "rejected" }), false);
-  assert.equal(canReceiveAdminEmails({ role: "MANAGEMENT", status: "approved" }), false);
+test("get_admin_emails()'s body-level recipient filter still excludes a pending/rejected/deactivated ADMIN-role row from the notification list", () => {
+  assert.equal(adminEmailRecipientFilter({ role: "ADMIN", status: "approved" }), true);
+  assert.equal(adminEmailRecipientFilter({ role: "ADMIN", status: "pending" }), false);
+  assert.equal(adminEmailRecipientFilter({ role: "ADMIN", status: "rejected" }), false);
+  assert.equal(adminEmailRecipientFilter({ role: "MANAGEMENT", status: "approved" }), false);
 });
 
-test("Part G: get_admin_emails() is redefined with an approved-status filter in its SQL body", () => {
+test("Part G: get_admin_emails() body still filters to approved ADMIN rows", () => {
   const code = migrationSql.replace(/\r\n/g, "\n");
   const match = code.match(/create or replace function public\.get_admin_emails\(\)[\s\S]*?\$function\$;/);
   assert.ok(match, "get_admin_emails() must be redefined in Part G");
   assert.match(match![0], /role\s*=\s*'ADMIN'/);
   assert.match(match![0], /status\s*=\s*'approved'/);
+});
+
+test("MANDATORY 1-4: PUBLIC, anon, and every ordinary authenticated role (ASO/SO/DSE/Enforcement) cannot execute get_admin_emails -- the revoke targets PUBLIC, anon, and authenticated as a whole, not a role subset", () => {
+  const code = migrationSql.replace(/\r\n/g, "\n");
+  assert.match(
+    code,
+    /revoke execute on function public\.get_admin_emails\(\) from public, anon, authenticated;/,
+    "must revoke from PUBLIC, anon, and authenticated together -- Postgres has no per-application-role grant, so revoking `authenticated` as a Postgres role necessarily covers every ASO/SO/DSE/Enforcement/vendor session, since they all connect as the same `authenticated` Postgres role",
+  );
+});
+
+test("MANDATORY 7-8: pending/rejected/deactivated accounts and approved Management alike cannot execute get_admin_emails through an ordinary browser session (no role is carved out of the authenticated revoke)", () => {
+  const code = migrationSql.replace(/\r\n/g, "\n");
+  // The revoke is unconditional on `authenticated` -- there is no
+  // role-scoped re-grant anywhere in the file for any application role,
+  // including Management/ADMIN, which connect through the same Postgres
+  // `authenticated` role as every other signed-in user.
+  const reGrantsToAuthenticated = code.match(/grant execute on function public\.get_admin_emails\([^)]*\) to authenticated/i);
+  assert.equal(reGrantsToAuthenticated, null, "no grant to authenticated must exist for get_admin_emails, for any role");
+});
+
+test("MANDATORY 9: service_role can perform the trusted lookup", () => {
+  const code = migrationSql.replace(/\r\n/g, "\n");
+  assert.match(code, /grant execute on function public\.get_admin_emails\(\) to service_role;/);
+});
+
+test("MANDATORY 10 / caller change: notifyReportSubmission.ts resolves admin emails through the service-role client, not the user-session client", () => {
+  const src = fs.readFileSync(
+    new URL("../lib/avsec/email/notifyReportSubmission.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(src, /import \{ createAdminClient \} from "@\/lib\/supabase\/admin";/);
+  assert.doesNotMatch(src, /import \{ createClient \} from "@\/lib\/supabase\/server";/);
+  assert.match(src, /createAdminClient\(\)/);
+  assert.match(src, /supabase\.rpc\("get_admin_emails"\)/);
+});
+
+test("MANDATORY 11 / caller change: notifyOvertimeApproval.ts resolves admin emails through the service-role client, not the user-session client", () => {
+  const src = fs.readFileSync(
+    new URL("../lib/avsec/email/notifyOvertimeApproval.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(src, /import \{ createAdminClient \} from "@\/lib\/supabase\/admin";/);
+  assert.doesNotMatch(src, /import \{ createClient \} from "@\/lib\/supabase\/server";/);
+  assert.match(src, /createAdminClient\(\)/);
+  assert.match(src, /supabase\.rpc\("get_admin_emails"\)/);
+});
+
+test("MANDATORY 12 / import-boundary: lib/supabase/admin.ts (the service-role client) is guarded with \"server-only\" and its callers are \"use server\" files, so it can never be pulled into a client bundle", () => {
+  const adminSrc = fs.readFileSync(new URL("../lib/supabase/admin.ts", import.meta.url), "utf8");
+  assert.match(adminSrc, /^import "server-only";/m);
+  assert.match(adminSrc, /process\.env\.SUPABASE_SERVICE_ROLE_KEY!/);
+
+  // The two server actions that trigger notification (report submission,
+  // overtime approval) must be "use server" -- that's what makes them
+  // callable only from the server, never bundled into client JS.
+  for (const file of ["../lib/avsec/reports/actions.ts", "../lib/avsec/duty/overtime-actions.ts"]) {
+    const src = fs.readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.match(src, /^"use server";/m, `${file} must be "use server"`);
+  }
+  // notifyReportSubmission.ts / notifyOvertimeApproval.ts are plain helper
+  // modules with no "use client"/"use server" directive of their own --
+  // they are safe specifically because nothing outside the two server
+  // actions above imports them, and they now import the "server-only"
+  // guarded admin client, which throws a build error if ever pulled into
+  // a client bundle.
+  for (const file of ["../lib/avsec/email/notifyReportSubmission.ts", "../lib/avsec/email/notifyOvertimeApproval.ts"]) {
+    const src = fs.readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.match(src, /import \{ createAdminClient \} from "@\/lib\/supabase\/admin";/, `${file} must import the server-only admin client`);
+  }
+});
+
+test("MANDATORY 13-14 / non-regression: notification failures are still caught and logged, and never thrown back to block the report/overtime workflow", () => {
+  const reportSrc = fs.readFileSync(
+    new URL("../lib/avsec/email/notifyReportSubmission.ts", import.meta.url),
+    "utf8",
+  );
+  const overtimeSrc = fs.readFileSync(
+    new URL("../lib/avsec/email/notifyOvertimeApproval.ts", import.meta.url),
+    "utf8",
+  );
+  for (const src of [reportSrc, overtimeSrc]) {
+    assert.match(src, /catch \(err\)/, "must still swallow notification errors, not propagate them");
+    assert.match(src, /console\.error/, "must still log a swallowed failure");
+  }
 });
 
 test("Part G: next_report_no and next_vendor_transaction_number are fully revoked from PUBLIC, anon, and authenticated (trigger-only callers, no direct RPC caller found)", () => {

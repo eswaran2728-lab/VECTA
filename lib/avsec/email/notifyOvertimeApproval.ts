@@ -1,10 +1,13 @@
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { sendEmail } from "./resend";
 import { buildReportEmailHtml } from "./reportEmailTemplate";
 
 /**
  * Emails every ADMIN-role user when an overtime request is approved — same best-effort,
  * failure-swallowing contract as notifyReportSubmission (never blocks the approval).
+ * Recipient lookup runs on the service-role client: get_admin_emails() is no longer
+ * callable by an ordinary authenticated session (2026-09-24), so this is the only
+ * path left able to resolve it.
  */
 export async function notifyOvertimeApproval({
   requestId,
@@ -28,7 +31,7 @@ export async function notifyOvertimeApproval({
   approvedByName: string;
 }): Promise<void> {
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const { data: adminEmails, error } = await supabase.rpc("get_admin_emails");
 
     if (error || !adminEmails || adminEmails.length === 0) {
