@@ -98,8 +98,12 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
         { onConflict: "id" }
       );
 
+      // Previously swallowed (console.error only, "success" still returned) --
+      // a rejected write here means the auth account exists with no profile
+      // row at all, so the account can never actually be approved or signed
+      // into. Surface it instead.
       if (profileError) {
-        console.error("[registerUser] AVSEC profile insert note:", profileError.message);
+        return { error: `Could not create your profile: ${profileError.message}`, success: null };
       }
     } else {
       // Insert into ICMS users table with 'pending' status
@@ -116,8 +120,12 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
         { onConflict: "id" }
       );
 
+      // Same as above -- previously swallowed. See the new
+      // "users: self register pending vendor" RLS policy
+      // (supabase/migrations) for what this write is now actually allowed
+      // to do; anything outside that narrow allowlist correctly fails here.
       if (userError) {
-        console.error("[registerUser] Driver user insert note:", userError.message);
+        return { error: `Could not create your driver/vendor account: ${userError.message}`, success: null };
       }
     }
 
@@ -151,10 +159,21 @@ export async function approveStaff(_prev: ApprovalState, formData: FormData): Pr
 
   try {
     const supabase = await createClient();
-    await Promise.all([
-      supabase.from("users").update({ status: "active" }).eq("id", userId),
-      supabase.from("profiles").update({ status: "approved" as ProfileStatus }).eq("id", userId),
+    const [usersResult, profilesResult] = await Promise.all([
+      supabase.from("users").update({ status: "active" }).eq("id", userId).select("id"),
+      supabase.from("profiles").update({ status: "approved" as ProfileStatus }).eq("id", userId).select("id"),
     ]);
+
+    // Previously unchecked -- both writes need an RLS policy that actually
+    // permits a supervisor to touch another user's row (users:
+    // "users: supervisor approves pending"; profiles already had this via
+    // "profiles management approve pending"). A rejected/zero-row write
+    // silently reported success with nothing actually approved.
+    if (usersResult.error) return { error: usersResult.error.message };
+    if (profilesResult.error) return { error: profilesResult.error.message };
+    if (!usersResult.data?.length && !profilesResult.data?.length) {
+      return { error: "Approval did not apply -- you may not be authorized, or the account was already reviewed." };
+    }
 
     revalidatePath("/icms/admin/users");
     revalidatePath("/avsec/admin/users");
@@ -176,10 +195,16 @@ export async function rejectStaff(_prev: ApprovalState, formData: FormData): Pro
 
   try {
     const supabase = await createClient();
-    await Promise.all([
-      supabase.from("users").update({ status: "rejected" }).eq("id", userId),
-      supabase.from("profiles").update({ status: "rejected" as ProfileStatus }).eq("id", userId),
+    const [usersResult, profilesResult] = await Promise.all([
+      supabase.from("users").update({ status: "rejected" }).eq("id", userId).select("id"),
+      supabase.from("profiles").update({ status: "rejected" as ProfileStatus }).eq("id", userId).select("id"),
     ]);
+
+    if (usersResult.error) return { error: usersResult.error.message };
+    if (profilesResult.error) return { error: profilesResult.error.message };
+    if (!usersResult.data?.length && !profilesResult.data?.length) {
+      return { error: "Rejection did not apply -- you may not be authorized, or the account was already reviewed." };
+    }
 
     revalidatePath("/icms/admin/users");
     revalidatePath("/avsec/admin/users");

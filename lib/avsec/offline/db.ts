@@ -35,6 +35,11 @@ export interface QueuedSubmission {
   createdAt: string;
   attempts: number;
   lastError?: string;
+  /** The profile.id of whoever queued this item — required so a shared
+   *  device never syncs, shows, or deletes one user's queued submission
+   *  while a different user is signed in. Items belonging to a signed-out
+   *  user stay queued untouched until they sign back in. */
+  ownerId: string;
 }
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
@@ -56,6 +61,7 @@ function getDb() {
 }
 
 export async function enqueueSubmission(
+  ownerId: string,
   type: QueueItemType,
   payload: unknown,
   attachments?: QueuedAttachment[],
@@ -69,15 +75,22 @@ export async function enqueueSubmission(
     attachments: attachments && attachments.length > 0 ? attachments : undefined,
     createdAt: new Date().toISOString(),
     attempts: 0,
+    ownerId,
   };
   await db.put(STORE, record);
   return localId;
 }
 
-export async function listQueuedSubmissions(): Promise<QueuedSubmission[]> {
+/** Only items belonging to `ownerId` — a shared device may have another
+ *  user's still-queued items sitting in the same IndexedDB store; those
+ *  are never listed, synced, or counted while a different user is signed
+ *  in. Legacy pre-scoping records (no ownerId) are treated as belonging
+ *  to nobody and are excluded here rather than guessed at. */
+export async function listQueuedSubmissions(ownerId: string): Promise<QueuedSubmission[]> {
   try {
     const db = await getDb();
-    return await db.getAll(STORE);
+    const all = await db.getAll(STORE);
+    return all.filter((item) => item.ownerId === ownerId);
   } catch {
     return [];
   }
@@ -93,6 +106,6 @@ export async function updateQueuedSubmission(record: QueuedSubmission) {
   await db.put(STORE, record);
 }
 
-export async function queueCount(): Promise<number> {
-  return (await listQueuedSubmissions()).length;
+export async function queueCount(ownerId: string): Promise<number> {
+  return (await listQueuedSubmissions(ownerId)).length;
 }

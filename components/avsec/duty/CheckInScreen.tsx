@@ -76,11 +76,13 @@ export function CheckInScreen({
   zones,
   record,
   initialAbsence = null,
+  profileId,
 }: {
   roster: TodayRoster | null;
   zones: DutyZone[];
   record: DutyRecordRow | null;
   initialAbsence?: AbsenceNoticeRow | null;
+  profileId: string;
 }) {
   const router = useRouter();
   const today = todayISODateMY();
@@ -104,8 +106,8 @@ export function CheckInScreen({
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [leaveNotice, setLeaveNotice] = useState<AbsenceNoticeRow | null>(initialAbsence);
 
-  const { submit: submitCheckIn, pending: submittingIn } = useOfflineSubmit("duty_checkin", submitDutyCheckIn);
-  const { submit: submitCheckOut, pending: submittingOut } = useOfflineSubmit("duty_checkout", submitDutyCheckOut);
+  const { submit: submitCheckIn, pending: submittingIn } = useOfflineSubmit("duty_checkin", submitDutyCheckIn, profileId);
+  const { submit: submitCheckOut, pending: submittingOut } = useOfflineSubmit("duty_checkout", submitDutyCheckOut, profileId);
   const submitting = submittingIn || submittingOut;
 
   const isOff = roster?.shift_code === "OFF";

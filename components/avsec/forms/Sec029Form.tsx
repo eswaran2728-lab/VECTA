@@ -65,7 +65,7 @@ const DECLARATION_DISCREPANCY =
   "DISCREPANCIES FOUND AND DUTY SECURITY EXECUTIVE / DUTY OFFICER IS NOTIFIED (PROVIDE DETAILS BELOW).";
 
 function buildDefaults(profile: Profile, serverDraft?: UIValues | null): UIValues {
-  const draft = readLocalDraft<UIValues>("sec029") ?? serverDraft;
+  const draft = readLocalDraft<UIValues>(profile.id, "sec029") ?? serverDraft;
   if (draft) return draft;
   return {
     station: profile.station ?? "",
@@ -144,8 +144,8 @@ export function Sec029Form({
   } = useForm<UIValues>({ defaultValues: buildDefaults(profile, serverDraft) });
 
   const values = watch();
-  const { savedAt } = useDraftAutosave("sec029", values);
-  const { submit } = useOfflineSubmit("sec029", submitSec029);
+  const { savedAt } = useDraftAutosave(profile.id, "sec029", values);
+  const { submit } = useOfflineSubmit("sec029", submitSec029, profile.id);
 
   const discrepanciesFound = values.declaration === DECLARATION_DISCREPANCY;
   const hasPhoto = attachments.some((a) => a.mimeType.startsWith("image/"));
@@ -178,7 +178,7 @@ export function Sec029Form({
       attachments.map((a) => ({ name: a.name, mimeType: a.mimeType, size: a.size, blob: a.blob })),
     );
     if (outcome.kind === "submitted") {
-      clearLocalDraft("sec029");
+      clearLocalDraft(profile.id, "sec029");
       revokeAttachmentPreviews(attachments);
       setAttachments([]);
       setResult({
@@ -189,7 +189,7 @@ export function Sec029Form({
         attachmentErrors: outcome.attachmentErrors,
       });
     } else if (outcome.kind === "queued") {
-      clearLocalDraft("sec029");
+      clearLocalDraft(profile.id, "sec029");
       setResult({ kind: "queued", pendingAttachments: attachments.length });
       revokeAttachmentPreviews(attachments);
       setAttachments([]);

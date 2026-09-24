@@ -41,7 +41,7 @@ interface UIValues {
 }
 
 function buildDefaults(profile: Profile, serverDraft?: UIValues | null): UIValues {
-  const draft = readLocalDraft<UIValues>("offload") ?? serverDraft;
+  const draft = readLocalDraft<UIValues>(profile.id, "offload") ?? serverDraft;
   if (draft) return draft;
   return {
     station: profile.station ?? "",
@@ -87,8 +87,8 @@ export function OffloadForm({
 
   const { fields, append, remove } = useFieldArray({ control, name: "items" });
   const values = watch();
-  const { savedAt } = useDraftAutosave("offload", values);
-  const { submit } = useOfflineSubmit("offload", submitOffload);
+  const { savedAt } = useDraftAutosave(profile.id, "offload", values);
+  const { submit } = useOfflineSubmit("offload", submitOffload, profile.id);
 
   const onSubmit = handleSubmit(async (v) => {
     const parsed = offloadSchema.safeParse(v);
@@ -104,7 +104,7 @@ export function OffloadForm({
       attachments.map((a) => ({ name: a.name, mimeType: a.mimeType, size: a.size, blob: a.blob })),
     );
     if (outcome.kind === "submitted") {
-      clearLocalDraft("offload");
+      clearLocalDraft(profile.id, "offload");
       revokeAttachmentPreviews(attachments);
       setAttachments([]);
       setResult({
@@ -115,7 +115,7 @@ export function OffloadForm({
         attachmentErrors: outcome.attachmentErrors,
       });
     } else if (outcome.kind === "queued") {
-      clearLocalDraft("offload");
+      clearLocalDraft(profile.id, "offload");
       setResult({ kind: "queued", pendingAttachments: attachments.length });
       revokeAttachmentPreviews(attachments);
       setAttachments([]);
