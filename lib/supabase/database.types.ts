@@ -139,6 +139,7 @@ export type Database = {
           revoked_at: string | null
           granted_by: string | null
           grant_reason: string | null
+          entity_membership_id: string | null
           created_at: string
           updated_at: string
         }
@@ -158,6 +159,7 @@ export type Database = {
           revoked_at?: string | null
           granted_by?: string | null
           grant_reason?: string | null
+          entity_membership_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -177,6 +179,7 @@ export type Database = {
           revoked_at?: string | null
           granted_by?: string | null
           grant_reason?: string | null
+          entity_membership_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -190,6 +193,106 @@ export type Database = {
           { foreignKeyName: "user_role_assignments_hub_id_fkey"; columns: ["hub_id"]; isOneToOne: false; referencedRelation: "hubs"; referencedColumns: ["id"] },
           { foreignKeyName: "user_role_assignments_station_id_fkey"; columns: ["station_id"]; isOneToOne: false; referencedRelation: "org_stations"; referencedColumns: ["id"] },
           { foreignKeyName: "user_role_assignments_team_id_fkey"; columns: ["team_id"]; isOneToOne: false; referencedRelation: "org_teams"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_role_assignments_entity_membership_id_fkey"; columns: ["entity_membership_id"]; isOneToOne: false; referencedRelation: "user_entity_memberships"; referencedColumns: ["id"] },
+        ]
+      }
+      user_entity_memberships: {
+        Row: {
+          id: string
+          profile_id: string
+          aoc_id: string
+          operating_entity_id: string
+          status: "pending" | "active" | "ended" | "revoked"
+          is_primary: boolean
+          starts_at: string
+          ends_at: string | null
+          revoked_at: string | null
+          created_by: string | null
+          approved_by: string | null
+          reason: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          profile_id: string
+          aoc_id: string
+          operating_entity_id: string
+          status?: "pending" | "active" | "ended" | "revoked"
+          is_primary?: boolean
+          starts_at?: string
+          ends_at?: string | null
+          revoked_at?: string | null
+          created_by?: string | null
+          approved_by?: string | null
+          reason?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          profile_id?: string
+          aoc_id?: string
+          operating_entity_id?: string
+          status?: "pending" | "active" | "ended" | "revoked"
+          is_primary?: boolean
+          starts_at?: string
+          ends_at?: string | null
+          revoked_at?: string | null
+          created_by?: string | null
+          approved_by?: string | null
+          reason?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: "user_entity_memberships_profile_id_fkey"; columns: ["profile_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_entity_memberships_aoc_id_fkey"; columns: ["aoc_id"]; isOneToOne: false; referencedRelation: "aocs"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_entity_memberships_operating_entity_id_fkey"; columns: ["operating_entity_id"]; isOneToOne: false; referencedRelation: "operating_entities"; referencedColumns: ["id"] },
+        ]
+      }
+      user_notifications: {
+        Row: {
+          id: string
+          recipient_profile_id: string
+          event_type: string
+          dedup_key: string
+          request_id: string | null
+          assignment_id: string | null
+          membership_id: string | null
+          payload: Json | null
+          created_at: string
+          read_at: string | null
+        }
+        Insert: {
+          id?: string
+          recipient_profile_id: string
+          event_type: string
+          dedup_key: string
+          request_id?: string | null
+          assignment_id?: string | null
+          membership_id?: string | null
+          payload?: Json | null
+          created_at?: string
+          read_at?: string | null
+        }
+        Update: {
+          id?: string
+          recipient_profile_id?: string
+          event_type?: string
+          dedup_key?: string
+          request_id?: string | null
+          assignment_id?: string | null
+          membership_id?: string | null
+          payload?: Json | null
+          created_at?: string
+          read_at?: string | null
+        }
+        Relationships: [
+          { foreignKeyName: "user_notifications_recipient_profile_id_fkey"; columns: ["recipient_profile_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_notifications_request_id_fkey"; columns: ["request_id"]; isOneToOne: false; referencedRelation: "user_registration_requests"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_notifications_assignment_id_fkey"; columns: ["assignment_id"]; isOneToOne: false; referencedRelation: "user_role_assignments"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_notifications_membership_id_fkey"; columns: ["membership_id"]; isOneToOne: false; referencedRelation: "user_entity_memberships"; referencedColumns: ["id"] },
         ]
       }
       user_registration_requests: {
@@ -210,6 +313,8 @@ export type Database = {
           reviewed_at: string | null
           rejection_reason: string | null
           final_assignment_id: string | null
+          transfer_of_assignment_id: string | null
+          transfer_of_membership_id: string | null
           submitted_at: string
           updated_at: string
         }
@@ -230,6 +335,8 @@ export type Database = {
           reviewed_at?: string | null
           rejection_reason?: string | null
           final_assignment_id?: string | null
+          transfer_of_assignment_id?: string | null
+          transfer_of_membership_id?: string | null
           submitted_at?: string
           updated_at?: string
         }
@@ -250,12 +357,16 @@ export type Database = {
           reviewed_at?: string | null
           rejection_reason?: string | null
           final_assignment_id?: string | null
+          transfer_of_assignment_id?: string | null
+          transfer_of_membership_id?: string | null
           submitted_at?: string
           updated_at?: string
         }
         Relationships: [
           { foreignKeyName: "user_registration_requests_profile_id_fkey"; columns: ["profile_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
           { foreignKeyName: "user_registration_requests_final_assignment_id_fkey"; columns: ["final_assignment_id"]; isOneToOne: false; referencedRelation: "user_role_assignments"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_registration_requests_transfer_of_assignment_id_fkey"; columns: ["transfer_of_assignment_id"]; isOneToOne: false; referencedRelation: "user_role_assignments"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_registration_requests_transfer_of_membership_id_fkey"; columns: ["transfer_of_membership_id"]; isOneToOne: false; referencedRelation: "user_entity_memberships"; referencedColumns: ["id"] },
         ]
       }
       user_admin_audit_log: {
@@ -2312,6 +2423,7 @@ export type Database = {
           hub_id: string | null
           org_station_id: string | null
           org_team_id: string | null
+          approval_state: "active" | "approved_pending_activation" | null
         }
         Insert: {
           approved_at?: string | null
@@ -2337,6 +2449,7 @@ export type Database = {
           hub_id?: string | null
           org_station_id?: string | null
           org_team_id?: string | null
+          approval_state?: "active" | "approved_pending_activation" | null
         }
         Update: {
           approved_at?: string | null
@@ -2362,6 +2475,7 @@ export type Database = {
           hub_id?: string | null
           org_station_id?: string | null
           org_team_id?: string | null
+          approval_state?: "active" | "approved_pending_activation" | null
         }
         Relationships: [
           {
@@ -4288,6 +4402,47 @@ export type Database = {
       }
       is_active_supervisor: { Args: never; Returns: boolean }
       is_entity_admin: { Args: { p_entity_code: string }; Returns: boolean }
+      is_authorized_admin_for_assignment: { Args: { p_assignment_id: string }; Returns: boolean }
+      sync_primary_operating_entity: { Args: { p_profile_id: string }; Returns: undefined }
+      get_or_create_active_membership: {
+        Args: { p_profile_id: string; p_aoc_id: string; p_operating_entity_id: string; p_approved_by: string }
+        Returns: string
+      }
+      apply_compatibility_profile_fields: {
+        Args: {
+          p_profile_id: string
+          p_role_code: string
+          p_hub_id: string | null
+          p_station_id: string | null
+          p_team_id: string | null
+          p_ops_group: string | null
+          p_actor_id: string
+        }
+        Returns: undefined
+      }
+      notify: {
+        Args: {
+          p_recipient_profile_id: string
+          p_event_type: string
+          p_dedup_key: string
+          p_request_id: string | null
+          p_assignment_id: string | null
+          p_membership_id: string | null
+          p_payload: Json | null
+        }
+        Returns: undefined
+      }
+      get_my_notifications: {
+        Args: { p_limit?: number }
+        Returns: {
+          id: string
+          event_type: string
+          payload: Json | null
+          created_at: string
+          read_at: string | null
+        }[]
+      }
+      mark_notification_read: { Args: { p_notification_id: string }; Returns: undefined }
       submit_registration_request: {
         Args: {
           p_requested_aoc_id: string | null

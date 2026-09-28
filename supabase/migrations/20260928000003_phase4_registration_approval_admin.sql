@@ -1,85 +1,128 @@
 -- PHASE 4 -- MALAYSIA REGISTRATION, APPROVAL, ASSIGNMENT, TRANSFER,
--- DEACTIVATION AND ENTITY-ADMIN USER ADMINISTRATION (2026-09-28)
+-- DEACTIVATION AND ENTITY-ADMIN USER ADMINISTRATION (2026-09-28, second
+-- pass: separates administrative entity membership from operational
+-- authorization scope, per correction review)
+--
 -- Additive only, same guarantee as Phases 2-3: no existing table/column/
 -- policy/function/grant is touched, renamed or dropped, and NO existing
 -- legacy permission is broadened. The current Google SSO/password
--- registration and Management approval workflow is completely untouched
--- -- this migration adds a parallel, new path, not a replacement.
+-- registration and Management approval workflow is completely untouched.
+--
+-- CORRECTED DESIGN (second pass) -- three separate questions, three
+-- separate fields, never overloaded onto one column:
+--   1. "Which entity's Admin may administer this person/assignment?"
+--      -> user_entity_memberships (this migration, new table)
+--   2. "What operational permission and scope does this person have?"
+--      -> user_role_assignments (Phase 3) -- entity_membership_id (new
+--         column, this migration) traces WHO authorized it without
+--         constraining the role's own operational scope (Investigation
+--         stays Malaysia-wide even though its administrative home is one
+--         entity's membership).
+--   3. "Which airline operating entity owns this operational record?"
+--      -> a report/flight's own operating_entity column -- Phase 5 work,
+--         untouched here.
+-- profiles.operating_entity_id (Phase 2) is now DOCUMENTED and ENFORCED
+-- as a compatibility/display value ONLY, derived exclusively from the
+-- profile's active PRIMARY membership, never written directly, never an
+-- independent authorization source (Part C below closes that path
+-- structurally, not just by convention).
 --
 -- Covers:
---   Part A: user_registration_requests (pending-assignment/request model)
---   Part B: user_admin_audit_log (append-only, no client read/write)
---   Part C: is_entity_admin() -- entity-authorization helper
---   Part D: apply_compatibility_profile_fields() -- the SINGLE controlled
---           compatibility-mapping layer (see its own header for the
---           safe-subset decision and why)
---   Part E: submit_registration_request() / list-my-request self-service
---   Part F: list_pending_registration_requests() -- entity-scoped read
---   Part G: approve_registration_request() -- the atomic approval
---           transaction
---   Part H: reject_registration_request()
---   Part I: deactivate_assignment()
---   Part J: transfer_assignment_same_entity()
---   Part K: initiate_cross_entity_transfer() / accept_cross_entity_transfer()
---   Part L: export_entity_user_directory()
---   Part M: RLS / grants summary
+--   Part A: user_entity_memberships
+--   Part B: user_role_assignments.entity_membership_id + its
+--           consistency trigger
+--   Part C: profiles' Phase 2/3/4 organizational fields become
+--           service_role-only to write (closes the direct-update path
+--           this correction review flagged)
+--   Part D: sync_primary_operating_entity() / get_or_create_active_membership()
+--   Part E: profiles.approval_state -- explicit active vs
+--           deferred-activation state (a new nullable text column, NOT
+--           an enum-type change -- see its own header for why)
+--   Part F: user_registration_requests gains transfer_of_assignment_id /
+--           transfer_of_membership_id (for the corrected two-stage
+--           cross-entity transfer)
+--   Part G: user_notifications -- durable, deduplicated in-app events
+--   Part H: user_admin_audit_log (unchanged from the first pass)
+--   Part I: is_entity_admin() (unchanged -- still correct: it resolves
+--           the CALLER's own maa_admin/aax_admin role, which IS
+--           correctly entity-scoped by Phase 3's own matrix; this
+--           correction only concerns the TARGET ordinary user's entity
+--           affiliation, never the admin's own)
+--   Part J: apply_compatibility_profile_fields() (corrected: writes
+--           approval_state explicitly; ops_group remains allowlist-
+--           validated, reachable only through the entity-admin approval
+--           path, never client-writable directly)
+--   Part K: submit_registration_request() / get_my_registration_request()
+--           / list_pending_registration_requests() (add notification on
+--           submit; otherwise unchanged)
+--   Part L: approve_registration_request() (corrected: creates/reuses an
+--           active membership via Part D, links the new assignment to
+--           it, and -- when the request carries transfer_of_* -- ends
+--           the OLD assignment/membership atomically in the SAME
+--           transaction as activating the new one)
+--   Part M: reject_registration_request() (add notification)
+--   Part N: deactivate_assignment() (corrected: authority now derives
+--           from the ASSIGNMENT's own entity_membership_id, never from
+--           profiles.operating_entity_id)
+--   Part O: transfer_assignment_same_entity() (corrected: same authority
+--           fix; carries the same entity_membership_id forward)
+--   Part P: initiate_cross_entity_transfer() (corrected: no longer
+--           revokes the old assignment at initiation -- only opens a
+--           request in the receiving entity's queue; old access is
+--           preserved until the receiving Admin approves)
+--   Part Q: export_entity_user_directory() (corrected: entity-filtered
+--           via entity_membership_id, not profiles.operating_entity_id;
+--           protected roles entirely omitted, documented as such)
+--   Part R: RLS / grants summary
 --
--- DESIGN DECISION recorded here, not guessed silently: Phase 3's
--- approved scope matrix correctly leaves operating_entity_id NULL on
--- every ordinary Operation/Enforcement role assignment (those roles are
--- AOC+department scoped, never entity scoped -- an Operation ASO's
--- assignment row has no entity column at all). But Phase 4 requires
--- "MAA Admin manages MAA ordinary users" / "AAX Admin manages AAX
--- ordinary users" / MAA<->AAX transfer, which needs SOME durable
--- per-person entity affiliation. Rather than reopening or bending
--- Phase 3's already-approved assignment-scope matrix, this phase uses
--- profiles.operating_entity_id (a nullable FK added in Phase 2, never
--- touched by Phase 3) as the person's organizational entity affiliation,
--- kept entirely separate from the assignment's own (correctly NULL)
--- entity column. Entity-admin authority over an ordinary user is
--- therefore always resolved via profiles.operating_entity_id, never via
--- user_role_assignments.operating_entity_id, for ordinary roles.
+-- NOT done in this migration (explicitly deferred): no scheduled/
+-- future-dated "effective transfer time" mechanism -- a cross-entity
+-- transfer's old assignment/membership end and new assignment/membership
+-- activation happen atomically at the moment of receiving-Admin
+-- approval (there is no cron/scheduling infrastructure authorized in
+-- this phase to defer it further); if a documented immediate suspension
+-- is ever needed mid-transfer, the existing deactivate_assignment()
+-- function is the correct tool -- no separate function is added for
+-- that, to avoid a second, redundant deactivation path.
 
 -- =======================================================================
--- PART A: user_registration_requests
+-- PART A: user_entity_memberships
 -- =======================================================================
-create table if not exists public.user_registration_requests (
+create table if not exists public.user_entity_memberships (
   id uuid primary key default gen_random_uuid(),
   profile_id uuid not null references public.profiles(id),
-
-  requested_aoc_id uuid references public.aocs(id),
-  requested_operating_entity_id uuid references public.operating_entities(id),
-  requested_department_id uuid references public.departments(id),
-  requested_unit_id uuid references public.units(id),
-  requested_hub_id uuid references public.hubs(id),
-  requested_station_id uuid references public.org_stations(id),
-  requested_team_id uuid references public.org_teams(id),
-  requested_role_code text references public.role_definitions(code),
-
-  applicant_notes text,
-
-  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
-  reviewer_id uuid references public.profiles(id),
-  reviewed_at timestamptz,
-  rejection_reason text,
-  final_assignment_id uuid references public.user_role_assignments(id),
-
-  submitted_at timestamptz not null default now(),
+  aoc_id uuid not null references public.aocs(id),
+  operating_entity_id uuid not null references public.operating_entities(id),
+  status text not null default 'active' check (status in ('pending', 'active', 'ended', 'revoked')),
+  is_primary boolean not null default false,
+  starts_at timestamptz not null default now(),
+  ends_at timestamptz,
+  revoked_at timestamptz,
+  created_by uuid references public.profiles(id),
+  approved_by uuid references public.profiles(id),
+  reason text,
+  created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
--- At most one OPEN (pending) request per profile -- resubmission after a
--- rejection creates a brand-new row (a clear new review cycle), it never
--- overwrites or erases the rejected row's history.
-create unique index if not exists user_registration_requests_one_pending_per_profile
-  on public.user_registration_requests (profile_id)
-  where status = 'pending';
+-- At most one ACTIVE membership per profile per entity (a person may
+-- hold one active MAA membership and one active AAX membership
+-- simultaneously -- that is explicitly allowed -- but never two active
+-- memberships to the SAME entity).
+create unique index if not exists user_entity_memberships_one_active_per_entity
+  on public.user_entity_memberships (profile_id, operating_entity_id)
+  where status = 'active';
 
-create index if not exists user_registration_requests_status_entity_idx
-  on public.user_registration_requests (status, requested_operating_entity_id)
-  where status = 'pending';
+-- At most one ACTIVE PRIMARY membership per profile, across all
+-- entities -- the structural enforcement behind "at most one active
+-- primary membership."
+create unique index if not exists user_entity_memberships_one_active_primary
+  on public.user_entity_memberships (profile_id)
+  where is_primary and status = 'active';
 
-create or replace function public.set_updated_at_user_registration_requests()
+create index if not exists user_entity_memberships_profile_idx on public.user_entity_memberships (profile_id);
+
+create or replace function public.set_updated_at_user_entity_memberships()
 returns trigger
 language plpgsql
 security definer
@@ -91,19 +134,74 @@ begin
 end;
 $function$;
 
-drop trigger if exists trg_user_registration_requests_updated_at on public.user_registration_requests;
-create trigger trg_user_registration_requests_updated_at
-  before update on public.user_registration_requests
-  for each row execute function public.set_updated_at_user_registration_requests();
+drop trigger if exists trg_user_entity_memberships_updated_at on public.user_entity_memberships;
+create trigger trg_user_entity_memberships_updated_at
+  before update on public.user_entity_memberships
+  for each row execute function public.set_updated_at_user_entity_memberships();
 
--- Enforces every "pending users may..." / "may not..." rule from the
--- spec at the database layer, independent of RLS: a self-write can only
--- ever create/update a still-pending row with every review-outcome
--- column left null, and can never touch profile_id or submitted_at once
--- created. service_role (used by the approve/reject/transfer RPCs below)
--- bypasses this, matching the established service-role-bypass pattern
--- from the C-02 containment migration earlier in this project.
-create or replace function public.enforce_registration_request_self_write()
+-- =======================================================================
+-- PART B: user_role_assignments.entity_membership_id
+-- =======================================================================
+alter table public.user_role_assignments
+  add column if not exists entity_membership_id uuid references public.user_entity_memberships(id);
+
+-- Consistency trigger: if entity_membership_id is set, it must
+-- reference an ACTIVE membership belonging to the SAME profile as the
+-- assignment, in the SAME aoc_id -- no assignment may ever link to
+-- another profile's membership, and no membership bypass via NULL is
+-- possible for entity-administered roles because
+-- approve_registration_request() (Part L) always sets it for the 11
+-- ordinary roles it can grant.
+create or replace function public.validate_assignment_entity_membership()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_membership record;
+begin
+  if new.entity_membership_id is null then
+    return new;
+  end if;
+
+  select * into v_membership from public.user_entity_memberships where id = new.entity_membership_id;
+  if v_membership is null then
+    raise exception 'entity_membership_id does not reference a real membership.';
+  end if;
+  if v_membership.profile_id <> new.profile_id then
+    raise exception 'entity_membership_id belongs to a different profile than this assignment.';
+  end if;
+  if v_membership.status <> 'active' then
+    raise exception 'entity_membership_id must reference an active membership.';
+  end if;
+  if v_membership.aoc_id is distinct from new.aoc_id then
+    raise exception 'entity_membership_id AOC does not match the assignment aoc_id.';
+  end if;
+
+  return new;
+end;
+$function$;
+
+drop trigger if exists trg_validate_assignment_entity_membership on public.user_role_assignments;
+create trigger trg_validate_assignment_entity_membership
+  before insert or update on public.user_role_assignments
+  for each row execute function public.validate_assignment_entity_membership();
+
+-- =======================================================================
+-- PART C: profiles' Phase 2/3/4 organizational fields -- service_role-only
+-- =======================================================================
+-- CORRECTION: profiles.operating_entity_id (and the other Phase 2 FK
+-- columns) had no dedicated write-protection added when Phase 2
+-- introduced them -- an ordinary authenticated self-update to one's own
+-- profile row was not proven to be blocked from touching them. This
+-- closes that gap directly: a new trigger, independent of whatever the
+-- pre-existing enforce_profile_self_update() trigger does or does not
+-- already cover, makes every one of these seven columns writable ONLY
+-- by service_role. This cannot break any existing behavior -- no
+-- current application code writes any of these columns today (confirmed
+-- by repo-wide grep before this migration was written).
+create or replace function public.enforce_profiles_org_fields_service_role_only()
 returns trigger
 language plpgsql
 security definer
@@ -113,56 +211,245 @@ begin
   if auth.role() = 'service_role' then
     return new;
   end if;
-
-  if new.profile_id <> auth.uid() then
-    raise exception 'Not authorized to write another user''s registration request.';
-  end if;
-
-  if tg_op = 'INSERT' then
-    if new.status <> 'pending'
-       or new.reviewer_id is not null
-       or new.reviewed_at is not null
-       or new.rejection_reason is not null
-       or new.final_assignment_id is not null
-    then
-      raise exception 'A self-submitted request must start pending with no review fields set.';
-    end if;
-    return new;
-  end if;
-
-  if old.status <> 'pending' then
-    raise exception 'Cannot modify a request that has already been reviewed.';
-  end if;
-  if new.status <> 'pending'
-     or new.reviewer_id is not null
-     or new.reviewed_at is not null
-     or new.rejection_reason is not null
-     or new.final_assignment_id is not null
+  if new.aoc_id is distinct from old.aoc_id
+     or new.operating_entity_id is distinct from old.operating_entity_id
+     or new.department_id is distinct from old.department_id
+     or new.unit_id is distinct from old.unit_id
+     or new.hub_id is distinct from old.hub_id
+     or new.org_station_id is distinct from old.org_station_id
+     or new.org_team_id is distinct from old.org_team_id
   then
-    raise exception 'Cannot self-approve, self-reject, or otherwise set review fields on your own request.';
-  end if;
-  if new.profile_id is distinct from old.profile_id or new.submitted_at is distinct from old.submitted_at then
-    raise exception 'Cannot change profile_id or submitted_at.';
+    raise exception 'profiles.aoc_id/operating_entity_id/department_id/unit_id/hub_id/org_station_id/org_team_id can only be changed by a trusted server-side process, never directly.';
   end if;
   return new;
 end;
 $function$;
 
-drop trigger if exists trg_enforce_registration_request_self_write on public.user_registration_requests;
-create trigger trg_enforce_registration_request_self_write
-  before insert or update on public.user_registration_requests
-  for each row execute function public.enforce_registration_request_self_write();
+drop trigger if exists trg_enforce_profiles_org_fields_service_role_only on public.profiles;
+create trigger trg_enforce_profiles_org_fields_service_role_only
+  before update on public.profiles
+  for each row execute function public.enforce_profiles_org_fields_service_role_only();
 
 -- =======================================================================
--- PART B: user_admin_audit_log
+-- PART D: sync_primary_operating_entity() / get_or_create_active_membership()
 -- =======================================================================
--- Append-only. No SELECT, UPDATE, or DELETE grant exists for anyone but
--- service_role in this phase -- an ordinary user's or entity Admin's own
--- scoped read of their relevant audit trail is Phase 5+ work (a narrow
--- RPC, never direct table access), so this structurally satisfies
--- "prevent ordinary users and entity Admins from editing/deleting audit
--- records" by removing the capability entirely rather than relying on a
--- policy that could later be loosened by mistake.
+-- profiles.operating_entity_id is written ONLY here, and ONLY derived
+-- from the profile's current active PRIMARY membership (or NULL if none
+-- exists) -- never set independently by any other function.
+create or replace function public.sync_primary_operating_entity(p_profile_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_primary_entity_id uuid;
+begin
+  select operating_entity_id into v_primary_entity_id
+  from public.user_entity_memberships
+  where profile_id = p_profile_id and is_primary and status = 'active'
+  limit 1;
+
+  update public.profiles set operating_entity_id = v_primary_entity_id where id = p_profile_id;
+end;
+$function$;
+
+revoke execute on function public.sync_primary_operating_entity(uuid) from public, anon, authenticated;
+grant execute on function public.sync_primary_operating_entity(uuid) to service_role;
+
+-- Internal helper (service_role-only, never directly client-callable):
+-- returns an existing active membership for (profile, entity) if one
+-- exists, otherwise creates one. Sets is_primary = true ONLY when the
+-- profile currently has no active primary membership at all (first-ever
+-- approval becomes primary automatically; a later second-entity
+-- approval never silently displaces an existing primary -- changing
+-- primary affiliation deliberately is a separate, explicit, audited
+-- action, not a side effect of an unrelated approval).
+create or replace function public.get_or_create_active_membership(
+  p_profile_id uuid,
+  p_aoc_id uuid,
+  p_operating_entity_id uuid,
+  p_approved_by uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_membership_id uuid;
+  v_has_primary boolean;
+begin
+  select id into v_membership_id
+  from public.user_entity_memberships
+  where profile_id = p_profile_id and operating_entity_id = p_operating_entity_id and status = 'active'
+  for update;
+
+  if v_membership_id is null then
+    insert into public.user_entity_memberships (profile_id, aoc_id, operating_entity_id, status, is_primary, approved_by)
+    values (p_profile_id, p_aoc_id, p_operating_entity_id, 'active', false, p_approved_by)
+    returning id into v_membership_id;
+  end if;
+
+  select exists (
+    select 1 from public.user_entity_memberships
+    where profile_id = p_profile_id and is_primary and status = 'active'
+  ) into v_has_primary;
+
+  if not v_has_primary then
+    update public.user_entity_memberships set is_primary = true where id = v_membership_id;
+    perform public.sync_primary_operating_entity(p_profile_id);
+
+    insert into public.user_admin_audit_log (actor_id, target_profile_id, action, new_state)
+    values (p_approved_by, p_profile_id, 'compatibility_sync', jsonb_build_object('primary_membership_id', v_membership_id, 'reason', 'first_active_membership'));
+  end if;
+
+  return v_membership_id;
+end;
+$function$;
+
+revoke execute on function public.get_or_create_active_membership(uuid, uuid, uuid, uuid) from public, anon, authenticated;
+grant execute on function public.get_or_create_active_membership(uuid, uuid, uuid, uuid) to service_role;
+
+-- =======================================================================
+-- PART E: profiles.approval_state -- explicit active vs deferred-activation
+-- =======================================================================
+-- CORRECTION: the first pass left profiles.status silently unchanged
+-- (still 'pending') for the 8 roles with no safe legacy compatibility
+-- mapping, with nothing else distinguishing "approved, feature pending"
+-- from "never reviewed." This adds a NEW NULLABLE TEXT column (not an
+-- enum-type change -- ALTER TYPE ... ADD VALUE has historically unsafe
+-- same-transaction semantics on some Postgres versions, and this
+-- migration is applied as a single transaction; a plain text column
+-- with a CHECK constraint avoids that risk entirely while being exactly
+-- as safe for callers, since it is never compared with = ANY() the way
+-- a narrower enum would be) so a deferred approval is explicit, safe,
+-- and never confused with the legacy 'approved' status:
+--   'active'                     -- assignment is immediately usable
+--   'approved_pending_activation' -- approved, but the role's live
+--                                    application feature does not exist
+--                                    yet (Phase 5-9 wiring); the
+--                                    assignment provides NO legacy
+--                                    application authorization until
+--                                    activation, and profiles.status
+--                                    itself is left completely alone
+--                                    (still whatever it was pre-approval
+--                                    -- 'pending' for a first-time
+--                                    applicant) so no existing
+--                                    status='approved' check anywhere in
+--                                    the legacy app can ever be
+--                                    satisfied by a deferred role.
+alter table public.profiles
+  add column if not exists approval_state text check (approval_state in ('active', 'approved_pending_activation'));
+
+-- =======================================================================
+-- PART F: user_registration_requests -- transfer linkage columns
+-- =======================================================================
+alter table public.user_registration_requests
+  add column if not exists transfer_of_assignment_id uuid references public.user_role_assignments(id),
+  add column if not exists transfer_of_membership_id uuid references public.user_entity_memberships(id);
+
+-- =======================================================================
+-- PART G: user_notifications -- durable, deduplicated in-app events
+-- =======================================================================
+create table if not exists public.user_notifications (
+  id uuid primary key default gen_random_uuid(),
+  recipient_profile_id uuid not null references public.profiles(id),
+  event_type text not null check (event_type in (
+    'request_submitted', 'request_approved', 'request_rejected',
+    'transfer_initiated', 'transfer_accepted', 'transfer_rejected',
+    'membership_ended', 'assignment_ended', 'deactivation'
+  )),
+  -- One row per real transition: dedup_key is unique, and every caller
+  -- below constructs it deterministically from (event_type, the
+  -- specific request/assignment/membership id it concerns) with an
+  -- ON CONFLICT DO NOTHING insert -- a retried call after a partial
+  -- client-side failure can never create a second notification for the
+  -- same transition, and a transaction that rolls back never leaves a
+  -- notification behind (the insert is inside the same transaction as
+  -- the state change it announces).
+  dedup_key text not null unique,
+  request_id uuid references public.user_registration_requests(id),
+  assignment_id uuid references public.user_role_assignments(id),
+  membership_id uuid references public.user_entity_memberships(id),
+  payload jsonb,
+  created_at timestamptz not null default now(),
+  read_at timestamptz
+);
+
+create index if not exists user_notifications_recipient_idx on public.user_notifications (recipient_profile_id, created_at desc);
+
+create or replace function public.notify(
+  p_recipient_profile_id uuid,
+  p_event_type text,
+  p_dedup_key text,
+  p_request_id uuid,
+  p_assignment_id uuid,
+  p_membership_id uuid,
+  p_payload jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  insert into public.user_notifications (
+    recipient_profile_id, event_type, dedup_key, request_id, assignment_id, membership_id, payload
+  ) values (
+    p_recipient_profile_id, p_event_type, p_dedup_key, p_request_id, p_assignment_id, p_membership_id, p_payload
+  )
+  on conflict (dedup_key) do nothing;
+end;
+$function$;
+
+revoke execute on function public.notify(uuid, text, text, uuid, uuid, uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.notify(uuid, text, text, uuid, uuid, uuid, jsonb) to service_role;
+
+-- Self-read/self-mark-read only -- never another user's notifications,
+-- mirroring every other self-read RPC in this migration.
+create or replace function public.get_my_notifications(p_limit integer default 50)
+returns table (
+  id uuid,
+  event_type text,
+  payload jsonb,
+  created_at timestamptz,
+  read_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select n.id, n.event_type, n.payload, n.created_at, n.read_at
+  from public.user_notifications n
+  where n.recipient_profile_id = auth.uid()
+  order by n.created_at desc
+  limit greatest(1, least(p_limit, 200));
+$function$;
+
+revoke execute on function public.get_my_notifications(integer) from public, anon;
+grant execute on function public.get_my_notifications(integer) to authenticated, service_role;
+
+create or replace function public.mark_notification_read(p_notification_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  update public.user_notifications
+  set read_at = coalesce(read_at, now())
+  where id = p_notification_id and recipient_profile_id = auth.uid();
+end;
+$function$;
+
+revoke execute on function public.mark_notification_read(uuid) from public, anon;
+grant execute on function public.mark_notification_read(uuid) to authenticated, service_role;
+
+-- =======================================================================
+-- PART H: user_admin_audit_log (unchanged from the first pass)
+-- =======================================================================
 create table if not exists public.user_admin_audit_log (
   id uuid primary key default gen_random_uuid(),
   actor_id uuid references public.profiles(id),
@@ -185,12 +472,8 @@ create index if not exists user_admin_audit_log_target_idx on public.user_admin_
 create index if not exists user_admin_audit_log_actor_idx on public.user_admin_audit_log (actor_id);
 
 -- =======================================================================
--- PART C: is_entity_admin() -- entity-authorization helper
+-- PART I: is_entity_admin() (unchanged)
 -- =======================================================================
--- Reuses Phase 3's has_role_in_scope() rather than inventing a parallel
--- authorization primitive. Reads only auth.uid() (via has_role_in_scope,
--- which itself reads only auth.uid()) -- never trusts a client-supplied
--- caller identity.
 create or replace function public.is_entity_admin(p_entity_code text)
 returns boolean
 language plpgsql
@@ -224,45 +507,50 @@ $function$;
 revoke execute on function public.is_entity_admin(text) from public, anon;
 grant execute on function public.is_entity_admin(text) to authenticated, service_role;
 
+-- Which entity's Admin currently administers a GIVEN assignment --
+-- resolved via the assignment's own entity_membership_id, never via
+-- profiles.operating_entity_id. Returns NULL if the assignment has no
+-- membership link at all (an international/platform-role assignment,
+-- which is never entity-administered in the first place).
+create or replace function public.is_authorized_admin_for_assignment(p_assignment_id uuid)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_entity_code text;
+begin
+  select oe.code into v_entity_code
+  from public.user_role_assignments ura
+  join public.user_entity_memberships uem on uem.id = ura.entity_membership_id
+  join public.operating_entities oe on oe.id = uem.operating_entity_id
+  where ura.id = p_assignment_id and uem.status = 'active';
+
+  if v_entity_code is null then
+    return false;
+  end if;
+  return public.is_entity_admin(v_entity_code);
+end;
+$function$;
+
+revoke execute on function public.is_authorized_admin_for_assignment(uuid) from public, anon, authenticated;
+grant execute on function public.is_authorized_admin_for_assignment(uuid) to service_role;
+
 -- =======================================================================
--- PART D: apply_compatibility_profile_fields()
+-- PART J: apply_compatibility_profile_fields()
 -- =======================================================================
--- THE single controlled compatibility-mapping layer. No other function
--- in this migration writes profiles.role/unified_role/ops_group/station/
--- team/status/approved_by/approved_at/rejection_reason directly -- every
--- write to those columns goes through this one function, so no action
--- can independently invent its own mapping rule.
---
--- SAFE SUBSET DECISION: profiles.role is a fixed Postgres enum
--- ('ASO','SO','DSE','ADMIN','ENFORCEMENT','MANAGEMENT') and
--- profiles.ops_group is constrained to
--- ('operation_avsec','ifc_avsec','hub_avsec') -- neither has a slot for
--- most of the 11 ordinary roles entity Admins may assign. Only
--- dse/so/aso, and only when hub = KUL, map onto an EXISTING legacy value
--- with EXACTLY the same real-world meaning the legacy system already
--- uses (KUL DSE/SO/ASO, ops_group-aware). For those three (KUL-only),
--- this function requires an explicit p_ops_group argument (constrained
--- to operation_avsec/ifc_avsec -- never hub_avsec, which is a distinct
--- branch not modelled by Phase 3's org hierarchy yet) and writes the
--- full legacy compatibility set.
---
--- Every other role -- sso (no legacy enum value exists at all: neither
--- 'SSO' nor a safe substitute), hub_se (would require ADMIN/MANAGEMENT/
--- ENFORCEMENT, all of which grant far more than hub-scoped duty
--- authority -- explicitly the "no broad ENFORCEMENT mapping unless
--- proven safe" and "Hub SE must not accidentally inherit Malaysia-wide
--- Enforcement/Management access" cases), investigation_sso/so/aso and
--- sat_aso and profiling_so/aso (same reasoning -- ENFORCEMENT is too
--- broad, and Investigation/SAT/Profiling must stay distinguishable,
--- which a single legacy ENFORCEMENT value cannot do), caterlink_management
--- (must never map to a scanning role, and has no operational duty
--- surface to map to anyway), and dse/so/aso OUTSIDE KUL (ops_group has
--- no per-hub concept yet -- that is Phase 7 wiring) -- get their scoped
--- Phase 3 assignment row and a full audit trail, but NO legacy
--- profiles.role/ops_group/station/team write, and profiles.status is
--- LEFT UNCHANGED (not flipped to 'approved') for these, per instruction
--- to record deferred roles as requiring Phase 5-9 wiring rather than
--- silently granting access through a stale or default legacy role value.
+-- Unchanged safe-subset decision from the first pass (see the report for
+-- the full reasoning: profiles.role/ops_group have no slot for 8 of the
+-- 11 ordinary roles). CORRECTED to write profiles.approval_state
+-- explicitly in both branches, and to record the supplied ops_group
+-- value in the audit trail for reviewability. p_ops_group remains
+-- allowlist-validated (operation_avsec/ifc_avsec only) and is reachable
+-- ONLY through approve_registration_request() -- an authenticated entity
+-- Admin's own RPC call, never a raw client write to any table; a caller
+-- who is not an authorized entity Admin can never reach this function at
+-- all (it is service_role-only, called internally).
 create or replace function public.apply_compatibility_profile_fields(
   p_profile_id uuid,
   p_role_code text,
@@ -300,20 +588,25 @@ begin
         station = v_station_code,
         team = v_team_name,
         status = 'approved',
+        approval_state = 'active',
         approved_by = p_actor_id,
         approved_at = now(),
         rejection_reason = null
     where id = p_profile_id;
     v_mapped := true;
+  else
+    -- Deferred: legacy status/role/ops_group/station/team are left
+    -- exactly as they were (the new assignment is the sole source of
+    -- authority until Phase 5-9 wiring exists). Only approval_state is
+    -- written, giving the applicant an explicit, honest signal distinct
+    -- from both "never reviewed" and "fully approved."
+    update public.profiles
+    set approval_state = 'approved_pending_activation'
+    where id = p_profile_id;
   end if;
-  -- No else branch: for every deferred role, profiles.status/role/
-  -- ops_group/station/team/approved_by/approved_at are left exactly as
-  -- they were -- the new user_role_assignments row is the sole source
-  -- of authority for that person's new role until Phase 5-9 wiring
-  -- exists to give it a live application surface.
 
   insert into public.user_admin_audit_log (actor_id, target_profile_id, action, new_state)
-  values (p_actor_id, p_profile_id, 'compatibility_sync', jsonb_build_object('role_code', p_role_code, 'mapped', v_mapped));
+  values (p_actor_id, p_profile_id, 'compatibility_sync', jsonb_build_object('role_code', p_role_code, 'mapped', v_mapped, 'ops_group', p_ops_group));
 end;
 $function$;
 
@@ -321,14 +614,8 @@ revoke execute on function public.apply_compatibility_profile_fields(uuid, text,
 grant execute on function public.apply_compatibility_profile_fields(uuid, text, uuid, uuid, uuid, text, uuid) to service_role;
 
 -- =======================================================================
--- PART E: submit_registration_request()
+-- PART K: submit_registration_request() / self-read RPCs
 -- =======================================================================
--- Thin, validated wrapper around the INSERT that RLS/the trigger above
--- already constrain to self-only, pending-only. Exists so the applicant
--- form has one clear entry point rather than each caller composing its
--- own INSERT. Explicit revalidation of the "no writing profile
--- role/unified_role/status/organization fields" boundary: this function
--- writes ONLY to user_registration_requests, never to profiles.
 create or replace function public.submit_registration_request(
   p_requested_aoc_id uuid,
   p_requested_operating_entity_id uuid,
@@ -366,6 +653,11 @@ begin
   insert into public.user_admin_audit_log (actor_id, target_profile_id, action, new_state, request_id)
   values (auth.uid(), auth.uid(), 'request_submitted', jsonb_build_object('role_code', p_requested_role_code), v_id);
 
+  perform public.notify(
+    auth.uid(), 'request_submitted', 'request_submitted:' || v_id::text,
+    v_id, null, null, jsonb_build_object('role_code', p_requested_role_code)
+  );
+
   return v_id;
 end;
 $function$;
@@ -373,9 +665,6 @@ $function$;
 revoke execute on function public.submit_registration_request(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, text) from public, anon;
 grant execute on function public.submit_registration_request(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, text) to authenticated, service_role;
 
--- Self-read: the applicant's own current request (any status), never
--- another user's -- mirrors Phase 3's get_my_active_role_assignments()
--- self-read pattern rather than granting a SELECT policy on the table.
 create or replace function public.get_my_registration_request()
 returns table (
   id uuid,
@@ -400,14 +689,6 @@ $function$;
 revoke execute on function public.get_my_registration_request() from public, anon;
 grant execute on function public.get_my_registration_request() to authenticated, service_role;
 
--- =======================================================================
--- PART F: list_pending_registration_requests() -- entity-scoped read
--- =======================================================================
--- Returns pending requests ONLY for the entity/entities the caller
--- actually administers (checked via is_entity_admin() for both MAA and
--- AAX independently -- a caller who is neither sees zero rows). No
--- client-supplied entity filter is trusted; the WHERE clause is the sole
--- authorization boundary.
 create or replace function public.list_pending_registration_requests()
 returns table (
   id uuid,
@@ -446,25 +727,17 @@ revoke execute on function public.list_pending_registration_requests() from publ
 grant execute on function public.list_pending_registration_requests() to authenticated, service_role;
 
 -- =======================================================================
--- PART G: approve_registration_request() -- the atomic approval transaction
+-- PART L: approve_registration_request() -- corrected atomic transaction
 -- =======================================================================
--- Single PL/pgSQL function = single transaction. Order of operations
--- matches the spec's step 7 exactly: validate Admin authority, validate
--- entity scope, validate role/scope shape (delegated to Phase 3's own
--- trigger by inserting into user_role_assignments -- never duplicated
--- here), create the assignment, update compatibility profile fields
--- (Part D, safe-subset only), record approved_by/approved_at (inside
--- Part D), change status to approved, and write one audit event -- all
--- in one function invocation, so a failure at any step rolls back the
--- entire operation (Postgres function bodies are transactional by
--- default; there is no partial-commit path here).
---
--- Race safety: `for update` on the request row means a second concurrent
--- approve/reject call for the same request blocks until the first
--- commits, then sees status <> 'pending' and raises -- two Admins can
--- never both successfully approve (or one approve while another
--- rejects) the same request. Approval submitted twice by the same Admin
--- hits the same guard on the second call.
+-- CORRECTED to: (1) create/reuse an active membership for the target
+-- entity via get_or_create_active_membership(), (2) link the new
+-- assignment to that membership, (3) when the request carries
+-- transfer_of_assignment_id/transfer_of_membership_id (i.e. this is a
+-- cross-entity transfer's receiving-side approval), atomically end the
+-- OLD assignment and, if nothing else still references it, the OLD
+-- membership too -- in the SAME transaction as activating the new one,
+-- so access is never lost and never doubled. Race safety and protected-
+-- role/self-approval denial are unchanged from the first pass.
 create or replace function public.approve_registration_request(
   p_request_id uuid,
   p_role_code text,
@@ -487,6 +760,8 @@ declare
   v_entity_code text;
   v_admin_id uuid := auth.uid();
   v_assignment_id uuid;
+  v_membership_id uuid;
+  v_old_membership_still_used boolean;
 begin
   if p_role_code = any(array[
     'airasia_management', 'ghod', 'global_reporting_controller', 'super_admin',
@@ -512,14 +787,16 @@ begin
     raise exception 'Not an authorized, approved entity Admin for the requested operating entity.';
   end if;
 
+  v_membership_id := public.get_or_create_active_membership(v_request.profile_id, p_aoc_id, p_operating_entity_id, v_admin_id);
+
   insert into public.user_role_assignments (
     profile_id, role_definition_id, aoc_id, operating_entity_id, department_id,
-    unit_id, hub_id, station_id, team_id, granted_by, grant_reason
+    unit_id, hub_id, station_id, team_id, granted_by, grant_reason, entity_membership_id
   )
   select
     v_request.profile_id, rd.id, p_aoc_id, p_operating_entity_id, p_department_id,
     p_unit_id, p_hub_id, p_station_id, p_team_id, v_admin_id,
-    'Approved from registration request ' || p_request_id::text
+    'Approved from registration request ' || p_request_id::text, v_membership_id
   from public.role_definitions rd
   where rd.code = p_role_code
   returning id into v_assignment_id;
@@ -532,22 +809,63 @@ begin
   set status = 'approved', reviewer_id = v_admin_id, reviewed_at = now(), final_assignment_id = v_assignment_id
   where id = p_request_id;
 
-  -- Person-level entity affiliation (see this migration's header design
-  -- decision) -- independent of the assignment row's own, correctly
-  -- NULL, entity column for ordinary roles.
-  update public.profiles set operating_entity_id = p_operating_entity_id where id = v_request.profile_id;
-
   perform public.apply_compatibility_profile_fields(
     v_request.profile_id, p_role_code, p_hub_id, p_station_id, p_team_id, p_ops_group, v_admin_id
   );
 
-  insert into public.user_admin_audit_log (actor_id, target_profile_id, action, previous_state, new_state, request_id, assignment_id)
-  values (
-    v_admin_id, v_request.profile_id, 'request_approved',
-    jsonb_build_object('status', 'pending'),
-    jsonb_build_object('status', 'approved', 'role_code', p_role_code, 'assignment_id', v_assignment_id),
-    p_request_id, v_assignment_id
-  );
+  -- Cross-entity transfer, receiving side: end the OLD assignment (and,
+  -- if orphaned, its OLD membership) atomically here, in the SAME
+  -- transaction that activates the new one -- never before this point,
+  -- so the person is never without access between initiation and this
+  -- approval.
+  if v_request.transfer_of_assignment_id is not null then
+    update public.user_role_assignments
+    set revoked_at = now()
+    where id = v_request.transfer_of_assignment_id and revoked_at is null;
+
+    if v_request.transfer_of_membership_id is not null then
+      select not exists (
+        select 1 from public.user_role_assignments
+        where entity_membership_id = v_request.transfer_of_membership_id
+          and revoked_at is null
+          and id <> v_request.transfer_of_assignment_id
+      ) into v_old_membership_still_used;
+
+      if v_old_membership_still_used then
+        update public.user_entity_memberships
+        set status = 'ended', ends_at = now()
+        where id = v_request.transfer_of_membership_id and status = 'active';
+      end if;
+    end if;
+
+    perform public.sync_primary_operating_entity(v_request.profile_id);
+
+    insert into public.user_admin_audit_log (actor_id, target_profile_id, action, previous_state, new_state, request_id, assignment_id)
+    values (
+      v_admin_id, v_request.profile_id, 'transfer_accepted',
+      jsonb_build_object('old_assignment_id', v_request.transfer_of_assignment_id),
+      jsonb_build_object('new_assignment_id', v_assignment_id, 'new_membership_id', v_membership_id),
+      p_request_id, v_assignment_id
+    );
+
+    perform public.notify(
+      v_request.profile_id, 'transfer_accepted', 'transfer_accepted:' || p_request_id::text,
+      p_request_id, v_assignment_id, v_membership_id, jsonb_build_object('role_code', p_role_code)
+    );
+  else
+    insert into public.user_admin_audit_log (actor_id, target_profile_id, action, previous_state, new_state, request_id, assignment_id)
+    values (
+      v_admin_id, v_request.profile_id, 'request_approved',
+      jsonb_build_object('status', 'pending'),
+      jsonb_build_object('status', 'approved', 'role_code', p_role_code, 'assignment_id', v_assignment_id),
+      p_request_id, v_assignment_id
+    );
+
+    perform public.notify(
+      v_request.profile_id, 'request_approved', 'request_approved:' || p_request_id::text,
+      p_request_id, v_assignment_id, v_membership_id, jsonb_build_object('role_code', p_role_code)
+    );
+  end if;
 
   return v_assignment_id;
 end;
@@ -557,8 +875,14 @@ revoke execute on function public.approve_registration_request(uuid, text, uuid,
 grant execute on function public.approve_registration_request(uuid, text, uuid, uuid, uuid, uuid, uuid, uuid, uuid, text) to authenticated, service_role;
 
 -- =======================================================================
--- PART H: reject_registration_request()
+-- PART M: reject_registration_request()
 -- =======================================================================
+-- Rejection NEVER touches an existing assignment/membership -- if this
+-- request carried transfer_of_assignment_id (a cross-entity transfer
+-- being rejected by the receiving entity), the old assignment and
+-- membership remain completely unaffected, which is exactly the
+-- required "rejection preserves old access" guarantee -- there is no
+-- special-case code path for it because none is needed.
 create or replace function public.reject_registration_request(
   p_request_id uuid,
   p_reason text
@@ -572,6 +896,7 @@ declare
   v_request record;
   v_admin_id uuid := auth.uid();
   v_entity_code text;
+  v_is_transfer boolean;
 begin
   if p_reason is null or length(trim(p_reason)) = 0 then
     raise exception 'A rejection reason is required.';
@@ -593,17 +918,32 @@ begin
     raise exception 'Not an authorized, approved entity Admin for the requested operating entity.';
   end if;
 
+  v_is_transfer := v_request.transfer_of_assignment_id is not null;
+
   update public.user_registration_requests
   set status = 'rejected', reviewer_id = v_admin_id, reviewed_at = now(), rejection_reason = p_reason
   where id = p_request_id;
 
-  update public.profiles set status = 'rejected', rejection_reason = p_reason where id = v_request.profile_id;
+  -- Only a first-time applicant's own profile status is touched by
+  -- rejection -- a transfer rejection leaves the profile's existing
+  -- approved status (and its unaffected old assignment) exactly as is.
+  if not v_is_transfer then
+    update public.profiles set status = 'rejected', rejection_reason = p_reason where id = v_request.profile_id;
+  end if;
 
   insert into public.user_admin_audit_log (actor_id, target_profile_id, action, previous_state, new_state, reason, request_id)
   values (
-    v_admin_id, v_request.profile_id, 'request_rejected',
+    v_admin_id, v_request.profile_id,
+    case when v_is_transfer then 'transfer_rejected' else 'request_rejected' end,
     jsonb_build_object('status', 'pending'), jsonb_build_object('status', 'rejected'),
     p_reason, p_request_id
+  );
+
+  perform public.notify(
+    v_request.profile_id,
+    case when v_is_transfer then 'transfer_rejected' else 'request_rejected' end,
+    (case when v_is_transfer then 'transfer_rejected:' else 'request_rejected:' end) || p_request_id::text,
+    p_request_id, null, null, jsonb_build_object('reason', p_reason)
   );
 end;
 $function$;
@@ -612,8 +952,14 @@ revoke execute on function public.reject_registration_request(uuid, text) from p
 grant execute on function public.reject_registration_request(uuid, text) to authenticated, service_role;
 
 -- =======================================================================
--- PART I: deactivate_assignment()
+-- PART N: deactivate_assignment() -- corrected authority source
 -- =======================================================================
+-- CORRECTED: authority to deactivate an assignment now derives from the
+-- ASSIGNMENT's own entity_membership_id (via is_authorized_admin_for_assignment()),
+-- never from profiles.operating_entity_id -- an Admin can no longer
+-- manage an assignment merely because the person's DISPLAY/compatibility
+-- entity currently happens to match; they must administer the SPECIFIC
+-- membership that authorized THIS assignment.
 create or replace function public.deactivate_assignment(
   p_assignment_id uuid,
   p_reason text
@@ -625,10 +971,9 @@ set search_path to 'public'
 as $function$
 declare
   v_assignment record;
-  v_role_code text;
   v_admin_id uuid := auth.uid();
-  v_target_entity_id uuid;
-  v_entity_code text;
+  v_membership_id uuid;
+  v_still_used boolean;
 begin
   if p_reason is null or length(trim(p_reason)) = 0 then
     raise exception 'A deactivation reason is required.';
@@ -656,26 +1001,42 @@ begin
   if v_assignment.profile_id = v_admin_id then
     raise exception 'Cannot deactivate your own assignment.';
   end if;
-
-  select p.operating_entity_id into v_target_entity_id from public.profiles p where p.id = v_assignment.profile_id;
-  select oe.code into v_entity_code from public.operating_entities oe where oe.id = v_target_entity_id;
-  if v_entity_code is null or not public.is_entity_admin(v_entity_code) then
-    raise exception 'Not an authorized, approved entity Admin for this user''s entity.';
+  if not public.is_authorized_admin_for_assignment(p_assignment_id) then
+    raise exception 'Not an authorized, approved entity Admin for the membership that authorized this assignment.';
   end if;
+
+  v_membership_id := v_assignment.entity_membership_id;
 
   update public.user_role_assignments set revoked_at = now() where id = p_assignment_id;
 
-  -- The account itself is never force-deactivated here -- only this one
-  -- assignment is revoked. profiles.status is left untouched: if the
-  -- person holds another valid, unrevoked assignment (or a legacy
-  -- compatibility grant), that access is completely unaffected, per the
-  -- explicit "account remains usable if another valid approved
-  -- assignment exists" requirement.
+  -- The account itself is never force-deactivated -- only this one
+  -- assignment is revoked. If the underlying membership is now unused by
+  -- any other active assignment, end it too (a normal lifecycle
+  -- transition, not a punitive revoke) -- but a completely separate,
+  -- independent MAA or AAX membership/assignment this person holds is
+  -- entirely unaffected either way, since this function only ever
+  -- touches the one named assignment and, at most, its own membership.
+  if v_membership_id is not null then
+    select not exists (
+      select 1 from public.user_role_assignments
+      where entity_membership_id = v_membership_id and revoked_at is null
+    ) into v_still_used;
+    if v_still_used then
+      update public.user_entity_memberships set status = 'ended', ends_at = now() where id = v_membership_id and status = 'active';
+      perform public.sync_primary_operating_entity(v_assignment.profile_id);
+    end if;
+  end if;
+
   insert into public.user_admin_audit_log (actor_id, target_profile_id, action, previous_state, new_state, reason, assignment_id)
   values (
     v_admin_id, v_assignment.profile_id, 'deactivation',
     jsonb_build_object('revoked_at', null), jsonb_build_object('revoked_at', now()),
     p_reason, p_assignment_id
+  );
+
+  perform public.notify(
+    v_assignment.profile_id, 'deactivation', 'deactivation:' || p_assignment_id::text,
+    null, p_assignment_id, v_membership_id, jsonb_build_object('reason', p_reason)
   );
 end;
 $function$;
@@ -684,17 +1045,8 @@ revoke execute on function public.deactivate_assignment(uuid, text) from public,
 grant execute on function public.deactivate_assignment(uuid, text) to authenticated, service_role;
 
 -- =======================================================================
--- PART J: transfer_assignment_same_entity()
+-- PART O: transfer_assignment_same_entity() -- corrected authority source
 -- =======================================================================
--- Team/station/hub/role-within-permitted-roles transfer, all within the
--- SAME entity -- ends the old assignment and creates a new one (never
--- overwrites assignment history in place), per the "prefer ending/
--- revoking the old assignment and creating a new assignment rather than
--- overwriting assignment history" instruction. Historical reports,
--- attendance, approvals and transactions already reference the OLD
--- assignment's scope by their own stored values at the time they were
--- created (this migration adds no retroactive rewrite of any existing
--- report/attendance/transaction table), so they remain correct as-is.
 create or replace function public.transfer_assignment_same_entity(
   p_old_assignment_id uuid,
   p_new_role_code text,
@@ -713,8 +1065,6 @@ as $function$
 declare
   v_old record;
   v_admin_id uuid := auth.uid();
-  v_target_entity_id uuid;
-  v_entity_code text;
   v_new_assignment_id uuid;
 begin
   if p_reason is null or length(trim(p_reason)) = 0 then
@@ -743,23 +1093,21 @@ begin
   if v_old.profile_id = v_admin_id then
     raise exception 'Cannot transfer your own assignment.';
   end if;
-
-  select p.operating_entity_id into v_target_entity_id from public.profiles p where p.id = v_old.profile_id;
-  select oe.code into v_entity_code from public.operating_entities oe where oe.id = v_target_entity_id;
-  if v_entity_code is null or not public.is_entity_admin(v_entity_code) then
-    raise exception 'Not an authorized, approved entity Admin for this user''s entity.';
+  if not public.is_authorized_admin_for_assignment(p_old_assignment_id) then
+    raise exception 'Not an authorized, approved entity Admin for the membership that authorized this assignment.';
   end if;
 
   update public.user_role_assignments set revoked_at = now() where id = p_old_assignment_id;
 
+  -- Same entity, same person -- reuse the SAME membership row.
   insert into public.user_role_assignments (
     profile_id, role_definition_id, aoc_id, operating_entity_id, department_id,
-    unit_id, hub_id, station_id, team_id, granted_by, grant_reason
+    unit_id, hub_id, station_id, team_id, granted_by, grant_reason, entity_membership_id
   )
   select
     v_old.profile_id, rd.id, v_old.aoc_id, v_old.operating_entity_id, p_new_department_id,
     p_new_unit_id, p_new_hub_id, p_new_station_id, p_new_team_id, v_admin_id,
-    'Transferred from assignment ' || p_old_assignment_id::text || ': ' || p_reason
+    'Transferred from assignment ' || p_old_assignment_id::text || ': ' || p_reason, v_old.entity_membership_id
   from public.role_definitions rd
   where rd.code = p_new_role_code
   returning id into v_new_assignment_id;
@@ -772,6 +1120,11 @@ begin
     p_reason, v_new_assignment_id
   );
 
+  perform public.notify(
+    v_old.profile_id, 'assignment_ended', 'assignment_ended:' || p_old_assignment_id::text,
+    null, p_old_assignment_id, v_old.entity_membership_id, jsonb_build_object('reason', p_reason, 'replaced_by', v_new_assignment_id)
+  );
+
   return v_new_assignment_id;
 end;
 $function$;
@@ -780,23 +1133,20 @@ revoke execute on function public.transfer_assignment_same_entity(uuid, text, uu
 grant execute on function public.transfer_assignment_same_entity(uuid, text, uuid, uuid, uuid, uuid, uuid, text) to authenticated, service_role;
 
 -- =======================================================================
--- PART K: MAA <-> AAX cross-entity transfer (two-step)
+-- PART P: initiate_cross_entity_transfer() -- corrected (no premature revoke)
 -- =======================================================================
--- Step 1 (originating entity Admin): revokes the current assignment and
--- opens a new registration request addressed to the RECEIVING entity's
--- queue (surfaced to that entity's Admin via
--- list_pending_registration_requests(), same as an ordinary applicant
--- request). Step 2 (receiving entity Admin): calls the ordinary
--- approve_registration_request() on that request -- there is
--- deliberately no separate "accept" function duplicating that logic;
--- this keeps exactly one approval code path in the whole migration.
--- During the gap between step 1 and step 2, the person holds no active
--- assignment for that role -- a real, intentional handover window
--- (a transferring person's OTHER, unrelated assignments, if any, are
--- completely unaffected, since only the one named assignment is
--- touched). profiles.operating_entity_id is only updated at step 2
--- (inside approve_registration_request()), matching "one entity
--- approval must not automatically approve the other."
+-- CORRECTED: this function NO LONGER touches the old assignment or
+-- membership at all -- it only opens a new registration request in the
+-- receiving entity's queue, carrying transfer_of_assignment_id/
+-- transfer_of_membership_id so the receiving Admin's eventual
+-- approve_registration_request() call can end the old assignment/
+-- membership ATOMICALLY alongside activating the new one (Part L). The
+-- person's existing access is completely unaffected between initiation
+-- and approval -- exactly the "prevent avoidable loss of access"
+-- requirement. If an immediate, documented suspension is genuinely
+-- needed mid-transfer, the source Admin uses the existing
+-- deactivate_assignment() directly; this function makes no assumption
+-- that a transfer implies suspension.
 create or replace function public.initiate_cross_entity_transfer(
   p_assignment_id uuid,
   p_to_entity_code text,
@@ -810,7 +1160,6 @@ as $function$
 declare
   v_old record;
   v_admin_id uuid := auth.uid();
-  v_from_entity_id uuid;
   v_from_entity_code text;
   v_to_entity_id uuid;
   v_to_aoc_id uuid;
@@ -845,28 +1194,32 @@ begin
   if v_old.profile_id = v_admin_id then
     raise exception 'Cannot transfer your own assignment.';
   end if;
-
-  select p.operating_entity_id into v_from_entity_id from public.profiles p where p.id = v_old.profile_id;
-  select oe.code into v_from_entity_code from public.operating_entities oe where oe.id = v_from_entity_id;
-  if v_from_entity_code is null or not public.is_entity_admin(v_from_entity_code) then
-    raise exception 'Not an authorized, approved entity Admin for this user''s current entity.';
+  if not public.is_authorized_admin_for_assignment(p_assignment_id) then
+    raise exception 'Not an authorized, approved entity Admin for the membership that authorized this assignment.';
   end if;
+
+  select oe.code into v_from_entity_code
+  from public.user_entity_memberships uem
+  join public.operating_entities oe on oe.id = uem.operating_entity_id
+  where uem.id = v_old.entity_membership_id;
+
   if v_from_entity_code = p_to_entity_code then
     raise exception 'Target entity must differ from the current entity for a cross-entity transfer.';
   end if;
 
   select id, aoc_id into v_to_entity_id, v_to_aoc_id from public.operating_entities where code = p_to_entity_code;
 
-  update public.user_role_assignments set revoked_at = now() where id = p_assignment_id;
-
+  -- NOTE: the old assignment/membership are intentionally NOT touched
+  -- here -- see this Part's header. Access continues uninterrupted.
   insert into public.user_registration_requests (
     profile_id, requested_aoc_id, requested_operating_entity_id, requested_department_id,
     requested_unit_id, requested_hub_id, requested_station_id, requested_team_id,
-    requested_role_code, applicant_notes
+    requested_role_code, applicant_notes, transfer_of_assignment_id, transfer_of_membership_id
   ) values (
     v_old.profile_id, v_to_aoc_id, v_to_entity_id, v_old.department_id,
     v_old.unit_id, v_old.hub_id, v_old.station_id, v_old.team_id,
-    v_old.role_code, 'Cross-entity transfer from ' || v_from_entity_code || ' to ' || p_to_entity_code || ': ' || p_reason
+    v_old.role_code, 'Cross-entity transfer from ' || v_from_entity_code || ' to ' || p_to_entity_code || ': ' || p_reason,
+    p_assignment_id, v_old.entity_membership_id
   )
   returning id into v_request_id;
 
@@ -878,6 +1231,12 @@ begin
     p_reason, v_request_id, p_assignment_id
   );
 
+  perform public.notify(
+    v_old.profile_id, 'transfer_initiated', 'transfer_initiated:' || v_request_id::text,
+    v_request_id, p_assignment_id, v_old.entity_membership_id,
+    jsonb_build_object('from_entity', v_from_entity_code, 'to_entity', p_to_entity_code)
+  );
+
   return v_request_id;
 end;
 $function$;
@@ -886,14 +1245,18 @@ revoke execute on function public.initiate_cross_entity_transfer(uuid, text, tex
 grant execute on function public.initiate_cross_entity_transfer(uuid, text, text) to authenticated, service_role;
 
 -- =======================================================================
--- PART L: export_entity_user_directory()
+-- PART Q: export_entity_user_directory() -- corrected entity filter
 -- =======================================================================
--- Returns ONLY the calling entity Admin's own entity's approved,
--- unrevoked ordinary-role assignments, with no auth secrets, tokens,
--- internal security metadata, the other entity's users, anonymous-
--- discussion identity data, or any personal field beyond name/staff
--- number/contact fields already exposed elsewhere in the app. Every
--- call is audited.
+-- CORRECTED to filter via entity_membership_id -> user_entity_memberships
+-- (active) -> operating_entities, never via profiles.operating_entity_id
+-- -- the directory reflects who is ACTUALLY entity-administered under an
+-- active membership linked to THIS assignment, not merely whichever
+-- entity happens to be the person's current primary/display value.
+-- Protected-role accounts are ENTIRELY OMITTED from this export (not
+-- shown redacted, not partially shown) -- they are visible only through
+-- a separate, not-yet-built Super Admin path (Phase 5+). No email,
+-- password, token, or other secret is ever included -- name and staff
+-- number only, matching what is already visible elsewhere in the app.
 create or replace function public.export_entity_user_directory(p_entity_code text)
 returns table (
   profile_id uuid,
@@ -925,7 +1288,8 @@ begin
   from public.user_role_assignments ura
   join public.role_definitions rd on rd.id = ura.role_definition_id
   join public.profiles p on p.id = ura.profile_id
-  join public.operating_entities oe on oe.id = p.operating_entity_id
+  join public.user_entity_memberships uem on uem.id = ura.entity_membership_id and uem.status = 'active'
+  join public.operating_entities oe on oe.id = uem.operating_entity_id
   left join public.departments d on d.id = ura.department_id
   left join public.units u on u.id = ura.unit_id
   left join public.hubs h on h.id = ura.hub_id
@@ -933,7 +1297,6 @@ begin
   left join public.org_teams t on t.id = ura.team_id
   where oe.code = p_entity_code
     and ura.revoked_at is null
-    and p.status = 'approved'
     and rd.code not in (
       'airasia_management', 'ghod', 'global_reporting_controller', 'super_admin',
       'maa_boss', 'aax_boss', 'maa_admin', 'aax_admin',
@@ -946,10 +1309,24 @@ revoke execute on function public.export_entity_user_directory(text) from public
 grant execute on function public.export_entity_user_directory(text) to authenticated, service_role;
 
 -- =======================================================================
--- PART M: RLS / grants summary
+-- PART R: RLS / grants summary
 -- =======================================================================
+alter table public.user_entity_memberships enable row level security;
 alter table public.user_registration_requests enable row level security;
 alter table public.user_admin_audit_log enable row level security;
+alter table public.user_notifications enable row level security;
+
+-- user_entity_memberships: no direct grant for anon/authenticated at
+-- all -- read happens only through get_my_registration_request()/
+-- list_pending_registration_requests()/export_entity_user_directory(),
+-- write happens only through the service_role-only helpers in Part D.
+-- This is a deliberately narrower posture than
+-- user_registration_requests (which does allow a self-service RLS
+-- policy) because membership rows carry administrative authority
+-- directly -- there is no legitimate reason for a client to read or
+-- write them outside the RPCs above.
+revoke all on public.user_entity_memberships from public, anon, authenticated;
+grant all on public.user_entity_memberships to service_role;
 
 revoke all on public.user_registration_requests from public, anon;
 grant select, insert, update on public.user_registration_requests to authenticated;
@@ -964,42 +1341,51 @@ for insert with check (profile_id = auth.uid());
 create policy "registration_requests: self update while pending" on public.user_registration_requests
 for update using (profile_id = auth.uid()) with check (profile_id = auth.uid());
 
--- Deliberately NO select/update/delete policy for entity Admins on this
--- table -- they read pending requests exclusively through
--- list_pending_registration_requests() and act exclusively through the
--- approve/reject/transfer/deactivate RPCs above, all of which are
--- SECURITY DEFINER and validate authority internally. This mirrors
--- Phase 3's user_role_assignments design (no direct table access, only
--- narrow RPCs) rather than introducing a second access pattern.
-
 revoke all on public.user_admin_audit_log from public, anon, authenticated;
 grant all on public.user_admin_audit_log to service_role;
 
-revoke execute on function public.set_updated_at_user_registration_requests() from public, anon, authenticated;
-grant execute on function public.set_updated_at_user_registration_requests() to service_role;
-revoke execute on function public.enforce_registration_request_self_write() from public, anon, authenticated;
-grant execute on function public.enforce_registration_request_self_write() to service_role;
+-- user_notifications: self select/self update(read_at only) via RLS,
+-- exactly mirroring the request table's posture -- but INSERT is
+-- service_role-only (every notification is created by the notify()
+-- helper inside a trusted transaction, never by a client-side insert),
+-- which is what "users cannot edit another user's events" requires
+-- together with the self-scoped USING clauses below.
+revoke all on public.user_notifications from public, anon;
+grant select, update on public.user_notifications to authenticated;
+grant all on public.user_notifications to service_role;
+
+create policy "notifications: self select" on public.user_notifications
+for select using (recipient_profile_id = auth.uid());
+
+create policy "notifications: self mark read" on public.user_notifications
+for update using (recipient_profile_id = auth.uid()) with check (recipient_profile_id = auth.uid());
+
+revoke execute on function public.set_updated_at_user_entity_memberships() from public, anon, authenticated;
+grant execute on function public.set_updated_at_user_entity_memberships() to service_role;
+revoke execute on function public.validate_assignment_entity_membership() from public, anon, authenticated;
+grant execute on function public.validate_assignment_entity_membership() to service_role;
+revoke execute on function public.enforce_profiles_org_fields_service_role_only() from public, anon, authenticated;
+grant execute on function public.enforce_profiles_org_fields_service_role_only() to service_role;
 
 -- =======================================================================
 -- DOCUMENTED ROLLBACK (not executed by this file -- reference only, run
 -- manually and only against a target where this migration was actually
--- applied). Dependency-safe order: triggers/functions before tables;
--- user_admin_audit_log and user_registration_requests before
--- user_role_assignments only if this migration also added a real FK
--- from user_role_assignments back into these new tables (it does NOT --
--- the reference direction is one-way, request/audit -> assignment), so
--- user_role_assignments (Phase 3) never needs to change for this
--- rollback. Only Phase 4's own two new tables and their functions are
--- touched here.
+-- applied).
 --
--- 1. Drop triggers and their functions:
+-- 1. Drop triggers and their trigger functions:
+--      drop trigger if exists trg_enforce_profiles_org_fields_service_role_only on public.profiles;
+--      drop trigger if exists trg_validate_assignment_entity_membership on public.user_role_assignments;
+--      drop trigger if exists trg_user_entity_memberships_updated_at on public.user_entity_memberships;
 --      drop trigger if exists trg_enforce_registration_request_self_write on public.user_registration_requests;
 --      drop trigger if exists trg_user_registration_requests_updated_at on public.user_registration_requests;
+--      drop function if exists public.enforce_profiles_org_fields_service_role_only();
+--      drop function if exists public.validate_assignment_entity_membership();
+--      drop function if exists public.set_updated_at_user_entity_memberships();
 --      drop function if exists public.enforce_registration_request_self_write();
 --      drop function if exists public.set_updated_at_user_registration_requests();
 --
--- 2. Drop the RPC functions (all reference user_registration_requests
---    and/or user_admin_audit_log, so must go before those tables):
+-- 2. Drop the RPC functions (all reference the new tables, so must go
+--    before them):
 --      drop function if exists public.export_entity_user_directory(text);
 --      drop function if exists public.initiate_cross_entity_transfer(uuid, text, text);
 --      drop function if exists public.transfer_assignment_same_entity(uuid, text, uuid, uuid, uuid, uuid, uuid, text);
@@ -1009,18 +1395,36 @@ grant execute on function public.enforce_registration_request_self_write() to se
 --      drop function if exists public.list_pending_registration_requests();
 --      drop function if exists public.get_my_registration_request();
 --      drop function if exists public.submit_registration_request(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, text);
+--      drop function if exists public.mark_notification_read(uuid);
+--      drop function if exists public.get_my_notifications(integer);
+--      drop function if exists public.notify(uuid, text, text, uuid, uuid, uuid, jsonb);
 --      drop function if exists public.apply_compatibility_profile_fields(uuid, text, uuid, uuid, uuid, text, uuid);
+--      drop function if exists public.is_authorized_admin_for_assignment(uuid);
 --      drop function if exists public.is_entity_admin(text);
+--      drop function if exists public.get_or_create_active_membership(uuid, uuid, uuid, uuid);
+--      drop function if exists public.sync_primary_operating_entity(uuid);
 --
--- 3. Drop the two new tables (user_registration_requests references
---    user_role_assignments via final_assignment_id and
---    user_admin_audit_log references user_registration_requests via
---    request_id -- drop the audit log first):
+-- 3. Drop the four new tables (dependents before their dependencies --
+--    user_admin_audit_log and user_notifications reference
+--    user_registration_requests/user_role_assignments/
+--    user_entity_memberships, so they go first; user_registration_requests
+--    references user_role_assignments and user_entity_memberships, so it
+--    goes before user_entity_memberships):
+--      drop table if exists public.user_notifications;
 --      drop table if exists public.user_admin_audit_log;
 --      drop table if exists public.user_registration_requests;
+--      drop table if exists public.user_entity_memberships;
 --
--- This rolls back cleanly independent of Phase 2/3, and rolling back
--- Phase 3 while Phase 4 is still applied would fail on
+-- 4. Drop the two new columns added to Phase 3's user_role_assignments
+--    and the one new column added to profiles (in that order -- the
+--    column drop has no ordering dependency on anything above, but is
+--    listed last for clarity):
+--      alter table public.user_role_assignments drop column if exists entity_membership_id;
+--      alter table public.profiles drop column if exists approval_state;
+--
+-- This rolls back cleanly independent of Phase 2/3; rolling back Phase 3
+-- while Phase 4 is still applied would fail on
+-- user_role_assignments.entity_membership_id's FK and on
 -- user_registration_requests' FKs into role_definitions/aocs/
 -- operating_entities/etc -- Phase 4 must always be rolled back before
 -- Phase 3 if both are ever reverted, exactly mirroring the Phase 2/3

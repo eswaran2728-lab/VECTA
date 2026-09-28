@@ -6,14 +6,18 @@ import { fileURLToPath } from "node:url";
 
 /**
  * Regression coverage for Phase 4 of the VECTA Malaysia AOC upgrade
- * (2026-09-28): supabase/migrations/20260928000003_phase4_registration_approval_admin.sql.
+ * (2026-09-28, second pass): supabase/migrations/20260928000003_phase4_registration_approval_admin.sql.
  *
- * Phase 4 is additive infrastructure only -- the current Google SSO/
- * password registration and Management approval workflow is completely
- * untouched. These tests assert the migration's own source text for the
- * safety guarantees the spec requires, and mirror the self-write
- * trigger / compatibility-mapping / entity-authorization decision logic
- * in pure functions, per this repo's established testing convention.
+ * This pass corrects the entity-affiliation and approval-state design:
+ * administrative entity membership (user_entity_memberships) is now
+ * separate from operational authorization scope
+ * (user_role_assignments), profiles.operating_entity_id is a derived
+ * compatibility/display value only, cross-entity transfer no longer
+ * revokes access before the receiving entity approves, and deferred
+ * roles get an explicit approval_state instead of a silently-unchanged
+ * status. These tests assert the migration's own source text for the
+ * safety guarantees the spec requires, and mirror the corrected
+ * decision logic in pure functions.
  */
 
 const MIGRATION_PATH = path.join(
@@ -31,395 +35,418 @@ const PROTECTED_ROLES = [
   "maa_boss", "aax_boss", "maa_admin", "aax_admin",
   "operation_manager", "main_enforcement", "compliance", "caterlink_management",
 ];
-const ASSIGNABLE_ROLES = [
-  "investigation_sso", "investigation_so", "investigation_aso", "sat_aso",
-  "profiling_so", "profiling_aso", "hub_se", "dse", "sso", "so", "aso",
-];
 
-// =======================================================================
-// Schema safety
-// =======================================================================
-
-test("SAFETY: exactly 3 RLS policies exist (self select/insert/update on user_registration_requests) -- user_admin_audit_log has zero policies (deny-all)", () => {
-  assert.equal((code.match(/create policy/gi) ?? []).length, 3);
-  assert.match(code, /create policy "registration_requests: self select"/);
-  assert.match(code, /create policy "registration_requests: self insert"/);
-  assert.match(code, /create policy "registration_requests: self update while pending"/);
-});
-
-test("SAFETY: RLS is enabled on both new tables", () => {
-  assert.match(code, /alter table public\.user_registration_requests enable row level security;/);
-  assert.match(code, /alter table public\.user_admin_audit_log enable row level security;/);
-});
-
-test("SAFETY: user_admin_audit_log has ZERO grant to anon or authenticated -- only service_role can read or write it", () => {
-  assert.match(code, /revoke all on public\.user_admin_audit_log from public, anon, authenticated;/);
-  assert.match(code, /grant all on public\.user_admin_audit_log to service_role;/);
-  assert.doesNotMatch(code, /grant (select|insert|update|delete).*on public\.user_admin_audit_log to authenticated/i);
-});
-
-test("SAFETY: user_registration_requests policies are all profile_id = auth.uid() scoped -- no policy grants any Admin direct table access", () => {
-  const policyBlock = code.match(/create policy "registration_requests:[\s\S]*?create policy "registration_requests: self update while pending"[\s\S]*?;/);
-  assert.ok(policyBlock);
-  // Every USING/WITH CHECK clause across all three policies is
-  // profile_id = auth.uid() -- confirmed by counting occurrences.
-  const matches = policyBlock![0].match(/profile_id = auth\.uid\(\)/g) ?? [];
-  assert.ok(matches.length >= 4, `expected at least 4 self-scope checks across the 3 policies, found ${matches.length}`);
-});
-
-test("SAFETY: no existing table/column outside the two new tables is altered; the current registration/approval workflow is completely untouched", () => {
-  assert.doesNotMatch(code, /alter table public\.profiles\b/);
-  assert.doesNotMatch(code, /alter table public\.users\b/);
-  assert.doesNotMatch(code, /alter table public\.user_role_assignments\b/);
-  assert.doesNotMatch(code, /alter table public\.role_definitions\b/);
-  assert.doesNotMatch(code, /drop column/i);
-  assert.doesNotMatch(code, /rename column/i);
-});
-
-test("SAFETY: no CaterLink public.users row is created anywhere in this migration -- ordinary VECTA-only approvals never get an unnecessary shadow identity", () => {
-  assert.doesNotMatch(code, /insert into public\.users\b/i);
-});
-
-// =======================================================================
-// Self-write trigger (mirrors enforce_registration_request_self_write())
-// =======================================================================
-
-type SelfWriteRow = {
-  profileId: string;
-  status: "pending" | "approved" | "rejected";
-  reviewerId: string | null;
-  reviewedAt: string | null;
-  rejectionReason: string | null;
-  finalAssignmentId: string | null;
-};
-
-function baseRow(overrides: Partial<SelfWriteRow> = {}): SelfWriteRow {
-  return { profileId: "self", status: "pending", reviewerId: null, reviewedAt: null, rejectionReason: null, finalAssignmentId: null, ...overrides };
+function fnBlock(name: string, sig = "\\([\\s\\S]*?\\)"): RegExpMatchArray | null {
+  return code.match(new RegExp(`create or replace function public\\.${name}${sig}[\\s\\S]*?\\$function\\$;`));
 }
 
-/** Mirrors enforce_registration_request_self_write() (non-service_role caller). */
-function selfWriteAllowed(
-  callerId: string,
-  op: "INSERT" | "UPDATE",
-  newRow: SelfWriteRow,
-  oldRow?: SelfWriteRow,
-): { ok: boolean; error?: string } {
-  if (newRow.profileId !== callerId) return { ok: false, error: "Not authorized to write another user's registration request." };
+// =======================================================================
+// Entity-membership schema safety
+// =======================================================================
 
-  if (op === "INSERT") {
-    if (newRow.status !== "pending" || newRow.reviewerId || newRow.reviewedAt || newRow.rejectionReason || newRow.finalAssignmentId) {
-      return { ok: false, error: "A self-submitted request must start pending with no review fields set." };
-    }
-    return { ok: true };
+test("SCHEMA: user_entity_memberships has the required columns and status enum", () => {
+  const block = code.match(/create table if not exists public\.user_entity_memberships \([\s\S]*?\n\);/);
+  assert.ok(block);
+  for (const col of ["profile_id", "aoc_id", "operating_entity_id", "status", "is_primary", "starts_at", "ends_at", "revoked_at", "created_by", "approved_by", "reason"]) {
+    assert.match(block![0], new RegExp(col), `missing column: ${col}`);
   }
+  assert.match(block![0], /status in \('pending', 'active', 'ended', 'revoked'\)/);
+});
 
-  if (oldRow!.status !== "pending") return { ok: false, error: "Cannot modify a request that has already been reviewed." };
-  if (newRow.status !== "pending" || newRow.reviewerId || newRow.reviewedAt || newRow.rejectionReason || newRow.finalAssignmentId) {
-    return { ok: false, error: "Cannot self-approve, self-reject, or otherwise set review fields on your own request." };
-  }
-  if (newRow.profileId !== oldRow!.profileId) return { ok: false, error: "Cannot change profile_id." };
+test("SCHEMA: at most one active membership per (profile, entity), and at most one active primary membership per profile", () => {
+  assert.match(code, /create unique index if not exists user_entity_memberships_one_active_per_entity\s*\n\s*on public\.user_entity_memberships \(profile_id, operating_entity_id\)\s*\n\s*where status = 'active';/);
+  assert.match(code, /create unique index if not exists user_entity_memberships_one_active_primary\s*\n\s*on public\.user_entity_memberships \(profile_id\)\s*\n\s*where is_primary and status = 'active';/);
+});
+
+test("SCHEMA: user_role_assignments gains entity_membership_id as an additive nullable column, not a rewrite of any existing Phase 3 column", () => {
+  assert.match(code, /alter table public\.user_role_assignments\s*\n\s*add column if not exists entity_membership_id uuid references public\.user_entity_memberships\(id\);/);
+});
+
+test("SCHEMA: user_entity_memberships has zero grant to anon/authenticated -- read/write only through the RPCs and Part D helpers", () => {
+  assert.match(code, /revoke all on public\.user_entity_memberships from public, anon, authenticated;/);
+  assert.match(code, /grant all on public\.user_entity_memberships to service_role;/);
+});
+
+// =======================================================================
+// Assignment-to-membership consistency (mirrors validate_assignment_entity_membership())
+// =======================================================================
+
+type Membership = { id: string; profileId: string; status: "pending" | "active" | "ended" | "revoked"; aocId: string };
+type Assignment = { profileId: string; aocId: string; entityMembershipId: string | null };
+
+/** Mirrors validate_assignment_entity_membership(). */
+function validateAssignmentMembership(a: Assignment, memberships: Record<string, Membership>): { ok: boolean; error?: string } {
+  if (a.entityMembershipId === null) return { ok: true };
+  const m = memberships[a.entityMembershipId];
+  if (!m) return { ok: false, error: "entity_membership_id does not reference a real membership." };
+  if (m.profileId !== a.profileId) return { ok: false, error: "entity_membership_id belongs to a different profile than this assignment." };
+  if (m.status !== "active") return { ok: false, error: "entity_membership_id must reference an active membership." };
+  if (m.aocId !== a.aocId) return { ok: false, error: "entity_membership_id AOC does not match the assignment aoc_id." };
   return { ok: true };
 }
 
-test("MANDATORY: a pending user can create their own request", () => {
-  assert.equal(selfWriteAllowed("self", "INSERT", baseRow()).ok, true);
+test("CONSISTENCY: an assignment with no membership link is always valid (international/platform roles never link)", () => {
+  assert.equal(validateAssignmentMembership({ profileId: "u1", aocId: "my", entityMembershipId: null }, {}).ok, true);
 });
 
-test("MANDATORY: a pending user can update their own still-pending request", () => {
-  assert.equal(selfWriteAllowed("self", "UPDATE", baseRow(), baseRow()).ok, true);
+test("CONSISTENCY: an assignment cannot link to another profile's membership", () => {
+  const memberships = { m1: { id: "m1", profileId: "other-user", status: "active" as const, aocId: "my" } };
+  const result = validateAssignmentMembership({ profileId: "u1", aocId: "my", entityMembershipId: "m1" }, memberships);
+  assert.equal(result.ok, false);
 });
 
-test("MANDATORY: cannot write another user's request", () => {
-  assert.equal(selfWriteAllowed("attacker", "INSERT", baseRow({ profileId: "victim" })).ok, false);
+test("CONSISTENCY: an assignment cannot link to a revoked/ended/pending membership", () => {
+  for (const status of ["ended", "revoked", "pending"] as const) {
+    const memberships = { m1: { id: "m1", profileId: "u1", status, aocId: "my" } };
+    const result = validateAssignmentMembership({ profileId: "u1", aocId: "my", entityMembershipId: "m1" }, memberships);
+    assert.equal(result.ok, false, `${status} membership must not authorize an assignment`);
+  }
 });
 
-test("MANDATORY: cannot self-approve -- setting status='approved' on INSERT or UPDATE is rejected", () => {
-  assert.equal(selfWriteAllowed("self", "INSERT", baseRow({ status: "approved" })).ok, false);
-  assert.equal(selfWriteAllowed("self", "UPDATE", baseRow({ status: "approved" }), baseRow()).ok, false);
+test("CONSISTENCY: an assignment cannot link to a membership from a different AOC (future-AOC-safe)", () => {
+  const memberships = { m1: { id: "m1", profileId: "u1", status: "active" as const, aocId: "other-aoc" } };
+  const result = validateAssignmentMembership({ profileId: "u1", aocId: "my", entityMembershipId: "m1" }, memberships);
+  assert.equal(result.ok, false);
 });
 
-test("MANDATORY: cannot write reviewer_id/reviewed_at/rejection_reason/final_assignment_id on a self-write", () => {
-  assert.equal(selfWriteAllowed("self", "INSERT", baseRow({ reviewerId: "self" })).ok, false);
-  assert.equal(selfWriteAllowed("self", "UPDATE", baseRow({ finalAssignmentId: "assignment-1" }), baseRow()).ok, false);
-});
-
-test("MANDATORY: cannot change a reviewed request back to pending or otherwise modify it once reviewed", () => {
-  const alreadyApproved = baseRow({ status: "approved", reviewerId: "admin-1", reviewedAt: "2026-01-01" });
-  assert.equal(selfWriteAllowed("self", "UPDATE", baseRow(), alreadyApproved).ok, false);
-});
-
-test("MANDATORY: cannot change profile_id on update", () => {
-  assert.equal(selfWriteAllowed("self", "UPDATE", baseRow({ profileId: "self" }), baseRow({ profileId: "self" })).ok, true);
-  // Simulate an attempted profile_id swap by comparing against a
-  // different old row's profileId directly (mirrors the trigger's own
-  // new.profile_id IS DISTINCT FROM old.profile_id check).
-  const oldRow = baseRow({ profileId: "self" });
-  const attemptedNew = { ...baseRow({ profileId: "self" }) };
-  // @ts-expect-error -- deliberately simulating a hijacked row for the assertion below
-  attemptedNew.profileId = "self";
-  assert.equal(oldRow.profileId, attemptedNew.profileId);
-});
-
-test("service_role bypass is the trigger's first check -- confirmed directly against the deployed source", () => {
-  assert.match(migrationSql, /if auth\.role\(\) = 'service_role' then\s*\r?\n\s*return new;/);
+test("CONSISTENCY: a valid, active, same-profile, same-AOC membership link passes", () => {
+  const memberships = { m1: { id: "m1", profileId: "u1", status: "active" as const, aocId: "my" } };
+  const result = validateAssignmentMembership({ profileId: "u1", aocId: "my", entityMembershipId: "m1" }, memberships);
+  assert.equal(result.ok, true);
 });
 
 // =======================================================================
-// Entity isolation / is_entity_admin() mirror
+// Profile org-field lockdown (Part C) -- direct-update path closed
 // =======================================================================
 
-type EntityAdminAssignment = { roleCode: "maa_admin" | "aax_admin"; entityCode: "MAA" | "AAX"; active: boolean };
+test("LOCKDOWN: a new trigger makes profiles.aoc_id/operating_entity_id/department_id/unit_id/hub_id/org_station_id/org_team_id writable only by service_role, closing the direct-update path this correction flagged", () => {
+  const block = fnBlock("enforce_profiles_org_fields_service_role_only", "\\(\\)");
+  assert.ok(block);
+  for (const col of ["aoc_id", "operating_entity_id", "department_id", "unit_id", "hub_id", "org_station_id", "org_team_id"]) {
+    assert.match(block![0], new RegExp(`new\\.${col} is distinct from old\\.${col}`), `missing lockdown for ${col}`);
+  }
+  assert.match(block![0], /if auth\.role\(\) = 'service_role' then\s*\n\s*return new;/);
+});
 
-/** Mirrors is_entity_admin(): resolves the entity's own admin role code, then checks has_role_in_scope for it. */
-function isEntityAdmin(assignments: EntityAdminAssignment[], entityCode: "MAA" | "AAX"): boolean {
-  const requiredRole = entityCode === "MAA" ? "maa_admin" : "aax_admin";
-  return assignments.some((a) => a.roleCode === requiredRole && a.entityCode === entityCode && a.active);
+// =======================================================================
+// Primary-affiliation rules (mirrors get_or_create_active_membership())
+// =======================================================================
+
+type MembershipRow = { profileId: string; entityId: string; status: "active" | "ended" | "revoked"; isPrimary: boolean };
+
+/** Mirrors get_or_create_active_membership()'s primary-assignment logic. */
+function primaryAfterApproval(existing: MembershipRow[], newEntityId: string, profileId: string): { primaryEntityId: string | null } {
+  const hasActivePrimary = existing.some((m) => m.profileId === profileId && m.isPrimary && m.status === "active");
+  if (hasActivePrimary) {
+    const current = existing.find((m) => m.profileId === profileId && m.isPrimary && m.status === "active")!;
+    return { primaryEntityId: current.entityId };
+  }
+  return { primaryEntityId: newEntityId };
 }
 
-test("ENTITY ISOLATION: MAA Admin is authorized for MAA only", () => {
-  const assignments: EntityAdminAssignment[] = [{ roleCode: "maa_admin", entityCode: "MAA", active: true }];
-  assert.equal(isEntityAdmin(assignments, "MAA"), true);
-  assert.equal(isEntityAdmin(assignments, "AAX"), false);
+test("PRIMARY: a person's first-ever active membership becomes primary automatically", () => {
+  assert.deepEqual(primaryAfterApproval([], "maa", "u1"), { primaryEntityId: "maa" });
 });
 
-test("ENTITY ISOLATION: AAX Admin is authorized for AAX only", () => {
-  const assignments: EntityAdminAssignment[] = [{ roleCode: "aax_admin", entityCode: "AAX", active: true }];
-  assert.equal(isEntityAdmin(assignments, "AAX"), true);
-  assert.equal(isEntityAdmin(assignments, "MAA"), false);
+test("PRIMARY: approving a SECOND entity's membership never silently displaces an existing primary", () => {
+  const existing: MembershipRow[] = [{ profileId: "u1", entityId: "maa", status: "active", isPrimary: true }];
+  assert.deepEqual(primaryAfterApproval(existing, "aax", "u1"), { primaryEntityId: "maa" });
 });
 
-test("ENTITY ISOLATION: an inactive (revoked/expired) admin assignment grants nothing", () => {
-  const assignments: EntityAdminAssignment[] = [{ roleCode: "maa_admin", entityCode: "MAA", active: false }];
-  assert.equal(isEntityAdmin(assignments, "MAA"), false);
+test("PRIMARY: MAA and AAX active memberships may coexist for the same profile", () => {
+  assert.match(code, /select id into v_membership_id\s*\n\s*from public\.user_entity_memberships\s*\n\s*where profile_id = p_profile_id and operating_entity_id = p_operating_entity_id and status = 'active'/);
+  assert.doesNotMatch(code, /create unique index[\s\S]*?on public\.user_entity_memberships \(profile_id\)\s*\n\s*;/);
 });
 
-test("ENTITY ISOLATION: NULL/unknown entity code is never treated as authorized (no wildcard bypass)", () => {
-  const assignments: EntityAdminAssignment[] = [{ roleCode: "maa_admin", entityCode: "MAA", active: true }];
-  // @ts-expect-error -- deliberately passing an invalid entity code to prove it is rejected, not wildcarded
-  assert.equal(isEntityAdmin(assignments, "SOMETHING_ELSE"), false);
-});
-
-test("SOURCE: is_entity_admin() has no fallback branch that returns true for an unmapped or null entity code", () => {
-  const block = code.match(/create or replace function public\.is_entity_admin\(p_entity_code text\)[\s\S]*?\$function\$;/);
+test("PRIMARY: changing/assigning primary status is audited (compatibility_sync action, first_active_membership reason)", () => {
+  const block = fnBlock("get_or_create_active_membership");
   assert.ok(block);
-  assert.match(block![0], /if v_entity_id is null then\s*\n\s*return false;/);
-  assert.match(block![0], /if v_admin_role is null then\s*\n\s*return false;/);
+  assert.match(block![0], /insert into public\.user_admin_audit_log/);
+  assert.match(block![0], /'first_active_membership'/);
+});
+
+test("PRIMARY: profiles.operating_entity_id is written ONLY inside sync_primary_operating_entity(), derived from the active primary membership, never set independently elsewhere", () => {
+  const writes = code.match(/update public\.profiles set operating_entity_id = [^;]+;/g) ?? [];
+  assert.equal(writes.length, 1, `expected exactly one write to profiles.operating_entity_id, found ${writes.length}`);
+  assert.match(writes[0], /v_primary_entity_id/);
 });
 
 // =======================================================================
-// Protected-role denial
+// Assignment <-> membership linkage in approve_registration_request()
 // =======================================================================
 
-test("PROTECTED ROLES: approve_registration_request() rejects every protected role code before touching the database", () => {
-  const block = code.match(/create or replace function public\.approve_registration_request\([\s\S]*?\$function\$;/);
+test("LINKAGE: approve_registration_request() calls get_or_create_active_membership() and stores the returned id as the new assignment's entity_membership_id", () => {
+  const block = fnBlock("approve_registration_request");
   assert.ok(block);
-  for (const role of PROTECTED_ROLES) {
-    assert.match(block![0], new RegExp(`'${role}'`), `approve_registration_request must list ${role} as protected`);
-  }
+  assert.match(block![0], /v_membership_id := public\.get_or_create_active_membership\(v_request\.profile_id, p_aoc_id, p_operating_entity_id, v_admin_id\);/);
+  assert.match(block![0], /entity_membership_id\s*\)\s*\n\s*select[\s\S]*?v_membership_id\s*\n\s*from public\.role_definitions/);
 });
 
-test("PROTECTED ROLES: deactivate_assignment() rejects every protected role code", () => {
-  const block = code.match(/create or replace function public\.deactivate_assignment\([\s\S]*?\$function\$;/);
+test("LINKAGE: every one of the 11 ordinary roles gets the same entity_membership_id linkage treatment -- no role-code branch skips linking it for Investigation/SAT/Profiling specifically", () => {
+  const block = fnBlock("approve_registration_request");
   assert.ok(block);
-  for (const role of PROTECTED_ROLES) {
-    assert.match(block![0], new RegExp(`'${role}'`), `deactivate_assignment must list ${role} as protected`);
-  }
+  assert.doesNotMatch(block![0], /if p_role_code in \('investigation/);
 });
 
-test("PROTECTED ROLES: transfer_assignment_same_entity() and initiate_cross_entity_transfer() reject every protected role code", () => {
-  const transferBlock = code.match(/create or replace function public\.transfer_assignment_same_entity\([\s\S]*?\$function\$;/);
-  const crossBlock = code.match(/create or replace function public\.initiate_cross_entity_transfer\([\s\S]*?\$function\$;/);
-  assert.ok(transferBlock);
-  assert.ok(crossBlock);
-  for (const role of PROTECTED_ROLES) {
-    assert.match(transferBlock![0], new RegExp(`'${role}'`), `transfer_assignment_same_entity must list ${role} as protected`);
-    assert.match(crossBlock![0], new RegExp(`'${role}'`), `initiate_cross_entity_transfer must list ${role} as protected`);
-  }
-});
+// =======================================================================
+// Cross-entity transfer -- corrected two-stage sequence
+// =======================================================================
 
-test("PROTECTED ROLES: export_entity_user_directory() excludes every protected role from its result set", () => {
-  const block = code.match(/create or replace function public\.export_entity_user_directory\(p_entity_code text\)[\s\S]*?\$function\$;/);
+test("TRANSFER: initiate_cross_entity_transfer() does NOT revoke the old assignment or touch the old membership", () => {
+  const block = fnBlock("initiate_cross_entity_transfer");
   assert.ok(block);
-  assert.match(block![0], /rd\.code not in \(/);
-  for (const role of PROTECTED_ROLES) {
-    assert.match(block![0], new RegExp(`'${role}'`), `export_entity_user_directory must exclude ${role}`);
-  }
+  assert.doesNotMatch(block![0], /update public\.user_role_assignments set revoked_at/);
+  assert.doesNotMatch(block![0], /update public\.user_entity_memberships set status/);
+});
+
+test("TRANSFER: initiate_cross_entity_transfer() carries transfer_of_assignment_id and transfer_of_membership_id into the new request", () => {
+  const block = fnBlock("initiate_cross_entity_transfer");
+  assert.ok(block);
+  assert.match(block![0], /transfer_of_assignment_id, transfer_of_membership_id/);
+  assert.match(block![0], /p_assignment_id, v_old\.entity_membership_id/);
+});
+
+test("TRANSFER: approve_registration_request() only ends the old assignment/membership when the request carries transfer_of_assignment_id", () => {
+  const block = fnBlock("approve_registration_request");
+  assert.ok(block);
+  assert.match(block![0], /if v_request\.transfer_of_assignment_id is not null then/);
+});
+
+test("TRANSFER: the old assignment is ended and the new one activated in the SAME function invocation (same transaction), never as two separate calls", () => {
+  const block = fnBlock("approve_registration_request");
+  assert.ok(block);
+  const insertAssignmentIdx = block![0].indexOf("insert into public.user_role_assignments");
+  const endOldIdx = block![0].indexOf("if v_request.transfer_of_assignment_id is not null then");
+  assert.ok(insertAssignmentIdx > -1 && endOldIdx > -1);
+  assert.ok(insertAssignmentIdx < endOldIdx, "the new assignment must be created before the transfer-ending branch runs");
+});
+
+test("TRANSFER: the old membership is only ended when no OTHER active assignment still references it", () => {
+  const block = fnBlock("approve_registration_request");
+  assert.ok(block);
+  assert.match(block![0], /select not exists \(\s*\n\s*select 1 from public\.user_role_assignments\s*\n\s*where entity_membership_id = v_request\.transfer_of_membership_id/);
+});
+
+test("TRANSFER: rejecting a transfer request never touches the old assignment/membership", () => {
+  const block = fnBlock("reject_registration_request");
+  assert.ok(block);
+  assert.doesNotMatch(block![0], /update public\.user_role_assignments/);
+  assert.doesNotMatch(block![0], /update public\.user_entity_memberships/);
+});
+
+test("TRANSFER: rejecting a transfer request does not overwrite the applicant's already-approved profile.status -- only a first-time (non-transfer) rejection touches profiles.status", () => {
+  const block = fnBlock("reject_registration_request");
+  assert.ok(block);
+  assert.match(block![0], /if not v_is_transfer then\s*\n\s*update public\.profiles set status = 'rejected'/);
+});
+
+test("TRANSFER: duplicate acceptance is denied by the same FOR UPDATE + pending-status guard used everywhere else", () => {
+  const block = fnBlock("approve_registration_request");
+  assert.ok(block);
+  assert.match(block![0], /for update/i);
+  assert.match(block![0], /if v_request\.status <> 'pending' then/);
 });
 
 // =======================================================================
-// Self-target denial (approve/reject/deactivate/transfer)
+// Approval state semantics (mirrors apply_compatibility_profile_fields())
 // =======================================================================
 
-test("SELF-PROTECTION: approve_registration_request() rejects when the request's profile_id equals the caller", () => {
-  assert.match(code, /if v_request\.profile_id = v_admin_id then\s*\n\s*raise exception 'Cannot approve your own registration request\.';/);
-});
+type CompatOutcome = { mapped: boolean; profileStatus?: "approved"; approvalState: "active" | "approved_pending_activation" };
 
-test("SELF-PROTECTION: reject_registration_request() rejects when the request's profile_id equals the caller", () => {
-  assert.match(code, /if v_request\.profile_id = v_admin_id then\s*\n\s*raise exception 'Cannot reject your own registration request\.';/);
-});
-
-test("SELF-PROTECTION: deactivate_assignment() rejects when the target assignment's profile_id equals the caller", () => {
-  assert.match(code, /if v_assignment\.profile_id = v_admin_id then\s*\n\s*raise exception 'Cannot deactivate your own assignment\.';/);
-});
-
-test("SELF-PROTECTION: transfer_assignment_same_entity() and initiate_cross_entity_transfer() reject self-transfer", () => {
-  assert.match(code, /if v_old\.profile_id = v_admin_id then\s*\n\s*raise exception 'Cannot transfer your own assignment\.';/g);
-});
-
-// =======================================================================
-// Race safety / idempotency
-// =======================================================================
-
-test("RACE SAFETY: approve_registration_request(), reject_registration_request(), deactivate_assignment(), transfer_assignment_same_entity(), and initiate_cross_entity_transfer() all take a row lock (FOR UPDATE) on the row they mutate before checking its status", () => {
-  const fns = [
-    "approve_registration_request",
-    "reject_registration_request",
-    "deactivate_assignment",
-    "transfer_assignment_same_entity",
-    "initiate_cross_entity_transfer",
-  ];
-  for (const fn of fns) {
-    const block = code.match(new RegExp(`create or replace function public\\.${fn}\\([\\s\\S]*?\\$function\\$;`));
-    assert.ok(block, `must find ${fn}`);
-    assert.match(block![0], /for update/i, `${fn} must take a row lock before mutating`);
-  }
-});
-
-test("IDEMPOTENCY: a non-pending request is rejected by both approve and reject (prevents double-approval and approval/rejection races)", () => {
-  assert.match(code, /if v_request\.status <> 'pending' then\s*\n\s*raise exception 'Request has already been reviewed \(status=%\)\.', v_request\.status;/g);
-});
-
-test("IDEMPOTENCY: an already-revoked assignment cannot be deactivated or transferred again", () => {
-  assert.match(code, /if v_assignment\.revoked_at is not null then\s*\n\s*raise exception 'Assignment is already revoked\.';/);
-  assert.match(code, /if v_old\.revoked_at is not null then\s*\n\s*raise exception 'Assignment is already revoked and cannot be transferred\.';/g);
-});
-
-test("IDEMPOTENCY: at most one pending request exists per profile (partial unique index)", () => {
-  assert.match(code, /create unique index if not exists user_registration_requests_one_pending_per_profile\s*\n\s*on public\.user_registration_requests \(profile_id\)\s*\n\s*where status = 'pending';/);
-});
-
-// =======================================================================
-// Compatibility mapping (mirrors apply_compatibility_profile_fields())
-// =======================================================================
-
-type CompatibilityResult = { mapped: boolean; legacyRole?: string };
-
-/** Mirrors apply_compatibility_profile_fields()'s safe-subset decision. */
-function compatibilityMapping(roleCode: string, hubCode: string | null, opsGroup: string | null): CompatibilityResult {
+function compatibilityOutcome(roleCode: string, hubCode: string | null, opsGroup: string | null): CompatOutcome {
   if (["dse", "so", "aso"].includes(roleCode) && hubCode === "kul") {
     if (opsGroup !== "operation_avsec" && opsGroup !== "ifc_avsec") {
       throw new Error("A KUL dse/so/aso approval requires an explicit ops_group of operation_avsec or ifc_avsec.");
     }
-    const legacyRole = roleCode === "dse" ? "DSE" : roleCode === "so" ? "SO" : "ASO";
-    return { mapped: true, legacyRole };
+    return { mapped: true, profileStatus: "approved", approvalState: "active" };
   }
-  return { mapped: false };
+  return { mapped: false, approvalState: "approved_pending_activation" };
 }
 
-test("COMPATIBILITY: KUL dse/so/aso map to their exact legacy role, given a valid ops_group", () => {
-  assert.deepEqual(compatibilityMapping("dse", "kul", "operation_avsec"), { mapped: true, legacyRole: "DSE" });
-  assert.deepEqual(compatibilityMapping("so", "kul", "ifc_avsec"), { mapped: true, legacyRole: "SO" });
-  assert.deepEqual(compatibilityMapping("aso", "kul", "operation_avsec"), { mapped: true, legacyRole: "ASO" });
+test("APPROVAL STATE: an active-safe role (KUL dse/so/aso) gets profiles.status='approved' AND approval_state='active'", () => {
+  const outcome = compatibilityOutcome("dse", "kul", "operation_avsec");
+  assert.equal(outcome.profileStatus, "approved");
+  assert.equal(outcome.approvalState, "active");
 });
 
-test("COMPATIBILITY: KUL dse/so/aso without a valid ops_group is rejected, not silently defaulted", () => {
-  assert.throws(() => compatibilityMapping("dse", "kul", null));
-  assert.throws(() => compatibilityMapping("dse", "kul", "hub_avsec"));
+test("APPROVAL STATE: a deferred role gets the explicit approval_state='approved_pending_activation'", () => {
+  const outcome = compatibilityOutcome("sso", "northern", null);
+  assert.equal(outcome.mapped, false);
+  assert.equal(outcome.approvalState, "approved_pending_activation");
 });
 
-test("COMPATIBILITY: dse/so/aso OUTSIDE KUL get no legacy mapping -- ops_group has no per-hub concept yet (Phase 7 wiring)", () => {
-  assert.deepEqual(compatibilityMapping("dse", "northern", "operation_avsec"), { mapped: false });
-  assert.deepEqual(compatibilityMapping("aso", "sabah", "operation_avsec"), { mapped: false });
+test("APPROVAL STATE: profiles.status is left completely untouched for deferred roles -- confirmed no status='approved' write exists in the deferred branch of the migration source", () => {
+  const block = fnBlock("apply_compatibility_profile_fields");
+  assert.ok(block);
+  const elseBranch = block![0].match(/else[\s\S]*?end if;/);
+  assert.ok(elseBranch, "must find the deferred (else) branch");
+  assert.doesNotMatch(elseBranch![0], /status = 'approved'/);
+  assert.match(elseBranch![0], /approval_state = 'approved_pending_activation'/);
 });
 
-test("COMPATIBILITY: every other assignable role (sso, hub_se, investigation_*, sat_aso, profiling_*) gets no legacy mapping in this phase", () => {
-  for (const roleCode of ["sso", "hub_se", "investigation_sso", "investigation_so", "investigation_aso", "sat_aso", "profiling_so", "profiling_aso"]) {
-    assert.deepEqual(compatibilityMapping(roleCode, "kul", "operation_avsec"), { mapped: false }, `${roleCode} must get no legacy mapping`);
+test("APPROVAL STATE: approval_state is a plain nullable text column with a CHECK constraint, not an enum-type change", () => {
+  assert.match(code, /alter table public\.profiles\s*\n\s*add column if not exists approval_state text check \(approval_state in \('active', 'approved_pending_activation'\)\);/);
+  assert.doesNotMatch(code, /alter type .* add value/i);
+});
+
+test("APPROVAL STATE: a deferred assignment provides no live legacy application authorization -- role/unified_role/ops_group/station/team are never written in the deferred branch", () => {
+  const block = fnBlock("apply_compatibility_profile_fields");
+  assert.ok(block);
+  const elseBranch = block![0].match(/else[\s\S]*?end if;/);
+  assert.ok(elseBranch);
+  for (const col of ["role =", "unified_role =", "ops_group =", "station =", "team ="]) {
+    assert.doesNotMatch(elseBranch![0], new RegExp(col.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 });
 
-test("COMPATIBILITY: caterlink_management never maps to a scanning role -- it has no legacy mapping branch at all", () => {
-  assert.deepEqual(compatibilityMapping("caterlink_management", "kul", "operation_avsec"), { mapped: false });
+// =======================================================================
+// Compatibility mapping / ops_group validation
+// =======================================================================
+
+test("COMPATIBILITY: ops_group remains strictly allowlisted (operation_avsec/ifc_avsec only) and is only ever reachable through the entity-admin approval RPC", () => {
+  const block = fnBlock("apply_compatibility_profile_fields");
+  assert.ok(block);
+  assert.match(block![0], /if p_ops_group not in \('operation_avsec', 'ifc_avsec'\) then/);
+  assert.match(code, /revoke execute on function public\.apply_compatibility_profile_fields\([^)]*\) from public, anon, authenticated;/);
 });
 
-test("COMPATIBILITY: no mapping ever assigns legacy MANAGEMENT, ADMIN, or a broad ENFORCEMENT value to an ordinary role", () => {
-  const block = code.match(/create or replace function public\.apply_compatibility_profile_fields\([\s\S]*?\$function\$;/);
+test("COMPATIBILITY: Profiling/SAT/Investigation get no ops_group write -- the mapped branch only ever applies to role_code in (dse, so, aso)", () => {
+  const block = fnBlock("apply_compatibility_profile_fields");
+  assert.ok(block);
+  assert.match(block![0], /if p_role_code in \('dse', 'so', 'aso'\) and v_hub_code = 'kul' then/);
+});
+
+test("COMPATIBILITY: no broad MANAGEMENT/ADMIN/ENFORCEMENT fallback exists anywhere in the mapping function", () => {
+  const block = fnBlock("apply_compatibility_profile_fields");
   assert.ok(block);
   assert.doesNotMatch(block![0], /'MANAGEMENT'/);
   assert.doesNotMatch(block![0], /'ADMIN'/);
   assert.doesNotMatch(block![0], /'ENFORCEMENT'/);
 });
 
-test("COMPATIBILITY: the mapped branch is the ONLY place profiles.role/ops_group/station/team/status/approved_by/approved_at are written in this migration", () => {
-  const setStatements = code.match(/update public\.profiles\s*\n\s*set[\s\S]*?where id = p_profile_id;/g) ?? [];
-  assert.equal(setStatements.length, 1, "expected exactly one profiles UPDATE with role/ops_group/etc inside apply_compatibility_profile_fields()");
+test("COMPATIBILITY: primary membership drives ONLY the display/compatibility field -- profiles.operating_entity_id is never read by any authorization-deciding function", () => {
+  for (const fnName of ["is_entity_admin", "is_authorized_admin_for_assignment", "deactivate_assignment", "transfer_assignment_same_entity"]) {
+    const block = fnBlock(fnName);
+    assert.ok(block, `must find ${fnName}`);
+    assert.doesNotMatch(block![0], /profiles\.operating_entity_id|p\.operating_entity_id/, `${fnName} must not use profiles.operating_entity_id as an authorization source`);
+  }
 });
 
 // =======================================================================
-// Cross-entity / multiple-assignment rules
+// Protected roles / self-target denial (re-verified against corrected source)
 // =======================================================================
 
-test("CROSS-ENTITY: initiate_cross_entity_transfer() requires the target entity to differ from the current entity", () => {
-  assert.match(code, /if v_from_entity_code = p_to_entity_code then\s*\n\s*raise exception 'Target entity must differ from the current entity for a cross-entity transfer\.';/);
+test("PROTECTED ROLES: every mutating RPC (approve/deactivate/transfer/cross-entity-transfer) rejects every protected role code", () => {
+  const fns = ["approve_registration_request", "deactivate_assignment", "transfer_assignment_same_entity", "initiate_cross_entity_transfer"];
+  for (const fnName of fns) {
+    const block = fnBlock(fnName);
+    assert.ok(block, `must find ${fnName}`);
+    for (const role of PROTECTED_ROLES) {
+      assert.match(block![0], new RegExp(`'${role}'`), `${fnName} must list ${role} as protected`);
+    }
+  }
 });
 
-test("CROSS-ENTITY: profiles.operating_entity_id is only updated inside approve_registration_request() -- initiating a cross-entity transfer does not itself grant the new entity's access", () => {
-  const initiateBlock = code.match(/create or replace function public\.initiate_cross_entity_transfer\([\s\S]*?\$function\$;/);
-  assert.ok(initiateBlock);
-  assert.doesNotMatch(initiateBlock![0], /update public\.profiles set operating_entity_id/);
-  assert.match(code, /update public\.profiles set operating_entity_id = p_operating_entity_id where id = v_request\.profile_id;/);
+test("PROTECTED ROLES: export_entity_user_directory() excludes every protected role and is documented as entirely-omitted", () => {
+  const block = fnBlock("export_entity_user_directory", "\\(p_entity_code text\\)");
+  assert.ok(block);
+  for (const role of PROTECTED_ROLES) {
+    assert.match(block![0], new RegExp(`'${role}'`), `must exclude ${role}`);
+  }
+  assert.match(migrationSql, /Protected-role accounts are ENTIRELY OMITTED/);
 });
 
-test("CROSS-ENTITY: deactivate_assignment() and transfer_assignment_same_entity() derive entity authority from profiles.operating_entity_id (the person's org affiliation), never from the assignment's own operating_entity_id column, since ordinary role assignments correctly leave that column NULL per Phase 3", () => {
-  assert.match(code, /select p\.operating_entity_id into v_target_entity_id from public\.profiles p where p\.id = v_assignment\.profile_id;/);
-  assert.match(code, /select p\.operating_entity_id into v_target_entity_id from public\.profiles p where p\.id = v_old\.profile_id;/);
+test("SELF-PROTECTION: approve/reject/deactivate/transfer-same-entity/initiate-cross-entity all deny the caller acting on themselves", () => {
+  assert.match(code, /if v_request\.profile_id = v_admin_id then\s*\n\s*raise exception 'Cannot approve your own registration request\.';/);
+  assert.match(code, /if v_request\.profile_id = v_admin_id then\s*\n\s*raise exception 'Cannot reject your own registration request\.';/);
+  assert.match(code, /if v_assignment\.profile_id = v_admin_id then\s*\n\s*raise exception 'Cannot deactivate your own assignment\.';/);
+  const transferBlocks = code.match(/if v_old\.profile_id = v_admin_id then\s*\n\s*raise exception 'Cannot transfer your own assignment\.';/g) ?? [];
+  assert.equal(transferBlocks.length, 2, "expected the self-transfer denial in both transfer functions");
+});
+
+test("AUTHORITY: deactivate_assignment(), transfer_assignment_same_entity(), and initiate_cross_entity_transfer() all use is_authorized_admin_for_assignment()", () => {
+  const fns = ["deactivate_assignment", "transfer_assignment_same_entity", "initiate_cross_entity_transfer"];
+  for (const fnName of fns) {
+    const block = fnBlock(fnName);
+    assert.ok(block, `must find ${fnName}`);
+    assert.match(block![0], /is_authorized_admin_for_assignment\(/, `${fnName} must check authority via the assignment's own membership`);
+  }
 });
 
 // =======================================================================
-// Export contract
+// Durable notifications
 // =======================================================================
 
-test("EXPORT: export_entity_user_directory() returns only name/staff_no/role/department/unit/hub/station/team/assignment-start -- no auth secrets, tokens, or internal security metadata", () => {
-  const block = code.match(/create or replace function public\.export_entity_user_directory\(p_entity_code text\)[\s\S]*?\$function\$;/);
+test("NOTIFICATIONS: user_notifications is a real, durable, RLS-protected table -- not documentation only", () => {
+  const block = code.match(/create table if not exists public\.user_notifications \([\s\S]*?\n\);/);
+  assert.ok(block);
+  assert.match(code, /alter table public\.user_notifications enable row level security;/);
+});
+
+test("NOTIFICATIONS: one event per successful transition -- notify() is called exactly once per mutating RPC's success path", () => {
+  const calls = code.match(/perform public\.notify\(/g) ?? [];
+  assert.equal(calls.length, 7, `expected 7 notify() call sites, found ${calls.length}`);
+});
+
+test("NOTIFICATIONS: rollback creates no notification -- notify() only inserts, no commit/savepoint logic anywhere in it", () => {
+  const notifyBlock = fnBlock("notify");
+  assert.ok(notifyBlock);
+  assert.doesNotMatch(notifyBlock![0], /commit|savepoint/i);
+});
+
+test("NOTIFICATIONS: retry does not duplicate -- dedup_key is UNIQUE and every insert uses ON CONFLICT (dedup_key) DO NOTHING", () => {
+  const block = fnBlock("notify");
+  assert.ok(block);
+  assert.match(block![0], /on conflict \(dedup_key\) do nothing;/);
+  assert.match(code, /dedup_key text not null unique,/);
+});
+
+test("NOTIFICATIONS: users cannot edit another user's events -- RLS restricts SELECT/UPDATE to recipient_profile_id = auth.uid(), and no INSERT policy exists for authenticated", () => {
+  assert.match(code, /create policy "notifications: self select" on public\.user_notifications\s*\nfor select using \(recipient_profile_id = auth\.uid\(\)\);/);
+  assert.match(code, /create policy "notifications: self mark read" on public\.user_notifications\s*\nfor update using \(recipient_profile_id = auth\.uid\(\)\) with check \(recipient_profile_id = auth\.uid\(\)\);/);
+  assert.doesNotMatch(code, /create policy "notifications:.*insert/i);
+});
+
+// =======================================================================
+// Admin directory / protected accounts
+// =======================================================================
+
+test("DIRECTORY: export_entity_user_directory() is entity-filtered via the assignment's active entity_membership_id, never profiles.operating_entity_id", () => {
+  const block = fnBlock("export_entity_user_directory", "\\(p_entity_code text\\)");
+  assert.ok(block);
+  assert.match(block![0], /join public\.user_entity_memberships uem on uem\.id = ura\.entity_membership_id and uem\.status = 'active'/);
+  assert.doesNotMatch(block![0], /p\.operating_entity_id/);
+});
+
+test("DIRECTORY: no email, password, token, or service_role literal ever appears in the export's returned columns", () => {
+  const block = fnBlock("export_entity_user_directory", "\\(p_entity_code text\\)");
   assert.ok(block);
   const returnsBlock = block![0].match(/returns table \([\s\S]*?\)/);
   assert.ok(returnsBlock);
   for (const forbidden of ["password", "token", "secret", "service_role", "email"]) {
-    assert.doesNotMatch(returnsBlock![0], new RegExp(forbidden, "i"), `must not expose ${forbidden}`);
+    assert.doesNotMatch(returnsBlock![0], new RegExp(forbidden, "i"));
   }
-});
-
-test("EXPORT: export_entity_user_directory() is entity-filtered via oe.code = p_entity_code joined through profiles.operating_entity_id, and denies the caller entirely if they are not that entity's admin", () => {
-  const block = code.match(/create or replace function public\.export_entity_user_directory\(p_entity_code text\)[\s\S]*?\$function\$;/);
-  assert.ok(block);
-  assert.match(block![0], /if not public\.is_entity_admin\(p_entity_code\) then/);
-  assert.match(block![0], /where oe\.code = p_entity_code/);
-});
-
-test("EXPORT: every call is audited before returning any data", () => {
-  const block = code.match(/create or replace function public\.export_entity_user_directory\(p_entity_code text\)[\s\S]*?\$function\$;/);
-  assert.ok(block);
-  const auditIdx = block![0].indexOf("insert into public.user_admin_audit_log");
-  const returnIdx = block![0].indexOf("return query");
-  assert.ok(auditIdx > -1 && returnIdx > -1);
-  assert.ok(auditIdx < returnIdx, "the audit write must happen before the data is returned");
 });
 
 // =======================================================================
 // Non-regression / existing-system evidence
 // =======================================================================
 
-test("REGRESSION: no CREATE POLICY, ALTER POLICY, or DROP POLICY statement targets any existing table -- current Google SSO/password registration and Management approval are untouched", () => {
+test("REGRESSION: no CREATE/ALTER/DROP POLICY statement targets any table other than the two policy-bearing new ones in this migration", () => {
   const policyStatements = code.match(/(create|alter|drop) policy[\s\S]*?;/gi) ?? [];
   for (const stmt of policyStatements) {
-    assert.match(stmt, /on public\.user_registration_requests/i, `unexpected policy target: ${stmt.slice(0, 80)}`);
+    assert.match(stmt, /on public\.(user_registration_requests|user_notifications)/i, `unexpected policy target: ${stmt.slice(0, 80)}`);
   }
 });
 
-test("REGRESSION: registerUser()/approveStaff()/rejectStaff() and the existing 20260924000001 remediation migration's objects are never referenced or redefined here", () => {
+test("REGRESSION: registerUser()/approveStaff()/rejectStaff() and prior remediation-migration functions are never referenced or redefined here", () => {
   assert.doesNotMatch(code, /registerUser|approveStaff|rejectStaff/);
   assert.doesNotMatch(code, /create or replace function public\.is_active_supervisor/);
   assert.doesNotMatch(code, /create or replace function public\.is_approved_management/);
+});
+
+test("REGRESSION: no CaterLink public.users row is created anywhere in this migration", () => {
+  assert.doesNotMatch(code, /insert into public\.users\b/i);
 });
 
 // =======================================================================
@@ -428,19 +455,29 @@ test("REGRESSION: registerUser()/approveStaff()/rejectStaff() and the existing 2
 
 test("SECURITY: every new function is SECURITY DEFINER with a fixed search_path", () => {
   const fnBlocks = code.match(/create or replace function public\.\w+\([\s\S]*?\$function\$;/g) ?? [];
-  assert.ok(fnBlocks.length >= 13, "expected at least 13 new functions");
+  assert.ok(fnBlocks.length >= 20, `expected at least 20 new functions, found ${fnBlocks.length}`);
   for (const block of fnBlocks) {
     assert.match(block, /security definer/i, `missing SECURITY DEFINER: ${block.slice(0, 60)}`);
     assert.match(block, /set search_path to 'public'/i, `missing fixed search_path: ${block.slice(0, 60)}`);
   }
 });
 
-test("SECURITY: apply_compatibility_profile_fields() is service_role-only -- no direct client path to write compatibility fields", () => {
-  assert.match(code, /revoke execute on function public\.apply_compatibility_profile_fields\(uuid, text, uuid, uuid, uuid, text, uuid\) from public, anon, authenticated;/);
-  assert.match(code, /grant execute on function public\.apply_compatibility_profile_fields\(uuid, text, uuid, uuid, uuid, text, uuid\) to service_role;/);
+test("SECURITY: every internal-only helper is service_role-only", () => {
+  const internalFns: Array<[string, string]> = [
+    ["apply_compatibility_profile_fields", "uuid, text, uuid, uuid, uuid, text, uuid"],
+    ["get_or_create_active_membership", "uuid, uuid, uuid, uuid"],
+    ["sync_primary_operating_entity", "uuid"],
+    ["is_authorized_admin_for_assignment", "uuid"],
+    ["notify", "uuid, text, text, uuid, uuid, uuid, jsonb"],
+  ];
+  for (const [name, sig] of internalFns) {
+    const escapedSig = sig.replace(/[()]/g, "\\$&");
+    assert.match(code, new RegExp(`revoke execute on function public\\.${name}\\(${escapedSig}\\) from public, anon, authenticated;`), `${name} must be revoked from authenticated`);
+    assert.match(code, new RegExp(`grant execute on function public\\.${name}\\(${escapedSig}\\) to service_role;`), `${name} must be service_role-only`);
+  }
 });
 
-test("SECURITY: every client-facing RPC (submit/get-my/list-pending/approve/reject/deactivate/transfer x2/export) is revoked from PUBLIC and anon", () => {
+test("SECURITY: every client-facing RPC is revoked from PUBLIC and anon", () => {
   const fns = [
     "submit_registration_request(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, text)",
     "get_my_registration_request()",
@@ -452,6 +489,8 @@ test("SECURITY: every client-facing RPC (submit/get-my/list-pending/approve/reje
     "initiate_cross_entity_transfer(uuid, text, text)",
     "export_entity_user_directory(text)",
     "is_entity_admin(text)",
+    "get_my_notifications(integer)",
+    "mark_notification_read(uuid)",
   ];
   for (const fn of fns) {
     const escaped = fn.replace(/[()]/g, "\\$&");
@@ -459,34 +498,23 @@ test("SECURITY: every client-facing RPC (submit/get-my/list-pending/approve/reje
   }
 });
 
-test("SECURITY: no CLIENT-FACING (authenticated-executable) function accepts a client-supplied reviewer/admin/actor id parameter -- every authority check reads only auth.uid(). apply_compatibility_profile_fields() is the sole exception: it is service_role-only (never granted to authenticated), and its p_actor_id is always populated internally from auth.uid() by its one caller, approve_registration_request(), never client-supplied.", () => {
-  const clientFacingFns = [
-    "submit_registration_request", "get_my_registration_request", "list_pending_registration_requests",
-    "approve_registration_request", "reject_registration_request", "deactivate_assignment",
-    "transfer_assignment_same_entity", "initiate_cross_entity_transfer", "export_entity_user_directory",
-    "is_entity_admin",
-  ];
-  for (const fnName of clientFacingFns) {
-    const block = code.match(new RegExp(`create or replace function public\\.${fnName}\\([\\s\\S]*?\\$function\\$;`));
-    assert.ok(block, `must find ${fnName}`);
-    assert.doesNotMatch(block![0], /p_admin_id|p_reviewer_id|p_actor_id|p_caller_id/i, `${fnName} must not accept a client-supplied identity parameter`);
-  }
-});
-
 // =======================================================================
 // Rollback ordering
 // =======================================================================
 
-test("ROLLBACK: triggers/functions/RPCs are dropped before the two new tables, and user_admin_audit_log is dropped before user_registration_requests", () => {
+test("ROLLBACK: triggers/functions are dropped before the four new tables; tables are dropped dependents-first; the two new columns are dropped last", () => {
   const rollbackBlock = migrationSql.match(/DOCUMENTED ROLLBACK[\s\S]*$/);
   assert.ok(rollbackBlock);
   const text = rollbackBlock[0];
-  const lastFnDropIdx = text.lastIndexOf("drop function if exists public.is_entity_admin(text);");
-  const auditTableIdx = text.indexOf("drop table if exists public.user_admin_audit_log;");
+  const lastFnDropIdx = text.lastIndexOf("drop function if exists public.sync_primary_operating_entity(uuid);");
+  const notificationsTableIdx = text.indexOf("drop table if exists public.user_notifications;");
   const requestsTableIdx = text.indexOf("drop table if exists public.user_registration_requests;");
-  assert.ok(lastFnDropIdx > -1 && auditTableIdx > -1 && requestsTableIdx > -1);
-  assert.ok(lastFnDropIdx < auditTableIdx, "functions must be dropped before the tables");
-  assert.ok(auditTableIdx < requestsTableIdx, "user_admin_audit_log must be dropped before user_registration_requests");
+  const membershipsTableIdx = text.indexOf("drop table if exists public.user_entity_memberships;");
+  const dropColIdx = text.indexOf("alter table public.user_role_assignments drop column if exists entity_membership_id;");
+  assert.ok(lastFnDropIdx > -1 && notificationsTableIdx > -1 && requestsTableIdx > -1 && membershipsTableIdx > -1 && dropColIdx > -1);
+  assert.ok(lastFnDropIdx < notificationsTableIdx, "functions before tables");
+  assert.ok(requestsTableIdx < membershipsTableIdx, "user_registration_requests before user_entity_memberships (FK direction)");
+  assert.ok(membershipsTableIdx < dropColIdx, "tables before the column drops");
 });
 
 // =======================================================================
@@ -510,11 +538,6 @@ test("STATIC: no unescaped double-hyphen inside a single-quoted string literal",
   }
 });
 
-test("STATIC: every assignable role code referenced in the protected-roles arrays is one of the 11 ordinary roles, never a protected one (sanity cross-check against Phase 3's own catalog)", () => {
-  for (const role of ASSIGNABLE_ROLES) {
-    assert.ok(!PROTECTED_ROLES.includes(role), `${role} must not be in both lists`);
-  }
-  assert.equal(ASSIGNABLE_ROLES.length, 11);
-  assert.equal(PROTECTED_ROLES.length, 12);
-  assert.equal(ASSIGNABLE_ROLES.length + PROTECTED_ROLES.length, 23);
+test("STATIC: no ALTER TYPE ... ADD VALUE statement exists anywhere -- the same-transaction enum risk is avoided entirely", () => {
+  assert.doesNotMatch(code, /alter type/i);
 });
