@@ -103,12 +103,12 @@ test("PRIVILEGE ESCALATION: the unique index prevents duplicate active assignmen
   assert.match(code, /where revoked_at is null;/);
 });
 
-// --- Scope-shape validation trigger (mirrors validate_user_role_assignment_scope()) ---
+// --- Scope-shape validation trigger (mirrors validate_user_role_assignment_scope() -- second pass, with hierarchy-consistency checks) ---
 
 const INTERNATIONAL_CODES = ["airasia_management", "ghod", "global_reporting_controller", "super_admin"];
 
-type Scope = {
-  aocId?: string | null;
+type FullScope = {
+  aocId: string | null;
   operatingEntityId?: string | null;
   departmentId?: string | null;
   unitId?: string | null;
@@ -117,138 +117,353 @@ type Scope = {
   teamId?: string | null;
 };
 
-type EntityCode = "MAA" | "AAX";
-type HubCode = "kul" | "northern" | "sarawak" | "sabah" | "southern_east_coast" | "unclassified";
+function scopeOf(overrides: Partial<FullScope> = {}): FullScope {
+  return { aocId: null, operatingEntityId: null, departmentId: null, unitId: null, hubId: null, stationId: null, teamId: null, ...overrides };
+}
 
-/** Mirrors validate_user_role_assignment_scope() exactly. */
-function validateAssignmentScope(
-  roleCode: string,
-  scope: Scope,
-  lookups: { operatingEntityCode?: EntityCode; hubCode?: HubCode } = {},
-): { ok: boolean; error?: string } {
+/** A small fake catalog mirroring the FK relationships in aocs/operating_entities/departments/units/hubs/org_stations/org_teams. */
+const CATALOG = {
+  entities: {
+    maa: { aocId: "my", code: "MAA" },
+    aax: { aocId: "my", code: "AAX" },
+    other_aoc_entity: { aocId: "other-aoc", code: "MAA" },
+  } as Record<string, { aocId: string; code: string }>,
+  departments: {
+    operation: { aocId: "my", code: "operation" },
+    enforcement: { aocId: "my", code: "enforcement" },
+    compliance: { aocId: "my", code: "compliance" },
+    caterlink: { aocId: "my", code: "caterlink" },
+    other_aoc_dept: { aocId: "other-aoc", code: "operation" },
+  } as Record<string, { aocId: string; code: string }>,
+  units: {
+    investigation: { departmentId: "enforcement", code: "investigation" },
+    sat: { departmentId: "enforcement", code: "sat" },
+    profiling: { departmentId: "enforcement", code: "profiling" },
+    wrong_dept_unit: { departmentId: "operation", code: "investigation" },
+  } as Record<string, { departmentId: string; code: string }>,
+  hubs: {
+    kul: { aocId: "my", code: "kul" },
+    northern: { aocId: "my", code: "northern" },
+    sabah: { aocId: "my", code: "sabah" },
+    other_aoc_hub: { aocId: "other-aoc", code: "kul" },
+  } as Record<string, { aocId: string; code: string }>,
+  stations: {
+    "kul-maa": { hubId: "kul" },
+    pen: { hubId: "northern" },
+    "wrong-hub-station": { hubId: "sabah" },
+  } as Record<string, { hubId: string }>,
+  teams: {
+    "kul-alpha": { stationId: "kul-maa" },
+    "pen-alpha": { stationId: "pen" },
+    "wrong-station-team": { stationId: "kul-maa" },
+  } as Record<string, { stationId: string }>,
+};
+
+/** Mirrors validate_user_role_assignment_scope() exactly -- generic hierarchy checks, then per-role required/forbidden scope. */
+function validateAssignmentScope(roleCode: string, scope: FullScope): { ok: boolean; error?: string } {
+  if (scope.operatingEntityId != null) {
+    const e = CATALOG.entities[scope.operatingEntityId];
+    if (!e || e.aocId !== scope.aocId) return { ok: false, error: "operating_entity_id does not belong to the assignment aoc_id (cross-AOC entity)." };
+  }
+  if (scope.departmentId != null) {
+    const d = CATALOG.departments[scope.departmentId];
+    if (!d || d.aocId !== scope.aocId) return { ok: false, error: "department_id does not belong to the assignment aoc_id (cross-AOC department)." };
+  }
+  if (scope.unitId != null) {
+    const u = CATALOG.units[scope.unitId];
+    if (!u || scope.departmentId == null || u.departmentId !== scope.departmentId) return { ok: false, error: "unit_id does not belong to the assignment department_id (wrong-department unit)." };
+  }
+  if (scope.hubId != null) {
+    const h = CATALOG.hubs[scope.hubId];
+    if (!h || h.aocId !== scope.aocId) return { ok: false, error: "hub_id does not belong to the assignment aoc_id (cross-AOC hub)." };
+  }
+  if (scope.stationId != null) {
+    const s = CATALOG.stations[scope.stationId];
+    if (!s || scope.hubId == null || s.hubId !== scope.hubId) return { ok: false, error: "station_id does not belong to the assignment hub_id (wrong-hub station)." };
+  }
+  if (scope.teamId != null) {
+    const t = CATALOG.teams[scope.teamId];
+    if (!t || scope.stationId == null || t.stationId !== scope.stationId) return { ok: false, error: "team_id does not belong to the assignment station_id (wrong-station team)." };
+  }
+
+  const entityCode = scope.operatingEntityId ? CATALOG.entities[scope.operatingEntityId]?.code : undefined;
+  const deptCode = scope.departmentId ? CATALOG.departments[scope.departmentId]?.code : undefined;
+  const unitCode = scope.unitId ? CATALOG.units[scope.unitId]?.code : undefined;
+  const hubCode = scope.hubId ? CATALOG.hubs[scope.hubId]?.code : undefined;
+
   if (INTERNATIONAL_CODES.includes(roleCode)) {
-    const anyScope = Object.values(scope).some((v) => v != null);
-    if (anyScope) return { ok: false, error: `${roleCode} is an international/platform role and must carry no AOC or narrower scope.` };
+    const anyScope = scope.aocId != null || scope.operatingEntityId != null || scope.departmentId != null || scope.unitId != null || scope.hubId != null || scope.stationId != null || scope.teamId != null;
+    if (anyScope) return { ok: false, error: `${roleCode} is an international/platform role and must carry no scope at all.` };
     return { ok: true };
   }
 
   if (scope.aocId == null) return { ok: false, error: `${roleCode} requires an explicit aoc_id.` };
 
-  if (["maa_boss", "maa_admin"].includes(roleCode)) {
+  if (["maa_boss", "maa_admin", "aax_boss", "aax_admin"].includes(roleCode)) {
     if (scope.operatingEntityId == null) return { ok: false, error: `${roleCode} requires operating_entity_id.` };
-    if (lookups.operatingEntityCode !== "MAA") return { ok: false, error: `${roleCode} must be scoped to the MAA operating entity, not any other.` };
+    if (["maa_boss", "maa_admin"].includes(roleCode) && entityCode !== "MAA") return { ok: false, error: `${roleCode} must be scoped to the MAA operating entity, not any other.` };
+    if (["aax_boss", "aax_admin"].includes(roleCode) && entityCode !== "AAX") return { ok: false, error: `${roleCode} must be scoped to the AAX operating entity, not any other.` };
+    if (scope.departmentId != null || scope.unitId != null || scope.hubId != null || scope.stationId != null || scope.teamId != null) {
+      return { ok: false, error: `${roleCode} must carry no department/unit/hub/station/team scope.` };
+    }
+    return { ok: true };
   }
-  if (["aax_boss", "aax_admin"].includes(roleCode)) {
-    if (scope.operatingEntityId == null) return { ok: false, error: `${roleCode} requires operating_entity_id.` };
-    if (lookups.operatingEntityCode !== "AAX") return { ok: false, error: `${roleCode} must be scoped to the AAX operating entity, not any other.` };
-  }
+
   if (["operation_manager", "main_enforcement", "compliance", "caterlink_management"].includes(roleCode)) {
     if (scope.departmentId == null) return { ok: false, error: `${roleCode} requires department_id.` };
+    if (roleCode === "operation_manager" && deptCode !== "operation") return { ok: false, error: "operation_manager must be scoped to the Operation department." };
+    if (roleCode === "main_enforcement" && deptCode !== "enforcement") return { ok: false, error: "main_enforcement must be scoped to the Enforcement department." };
+    if (roleCode === "compliance" && deptCode !== "compliance") return { ok: false, error: "compliance must be scoped to the Compliance department." };
+    if (roleCode === "caterlink_management" && deptCode !== "caterlink") return { ok: false, error: "caterlink_management must be scoped to the CaterLink department." };
+    if (scope.operatingEntityId != null || scope.unitId != null || scope.hubId != null || scope.stationId != null || scope.teamId != null) {
+      return { ok: false, error: `${roleCode} must carry no entity/unit/hub/station/team scope.` };
+    }
+    return { ok: true };
   }
+
   if (["investigation_sso", "investigation_so", "investigation_aso"].includes(roleCode)) {
+    if (scope.departmentId == null) return { ok: false, error: `${roleCode} requires department_id (Enforcement).` };
     if (scope.unitId == null) return { ok: false, error: `${roleCode} requires unit_id (Investigation).` };
+    if (deptCode !== "enforcement") return { ok: false, error: `${roleCode} must be scoped to the Enforcement department.` };
+    if (unitCode !== "investigation") return { ok: false, error: `${roleCode} must be scoped to the Investigation unit.` };
+    if (scope.operatingEntityId != null || scope.hubId != null || scope.stationId != null || scope.teamId != null) {
+      return { ok: false, error: `${roleCode} must carry no entity/hub/station/team scope.` };
+    }
+    return { ok: true };
   }
+
   if (roleCode === "sat_aso") {
-    if (scope.unitId == null || scope.hubId == null) return { ok: false, error: "sat_aso requires unit_id (SAT) and hub_id (KUL)." };
-    if (lookups.hubCode !== "kul") return { ok: false, error: "sat_aso must be scoped to the KUL hub only." };
+    if (scope.departmentId == null) return { ok: false, error: "sat_aso requires department_id (Enforcement)." };
+    if (scope.unitId == null) return { ok: false, error: "sat_aso requires unit_id (SAT)." };
+    if (scope.hubId == null) return { ok: false, error: "sat_aso requires hub_id (KUL)." };
+    if (scope.stationId == null) return { ok: false, error: "sat_aso requires station_id (a KUL station)." };
+    if (scope.teamId == null) return { ok: false, error: "sat_aso requires team_id (one SAT team)." };
+    if (deptCode !== "enforcement") return { ok: false, error: "sat_aso must be scoped to the Enforcement department." };
+    if (unitCode !== "sat") return { ok: false, error: "sat_aso must be scoped to the SAT unit." };
+    if (hubCode !== "kul") return { ok: false, error: "sat_aso must be scoped to the KUL hub only." };
+    if (scope.operatingEntityId != null) return { ok: false, error: "sat_aso must carry no operating-entity scope." };
+    return { ok: true };
   }
+
   if (["profiling_so", "profiling_aso"].includes(roleCode)) {
+    if (scope.departmentId == null) return { ok: false, error: `${roleCode} requires department_id (Enforcement).` };
     if (scope.unitId == null) return { ok: false, error: `${roleCode} requires unit_id (Profiling).` };
-  }
-  if (roleCode === "hub_se") {
-    if (scope.hubId == null) return { ok: false, error: "hub_se requires hub_id." };
-  }
-  if (roleCode === "dse") {
-    if (scope.hubId == null || scope.teamId == null) return { ok: false, error: "dse requires hub_id (KUL) and team_id (own team only)." };
-    if (lookups.hubCode !== "kul") return { ok: false, error: "dse must be scoped to the KUL hub only; non-KUL hubs use hub_se instead." };
-  }
-  if (["sso", "so", "aso"].includes(roleCode)) {
+    if (scope.hubId == null) return { ok: false, error: `${roleCode} requires hub_id.` };
     if (scope.stationId == null) return { ok: false, error: `${roleCode} requires station_id.` };
+    if (scope.teamId == null) return { ok: false, error: `${roleCode} requires team_id (one Profiling team).` };
+    if (deptCode !== "enforcement") return { ok: false, error: `${roleCode} must be scoped to the Enforcement department.` };
+    if (unitCode !== "profiling") return { ok: false, error: `${roleCode} must be scoped to the Profiling unit.` };
+    if (scope.operatingEntityId != null) return { ok: false, error: `${roleCode} must carry no operating-entity scope.` };
+    return { ok: true };
   }
-  return { ok: true };
+
+  if (roleCode === "hub_se") {
+    if (scope.departmentId == null) return { ok: false, error: "hub_se requires department_id (Operation)." };
+    if (scope.hubId == null) return { ok: false, error: "hub_se requires hub_id." };
+    if (deptCode !== "operation") return { ok: false, error: "hub_se must be scoped to the Operation department." };
+    if (scope.operatingEntityId != null || scope.unitId != null || scope.stationId != null || scope.teamId != null) {
+      return { ok: false, error: "hub_se must carry no entity/unit/station/team scope." };
+    }
+    return { ok: true };
+  }
+
+  if (roleCode === "dse") {
+    if (scope.departmentId == null) return { ok: false, error: "dse requires department_id (Operation)." };
+    if (scope.hubId == null) return { ok: false, error: "dse requires hub_id (KUL)." };
+    if (scope.stationId == null) return { ok: false, error: "dse requires station_id (a KUL station)." };
+    if (scope.teamId == null) return { ok: false, error: "dse requires team_id (own team only)." };
+    if (deptCode !== "operation") return { ok: false, error: "dse must be scoped to the Operation department." };
+    if (hubCode !== "kul") return { ok: false, error: "dse must be scoped to the KUL hub only; non-KUL hubs use hub_se instead." };
+    if (scope.operatingEntityId != null || scope.unitId != null) return { ok: false, error: "dse must carry no entity/unit scope." };
+    return { ok: true };
+  }
+
+  if (["sso", "so", "aso"].includes(roleCode)) {
+    if (scope.departmentId == null) return { ok: false, error: `${roleCode} requires department_id (Operation).` };
+    if (scope.hubId == null) return { ok: false, error: `${roleCode} requires hub_id.` };
+    if (scope.stationId == null) return { ok: false, error: `${roleCode} requires station_id.` };
+    if (scope.teamId == null) return { ok: false, error: `${roleCode} requires team_id; station staff cannot receive an assignment without a team.` };
+    if (deptCode !== "operation") return { ok: false, error: `${roleCode} must be scoped to the Operation department.` };
+    if (scope.operatingEntityId != null || scope.unitId != null) return { ok: false, error: `${roleCode} must carry no entity/unit scope.` };
+    return { ok: true };
+  }
+
+  return { ok: false, error: `Unhandled role code ${roleCode}.` };
 }
 
-test("MANDATORY: international roles must have a fully null scope (aoc_id included)", () => {
-  for (const roleCode of INTERNATIONAL_CODES) {
-    assert.equal(validateAssignmentScope(roleCode, {}).ok, true, `${roleCode} with no scope should be valid`);
-    assert.equal(validateAssignmentScope(roleCode, { aocId: "my" }).ok, false, `${roleCode} with an aoc_id should be rejected`);
+/** The minimal valid scope for each role, built from CATALOG -- used to drive the full per-role decision table below. */
+const MINIMAL_VALID_SCOPE: Record<string, FullScope> = {
+  airasia_management: scopeOf(),
+  ghod: scopeOf(),
+  global_reporting_controller: scopeOf(),
+  super_admin: scopeOf(),
+  maa_boss: scopeOf({ aocId: "my", operatingEntityId: "maa" }),
+  aax_boss: scopeOf({ aocId: "my", operatingEntityId: "aax" }),
+  maa_admin: scopeOf({ aocId: "my", operatingEntityId: "maa" }),
+  aax_admin: scopeOf({ aocId: "my", operatingEntityId: "aax" }),
+  operation_manager: scopeOf({ aocId: "my", departmentId: "operation" }),
+  main_enforcement: scopeOf({ aocId: "my", departmentId: "enforcement" }),
+  compliance: scopeOf({ aocId: "my", departmentId: "compliance" }),
+  investigation_sso: scopeOf({ aocId: "my", departmentId: "enforcement", unitId: "investigation" }),
+  investigation_so: scopeOf({ aocId: "my", departmentId: "enforcement", unitId: "investigation" }),
+  investigation_aso: scopeOf({ aocId: "my", departmentId: "enforcement", unitId: "investigation" }),
+  sat_aso: scopeOf({ aocId: "my", departmentId: "enforcement", unitId: "sat", hubId: "kul", stationId: "kul-maa", teamId: "kul-alpha" }),
+  profiling_so: scopeOf({ aocId: "my", departmentId: "enforcement", unitId: "profiling", hubId: "northern", stationId: "pen", teamId: "pen-alpha" }),
+  profiling_aso: scopeOf({ aocId: "my", departmentId: "enforcement", unitId: "profiling", hubId: "northern", stationId: "pen", teamId: "pen-alpha" }),
+  hub_se: scopeOf({ aocId: "my", departmentId: "operation", hubId: "northern" }),
+  dse: scopeOf({ aocId: "my", departmentId: "operation", hubId: "kul", stationId: "kul-maa", teamId: "kul-alpha" }),
+  sso: scopeOf({ aocId: "my", departmentId: "operation", hubId: "northern", stationId: "pen", teamId: "pen-alpha" }),
+  so: scopeOf({ aocId: "my", departmentId: "operation", hubId: "northern", stationId: "pen", teamId: "pen-alpha" }),
+  aso: scopeOf({ aocId: "my", departmentId: "operation", hubId: "northern", stationId: "pen", teamId: "pen-alpha" }),
+  caterlink_management: scopeOf({ aocId: "my", departmentId: "caterlink" }),
+};
+
+test("DECISION TABLE: every role's minimal scope from the matrix passes validation", () => {
+  for (const roleCode of REQUIRED_ROLE_CODES) {
+    const result = validateAssignmentScope(roleCode, MINIMAL_VALID_SCOPE[roleCode]);
+    assert.equal(result.ok, true, `${roleCode}: expected valid, got error: ${result.error}`);
   }
 });
 
-test("MANDATORY: null-scope bypass is closed -- every non-international role requires an explicit aoc_id", () => {
+test("DECISION TABLE: every role rejects a fully empty scope (missing required scope)", () => {
   for (const roleCode of REQUIRED_ROLE_CODES.filter((c) => !INTERNATIONAL_CODES.includes(c))) {
-    assert.equal(validateAssignmentScope(roleCode, {}).ok, false, `${roleCode} with no aoc_id must be rejected`);
+    assert.equal(validateAssignmentScope(roleCode, scopeOf()).ok, false, `${roleCode} with no scope must be rejected`);
   }
 });
 
-test("MAA Admin denial: MAA Admin cannot be scoped to the AAX operating entity", () => {
-  const result = validateAssignmentScope("maa_admin", { aocId: "my", operatingEntityId: "aax" }, { operatingEntityCode: "AAX" });
-  assert.equal(result.ok, false);
-});
-
-test("AAX Admin denial: AAX Admin cannot be scoped to the MAA operating entity", () => {
-  const result = validateAssignmentScope("aax_admin", { aocId: "my", operatingEntityId: "maa" }, { operatingEntityCode: "MAA" });
-  assert.equal(result.ok, false);
-});
-
-test("Valid MAA Admin assignment passes", () => {
-  assert.equal(validateAssignmentScope("maa_admin", { aocId: "my", operatingEntityId: "maa" }, { operatingEntityCode: "MAA" }).ok, true);
-});
-
-test("Valid AAX Boss assignment passes", () => {
-  assert.equal(validateAssignmentScope("aax_boss", { aocId: "my", operatingEntityId: "aax" }, { operatingEntityCode: "AAX" }).ok, true);
-});
-
-test("Hub SE requires hub_id", () => {
-  assert.equal(validateAssignmentScope("hub_se", { aocId: "my" }).ok, false);
-  assert.equal(validateAssignmentScope("hub_se", { aocId: "my", hubId: "northern" }).ok, true);
-});
-
-test("DSE own-team requirement: DSE requires hub_id AND team_id, and must be KUL", () => {
-  assert.equal(validateAssignmentScope("dse", { aocId: "my", hubId: "kul" }).ok, false, "missing team_id must fail");
-  assert.equal(validateAssignmentScope("dse", { aocId: "my", teamId: "alpha" }).ok, false, "missing hub_id must fail");
-  assert.equal(validateAssignmentScope("dse", { aocId: "my", hubId: "kul", teamId: "alpha" }, { hubCode: "kul" }).ok, true);
-});
-
-test("REGRESSION: a DSE assignment cannot be scoped to a non-KUL hub (that's hub_se's job)", () => {
-  const result = validateAssignmentScope("dse", { aocId: "my", hubId: "northern", teamId: "alpha" }, { hubCode: "northern" });
-  assert.equal(result.ok, false);
-});
-
-test("SAT ASO must be scoped to KUL only", () => {
-  assert.equal(validateAssignmentScope("sat_aso", { aocId: "my", unitId: "sat", hubId: "kul" }, { hubCode: "kul" }).ok, true);
-  assert.equal(validateAssignmentScope("sat_aso", { aocId: "my", unitId: "sat", hubId: "northern" }, { hubCode: "northern" }).ok, false);
-});
-
-test("Investigation roles require unit_id", () => {
-  for (const roleCode of ["investigation_sso", "investigation_so", "investigation_aso"]) {
-    assert.equal(validateAssignmentScope(roleCode, { aocId: "my" }).ok, false);
-    assert.equal(validateAssignmentScope(roleCode, { aocId: "my", unitId: "investigation" }).ok, true);
+test("DECISION TABLE: wrong department is rejected for every department-scoped role", () => {
+  const cases: Array<[string, FullScope]> = [
+    ["operation_manager", scopeOf({ aocId: "my", departmentId: "enforcement" })],
+    ["main_enforcement", scopeOf({ aocId: "my", departmentId: "operation" })],
+    ["compliance", scopeOf({ aocId: "my", departmentId: "operation" })],
+    ["caterlink_management", scopeOf({ aocId: "my", departmentId: "operation" })],
+    ["hub_se", scopeOf({ aocId: "my", departmentId: "enforcement", hubId: "northern" })],
+    ["dse", scopeOf({ aocId: "my", departmentId: "enforcement", hubId: "kul", stationId: "kul-maa", teamId: "kul-alpha" })],
+    ["aso", scopeOf({ aocId: "my", departmentId: "enforcement", hubId: "northern", stationId: "pen", teamId: "pen-alpha" })],
+    ["investigation_aso", scopeOf({ aocId: "my", departmentId: "operation", unitId: "wrong_dept_unit" })],
+  ];
+  for (const [roleCode, scope] of cases) {
+    assert.equal(validateAssignmentScope(roleCode, scope).ok, false, `${roleCode} with the wrong department must be rejected`);
   }
 });
 
-test("Profiling roles require unit_id", () => {
-  for (const roleCode of ["profiling_so", "profiling_aso"]) {
-    assert.equal(validateAssignmentScope(roleCode, { aocId: "my" }).ok, false);
-    assert.equal(validateAssignmentScope(roleCode, { aocId: "my", unitId: "profiling" }).ok, true);
+test("DECISION TABLE: wrong unit is rejected for every unit-scoped role", () => {
+  // wrong_dept_unit has code 'investigation' but departmentId 'operation' --
+  // this simultaneously exercises the unit-belongs-to-department hierarchy
+  // check AND the department-code check, both of which must independently
+  // reject it.
+  assert.equal(
+    validateAssignmentScope("investigation_aso", scopeOf({ aocId: "my", departmentId: "operation", unitId: "wrong_dept_unit" })).ok,
+    false,
+  );
+  assert.equal(
+    validateAssignmentScope("sat_aso", scopeOf({ aocId: "my", departmentId: "enforcement", unitId: "investigation", hubId: "kul", stationId: "kul-maa", teamId: "kul-alpha" })).ok,
+    false,
+    "sat_aso with the Investigation unit instead of SAT must be rejected",
+  );
+  assert.equal(
+    validateAssignmentScope("profiling_so", scopeOf({ aocId: "my", departmentId: "enforcement", unitId: "sat", hubId: "northern", stationId: "pen", teamId: "pen-alpha" })).ok,
+    false,
+    "profiling_so with the SAT unit instead of Profiling must be rejected",
+  );
+});
+
+test("DECISION TABLE: forbidden extra scope is rejected for every role -- a harmless-looking extra id is never accepted", () => {
+  const cases: Array<[string, FullScope]> = [
+    ["airasia_management", scopeOf({ aocId: "my" })],
+    ["ghod", scopeOf({ hubId: "northern" })],
+    ["super_admin", scopeOf({ departmentId: "operation" })],
+    ["global_reporting_controller", scopeOf({ stationId: "pen" })],
+    ["maa_boss", scopeOf({ aocId: "my", operatingEntityId: "maa", departmentId: "operation" })],
+    ["aax_admin", scopeOf({ aocId: "my", operatingEntityId: "aax", hubId: "northern" })],
+    ["operation_manager", scopeOf({ aocId: "my", departmentId: "operation", operatingEntityId: "maa" })],
+    ["operation_manager", scopeOf({ aocId: "my", departmentId: "operation", hubId: "northern" })],
+    ["main_enforcement", scopeOf({ aocId: "my", departmentId: "enforcement", unitId: "investigation" })],
+    ["compliance", scopeOf({ aocId: "my", departmentId: "compliance", stationId: "pen" })],
+    ["investigation_sso", scopeOf({ aocId: "my", departmentId: "enforcement", unitId: "investigation", hubId: "kul" })],
+    ["sat_aso", { ...MINIMAL_VALID_SCOPE.sat_aso, operatingEntityId: "maa" }],
+    ["profiling_aso", { ...MINIMAL_VALID_SCOPE.profiling_aso, operatingEntityId: "aax" }],
+    ["hub_se", scopeOf({ aocId: "my", departmentId: "operation", hubId: "northern", stationId: "pen" })],
+    ["hub_se", scopeOf({ aocId: "my", departmentId: "operation", hubId: "northern", teamId: "pen-alpha", stationId: "pen" })],
+    ["dse", { ...MINIMAL_VALID_SCOPE.dse, operatingEntityId: "maa" }],
+    ["dse", { ...MINIMAL_VALID_SCOPE.dse, unitId: "investigation" }],
+    ["aso", { ...MINIMAL_VALID_SCOPE.aso, operatingEntityId: "maa" }],
+    ["caterlink_management", scopeOf({ aocId: "my", departmentId: "caterlink", hubId: "northern" })],
+  ];
+  for (const [roleCode, scope] of cases) {
+    assert.equal(validateAssignmentScope(roleCode, scope).ok, false, `${roleCode} with forbidden extra scope must be rejected: ${JSON.stringify(scope)}`);
   }
 });
 
-test("Station roles (SSO/SO/ASO) require station_id", () => {
+test("HIERARCHY: Malaysia AOC with an operating entity that belongs to a different AOC is rejected (mixed valid IDs, invalid hierarchy)", () => {
+  const result = validateAssignmentScope("maa_boss", scopeOf({ aocId: "my", operatingEntityId: "other_aoc_entity" }));
+  assert.equal(result.ok, false);
+});
+
+test("HIERARCHY: an Enforcement unit attached to a supplied Operation department is rejected", () => {
+  const result = validateAssignmentScope("investigation_aso", scopeOf({ aocId: "my", departmentId: "operation", unitId: "investigation" }));
+  assert.equal(result.ok, false);
+});
+
+test("HIERARCHY: a station from a different hub than the one supplied is rejected", () => {
+  const result = validateAssignmentScope("aso", scopeOf({ aocId: "my", departmentId: "operation", hubId: "northern", stationId: "wrong-hub-station", teamId: "pen-alpha" }));
+  assert.equal(result.ok, false);
+});
+
+test("HIERARCHY: a team from a different station than the one supplied is rejected", () => {
+  const result = validateAssignmentScope("aso", scopeOf({ aocId: "my", departmentId: "operation", hubId: "northern", stationId: "pen", teamId: "wrong-station-team" }));
+  assert.equal(result.ok, false);
+});
+
+test("HIERARCHY: a hub from a different AOC than the assignment's aoc_id is rejected -- future-AOC-safe (not hardcoded to 'my')", () => {
+  const result = validateAssignmentScope("hub_se", scopeOf({ aocId: "my", departmentId: "operation", hubId: "other_aoc_hub" }));
+  assert.equal(result.ok, false);
+});
+
+test("HIERARCHY: a department from a different AOC than the assignment's aoc_id is rejected", () => {
+  const result = validateAssignmentScope("operation_manager", scopeOf({ aocId: "my", departmentId: "other_aoc_dept" }));
+  assert.equal(result.ok, false);
+});
+
+test("HIERARCHY: mixed valid IDs producing an invalid hierarchy -- a valid entity and a valid department that individually exist but belong to different AOCs are both rejected even though each id alone is real", () => {
+  // other_aoc_entity is a real row (aocId 'other-aoc'), other_aoc_dept is a
+  // real row (aocId 'other-aoc') -- but the assignment itself claims
+  // aoc_id = 'my'. Each individual FK is valid; the combination is not.
+  const result1 = validateAssignmentScope("maa_boss", scopeOf({ aocId: "my", operatingEntityId: "other_aoc_entity" }));
+  const result2 = validateAssignmentScope("operation_manager", scopeOf({ aocId: "my", departmentId: "other_aoc_dept" }));
+  assert.equal(result1.ok, false);
+  assert.equal(result2.ok, false);
+});
+
+test("NAMED: station ASO/SO/SSO without a team is rejected", () => {
   for (const roleCode of ["sso", "so", "aso"]) {
-    assert.equal(validateAssignmentScope(roleCode, { aocId: "my" }).ok, false);
-    assert.equal(validateAssignmentScope(roleCode, { aocId: "my", stationId: "pen" }).ok, true);
+    const scope = scopeOf({ aocId: "my", departmentId: "operation", hubId: "northern", stationId: "pen" });
+    assert.equal(validateAssignmentScope(roleCode, scope).ok, false, `${roleCode} without team_id must be rejected`);
   }
 });
 
-test("Compliance requires department_id, and nothing narrower is required (read-only role, no unit/hub/station requirement)", () => {
-  assert.equal(validateAssignmentScope("compliance", { aocId: "my" }).ok, false);
-  assert.equal(validateAssignmentScope("compliance", { aocId: "my", departmentId: "compliance" }).ok, true);
+test("NAMED: DSE outside KUL is rejected", () => {
+  const result = validateAssignmentScope("dse", scopeOf({ aocId: "my", departmentId: "operation", hubId: "northern", stationId: "pen", teamId: "pen-alpha" }));
+  assert.equal(result.ok, false);
 });
 
-test("CaterLink Management requires department_id (caterlink)", () => {
-  assert.equal(validateAssignmentScope("caterlink_management", { aocId: "my" }).ok, false);
-  assert.equal(validateAssignmentScope("caterlink_management", { aocId: "my", departmentId: "caterlink" }).ok, true);
+test("NAMED: SAT outside KUL is rejected", () => {
+  const result = validateAssignmentScope("sat_aso", scopeOf({ aocId: "my", departmentId: "enforcement", unitId: "sat", hubId: "northern", stationId: "pen", teamId: "pen-alpha" }));
+  assert.equal(result.ok, false);
+});
+
+test("NAMED: global roles (AirAsia Management, GHOD, Global Reporting Controller, Super Admin) receive no operational scope of any kind", () => {
+  for (const roleCode of INTERNATIONAL_CODES) {
+    for (const partialScope of [
+      scopeOf({ hubId: "northern" }),
+      scopeOf({ stationId: "pen" }),
+      scopeOf({ departmentId: "operation" }),
+      scopeOf({ unitId: "investigation" }),
+      scopeOf({ operatingEntityId: "maa" }),
+    ]) {
+      assert.equal(validateAssignmentScope(roleCode, partialScope).ok, false, `${roleCode} must reject any operational scope`);
+    }
+  }
 });
 
 // --- has_role_in_scope() effective-permission logic (mirrors the SQL exactly) ---
