@@ -126,9 +126,44 @@ function toListItem(type: ReportType, row: Record<string, unknown>): ReportListI
   };
 }
 
+/** Thrown when a report exists but has not yet been indexed into the
+ * Phase 5 Central Reporting Repository -- authorization cannot be
+ * verified through the secure path yet, so this fails closed rather
+ * than falling back to an unauthorized direct read. This is expected
+ * for every report until the Phase 2-6 migrations are applied and the
+ * indexing queue/backfill has run (see the Phase 6 report's deployment
+ * sequencing section) -- it is not a bug. */
+export class ReportNotIndexedError extends Error {
+  constructor(type: ReportType, id: string) {
+    super(`Report ${type}/${id} has not yet been indexed into the secure repository. It cannot be opened until the Phase 5/6 rollout (migration, role-assignment activation, and backfill/indexing) has run for this environment.`);
+    this.name = "ReportNotIndexedError";
+  }
+}
+
 export async function getReportById(type: ReportType, id: string) {
   const supabase = await createClient();
   const table = REPORT_META[type].table;
+
+  const { data: indexRow } = await supabase
+    .from("central_reports_index")
+    .select("id")
+    .eq("source_table", table)
+    .eq("source_id", id)
+    .maybeSingle();
+  if (!indexRow) {
+    throw new ReportNotIndexedError(type, id);
+  }
+
+  // Authorization decision + audit happen entirely inside this RPC
+  // (Phase 6 get_report_secure()) -- if it throws, no content is read
+  // below at all. This server-side read of the full row only proceeds
+  // once that authorization has already been confirmed for THIS exact
+  // repository id, in this same request.
+  const { error: authError } = await supabase.rpc("get_report_secure", { p_repository_report_id: indexRow.id });
+  if (authError) {
+    throw new Error(authError.message);
+  }
+
   const { data: rawData } = await supabase.from(table as never).select("*").eq("id", id).single();
   const data = rawData as Record<string, unknown> | null;
   if (!data) return null;

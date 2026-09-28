@@ -533,25 +533,8 @@ test("REGRESSION: no existing Phase 2/3/4 function is redefined by this migratio
   }
 });
 
-test("REGRESSION: no route/server-action file references any Phase 5 object -- zero live wiring, confirmed by repo-wide search", () => {
-  const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-  const searchDirs = ["lib", "app", "components"];
-  const phase5Objects = ["central_reports_index", "index_report", "get_report_secure", "has_report_access", "create_report_amendment"];
-  for (const dir of searchDirs) {
-    const full = path.join(repoRoot, dir);
-    if (!fs.existsSync(full)) continue;
-    const walk = (d: string): string[] =>
-      fs.readdirSync(d, { withFileTypes: true }).flatMap((entry) =>
-        entry.isDirectory() ? walk(path.join(d, entry.name)) : [path.join(d, entry.name)],
-      );
-    for (const file of walk(full)) {
-      if (!/\.(ts|tsx)$/.test(file) || file.endsWith("database.types.ts")) continue;
-      const contents = fs.readFileSync(file, "utf8");
-      for (const obj of phase5Objects) {
-        assert.doesNotMatch(contents, new RegExp(obj), `${file} must not reference ${obj}`);
-      }
-    }
-  }
+test("REGRESSION (superseded by Phase 6): this Phase 5 migration file itself still does not wire any application code -- Phase 5 remains purely schema/RPC infrastructure. Live application wiring to these RPCs was deliberately added in Phase 6 (see tests/phase6-secure-report-access.test.mts and tests/phase6-direct-read-closure.test.mts), which is a separate, later, explicitly-authorized correction -- this test now only confirms the ORIGINAL Phase 5 migration file's own additive-only, non-wiring nature, not that the wiring never exists anywhere.", () => {
+  assert.doesNotMatch(code, /supabase\.rpc\(/, "the migration FILE itself is SQL, never application code calling its own RPCs");
 });
 
 // =======================================================================

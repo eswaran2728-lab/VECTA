@@ -504,6 +504,7 @@ export type Database = {
           request_id: string | null
           grant_id: string | null
           created_at: string
+          access_reason: string | null
         }
         Insert: {
           id?: string
@@ -515,6 +516,7 @@ export type Database = {
           request_id?: string | null
           grant_id?: string | null
           created_at?: string
+          access_reason?: string | null
         }
         Update: {
           id?: string
@@ -526,6 +528,7 @@ export type Database = {
           request_id?: string | null
           grant_id?: string | null
           created_at?: string
+          access_reason?: string | null
         }
         Relationships: [
           { foreignKeyName: "report_access_audit_repository_report_id_fkey"; columns: ["repository_report_id"]; isOneToOne: false; referencedRelation: "central_reports_index"; referencedColumns: ["id"] },
@@ -5136,6 +5139,82 @@ export type Database = {
       get_attachment_authorization_secure: {
         Args: { p_attachment_id: string }
         Returns: { storage_path: string; file_name: string; mime_type: string }[]
+      }
+      resolve_report_access_reason: { Args: { p_repository_report_id: string }; Returns: string | null }
+      get_report_version_content_secure: {
+        Args: { p_repository_report_id: string; p_version_number: number }
+        Returns: {
+          version_number: number
+          amendment_type: string
+          reason: string
+          requested_by: string
+          approved_by: string | null
+          effective_status: string
+          amended_content: Json | null
+          supersedes_version: number | null
+          created_at: string
+          decided_at: string | null
+        }[]
+      }
+      get_report_amendments_secure: {
+        Args: { p_repository_report_id: string }
+        Returns: {
+          version_number: number
+          amendment_type: string
+          reason: string
+          requested_by: string
+          effective_status: string
+          supersedes_version: number | null
+          created_at: string
+        }[]
+      }
+      get_access_request_status_secure: {
+        Args: { p_request_id: string }
+        Returns: {
+          id: string
+          repository_report_id: string
+          status: string
+          reviewed_by: string | null
+          reviewed_at: string | null
+          decision_reason: string | null
+        }[]
+      }
+      get_report_dashboard_aggregate_secure: {
+        Args: { p_group_by?: string | null }
+        Returns: { group_value: string | null; report_count: number }[]
+      }
+      sanitize_csv_value: { Args: { p_value: string | null }; Returns: string | null }
+      export_reports_secure: {
+        Args: {
+          p_max_rows?: number | null
+          p_flight_number?: string | null
+          p_aoc_id?: string | null
+          p_operating_entity_code?: string | null
+          p_department_id?: string | null
+          p_hub_id?: string | null
+          p_station_id?: string | null
+          p_team_id?: string | null
+          p_severity?: string | null
+          p_flag_state?: string | null
+          p_status?: string | null
+          p_from_date?: string | null
+          p_to_date?: string | null
+        }
+        Returns: {
+          id: string
+          source_table: string
+          report_type: string | null
+          operating_entity_code: string | null
+          flight_number: string | null
+          report_date: string | null
+          status: string
+          severity: string | null
+          flag_state: string
+        }[]
+      }
+      authorize_report_pdf_secure: {
+        Args: { p_repository_report_id: string }
+        Returns: { source_table: string; source_id: string; report_type: string }[]
       }
       process_report_index_queue: {
         Args: { p_batch_size?: number | null }

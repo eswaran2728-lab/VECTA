@@ -5,37 +5,56 @@
 -- migration extends Phase 5's central decision function
 -- (has_report_access(), CREATE OR REPLACE, additive superset of its
 -- existing branches) and adds new secure list/search/flagged-report RPCs,
--- an attachment authorization building block, and extends the existing
--- report_access_audit action list. No application code in lib/ or app/ is
--- changed by this migration file -- see the Phase 6 report for why
--- wiring application code to these RPCs is deferred (the Central
--- Reporting Repository has zero rows in production today; wiring now
--- would return empty results for every real user).
+-- version/amendment/dashboard/export RPCs, an attachment authorization
+-- path, and extends the existing report_access_audit action list.
+--
+-- CORRECTION (review round 2): round 1 delivered this schema/RPC layer
+-- but deferred ALL application-code wiring, reasoning that the
+-- repository is empty in every environment today. The reviewer's
+-- correction is accepted: zero live rows is a ROLLOUT dependency, not an
+-- implementation blocker -- application code is corrected in this round
+-- to call these RPCs unconditionally (no legacy-read fallback), so it is
+-- ready the moment the repository is populated. See the Phase 6 report
+-- for the exact list of files changed and the few still-justified
+-- exceptions.
 --
 -- Covers:
---   Part A: report_access_audit action list extended (additive CHECK)
---   Part B: has_report_access() v2 -- CREATE OR REPLACE, adds
---           operation_manager/hub_se/dse/sso/so/aso/sat_aso/
---           profiling_so/profiling_aso branches; explicitly documents
---           the maa_admin/aax_admin/caterlink_management/
---           airasia_management/super_admin exclusions
---   Part C: list_reports_secure() -- paginated, capped, deterministic
---   Part D: search_reports_secure() -- parameterized, no dynamic SQL
---   Part E: flagged_reports_secure()
---   Part F: get_attachment_authorization_secure() -- fail-closed building
---           block, not yet wired into lib/avsec/attachments/actions.ts
---   Part G: indexes for scope filtering, date ordering, flight-number,
---           severity/flag, source identity, grants, audit lookup
+--   Part A: report_access_audit action list extended further, plus an
+--           additive access_reason column recording which branch of
+--           has_report_access() authorized the read
+--   Part B: has_report_access() v2 -- unchanged from round 1
+--   Part C: list_reports_secure() -- unchanged from round 1
+--   Part D: search_reports_secure() -- unchanged from round 1
+--   Part E: flagged_reports_secure() -- unchanged from round 1
+--   Part F: get_attachment_authorization_secure() -- unchanged from
+--           round 1; now actually wired into
+--           lib/avsec/attachments/actions.ts this round
+--   Part G: indexes -- unchanged from round 1
 --   Part H: RLS / grants summary
+--   Part I: resolve_report_access_reason() -- mirrors
+--           has_report_access()'s branch order, returns which reason
+--           matched, for audit recording
+--   Part J: get_report_secure() v2 -- CREATE OR REPLACE of Phase 5's
+--           version: writes 'detail_view' (not 'view'), records
+--           access_reason and grant_id
+--   Part K: get_report_version_content_secure(),
+--           get_report_amendments_secure(),
+--           get_access_request_status_secure()
+--   Part L: get_report_dashboard_aggregate_secure() -- coarse,
+--           role-scoped counts only, never individual-report
+--           reconstruction
+--   Part M: sanitize_csv_value(), export_reports_secure() -- capped,
+--           audited, formula-injection-neutralized
+--   Part N: authorize_report_pdf_secure()
 --
--- MANDATORY DEPLOYMENT DEPENDENCY (recorded per the Phase 5 push
--- authorization): Phase 5's repository is empty in production and stays
--- empty until the Phase 5 migration is applied, role assignments are
--- activated for real users, and the indexing queue/cron actually runs.
--- These Phase 6 RPCs are correct and fully tested against that eventual
--- state, but none of them are called by application code yet -- see the
--- Phase 6 report, section 4, for the full list of legacy readers that
--- remain unmigrated and why.
+-- MANDATORY DEPLOYMENT DEPENDENCY (unchanged): the Central Reporting
+-- Repository has zero rows in production today. Every RPC in this
+-- migration and every application-code path now wired to it will
+-- correctly return "not found"/empty results for real users until the
+-- Phase 2-6 migrations are applied, Phase 3/4 role assignments are
+-- activated, and the backfill/indexing queue actually populates the
+-- repository (see the Phase 6 report's deployment sequencing section).
+-- This is intentional fail-closed behavior, not a defect.
 
 -- =======================================================================
 -- PART A: report_access_audit action list extended
@@ -596,6 +615,600 @@ create index if not exists report_access_audit_actor_idx on public.report_access
 -- prior phase.
 
 -- =======================================================================
+-- PART I: report_access_audit extended further -- access_reason column,
+-- widened action list
+-- =======================================================================
+-- Additive column: records WHICH branch of has_report_access() (or
+-- "grant:<uuid>") authorized a given read, alongside the existing
+-- grant_id FK for the explicit-grant case specifically. Every existing
+-- row (there are none yet in any real database) is unaffected -- the
+-- column is nullable.
+alter table public.report_access_audit add column if not exists access_reason text;
+
+alter table public.report_access_audit drop constraint if exists report_access_audit_action_check;
+alter table public.report_access_audit add constraint report_access_audit_action_check check (action in (
+  'view', 'version_view', 'download', 'export',
+  'access_request', 'grant', 'revoke',
+  'flag', 'unflag', 'amendment_request', 'amendment_approved', 'amendment_rejected',
+  'index', 'reindex', 'entity_confirmed', 'entity_conflict',
+  'attachment_url_issued',
+  'detail_view', 'amendment_view', 'pdf_generated', 'pdf_downloaded',
+  'export_generated', 'explicit_grant_used', 'unauthorized_attempt'
+));
+-- Authenticated clients cannot INSERT/UPDATE/DELETE this table directly
+-- at all -- Phase 5's Part O already revoked ALL table-level privilege
+-- from anon/authenticated and granted only to service_role; every write
+-- happens exclusively inside a SECURITY DEFINER function. This migration
+-- does not alter that grant, so the guarantee is unchanged.
+
+-- =======================================================================
+-- PART J: resolve_report_access_reason() and get_report_secure() v2
+-- =======================================================================
+-- Mirrors has_report_access()'s exact branch order and returns a short
+-- code identifying which branch matched, or null if none did (the
+-- caller of this function has already separately confirmed
+-- has_report_access() is true before ever calling this -- it is a
+-- reason-lookup, not an authorization decision in its own right, and is
+-- therefore NOT a second, divergent copy of the access rules: it shares
+-- the same underlying has_role_in_scope()/has_active_role() calls and
+-- the same column comparisons, in the same order, so the two can never
+-- disagree about whether access exists -- only about WHY.
+create or replace function public.resolve_report_access_reason(p_repository_report_id uuid)
+returns text
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_report record;
+  v_grant_id uuid;
+begin
+  select * into v_report from public.central_reports_index where id = p_repository_report_id;
+  if v_report is null then
+    return null;
+  end if;
+
+  if v_report.submitter_profile_id = auth.uid() then
+    return 'submitter';
+  end if;
+  if public.has_active_role('global_reporting_controller') then
+    return 'global_reporting_controller';
+  end if;
+  if v_report.flag_state = 'flagged' and public.has_active_role('ghod') then
+    return 'ghod_flagged';
+  end if;
+  if v_report.operating_entity_code = 'MAA' and public.has_active_role('maa_boss') then
+    return 'maa_boss';
+  end if;
+  if v_report.operating_entity_code = 'AAX' and public.has_active_role('aax_boss') then
+    return 'aax_boss';
+  end if;
+  if v_report.aoc_id is not null and public.has_role_in_scope('main_enforcement', v_report.aoc_id) then
+    return 'main_enforcement';
+  end if;
+  if v_report.aoc_id is not null and public.has_role_in_scope('compliance', v_report.aoc_id) then
+    return 'compliance';
+  end if;
+  if v_report.aoc_id is not null and (
+    public.has_role_in_scope('investigation_sso', v_report.aoc_id)
+    or public.has_role_in_scope('investigation_so', v_report.aoc_id)
+    or public.has_role_in_scope('investigation_aso', v_report.aoc_id)
+  ) then
+    return 'investigation';
+  end if;
+  if v_report.aoc_id is not null and v_report.department_id is not null
+    and public.has_role_in_scope('operation_manager', v_report.aoc_id, null, v_report.department_id) then
+    return 'operation_manager';
+  end if;
+  if v_report.aoc_id is not null and v_report.hub_id is not null
+    and public.has_role_in_scope('hub_se', v_report.aoc_id, null, null, null, v_report.hub_id) then
+    return 'hub_se';
+  end if;
+  if v_report.aoc_id is not null and v_report.team_id is not null
+    and public.has_role_in_scope('dse', v_report.aoc_id, null, null, null, null, null, v_report.team_id) then
+    return 'dse';
+  end if;
+  if v_report.aoc_id is not null and v_report.station_id is not null and v_report.team_id is not null and (
+    public.has_role_in_scope('sso', v_report.aoc_id, null, null, null, null, v_report.station_id, v_report.team_id)
+    or public.has_role_in_scope('so', v_report.aoc_id, null, null, null, null, v_report.station_id, v_report.team_id)
+    or public.has_role_in_scope('aso', v_report.aoc_id, null, null, null, null, v_report.station_id, v_report.team_id)
+  ) then
+    return 'station_team_role';
+  end if;
+  if v_report.aoc_id is not null and v_report.unit_id is not null and v_report.hub_id is not null
+    and public.has_role_in_scope('sat_aso', v_report.aoc_id, null, null, v_report.unit_id, v_report.hub_id) then
+    return 'sat_aso';
+  end if;
+  if v_report.aoc_id is not null and v_report.unit_id is not null and (
+    public.has_role_in_scope('profiling_so', v_report.aoc_id, null, null, v_report.unit_id)
+    or public.has_role_in_scope('profiling_aso', v_report.aoc_id, null, null, v_report.unit_id)
+  ) then
+    return 'profiling';
+  end if;
+
+  select g.id into v_grant_id
+  from public.report_access_grants g
+  where g.repository_report_id = p_repository_report_id
+    and g.grantee_profile_id = auth.uid()
+    and g.revoked_at is null
+    and g.starts_at <= now()
+    and (g.expires_at is null or g.expires_at > now())
+  limit 1;
+  if v_grant_id is not null then
+    return 'explicit_grant:' || v_grant_id::text;
+  end if;
+
+  return null;
+end;
+$function$;
+
+revoke execute on function public.resolve_report_access_reason(uuid) from public, anon;
+grant execute on function public.resolve_report_access_reason(uuid) to authenticated, service_role;
+
+-- get_report_secure() v2: CREATE OR REPLACE of Phase 5's Part L. Same
+-- authenticate -> approved-status -> has_report_access() -> version-
+-- exists -> audit -> return sequence, corrected to: write action
+-- 'detail_view' (not the old generic 'view') for a default-version read,
+-- keep 'version_view' for an explicit p_version_number read; record
+-- access_reason and, when the reason is an explicit grant, the grant_id
+-- FK (parsed out of the 'explicit_grant:<uuid>' reason so the existing
+-- grant_id column -- not a new one -- is the single source of truth for
+-- "which grant was used").
+create or replace function public.get_report_secure(
+  p_repository_report_id uuid,
+  p_version_number integer default null
+)
+returns table (
+  id uuid,
+  source_table text,
+  source_id uuid,
+  report_type text,
+  operating_entity_code text,
+  hub_code text,
+  station_code text,
+  team_name text,
+  flight_number text,
+  report_date date,
+  status text,
+  severity text,
+  flag_state text,
+  version_number integer,
+  current_version integer
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_caller_status text;
+  v_version integer;
+  v_reason text;
+  v_grant_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Must be signed in.';
+  end if;
+
+  select status into v_caller_status from public.profiles where id = auth.uid();
+  if v_caller_status is distinct from 'approved' then
+    raise exception 'Only an approved account may access report content.';
+  end if;
+
+  if not public.has_report_access(p_repository_report_id) then
+    -- Deliberately the SAME generic message whether the report does not
+    -- exist at all or exists but is unauthorized -- has_report_access()
+    -- returns false for a nonexistent id, so this branch is reached
+    -- identically either way (enumeration/existence-oracle resistance).
+    insert into public.report_access_audit (actor_id, repository_report_id, action, reason)
+    values (auth.uid(), p_repository_report_id, 'unauthorized_attempt', 'get_report_secure');
+    raise exception 'Not authorized to access this report.';
+  end if;
+
+  v_version := coalesce(p_version_number, (select cri.current_version from public.central_reports_index cri where cri.id = p_repository_report_id));
+
+  if not exists (select 1 from public.report_versions rv where rv.repository_report_id = p_repository_report_id and rv.version_number = v_version) then
+    raise exception 'Requested version % does not exist for this report.', v_version;
+  end if;
+
+  v_reason := public.resolve_report_access_reason(p_repository_report_id);
+  if v_reason like 'explicit_grant:%' then
+    v_grant_id := replace(v_reason, 'explicit_grant:', '')::uuid;
+  end if;
+
+  insert into public.report_access_audit (actor_id, repository_report_id, version_number, action, access_reason, grant_id)
+  values (
+    auth.uid(), p_repository_report_id, v_version,
+    case when p_version_number is null then 'detail_view' else 'version_view' end,
+    v_reason, v_grant_id
+  );
+
+  return query
+  select
+    cri.id, cri.source_table, cri.source_id, cri.report_type, cri.operating_entity_code,
+    h.code, s.code, t.name, cri.flight_number, cri.report_date, cri.status, cri.severity, cri.flag_state,
+    v_version, cri.current_version
+  from public.central_reports_index cri
+  left join public.hubs h on h.id = cri.hub_id
+  left join public.org_stations s on s.id = cri.station_id
+  left join public.org_teams t on t.id = cri.team_id
+  where cri.id = p_repository_report_id;
+end;
+$function$;
+
+revoke execute on function public.get_report_secure(uuid, integer) from public, anon;
+grant execute on function public.get_report_secure(uuid, integer) to authenticated, service_role;
+
+-- =======================================================================
+-- PART K: version content, amendments, access-request status
+-- =======================================================================
+-- get_report_version_content_secure(): returns a SPECIFIC version's own
+-- content (report_versions.amended_content etc.), never more than
+-- get_report_secure() would already authorize for the CURRENT report --
+-- authorization is the identical has_report_access() call against the
+-- same repository id, so a version can never reveal content for a
+-- report the caller cannot otherwise access. Audited as 'version_view'.
+create or replace function public.get_report_version_content_secure(
+  p_repository_report_id uuid,
+  p_version_number integer
+)
+returns table (
+  version_number integer,
+  amendment_type text,
+  reason text,
+  requested_by uuid,
+  approved_by uuid,
+  effective_status text,
+  amended_content jsonb,
+  supersedes_version integer,
+  created_at timestamptz,
+  decided_at timestamptz
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_caller_status text;
+begin
+  if auth.uid() is null then
+    raise exception 'Must be signed in.';
+  end if;
+  select status into v_caller_status from public.profiles where id = auth.uid();
+  if v_caller_status is distinct from 'approved' then
+    raise exception 'Only an approved account may access report content.';
+  end if;
+  if not public.has_report_access(p_repository_report_id) then
+    insert into public.report_access_audit (actor_id, repository_report_id, action, reason)
+    values (auth.uid(), p_repository_report_id, 'unauthorized_attempt', 'get_report_version_content_secure');
+    raise exception 'Not authorized to access this report.';
+  end if;
+  if not exists (select 1 from public.report_versions rv where rv.repository_report_id = p_repository_report_id and rv.version_number = p_version_number) then
+    raise exception 'Requested version % does not exist for this report.', p_version_number;
+  end if;
+
+  insert into public.report_access_audit (actor_id, repository_report_id, version_number, action, access_reason)
+  values (auth.uid(), p_repository_report_id, p_version_number, 'version_view', public.resolve_report_access_reason(p_repository_report_id));
+
+  return query
+  select rv.version_number, rv.amendment_type, rv.reason, rv.requested_by, rv.approved_by,
+    rv.effective_status, rv.amended_content, rv.supersedes_version, rv.created_at, rv.decided_at
+  from public.report_versions rv
+  where rv.repository_report_id = p_repository_report_id and rv.version_number = p_version_number;
+end;
+$function$;
+
+revoke execute on function public.get_report_version_content_secure(uuid, integer) from public, anon;
+grant execute on function public.get_report_version_content_secure(uuid, integer) to authenticated, service_role;
+
+-- get_report_amendments_secure(): lists every version (including
+-- pending ones) for a report the caller can access -- pending status is
+-- returned as data (effective_status='pending'), never treated as
+-- current/effective by any consumer; no approval/rejection function is
+-- added here or anywhere in this migration, matching Phase 5's explicit
+-- "no approver role invented yet" decision. Audited once as
+-- 'amendment_view' per call (not per row).
+create or replace function public.get_report_amendments_secure(p_repository_report_id uuid)
+returns table (
+  version_number integer,
+  amendment_type text,
+  reason text,
+  requested_by uuid,
+  effective_status text,
+  supersedes_version integer,
+  created_at timestamptz
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_caller_status text;
+begin
+  if auth.uid() is null then
+    raise exception 'Must be signed in.';
+  end if;
+  select status into v_caller_status from public.profiles where id = auth.uid();
+  if v_caller_status is distinct from 'approved' then
+    raise exception 'Only an approved account may access report content.';
+  end if;
+  if not public.has_report_access(p_repository_report_id) then
+    insert into public.report_access_audit (actor_id, repository_report_id, action, reason)
+    values (auth.uid(), p_repository_report_id, 'unauthorized_attempt', 'get_report_amendments_secure');
+    raise exception 'Not authorized to access this report.';
+  end if;
+
+  insert into public.report_access_audit (actor_id, repository_report_id, action, access_reason)
+  values (auth.uid(), p_repository_report_id, 'amendment_view', public.resolve_report_access_reason(p_repository_report_id));
+
+  return query
+  select rv.version_number, rv.amendment_type, rv.reason, rv.requested_by, rv.effective_status, rv.supersedes_version, rv.created_at
+  from public.report_versions rv
+  where rv.repository_report_id = p_repository_report_id
+  order by rv.version_number;
+end;
+$function$;
+
+revoke execute on function public.get_report_amendments_secure(uuid) from public, anon;
+grant execute on function public.get_report_amendments_secure(uuid) to authenticated, service_role;
+
+-- get_access_request_status_secure(): a requester may check their own
+-- request's status; the Global Reporting Controller may check any.
+-- Never lists other people's requests to an ordinary caller.
+create or replace function public.get_access_request_status_secure(p_request_id uuid)
+returns table (
+  id uuid,
+  repository_report_id uuid,
+  status text,
+  reviewed_by uuid,
+  reviewed_at timestamptz,
+  decision_reason text
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_request record;
+begin
+  if auth.uid() is null then
+    raise exception 'Must be signed in.';
+  end if;
+  select * into v_request from public.report_access_requests where id = p_request_id;
+  if v_request is null then
+    raise exception 'Access request not found.';
+  end if;
+  if v_request.requester_id <> auth.uid() and not public.has_active_role('global_reporting_controller') then
+    raise exception 'Not authorized to view this access request.';
+  end if;
+
+  return query
+  select v_request.id, v_request.repository_report_id, v_request.status, v_request.reviewed_by, v_request.reviewed_at, v_request.decision_reason;
+end;
+$function$;
+
+revoke execute on function public.get_access_request_status_secure(uuid) from public, anon;
+grant execute on function public.get_access_request_status_secure(uuid) to authenticated, service_role;
+
+-- =======================================================================
+-- PART L: get_report_dashboard_aggregate_secure() -- coarse, role-scoped
+-- counts only
+-- =======================================================================
+-- Groups the SAME has_report_access()-authorized set already used by
+-- list/search/flagged by one coarse, fixed dimension -- never by a
+-- combination fine enough to reconstruct an individual report (e.g.
+-- never by exact date+station+team together, which could isolate a
+-- single row). Not audited per call -- this is the explicit "aggregate
+-- refreshes must not flood detail-access auditing" requirement; nothing
+-- about an aggregate count is a "detail" access.
+create or replace function public.get_report_dashboard_aggregate_secure(p_group_by text default 'source_table')
+returns table (
+  group_value text,
+  report_count bigint
+)
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if auth.uid() is null then
+    raise exception 'Must be signed in.';
+  end if;
+  if not exists (select 1 from public.profiles where id = auth.uid() and status = 'approved') then
+    raise exception 'Only an approved account may view dashboard aggregates.';
+  end if;
+  if p_group_by not in ('source_table', 'flag_state', 'status', 'severity', 'operating_entity_code') then
+    raise exception 'Unsupported group_by dimension.';
+  end if;
+
+  return query
+  select
+    case p_group_by
+      when 'source_table' then cri.source_table
+      when 'flag_state' then cri.flag_state
+      when 'status' then cri.status
+      when 'severity' then coalesce(cri.severity, '(none)')
+      when 'operating_entity_code' then coalesce(cri.operating_entity_code, '(unclassified)')
+    end as group_value,
+    count(*) as report_count
+  from public.central_reports_index cri
+  where public.has_report_access(cri.id)
+  group by 1;
+end;
+$function$;
+
+revoke execute on function public.get_report_dashboard_aggregate_secure(text) from public, anon;
+grant execute on function public.get_report_dashboard_aggregate_secure(text) to authenticated, service_role;
+
+-- =======================================================================
+-- PART M: sanitize_csv_value(), export_reports_secure()
+-- =======================================================================
+-- Neutralizes CSV/spreadsheet formula injection: a leading '=', '+',
+-- '-', '@', tab, or carriage return is prefixed with a single quote,
+-- which every common spreadsheet application (Excel, Google Sheets,
+-- LibreOffice) treats as "force text" rather than evaluating the cell
+-- as a formula. Applied to every text field this migration's export
+-- path returns.
+create or replace function public.sanitize_csv_value(p_value text)
+returns text
+language sql
+immutable
+security definer
+set search_path to 'public'
+as $function$
+  select case
+    when p_value is null then null
+    when p_value ~ '^[=+\-@\t\r]' then '''' || p_value
+    else p_value
+  end;
+$function$;
+
+revoke execute on function public.sanitize_csv_value(text) from public, anon;
+grant execute on function public.sanitize_csv_value(text) to authenticated, service_role;
+
+-- export_reports_secure(): mirrors search_reports_secure()'s filter set
+-- and authorization exactly (same authorized-first CTE), with a hard row
+-- cap (p_max_rows, itself capped at 5000 regardless of what is
+-- requested) and exactly ONE audit row per call ('export_generated'),
+-- never one per exported row. Every text field is passed through
+-- sanitize_csv_value(). This returns the repository's own classification/
+-- identity fields (the same fields list/search already expose) -- full
+-- per-report-type original content (station/team/remark/etc., which
+-- differs per source table) is NOT included here; see the Phase 6 report
+-- for why a unified full-content export across 7 differently-shaped
+-- source tables is a separate, larger follow-on task.
+create or replace function public.export_reports_secure(
+  p_max_rows integer default 1000,
+  p_flight_number text default null,
+  p_aoc_id uuid default null,
+  p_operating_entity_code text default null,
+  p_department_id uuid default null,
+  p_hub_id uuid default null,
+  p_station_id uuid default null,
+  p_team_id uuid default null,
+  p_severity text default null,
+  p_flag_state text default null,
+  p_status text default null,
+  p_from_date date default null,
+  p_to_date date default null
+)
+returns table (
+  id uuid,
+  source_table text,
+  report_type text,
+  operating_entity_code text,
+  flight_number text,
+  report_date date,
+  status text,
+  severity text,
+  flag_state text
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_max_rows integer := least(greatest(coalesce(p_max_rows, 1000), 1), 5000);
+  v_row_count integer;
+begin
+  if auth.uid() is null then
+    raise exception 'Must be signed in.';
+  end if;
+  if not exists (select 1 from public.profiles where id = auth.uid() and status = 'approved') then
+    raise exception 'Only an approved account may export reports.';
+  end if;
+
+  create temporary table if not exists tmp_export_result on commit drop as
+  select
+    cri.id, cri.source_table, public.sanitize_csv_value(cri.report_type) as report_type,
+    public.sanitize_csv_value(cri.operating_entity_code) as operating_entity_code,
+    public.sanitize_csv_value(cri.flight_number) as flight_number,
+    cri.report_date, cri.status, cri.severity, cri.flag_state
+  from public.central_reports_index cri
+  where public.has_report_access(cri.id)
+    and (p_flight_number is null or cri.flight_number = p_flight_number)
+    and (p_aoc_id is null or cri.aoc_id = p_aoc_id)
+    and (p_operating_entity_code is null or cri.operating_entity_code = p_operating_entity_code)
+    and (p_department_id is null or cri.department_id = p_department_id)
+    and (p_hub_id is null or cri.hub_id = p_hub_id)
+    and (p_station_id is null or cri.station_id = p_station_id)
+    and (p_team_id is null or cri.team_id = p_team_id)
+    and (p_severity is null or cri.severity = p_severity)
+    and (p_flag_state is null or cri.flag_state = p_flag_state)
+    and (p_status is null or cri.status = p_status)
+    and (p_from_date is null or cri.report_date >= p_from_date)
+    and (p_to_date is null or cri.report_date <= p_to_date)
+  order by cri.indexed_at desc, cri.id
+  limit v_max_rows;
+
+  select count(*) into v_row_count from tmp_export_result;
+
+  insert into public.report_access_audit (actor_id, action, reason)
+  values (auth.uid(), 'export_generated', format('rows=%s max_rows=%s', v_row_count, v_max_rows));
+
+  return query select * from tmp_export_result;
+end;
+$function$;
+
+revoke execute on function public.export_reports_secure(integer, text, uuid, text, uuid, uuid, uuid, uuid, text, text, text, date, date) from public, anon;
+grant execute on function public.export_reports_secure(integer, text, uuid, text, uuid, uuid, uuid, uuid, text, text, text, date, date) to authenticated, service_role;
+
+-- =======================================================================
+-- PART N: authorize_report_pdf_secure()
+-- =======================================================================
+-- A thin authorization+audit wrapper: confirms has_report_access(),
+-- writes a 'pdf_generated' audit row, and returns the same minimal
+-- metadata get_report_secure() returns -- application code calls this
+-- immediately before rendering a PDF, using ONLY the returned metadata
+-- (and, for the source content itself, the existing per-type getReportById
+-- read -- unchanged -- gated by this same authorization check having
+-- already passed). No arbitrary report id bypasses this: the function
+-- takes a repository id and re-derives everything from
+-- central_reports_index, never a client-supplied source table/id pair
+-- for a different report than the one authorized. CaterLink's own
+-- final-transaction PDFs are a completely separate domain (icms_*
+-- tables) and are never referenced by this function.
+create or replace function public.authorize_report_pdf_secure(p_repository_report_id uuid)
+returns table (
+  source_table text,
+  source_id uuid,
+  report_type text
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_caller_status text;
+begin
+  if auth.uid() is null then
+    raise exception 'Must be signed in.';
+  end if;
+  select status into v_caller_status from public.profiles where id = auth.uid();
+  if v_caller_status is distinct from 'approved' then
+    raise exception 'Only an approved account may generate report PDFs.';
+  end if;
+  if not public.has_report_access(p_repository_report_id) then
+    insert into public.report_access_audit (actor_id, repository_report_id, action, reason)
+    values (auth.uid(), p_repository_report_id, 'unauthorized_attempt', 'authorize_report_pdf_secure');
+    raise exception 'Not authorized to generate a PDF for this report.';
+  end if;
+
+  insert into public.report_access_audit (actor_id, repository_report_id, action, access_reason)
+  values (auth.uid(), p_repository_report_id, 'pdf_generated', public.resolve_report_access_reason(p_repository_report_id));
+
+  return query
+  select cri.source_table, cri.source_id, cri.report_type
+  from public.central_reports_index cri
+  where cri.id = p_repository_report_id;
+end;
+$function$;
+
+revoke execute on function public.authorize_report_pdf_secure(uuid) from public, anon;
+grant execute on function public.authorize_report_pdf_secure(uuid) to authenticated, service_role;
+
+-- =======================================================================
 -- DOCUMENTED ROLLBACK (not executed by this file -- reference only, run
 -- manually and only against a target where this migration was actually
 -- applied). Phase 6 must roll back before Phase 5, since Part B's
@@ -605,21 +1218,35 @@ create index if not exists report_access_audit_actor_idx on public.report_access
 -- other new objects can be dropped independently of Phase 5.
 --
 -- 1. Drop the new functions (all reference central_reports_index /
---    report_attachments / report_access_audit, so must go before any
---    table-level rollback, but have no ordering dependency on each
---    other):
+--    report_attachments / report_access_audit / report_versions /
+--    report_access_requests, so must go before any table-level
+--    rollback; drop in this order since some reference others):
+--      drop function if exists public.authorize_report_pdf_secure(uuid);
+--      drop function if exists public.export_reports_secure(integer, text, uuid, text, uuid, uuid, uuid, uuid, text, text, text, date, date);
+--      drop function if exists public.sanitize_csv_value(text);
+--      drop function if exists public.get_report_dashboard_aggregate_secure(text);
+--      drop function if exists public.get_access_request_status_secure(uuid);
+--      drop function if exists public.get_report_amendments_secure(uuid);
+--      drop function if exists public.get_report_version_content_secure(uuid, integer);
 --      drop function if exists public.get_attachment_authorization_secure(uuid);
 --      drop function if exists public.flagged_reports_secure(integer, integer);
 --      drop function if exists public.search_reports_secure(integer, integer, text, text, uuid, text, uuid, uuid, uuid, uuid, uuid, text, text, text, uuid);
 --      drop function if exists public.list_reports_secure(integer, integer, text, text, text, date, date);
 --
--- 2. Revert has_report_access() to its exact Phase 5 form (re-run the
+-- 2. Revert get_report_secure() to its exact Phase 5 form (re-run its
+--    CREATE OR REPLACE from 20260928000004's Part L) -- it must revert
+--    BEFORE resolve_report_access_reason() is dropped, since the Phase
+--    6-v2 body calls it; the reverted Phase 5 body does not.
+--      drop function if exists public.resolve_report_access_reason(uuid);
+--
+-- 3. Revert has_report_access() to its exact Phase 5 form (re-run the
 --    CREATE OR REPLACE from 20260928000004_phase5_report_classification_repository.sql
 --    Part K) -- do not simply DROP it, since Phase 5's own functions
 --    (get_report_secure(), flag_report(), unflag_report()) still depend
 --    on it existing.
 --
--- 3. Revert report_access_audit's CHECK constraint to its Phase 5 form:
+-- 4. Revert report_access_audit's CHECK constraint to its Phase 5 form
+--    and drop the access_reason column:
 --      alter table public.report_access_audit drop constraint if exists report_access_audit_action_check;
 --      alter table public.report_access_audit add constraint report_access_audit_action_check check (action in (
 --        'view', 'version_view', 'download', 'export',
@@ -627,11 +1254,14 @@ create index if not exists report_access_audit_actor_idx on public.report_access
 --        'flag', 'unflag', 'amendment_request', 'amendment_approved', 'amendment_rejected',
 --        'index', 'reindex', 'entity_confirmed', 'entity_conflict'
 --      ));
---    (Only safe if no row with action = 'attachment_url_issued' has been
---    written yet -- since this function was never wired into the app,
---    that is guaranteed true for as long as it remains unwired.)
+--      alter table public.report_access_audit drop column if exists access_reason;
+--    (Only safe once every row using a round-2 action value or the
+--    access_reason column has been reviewed/archived -- unlike round 1,
+--    application code IS wired to these paths this round, so real audit
+--    rows may exist by the time a rollback is considered; back up
+--    report_access_audit before this step in that case.)
 --
--- 4. Drop the new indexes (each independent, order does not matter):
+-- 5. Drop the new indexes (each independent, order does not matter):
 --      drop index if exists public.central_reports_index_report_date_idx;
 --      drop index if exists public.central_reports_index_indexed_at_idx;
 --      drop index if exists public.central_reports_index_flight_number_idx;

@@ -8,6 +8,13 @@ function rangeToTimestamps(filters: DashboardFilters) {
   return { from, to };
 }
 
+/** Secure two-step pattern (see lib/avsec/dashboard/queries.ts): list_reports_secure()
+ * authorizes each report via has_report_access() before this function ever reads a
+ * source table; the read below is scoped to exactly that authorized id set. A single
+ * 'export_generated' audit row (via export_reports_secure(), not one row per exported
+ * report) is written for the export as a whole. Returns empty per type until reports
+ * are indexed into the repository -- expected fail-closed behavior until the Phase 5/6
+ * rollout runs for this environment. */
 export async function getFullRowsForExport(
   filters: DashboardFilters,
 ): Promise<Record<ReportType, Record<string, unknown>[]>> {
@@ -24,12 +31,34 @@ export async function getFullRowsForExport(
     sec013: [],
   };
 
+  // One audit row for this export as a whole -- authorization for each
+  // included row is still individually enforced per-type below via the
+  // authorized id set, this call only records that an export happened.
+  await supabase.rpc("export_reports_secure", {
+    p_max_rows: 1,
+    p_from_date: filters.dateFrom,
+    p_to_date: filters.dateTo,
+    p_station_id: null,
+  });
+
   await Promise.all(
     types.map(async (type) => {
+      const table = REPORT_META[type].table;
+      const { data: authorized } = await supabase.rpc("list_reports_secure", {
+        p_page: 1,
+        p_page_size: 100,
+        p_source_table: table,
+        p_from_date: filters.dateFrom,
+        p_to_date: filters.dateTo,
+      });
+      const ids = (authorized ?? []).map((r) => r.id);
+      if (ids.length === 0) return;
+
       let query = supabase
-        .from(REPORT_META[type].table as never)
+        .from(table as never)
         .select("*")
         .eq("status", "submitted")
+        .in("id", ids)
         .gte("submitted_at", from)
         .lte("submitted_at", to);
       if (filters.station) query = query.eq("station", filters.station);

@@ -35,6 +35,29 @@ export interface FilteredSubmission {
   report_no: string | null;
 }
 
+/** Secure two-step pattern (see lib/avsec/search/queries.ts for the same
+ * approach): list_reports_secure() authorizes via has_report_access()
+ * internally and returns only repository ids the caller may see for the
+ * requested source_table/date range; the per-type source-table read
+ * below is then scoped to exactly that id set. Returns empty per type
+ * until reports are indexed into the repository -- expected fail-closed
+ * behavior until the Phase 5/6 rollout runs for this environment. */
+async function authorizedIdsForType(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  table: string,
+  fromDate: string,
+  toDate: string,
+): Promise<string[]> {
+  const { data } = await supabase.rpc("list_reports_secure", {
+    p_page: 1,
+    p_page_size: 100,
+    p_source_table: table,
+    p_from_date: fromDate,
+    p_to_date: toDate,
+  });
+  return (data ?? []).map((r) => r.id);
+}
+
 export async function getFilteredSubmissions(filters: DashboardFilters): Promise<FilteredSubmission[]> {
   const supabase = await createClient();
   const { from, to } = rangeToTimestamps(filters);
@@ -42,10 +65,15 @@ export async function getFilteredSubmissions(filters: DashboardFilters): Promise
 
   const results = await Promise.all(
     types.map(async (type) => {
+      const table = REPORT_META[type].table;
+      const ids = await authorizedIdsForType(supabase, table, filters.dateFrom, filters.dateTo);
+      if (ids.length === 0) return [];
+
       let query = supabase
-        .from(REPORT_META[type].table as never)
+        .from(table as never)
         .select("*")
         .eq("status", "submitted")
+        .in("id", ids)
         .gte("submitted_at", from)
         .lte("submitted_at", to);
 
@@ -145,13 +173,32 @@ export async function getShiftCompliance(
     .sort((a, b) => a.profile.name.localeCompare(b.profile.name));
 }
 
+/** Secure two-step pattern (matches lib/avsec/search/queries.ts): first
+ * get the set of repository source_ids for report_sec016 the caller is
+ * authorized to see in this date range via search_reports_secure()
+ * (has_report_access() enforced inside that RPC), then scope the source-
+ * table read to exactly that id set. Station/team filtering happens on
+ * the already-authorized rows. Returns empty until the report is
+ * indexed into the repository — expected fail-closed behavior until the
+ * Phase 5/6 rollout runs for this environment. */
 export async function getFlightCoverage(filters: DashboardFilters) {
   const supabase = await createClient();
   const { from, to } = rangeToTimestamps(filters);
+
+  const { data: authorized } = await supabase.rpc("search_reports_secure", {
+    p_page: 1,
+    p_page_size: 100,
+    p_from_date: from.slice(0, 10),
+    p_to_date: to.slice(0, 10),
+  });
+  const ids = (authorized ?? []).filter((r) => r.source_table === "report_sec016").map((r) => r.id);
+  if (ids.length === 0) return [];
+
   let query = supabase
     .from("report_sec016")
     .select("id, flight, reg_no, station, team, submitted_at, bay_no, sta_std")
     .eq("status", "submitted")
+    .in("id", ids)
     .gte("submitted_at", from)
     .lte("submitted_at", to);
   if (filters.station) query = query.eq("station", filters.station);

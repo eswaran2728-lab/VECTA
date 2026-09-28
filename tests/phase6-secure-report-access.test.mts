@@ -444,12 +444,13 @@ test("ATTACHMENTS: every successful authorization writes an attachment_url_issue
   assert.match(block, /'attachment_url_issued'/);
 });
 
-test("ATTACHMENTS: this function is NOT yet called from lib/avsec/attachments/actions.ts -- confirmed unwired, documented as a deferred migration step, existing attachment access is unaffected", () => {
+test("ATTACHMENTS (corrected, round 2): this function IS now called from lib/avsec/attachments/actions.ts -- getReportAttachments() calls it per-attachment before issuing any signed URL, and signs the RPC's own returned storage_path, never the client-visible row's own path", () => {
   const attachmentsActions = fs.readFileSync(
     path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "attachments", "actions.ts"),
     "utf8",
   );
-  assert.doesNotMatch(attachmentsActions, /get_attachment_authorization_secure/);
+  assert.match(attachmentsActions, /\.rpc\("get_attachment_authorization_secure"/);
+  assert.match(attachmentsActions, /createSignedUrl\(authorized\.storage_path/);
 });
 
 // =======================================================================
@@ -478,11 +479,12 @@ test("INDEXES: no index is created on an insecure view -- every index in this mi
 // Non-regression / phase-boundary checks
 // =======================================================================
 
-test("NON-REGRESSION: this migration touches only report_access_audit's CHECK constraint and central_reports_index/report_access_grants/report_access_audit's indexes -- no CREATE TABLE, no ALTER ... ADD COLUMN, no DROP of anything", () => {
+test("NON-REGRESSION (corrected, round 2): this migration adds exactly one column (report_access_audit.access_reason, additive/nullable) and no CREATE TABLE / DROP TABLE / DROP COLUMN anywhere", () => {
   assert.doesNotMatch(code, /create table/i);
-  assert.doesNotMatch(code, /add column/i);
   assert.doesNotMatch(code, /drop table/i);
   assert.doesNotMatch(code, /drop column/i);
+  const addColumnMatches = code.match(/add column if not exists (\w+)/g) ?? [];
+  assert.deepEqual(addColumnMatches, ["add column if not exists access_reason"]);
 });
 
 test("NON-REGRESSION: no RLS policy is created, altered, or dropped -- access remains exclusively through SECURITY DEFINER functions", () => {
@@ -508,11 +510,225 @@ test("PHASE BOUNDARY: this migration does not execute the Phase 5 backfill, does
 // ROLLBACK
 // =======================================================================
 
-test("ROLLBACK: documents dropping the 4 new functions before reverting has_report_access() to its Phase 5 form and widening report_access_audit's constraint back, then dropping the new indexes last", () => {
+test("ROLLBACK: documents dropping the new functions before reverting get_report_secure()/has_report_access() to their Phase 5 forms and widening report_access_audit's constraint back, then dropping the new indexes last", () => {
   const rollbackBlock = migrationSql.match(/DOCUMENTED ROLLBACK[\s\S]*$/)![0];
   const fnDropIdx = rollbackBlock.indexOf("drop function if exists public.get_attachment_authorization_secure(uuid);");
   const revertIdx = rollbackBlock.indexOf("Revert has_report_access() to its exact Phase 5 form");
   const constraintIdx = rollbackBlock.indexOf("Revert report_access_audit's CHECK constraint");
   const indexDropIdx = rollbackBlock.indexOf("drop index if exists public.central_reports_index_report_date_idx;");
   assert.ok(fnDropIdx > -1 && revertIdx > fnDropIdx && constraintIdx > revertIdx && indexDropIdx > constraintIdx);
+});
+
+// =======================================================================
+// CORRECTION ROUND 2, PART I/J: audit extension, access_reason, get_report_secure() v2
+// =======================================================================
+
+test("PART I: report_access_audit's CHECK is widened additively for round 2 -- every prior value (including round 1's attachment_url_issued) is preserved, plus the 7 new event types required by review section 10", () => {
+  const blocks = [...code.matchAll(/alter table public\.report_access_audit add constraint report_access_audit_action_check check \(action in \(([\s\S]*?)\)\);/g)];
+  assert.ok(blocks.length >= 2, "expected both the round-1 and round-2 widening statements");
+  const block = [blocks[blocks.length - 1]];
+  const values = (block[0]![1].match(/'([a-z_]+)'/g) ?? []).map((s) => s.replace(/'/g, ""));
+  for (const v of [
+    "view", "version_view", "download", "export", "access_request", "grant", "revoke",
+    "flag", "unflag", "amendment_request", "amendment_approved", "amendment_rejected",
+    "index", "reindex", "entity_confirmed", "entity_conflict", "attachment_url_issued",
+    "detail_view", "amendment_view", "pdf_generated", "pdf_downloaded",
+    "export_generated", "explicit_grant_used", "unauthorized_attempt",
+  ]) {
+    assert.ok(values.includes(v), `must preserve/add action value ${v}`);
+  }
+});
+
+test("PART I: access_reason is an additive, nullable column -- existing rows (none yet in any real database) are unaffected", () => {
+  assert.match(code, /alter table public\.report_access_audit add column if not exists access_reason text;/);
+});
+
+test("PART J: resolve_report_access_reason() mirrors has_report_access()'s branch order exactly -- same role checks, in the same sequence, so the two functions can never disagree about WHETHER access exists, only WHY", () => {
+  const accessBlock = fnBlock("has_report_access")![0];
+  const reasonBlock = fnBlock("resolve_report_access_reason")![0];
+  const rolesInOrder = [
+    "submitter_profile_id = auth.uid()", "global_reporting_controller", "ghod",
+    "maa_boss", "aax_boss", "main_enforcement", "compliance",
+    "investigation_sso", "operation_manager", "hub_se", "dse", "'sso'",
+    "sat_aso", "profiling_so",
+  ];
+  let lastAccessIdx = -1;
+  let lastReasonIdx = -1;
+  for (const role of rolesInOrder) {
+    const accessIdx = accessBlock.indexOf(role);
+    const reasonIdx = reasonBlock.indexOf(role);
+    assert.ok(accessIdx > lastAccessIdx, `${role} out of order in has_report_access()`);
+    assert.ok(reasonIdx > lastReasonIdx, `${role} out of order in resolve_report_access_reason()`);
+    lastAccessIdx = accessIdx;
+    lastReasonIdx = reasonIdx;
+  }
+});
+
+test("PART J: get_report_secure() v2 writes 'detail_view' for a default-version read and 'version_view' for an explicit version read (corrected from round 1's generic 'view')", () => {
+  const block = fnBlock("get_report_secure")![0];
+  assert.match(block, /case when p_version_number is null then 'detail_view' else 'version_view' end/);
+});
+
+test("PART J: get_report_secure() v2 records access_reason and, when the reason is an explicit grant, parses the grant_id out of it into the existing grant_id column", () => {
+  const block = fnBlock("get_report_secure")![0];
+  assert.match(block, /v_reason := public\.resolve_report_access_reason\(p_repository_report_id\);/);
+  assert.match(block, /if v_reason like 'explicit_grant:%' then/);
+  assert.match(block, /v_grant_id := replace\(v_reason, 'explicit_grant:', ''\)::uuid;/);
+  assert.match(block, /insert into public\.report_access_audit \(actor_id, repository_report_id, version_number, action, access_reason, grant_id\)/);
+});
+
+test("PART J: get_report_secure() v2 writes an 'unauthorized_attempt' audit row (without repository content) before raising, for a denied caller -- and raises the SAME generic message as before, so this new event type does not create a new existence oracle", () => {
+  const block = fnBlock("get_report_secure")![0];
+  assert.match(block, /if not public\.has_report_access\(p_repository_report_id\) then/);
+  assert.match(block, /'unauthorized_attempt', 'get_report_secure'/);
+  assert.match(block, /raise exception 'Not authorized to access this report\.';/);
+});
+
+test("PART J: get_report_secure()'s EXECUTE grant is unchanged (authenticated + service_role, revoked from public/anon)", () => {
+  assert.match(code, /revoke execute on function public\.get_report_secure\(uuid, integer\) from public, anon;/);
+  assert.match(code, /grant execute on function public\.get_report_secure\(uuid, integer\) to authenticated, service_role;/);
+});
+
+// =======================================================================
+// PART K: version content, amendments, access-request status
+// =======================================================================
+
+test("PART K: get_report_version_content_secure() authorizes via the SAME has_report_access() check as get_report_secure() -- a version can never reveal content for a report the caller cannot otherwise access", () => {
+  const block = fnBlock("get_report_version_content_secure")![0];
+  assert.match(block, /if not public\.has_report_access\(p_repository_report_id\) then/);
+  assert.match(block, /'version_view'/);
+});
+
+test("PART K: get_report_amendments_secure() is audited exactly ONCE per call ('amendment_view'), not once per amendment row returned", () => {
+  const block = fnBlock("get_report_amendments_secure")![0];
+  const auditInserts = (block.match(/insert into public\.report_access_audit/g) ?? []).length;
+  // One for the unauthorized-attempt branch, one for the success path --
+  // never one per row in the returned SELECT.
+  assert.equal(auditInserts, 2);
+  assert.doesNotMatch(block, /for .* in .*loop[\s\S]*insert into public\.report_access_audit/);
+});
+
+test("PART K: get_report_amendments_secure() never filters out pending amendments -- effective_status='pending' rows are returned as data (never treated as current), and no approval/rejection function exists anywhere in this migration", () => {
+  const block = fnBlock("get_report_amendments_secure")![0];
+  assert.doesNotMatch(block, /effective_status = 'approved'/);
+  assert.doesNotMatch(code, /function public\.approve_report_amendment/i);
+  assert.doesNotMatch(code, /function public\.reject_report_amendment/i);
+});
+
+test("PART K: get_access_request_status_secure() only lets the requester see their OWN request, or the Global Reporting Controller see any -- never an arbitrary other caller", () => {
+  const block = fnBlock("get_access_request_status_secure")![0];
+  assert.match(block, /v_request\.requester_id <> auth\.uid\(\) and not public\.has_active_role\('global_reporting_controller'\)/);
+});
+
+// =======================================================================
+// PART L: dashboard aggregates
+// =======================================================================
+
+test("PART L: get_report_dashboard_aggregate_secure() only groups by a fixed, coarse dimension allowlist -- never a client-supplied column name, and never a combination fine enough to isolate one report", () => {
+  const block = fnBlock("get_report_dashboard_aggregate_secure")![0];
+  assert.match(block, /if p_group_by not in \('source_table', 'flag_state', 'status', 'severity', 'operating_entity_code'\) then/);
+  assert.doesNotMatch(block, /format\(/);
+});
+
+test("PART L: get_report_dashboard_aggregate_secure() counts over the SAME has_report_access()-filtered set as list/search/flagged -- AirAsia Management/GHOD/MAA-AAX Boss/Operation Manager/etc. each see only counts of reports they could already see individually, never a broader aggregate", () => {
+  const block = fnBlock("get_report_dashboard_aggregate_secure")![0];
+  assert.match(block, /where public\.has_report_access\(cri\.id\)/);
+});
+
+test("PART L: dashboard aggregates are NOT audited per call -- an aggregate refresh is not a 'detail' access, matching the explicit 'must not flood detail-access auditing' requirement", () => {
+  const block = fnBlock("get_report_dashboard_aggregate_secure")![0];
+  assert.doesNotMatch(block, /insert into public\.report_access_audit/);
+});
+
+// =======================================================================
+// PART M: CSV sanitization and export
+// =======================================================================
+
+/** Mirrors sanitize_csv_value()'s regex exactly. */
+function sanitizeCsvValue(value: string | null): string | null {
+  if (value === null) return null;
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
+test("CSV INJECTION: a leading =, +, -, @, tab, or carriage return is prefixed with a single quote (force-text in every common spreadsheet app); an ordinary value is untouched", () => {
+  assert.equal(sanitizeCsvValue("=SUM(A1:A9)"), "'=SUM(A1:A9)");
+  assert.equal(sanitizeCsvValue("+1234"), "'+1234");
+  assert.equal(sanitizeCsvValue("-5"), "'-5");
+  assert.equal(sanitizeCsvValue("@mention"), "'@mention");
+  assert.equal(sanitizeCsvValue("\tstuff"), "'\tstuff");
+  assert.equal(sanitizeCsvValue("\rstuff"), "'\rstuff");
+  assert.equal(sanitizeCsvValue("KUL - MAA"), "KUL - MAA");
+  assert.equal(sanitizeCsvValue(null), null);
+});
+
+test("CSV INJECTION: sanitize_csv_value() is applied to every text field export_reports_secure() returns", () => {
+  const block = fnBlock("export_reports_secure")![0];
+  for (const col of ["report_type", "operating_entity_code", "flight_number"]) {
+    assert.match(block, new RegExp(`public\\.sanitize_csv_value\\(cri\\.${col}\\)`));
+  }
+});
+
+test("EXPORT: export_reports_secure() authorizes via the same has_report_access() CTE pattern, caps rows at 5000 regardless of what is requested, and writes exactly ONE 'export_generated' audit row per call, never one per exported row", () => {
+  const block = fnBlock("export_reports_secure")![0];
+  assert.match(block, /where public\.has_report_access\(cri\.id\)/);
+  assert.match(block, /least\(greatest\(coalesce\(p_max_rows, 1000\), 1\), 5000\)/);
+  const auditInserts = (block.match(/insert into public\.report_access_audit/g) ?? []).length;
+  assert.equal(auditInserts, 1);
+  assert.match(block, /'export_generated'/);
+});
+
+test("EXPORT: export scope is enforced the same way for every role -- Global Reporting Controller, Operation Manager, Main Enforcement, and every other role all go through the identical has_report_access()-authorized CTE, so an Operation Manager can never export outside Operation scope and Main Enforcement can never export outside its own Malaysia scope", () => {
+  const block = fnBlock("export_reports_secure")![0];
+  // No role-specific branch exists at all -- authorization is entirely
+  // delegated to has_report_access(), which already enforces each
+  // role's own scope (asserted exhaustively in the ROLE MATRIX tests
+  // above) -- there is no separate, divergent export-specific rule to
+  // audit here.
+  assert.doesNotMatch(block, /has_active_role\(/);
+  assert.doesNotMatch(block, /has_role_in_scope\(/);
+});
+
+// =======================================================================
+// PART N: PDF authorization
+// =======================================================================
+
+test("PDF: authorize_report_pdf_secure() re-derives source_table/source_id from central_reports_index by the repository id -- never accepts a client-supplied source table/id pair for a different report than the one authorized", () => {
+  const block = fnBlock("authorize_report_pdf_secure")![0];
+  assert.match(block, /where cri\.id = p_repository_report_id/);
+  assert.doesNotMatch(block, /p_source_table|p_source_id/);
+});
+
+test("PDF: authorize_report_pdf_secure() writes 'pdf_generated' on success and 'unauthorized_attempt' on denial, both audited, and requires an approved profile status", () => {
+  const block = fnBlock("authorize_report_pdf_secure")![0];
+  assert.match(block, /'pdf_generated'/);
+  assert.match(block, /'unauthorized_attempt', 'authorize_report_pdf_secure'/);
+  assert.match(block, /is distinct from 'approved'/);
+});
+
+test("PDF: CaterLink is never referenced by authorize_report_pdf_secure() or anywhere else in this migration -- CaterLink final-transaction PDFs remain a completely separate domain", () => {
+  const block = fnBlock("authorize_report_pdf_secure")![0];
+  assert.doesNotMatch(block, /caterlink|icms_/i);
+  assert.doesNotMatch(code, /caterlink_transactions/i);
+});
+
+// =======================================================================
+// Permission matrix -- round 2 additions
+// =======================================================================
+
+test("PERMISSION MATRIX (round 2): every new function is revoked from public/anon and granted to exactly authenticated+service_role, except sanitize_csv_value (a pure computation helper, same grant)", () => {
+  const fns: [string, string][] = [
+    ["resolve_report_access_reason", "uuid"],
+    ["get_report_version_content_secure", "uuid, integer"],
+    ["get_report_amendments_secure", "uuid"],
+    ["get_access_request_status_secure", "uuid"],
+    ["get_report_dashboard_aggregate_secure", "text"],
+    ["sanitize_csv_value", "text"],
+    ["export_reports_secure", "integer, text, uuid, text, uuid, uuid, uuid, uuid, text, text, text, date, date"],
+    ["authorize_report_pdf_secure", "uuid"],
+  ];
+  for (const [fn, sig] of fns) {
+    const escaped = sig.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.match(code, new RegExp(`revoke execute on function public\\.${fn}\\(${escaped}\\) from public, anon;`), `${fn} missing revoke`);
+    assert.match(code, new RegExp(`grant execute on function public\\.${fn}\\(${escaped}\\) to authenticated, service_role;`), `${fn} missing grant`);
+  }
 });

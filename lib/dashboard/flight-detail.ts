@@ -27,15 +27,38 @@ export interface FlightSummary {
   regNo: string | null;
 }
 
+/** Repository ids for report_sec016/report_sec029 the caller is authorized
+ * to see on the given date (search_reports_secure() enforces
+ * has_report_access() internally). Used to scope the source-table reads
+ * below to an already-authorized set instead of an open table scan.
+ * Returns an empty set until the report is indexed into the repository —
+ * expected fail-closed behavior until the Phase 5/6 rollout runs. */
+async function authorizedIdsForDate(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  sourceTable: "report_sec016" | "report_sec029",
+  date: string,
+): Promise<string[]> {
+  const { data } = await supabase.rpc("search_reports_secure", {
+    p_page: 1,
+    p_page_size: 100,
+    p_from_date: date,
+    p_to_date: date,
+  });
+  return (data ?? []).filter((r) => r.source_table === sourceTable).map((r) => r.id);
+}
+
 export async function getFlightsForDate(date: string, station?: string): Promise<FlightSummary[]> {
   const supabase = await createClient();
+
+  const sec016Ids = await authorizedIdsForDate(supabase, "report_sec016", date);
 
   let sec016Q = supabase
     .from("report_sec016")
     .select("flight, station, reg_no")
     .eq("duty_date", date)
     .eq("status", "submitted")
-    .not("flight", "is", null);
+    .not("flight", "is", null)
+    .in("id", sec016Ids); // empty array => zero rows, never an open scan; CaterLink transactions below are unaffected
   if (station) sec016Q = sec016Q.eq("station", station);
 
   let txQ = supabase
@@ -101,6 +124,11 @@ export async function getFlightDetail(flight: string, date: string, station: str
   const supabase = await createClient();
   const flightNorm = normFlight(flight);
 
+  const [sec016Ids, sec029Ids] = await Promise.all([
+    authorizedIdsForDate(supabase, "report_sec016", date),
+    authorizedIdsForDate(supabase, "report_sec029", date),
+  ]);
+
   const [{ data: sec016Rows }, { data: sec029Rows }, { data: txRows }] = await Promise.all([
     supabase
       .from("report_sec016")
@@ -109,12 +137,14 @@ export async function getFlightDetail(flight: string, date: string, station: str
       )
       .eq("duty_date", date)
       .eq("station", station)
-      .eq("status", "submitted"),
+      .eq("status", "submitted")
+      .in("id", sec016Ids),
     supabase
       .from("report_sec029")
       .select("id, flight_no, aircraft_registration, declaration, submitted_at, staff_name, supervising_officer_name, assisted_by_name")
       .eq("station", station)
-      .eq("status", "submitted"),
+      .eq("status", "submitted")
+      .in("id", sec029Ids),
     supabase
       .from("transactions")
       .select("id, transaction_number, status, direction, driver_name, escort_officer_name, created_at")

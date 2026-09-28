@@ -3,7 +3,8 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import QRCode from "qrcode";
 import { requireProfile } from "@/lib/avsec/auth";
 import { getReportById } from "@/lib/avsec/reports/queries";
-import { REPORT_TYPES, type ReportType } from "@/lib/avsec/reference-data";
+import { REPORT_META, REPORT_TYPES, type ReportType } from "@/lib/avsec/reference-data";
+import { createClient } from "@/lib/supabase/server";
 import { Sec016Pdf } from "@/lib/avsec/export/pdf/Sec016Pdf";
 import { Sec014Pdf } from "@/lib/avsec/export/pdf/Sec014Pdf";
 import { Sec029Pdf } from "@/lib/avsec/export/pdf/Sec029Pdf";
@@ -24,9 +25,26 @@ export async function GET(
   }
   const type = params.type as ReportType;
 
+  // getReportById() already enforces has_report_access() and fails closed
+  // (ReportNotIndexedError / thrown RPC error) if this report isn't
+  // indexed or the caller isn't authorized. This second call is purely
+  // to record a DISTINCT 'pdf_generated' audit event (vs. getReportById's
+  // own 'detail_view') -- it re-derives the same repository id and is
+  // authorized by the identical has_report_access() check, so it cannot
+  // itself become a bypass or a second, divergent decision.
   const report = await getReportById(type, params.id);
   if (!report) {
     return NextResponse.json({ error: "Report not found" }, { status: 404 });
+  }
+  const supabase = await createClient();
+  const { data: indexRow } = await supabase
+    .from("central_reports_index")
+    .select("id")
+    .eq("source_table", REPORT_META[type].table)
+    .eq("source_id", params.id)
+    .maybeSingle();
+  if (indexRow) {
+    await supabase.rpc("authorize_report_pdf_secure", { p_repository_report_id: indexRow.id });
   }
 
   const reportNo = (report as { report_no?: string | null }).report_no;

@@ -22,6 +22,7 @@ export interface ReportAttachment {
   size_bytes: number;
   created_at: string;
   url: string | null;
+  deniedReason?: string;
 }
 
 function sanitizeFileName(name: string): string {
@@ -82,23 +83,50 @@ export async function uploadReportAttachment(formData: FormData): Promise<Attach
   return { ok: true, attachment: data };
 }
 
-/** Gallery data for a report's view page — RLS scopes visibility the same as the report
- * itself, so this never leaks an attachment the caller couldn't already see the report of. */
+/** Gallery data for a report's view page. Listing the attachment rows (id/name/size, never
+ * the storage path itself) is unrestricted the same way it always was; the security-relevant
+ * step is per-attachment signed-URL issuance below, which now goes through the secure
+ * repository authorization path instead of trusting RLS on report_attachments alone.
+ *
+ * For each attachment, get_attachment_authorization_secure() (Phase 6): resolves the
+ * attachment's own report_type/report_id to its Central Reporting Repository entry, re-checks
+ * has_report_access() immediately, and returns the TRUSTED storage_path from that lookup —
+ * never the client-supplied path, so cross-report/cross-AOC path substitution is impossible.
+ * It fails closed (throws) when the report is not yet indexed or the caller is unauthorized —
+ * in either case this returns url: null for that attachment rather than falling back to the
+ * old unauthorized direct signed-URL path, and the failure reason is distinguishable via the
+ * `deniedReason` field for the UI to show a clear message instead of a silent broken image. */
 export async function getReportAttachments(reportType: ReportType, reportId: string): Promise<ReportAttachment[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("report_attachments")
-    .select("id, file_name, mime_type, size_bytes, storage_path, created_at")
+    .select("id, file_name, mime_type, size_bytes, created_at")
     .eq("report_type", reportType)
     .eq("report_id", reportId)
     .order("created_at", { ascending: true });
 
-  const rows = (data ?? []) as { id: string; file_name: string; mime_type: string; size_bytes: number; storage_path: string; created_at: string }[];
+  const rows = (data ?? []) as { id: string; file_name: string; mime_type: string; size_bytes: number; created_at: string }[];
   return Promise.all(
     rows.map(async (r) => {
+      const { data: authorized, error: authError } = await supabase
+        .rpc("get_attachment_authorization_secure", { p_attachment_id: r.id })
+        .single();
+
+      if (authError || !authorized) {
+        return {
+          id: r.id,
+          file_name: r.file_name,
+          mime_type: r.mime_type,
+          size_bytes: r.size_bytes,
+          created_at: r.created_at,
+          url: null,
+          deniedReason: authError?.message ?? "Not authorized",
+        };
+      }
+
       const { data: signed } = await supabase.storage
         .from("report-attachments")
-        .createSignedUrl(r.storage_path, SIGNED_URL_TTL_SECONDS);
+        .createSignedUrl(authorized.storage_path, SIGNED_URL_TTL_SECONDS);
       return {
         id: r.id,
         file_name: r.file_name,
