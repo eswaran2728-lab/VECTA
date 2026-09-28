@@ -5061,6 +5061,82 @@ export type Database = {
       }
       revoke_report_access: { Args: { p_grant_id: string; p_reason: string | null }; Returns: undefined }
       has_report_access: { Args: { p_repository_report_id: string }; Returns: boolean }
+      list_reports_secure: {
+        Args: {
+          p_page?: number | null
+          p_page_size?: number | null
+          p_source_table?: string | null
+          p_flag_state?: string | null
+          p_status?: string | null
+          p_from_date?: string | null
+          p_to_date?: string | null
+        }
+        Returns: {
+          id: string
+          source_table: string
+          report_type: string
+          operating_entity_code: string | null
+          flight_number: string | null
+          report_date: string | null
+          status: string
+          severity: string | null
+          flag_state: string
+          indexed_at: string
+          total_count: number
+        }[]
+      }
+      search_reports_secure: {
+        Args: {
+          p_page?: number | null
+          p_page_size?: number | null
+          p_flight_number?: string | null
+          p_report_reference?: string | null
+          p_aoc_id?: string | null
+          p_operating_entity_code?: string | null
+          p_department_id?: string | null
+          p_unit_id?: string | null
+          p_hub_id?: string | null
+          p_station_id?: string | null
+          p_team_id?: string | null
+          p_severity?: string | null
+          p_flag_state?: string | null
+          p_status?: string | null
+          p_submitter_profile_id?: string | null
+        }
+        Returns: {
+          id: string
+          source_table: string
+          report_type: string
+          operating_entity_code: string | null
+          flight_number: string | null
+          report_date: string | null
+          status: string
+          severity: string | null
+          flag_state: string
+          indexed_at: string
+          total_count: number
+        }[]
+      }
+      flagged_reports_secure: {
+        Args: { p_page?: number | null; p_page_size?: number | null }
+        Returns: {
+          id: string
+          source_table: string
+          report_type: string
+          operating_entity_code: string | null
+          flight_number: string | null
+          report_date: string | null
+          status: string
+          severity: string | null
+          flagged_reason: string | null
+          flagged_at: string | null
+          total_count: number
+        }[]
+      }
+      get_attachment_authorization_secure: {
+        Args: { p_attachment_id: string }
+        Returns: { storage_path: string; file_name: string; mime_type: string }[]
+      }
       process_report_index_queue: {
         Args: { p_batch_size?: number | null }
         Returns: { processed: number; indexed: number; failed: number; permanently_failed: number }[]
