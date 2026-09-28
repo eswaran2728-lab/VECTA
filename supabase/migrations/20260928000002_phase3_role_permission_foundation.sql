@@ -6,8 +6,11 @@
 -- not retire MANAGEMENT/ADMIN/ENFORCEMENT/DSE/SO/ASO or any ICMS role.
 --
 -- Covers:
---   Part A: role_definitions (27 required role codes, seeded, inactive
---           until a real assignment references them)
+--   Part A: role_definitions (23 required role codes per the approved
+--           specification -- 4 international/platform, 7 Malaysia
+--           leadership, 6 Enforcement, 5 Operation, 1 CaterLink -- seeded
+--           once; the catalog row exists whether or not any assignment
+--           yet references it)
 --   Part B: user_role_assignments (scoped, audited, multi-assignment-safe)
 --   Part C: scope-shape validation trigger (closes null-scope bypass
 --           per role category -- the international/platform roles are
@@ -33,6 +36,24 @@
 --     migration (Compliance, CaterLink Management, and every other new
 --     role get a role_definitions ROW and a scope-shape RULE in this
 --     phase -- not a single new grant on any existing table)
+--
+-- RESOLVED DECISIONS (carried forward from Phase 2's own RESOLVED
+-- DECISIONS block -- restated here, not re-opened, since Phase 3's
+-- scope model depends on them):
+--   - A station is never permanently assigned to only MAA or AAX
+--     (org_stations has no operating_entity_id column, per Phase 2).
+--     Operating entity is a property of each relevant flight/report
+--     record, not of a station or an assignment's station_id.
+--   - AK/D7 are input-helper suggestions only; the saved explicit
+--     operating_entity_id on a flight/report row is authoritative.
+--     Phase 3 does not touch reports at all.
+--   - AAX is not KUL-only. Nothing in this migration ties any operating
+--     entity to any specific station or hub -- an aax_boss/aax_admin
+--     assignment's operating_entity_id is validated (Part C) only
+--     against the AAX entity row itself, never against a station or hub.
+--   - Historical public.feedback_threads rows remain untouched and will
+--     not be migrated into the future anonymous-discussion tables
+--     (Phase 10) -- this migration does not reference that table at all.
 
 -- =======================================================================
 -- PART A: role_definitions

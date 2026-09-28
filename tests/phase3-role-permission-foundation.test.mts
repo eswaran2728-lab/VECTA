@@ -533,3 +533,130 @@ test("STATIC: no unescaped double-hyphen inside a single-quoted string literal (
     assert.equal(quoteCount % 2, 0, `line contains "--" inside an open string literal: ${line}`);
   }
 });
+
+// --- Correction pass (2026-09-28, second review): exact role count ---
+
+test("CORRECTION: exactly 23 role codes are seeded -- not 27. 4 international + 7 Malaysia leadership + 6 Enforcement + 5 Operation + 1 CaterLink = 23, matching the approved specification exactly. No unapproved role was ever introduced -- the prior report's '27' was a prose error, not a schema defect.", () => {
+  const insertBlock = code.match(/insert into public\.role_definitions[\s\S]*?on conflict \(code\) do nothing;/);
+  assert.ok(insertBlock);
+  const rows = insertBlock![0].match(/^\s*\('[a-z_]+',/gm) ?? [];
+  assert.equal(rows.length, 23, `expected exactly 23 seeded role rows, found ${rows.length}`);
+  assert.equal(REQUIRED_ROLE_CODES.length, 23);
+
+  const byCategory: Record<string, number> = {
+    international: 4,
+    malaysia_leadership: 7,
+    enforcement: 6,
+    operation: 5,
+    caterlink: 1,
+  };
+  for (const [category, expectedCount] of Object.entries(byCategory)) {
+    const categoryRows = insertBlock![0].match(new RegExp(`'${category}',`, "g")) ?? [];
+    assert.equal(categoryRows.length, expectedCount, `expected ${expectedCount} rows in category ${category}, found ${categoryRows.length}`);
+  }
+});
+
+test("CORRECTION: the migration header comment states 23, not 27", () => {
+  assert.doesNotMatch(migrationSql, /27 required role codes/);
+  assert.match(migrationSql, /23 required role codes per the approved/);
+});
+
+// --- Correction pass: resolved-decisions documentation carried into Phase 3 ---
+
+test("CORRECTION: Phase 3 restates (not reopens) the four resolved decisions from Phase 2", () => {
+  assert.match(migrationSql, /RESOLVED DECISIONS \(carried forward from Phase 2/);
+  assert.match(migrationSql, /A station is never permanently assigned to only MAA or AAX/);
+  assert.match(migrationSql, /AAX is not KUL-only/);
+  assert.match(migrationSql, /Historical public\.feedback_threads rows remain untouched/);
+});
+
+// --- Correction pass: extended multiple-assignment safety proofs ---
+
+test("MULTI-ASSIGNMENT: an MAA assignment plus a separately-held AAX assignment does not produce unrestricted entity access -- each only satisfies a query for its own entity", () => {
+  const assignments: Assignment[] = [
+    baseAssignment({ roleCode: "maa_admin", hubId: undefined, aocId: "my", operatingEntityId: "maa-id" }),
+    baseAssignment({ roleCode: "aax_admin", hubId: undefined, aocId: "my", operatingEntityId: "aax-id" }),
+  ];
+  assert.equal(hasRoleInScope(assignments, { roleCode: "maa_admin", operatingEntityId: "maa-id" }), true);
+  assert.equal(hasRoleInScope(assignments, { roleCode: "maa_admin", operatingEntityId: "aax-id" }), false);
+  assert.equal(hasRoleInScope(assignments, { roleCode: "aax_admin", operatingEntityId: "aax-id" }), true);
+  assert.equal(hasRoleInScope(assignments, { roleCode: "aax_admin", operatingEntityId: "maa-id" }), false);
+  // Critically: holding BOTH does not manufacture a third, broader
+  // "any entity" capability under either role code -- there is no query
+  // shape that both rows satisfy simultaneously for a mismatched entity.
+});
+
+test("MULTI-ASSIGNMENT: a hub_se(Northern) assignment plus a separate aso(PEN station) assignment does not create whole-AOC access -- querying a third, unrelated hub/station under either role still fails", () => {
+  const assignments: Assignment[] = [
+    baseAssignment({ roleCode: "hub_se", hubId: "northern" }),
+    baseAssignment({ roleCode: "aso", hubId: undefined, stationId: "pen-station" }),
+  ];
+  assert.equal(hasRoleInScope(assignments, { roleCode: "hub_se", hubId: "sabah" }), false);
+  assert.equal(hasRoleInScope(assignments, { roleCode: "aso", stationId: "jhb-station" }), false);
+  assert.equal(hasRoleInScope(assignments, { roleCode: "operation_manager" }), false, "neither narrow assignment satisfies a department-wide role query");
+});
+
+test("MULTI-ASSIGNMENT: an expired assignment held alongside an active, unrelated assignment contributes zero access of its own", () => {
+  const assignments: Assignment[] = [
+    baseAssignment({ roleCode: "hub_se", hubId: "northern", endsAt: -500 }), // expired
+    baseAssignment({ roleCode: "compliance", hubId: undefined, departmentId: "compliance-dept" }), // active
+  ];
+  assert.equal(hasRoleInScope(assignments, { roleCode: "hub_se", hubId: "northern" }, 0), false, "the expired assignment must not grant access");
+  assert.equal(hasRoleInScope(assignments, { roleCode: "compliance", departmentId: "compliance-dept" }, 0), true, "the still-active, unrelated assignment is unaffected by the expired one");
+});
+
+test("MULTI-ASSIGNMENT: a revoked assignment held alongside an active, unrelated assignment contributes zero access of its own", () => {
+  const assignments: Assignment[] = [
+    baseAssignment({ roleCode: "hub_se", hubId: "northern", revokedAt: "2026-01-01" }),
+    baseAssignment({ roleCode: "compliance", hubId: undefined, departmentId: "compliance-dept" }),
+  ];
+  assert.equal(hasRoleInScope(assignments, { roleCode: "hub_se", hubId: "northern" }), false);
+  assert.equal(hasRoleInScope(assignments, { roleCode: "compliance", departmentId: "compliance-dept" }), true);
+});
+
+test("MULTI-ASSIGNMENT: a global technical role (super_admin) held alongside a narrow operational role does not let the operational role bypass its own scope, nor does it let super_admin acquire operational scope", () => {
+  const assignments: Assignment[] = [
+    baseAssignment({ roleCode: "super_admin", hubId: undefined, aocId: null }),
+    baseAssignment({ roleCode: "hub_se", hubId: "northern" }),
+  ];
+  // super_admin still satisfies only super_admin queries, never an
+  // operational role code:
+  assert.equal(hasRoleInScope(assignments, { roleCode: "operation_manager" }), false);
+  // hub_se still satisfies only its own hub, unaffected by holding
+  // super_admin too:
+  assert.equal(hasRoleInScope(assignments, { roleCode: "hub_se", hubId: "sabah" }), false);
+  assert.equal(hasRoleInScope(assignments, { roleCode: "hub_se", hubId: "northern" }), true);
+});
+
+// --- Correction pass: RPC output safety review ---
+
+test("RPC SAFETY: get_my_active_role_assignments() returns only self-service display columns -- never id, profile_id, granted_by, grant_reason, or revoked_at", () => {
+  const block = code.match(/create or replace function public\.get_my_active_role_assignments\(\)[\s\S]*?\$function\$;/);
+  assert.ok(block);
+  const returnsBlock = block![0].match(/returns table \([\s\S]*?\)/);
+  assert.ok(returnsBlock, "must find the RETURNS TABLE column list");
+  for (const sensitiveColumn of ["granted_by", "grant_reason", "profile_id", "revoked_at", /\bid\b/]) {
+    assert.doesNotMatch(returnsBlock![0], sensitiveColumn instanceof RegExp ? sensitiveColumn : new RegExp(`\\b${sensitiveColumn}\\b`));
+  }
+  // Confirms exactly the minimal, documented column set:
+  for (const expectedColumn of ["role_code", "role_category", "aoc_code", "operating_entity_code", "department_code", "unit_code", "hub_code", "station_code", "team_name", "starts_at", "ends_at"]) {
+    assert.match(returnsBlock![0], new RegExp(expectedColumn));
+  }
+});
+
+test("RPC SAFETY: get_my_active_role_assignments() is scoped to auth.uid() in its WHERE clause and filters to currently-effective rows only (no revoked/expired/future/inactive-role-definition/unapproved-caller row can be returned)", () => {
+  const block = code.match(/create or replace function public\.get_my_active_role_assignments\(\)[\s\S]*?\$function\$;/);
+  assert.ok(block);
+  assert.match(block![0], /where ura\.profile_id = auth\.uid\(\)/);
+  assert.match(block![0], /and rd\.is_active/);
+  assert.match(block![0], /and p\.status = 'approved'/);
+  assert.match(block![0], /and ura\.revoked_at is null/);
+  assert.match(block![0], /and ura\.starts_at <= now\(\)/);
+  assert.match(block![0], /and \(ura\.ends_at is null or ura\.ends_at > now\(\)\)/);
+});
+
+test("RPC SAFETY: get_my_active_role_assignments() cannot be called with any other user's identity -- no parameter of any kind exists on the function signature", () => {
+  const block = code.match(/create or replace function public\.get_my_active_role_assignments\(\)[\s\S]*?\$function\$;/);
+  assert.ok(block);
+  assert.match(block![0], /create or replace function public\.get_my_active_role_assignments\(\)\s*\nreturns table/);
+});
