@@ -92,6 +92,106 @@ export type Database = {
           { foreignKeyName: "org_teams_station_id_fkey"; columns: ["station_id"]; isOneToOne: false; referencedRelation: "org_stations"; referencedColumns: ["id"] },
         ]
       }
+      role_definitions: {
+        Row: {
+          id: string
+          code: string
+          display_name: string
+          role_category: "international" | "malaysia_leadership" | "enforcement" | "operation" | "caterlink"
+          description: string
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          code: string
+          display_name: string
+          role_category: "international" | "malaysia_leadership" | "enforcement" | "operation" | "caterlink"
+          description?: string
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          code?: string
+          display_name?: string
+          role_category?: "international" | "malaysia_leadership" | "enforcement" | "operation" | "caterlink"
+          description?: string
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
+      user_role_assignments: {
+        Row: {
+          id: string
+          profile_id: string
+          role_definition_id: string
+          aoc_id: string | null
+          operating_entity_id: string | null
+          department_id: string | null
+          unit_id: string | null
+          hub_id: string | null
+          station_id: string | null
+          team_id: string | null
+          starts_at: string
+          ends_at: string | null
+          revoked_at: string | null
+          granted_by: string | null
+          grant_reason: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          profile_id: string
+          role_definition_id: string
+          aoc_id?: string | null
+          operating_entity_id?: string | null
+          department_id?: string | null
+          unit_id?: string | null
+          hub_id?: string | null
+          station_id?: string | null
+          team_id?: string | null
+          starts_at?: string
+          ends_at?: string | null
+          revoked_at?: string | null
+          granted_by?: string | null
+          grant_reason?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          profile_id?: string
+          role_definition_id?: string
+          aoc_id?: string | null
+          operating_entity_id?: string | null
+          department_id?: string | null
+          unit_id?: string | null
+          hub_id?: string | null
+          station_id?: string | null
+          team_id?: string | null
+          starts_at?: string
+          ends_at?: string | null
+          revoked_at?: string | null
+          granted_by?: string | null
+          grant_reason?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: "user_role_assignments_profile_id_fkey"; columns: ["profile_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_role_assignments_role_definition_id_fkey"; columns: ["role_definition_id"]; isOneToOne: false; referencedRelation: "role_definitions"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_role_assignments_aoc_id_fkey"; columns: ["aoc_id"]; isOneToOne: false; referencedRelation: "aocs"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_role_assignments_operating_entity_id_fkey"; columns: ["operating_entity_id"]; isOneToOne: false; referencedRelation: "operating_entities"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_role_assignments_department_id_fkey"; columns: ["department_id"]; isOneToOne: false; referencedRelation: "departments"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_role_assignments_unit_id_fkey"; columns: ["unit_id"]; isOneToOne: false; referencedRelation: "units"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_role_assignments_hub_id_fkey"; columns: ["hub_id"]; isOneToOne: false; referencedRelation: "hubs"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_role_assignments_station_id_fkey"; columns: ["station_id"]; isOneToOne: false; referencedRelation: "org_stations"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_role_assignments_team_id_fkey"; columns: ["team_id"]; isOneToOne: false; referencedRelation: "org_teams"; referencedColumns: ["id"] },
+        ]
+      }
       organizations: {
         Row: {
           id: string
@@ -4046,6 +4146,36 @@ export type Database = {
           profile_id: string
           station: string
           team: string
+        }[]
+      }
+      has_active_role: { Args: { p_role_code: string }; Returns: boolean }
+      has_role_in_scope: {
+        Args: {
+          p_role_code: string
+          p_aoc_id?: string | null
+          p_operating_entity_id?: string | null
+          p_department_id?: string | null
+          p_unit_id?: string | null
+          p_hub_id?: string | null
+          p_station_id?: string | null
+          p_team_id?: string | null
+        }
+        Returns: boolean
+      }
+      get_my_active_role_assignments: {
+        Args: never
+        Returns: {
+          role_code: string
+          role_category: string
+          aoc_code: string | null
+          operating_entity_code: string | null
+          department_code: string | null
+          unit_code: string | null
+          hub_code: string | null
+          station_code: string | null
+          team_name: string | null
+          starts_at: string
+          ends_at: string | null
         }[]
       }
       is_active_supervisor: { Args: never; Returns: boolean }
