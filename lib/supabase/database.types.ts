@@ -4926,6 +4926,7 @@ export type Database = {
           last_error: string | null
           created_at: string | null
           processed_at: string | null
+          is_stale: boolean | null
         }
         Relationships: []
       }
@@ -5062,10 +5063,11 @@ export type Database = {
       has_report_access: { Args: { p_repository_report_id: string }; Returns: boolean }
       process_report_index_queue: {
         Args: { p_batch_size?: number | null }
-        Returns: { processed: number; indexed: number; failed: number }[]
+        Returns: { processed: number; indexed: number; failed: number; permanently_failed: number }[]
       }
       enqueue_report_for_indexing: { Args: Record<string, never>; Returns: unknown }
       enforce_report_row_immutability: { Args: Record<string, never>; Returns: unknown }
+      derive_report_classification: { Args: Record<string, never>; Returns: unknown }
       get_report_secure: {
         Args: { p_repository_report_id: string; p_version_number?: number | null }
         Returns: {

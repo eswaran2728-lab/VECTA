@@ -3,6 +3,18 @@
 -- supabase/migrations/ so it can never be picked up by an automated
 -- migration run.
 --
+-- EXECUTION CONTEXT (added review round 3): index_report() performs a
+-- classification-mirroring UPDATE against the already-submitted source
+-- row. The corrected block_submitted_report_mutation() trigger (Part P)
+-- only permits that exact 15-column update when auth.role() =
+-- 'service_role' -- this script must therefore be run with service-role
+-- privileges (e.g. the Supabase SQL editor's service-role connection,
+-- or an equivalent superuser/service context), never as an ordinary
+-- authenticated user, or every index_report() call inside it will be
+-- rejected by that trigger. This is unchanged from -- and does not
+-- weaken -- the trigger's protection: it is the same narrow exception
+-- already relied on by the automatic indexing queue (Part Q).
+--
 -- Purpose: index the 8 existing, deterministic, station='KUL - MAA'
 -- report rows (report_sec014=4, report_sec016=4; report_sec013/018/029/
 -- 033/offload_records=0 as of the 2026-09-28 production inventory in

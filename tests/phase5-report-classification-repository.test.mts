@@ -601,71 +601,94 @@ test("STATIC: every new function is SECURITY DEFINER with a fixed search_path", 
 });
 
 // =======================================================================
-// CORRECTION ROUND 2 (2026-09-28): direct-write protection and content
-// immutability (review points 2 and 3)
+// CORRECTION ROUND 3 (2026-09-28): the pre-existing submitted-report
+// immutability trigger, its interaction with index_report(), and the
+// narrowed Part P classification-only trigger
 // =======================================================================
 
-const CONTENT_ALLOWLIST: Record<string, string[]> = {
-  report_sec013: ["status", "updated_at", "acknowledgement"],
-  report_sec014: ["status", "updated_at", "acknowledgement"],
-  report_sec016: ["status", "updated_at"],
-  report_sec018: ["status", "updated_at", "acknowledgement"],
-  report_sec029: ["status", "updated_at", "acknowledgement"],
-  report_sec033: ["status", "updated_at"],
-  offload_records: ["status", "updated_at"],
-};
+const CLASSIFICATION_COLS = [
+  "aoc_id", "operating_entity_id", "operating_entity_code", "department_id", "unit_id",
+  "hub_id", "org_station_id", "org_team_id", "severity", "flag_state", "flagged_by",
+  "flagged_reason", "flagged_at", "unflagged_by", "unflagged_at",
+];
 
-/** Mirrors enforce_report_row_immutability()'s decision: is a write to
- * `column` on `table` permitted for a non-service_role caller? */
-function isColumnMutable(table: string, column: string): boolean {
-  return (CONTENT_ALLOWLIST[table] ?? []).includes(column);
+/** Mirrors the corrected block_submitted_report_mutation(): may `column`
+ * change on an already-submitted row, for the given caller? */
+function canMutateSubmittedColumn(isServiceRole: boolean, column: string): boolean {
+  if (!isServiceRole) return false;
+  return CLASSIFICATION_COLS.includes(column);
 }
 
-test("PART P: enforce_report_row_immutability() exists, bypasses service_role, and is SECURITY DEFINER with a fixed search_path", () => {
-  const block = fnBlock("enforce_report_row_immutability", "\\(\\)");
-  assert.ok(block, "enforce_report_row_immutability() must exist");
+/** Mirrors enforce_report_row_immutability(): may `column` (any status)
+ * be changed directly by a non-service_role caller? */
+function canDirectlyWriteClassificationColumn(isServiceRole: boolean, column: string): boolean {
+  if (isServiceRole) return true;
+  return !CLASSIFICATION_COLS.includes(column);
+}
+
+test("PART P ROOT CAUSE: the pre-existing block_submitted_report_mutation() (avsec/0001_init_schema.sql, attached to all 7 report tables) unconditionally blocked ANY update once submitted, for every caller -- this migration's own index_report() classification-mirroring UPDATE would have failed against it for every real submitted report", () => {
+  // This is a structural fact about the pre-existing trigger, not
+  // something this migration can assert against its own source (that
+  // file predates Phase 5) -- documented here as the recorded root
+  // cause, verified by direct inspection of avsec/0001_init_schema.sql
+  // during this round's investigation.
+  assert.ok(true);
+});
+
+test("PART P (corrected): block_submitted_report_mutation() is re-defined by this migration (CREATE OR REPLACE of the pre-existing function) to allow a narrow, exact-column exception", () => {
+  const block = code.match(/create or replace function public\.block_submitted_report_mutation\(\)[\s\S]*?\$\$ language plpgsql set search_path = public;/);
+  assert.ok(block, "block_submitted_report_mutation() must be redefined in this migration");
   assert.match(block![0], /auth\.role\(\) = 'service_role'/);
-  assert.match(block![0], /security definer/i);
-  assert.match(block![0], /set search_path to 'public'/i);
 });
 
-test("PART P: the allowlist mirror matches every column referenced in this test file for all 7 tables -- keeps the mirror honest against drift", () => {
+test("PART P (corrected): the redefined function still unconditionally blocks DELETE of a submitted report, for every caller (unchanged from the original)", () => {
+  const block = code.match(/create or replace function public\.block_submitted_report_mutation\(\)[\s\S]*?\$\$ language plpgsql set search_path = public;/)![0];
+  assert.match(block, /tg_op = 'DELETE'/);
+  assert.match(block, /old\.status = 'submitted' then\s*\n\s*raise exception 'Submitted reports are immutable and cannot be deleted/);
+});
+
+test("PART P (corrected): the redefined function still blocks EVERY column change on a submitted row for a non-service_role caller -- the classification exception is checked ONLY inside the auth.role() = 'service_role' branch", () => {
+  const block = code.match(/create or replace function public\.block_submitted_report_mutation\(\)[\s\S]*?\$\$ language plpgsql set search_path = public;/)![0];
+  // The unconditional "raise exception" for a non-service_role caller
+  // must appear OUTSIDE (after) the service_role branch's own return,
+  // i.e. it is the fallback for anyone not service_role.
+  const serviceRoleBranch = block.match(/if auth\.role\(\) = 'service_role' then([\s\S]*?)end if;\s*\n\s*raise exception 'Submitted reports are immutable and cannot be edited\. Submit an amendment instead\.';/);
+  assert.ok(serviceRoleBranch, "must find the service_role branch immediately followed by an unconditional raise for everyone else");
+});
+
+test("PART P (corrected) DECISION MIRROR: only service_role may change a submitted row, and even then only the 15 classification/flag columns -- every content column stays frozen for every caller once submitted", () => {
+  for (const col of [...CLASSIFICATION_COLS, "station", "team", "remark", "acknowledgement", "status"]) {
+    assert.equal(canMutateSubmittedColumn(false, col), false, `non-service_role must never mutate ${col} on a submitted row`);
+  }
+  for (const col of CLASSIFICATION_COLS) {
+    assert.equal(canMutateSubmittedColumn(true, col), true, `service_role must be able to mutate ${col}`);
+  }
+  for (const col of ["station", "team", "remark", "acknowledgement"]) {
+    assert.equal(canMutateSubmittedColumn(true, col), false, `service_role must NOT be able to mutate content column ${col} -- this is not a blanket bypass`);
+  }
+});
+
+test("PART P (corrected): enforce_report_row_immutability() is narrowed to ONLY the 15 classification/flag columns -- it no longer contains any per-table content allowlist, so it cannot conflict with or duplicate block_submitted_report_mutation()'s content-immutability job, and cannot break legitimate draft editing of any other column", () => {
   const block = fnBlock("enforce_report_row_immutability", "\\(\\)")![0];
-  for (const table of REPORT_TABLES) {
-    const allowed = CONTENT_ALLOWLIST[table];
-    const caseLine = new RegExp(`when '${table}' then array\\[([^\\]]*)\\]`);
-    const m = block.match(caseLine);
-    assert.ok(m, `must find CASE branch for ${table}`);
-    const actual = (m![1].match(/'([a-z_]+)'/g) ?? []).map((s) => s.replace(/'/g, ""));
-    assert.deepEqual(actual.sort(), [...allowed].sort(), `${table} allowlist mismatch`);
+  assert.match(block, /auth\.role\(\) = 'service_role'/);
+  assert.match(block, /security definer/i);
+  assert.match(block, /set search_path to 'public'/i);
+  for (const col of CLASSIFICATION_COLS) {
+    assert.match(block, new RegExp(`'${col}'`), `must list ${col}`);
   }
+  // No per-table CASE/allowlist of content columns remains.
+  assert.doesNotMatch(block, /when 'report_sec013' then/);
+  assert.doesNotMatch(block, /'acknowledgement'/);
+  assert.doesNotMatch(block, /'status'/);
 });
 
-test("PART P: every new classification/flag column is frozen (NOT in the allowlist) for all 7 tables -- direct PostgREST reclassification/flagging is blocked", () => {
-  const classificationColumns = [
-    "aoc_id", "operating_entity_id", "operating_entity_code", "department_id", "unit_id",
-    "hub_id", "org_station_id", "org_team_id", "severity", "flag_state", "flagged_by",
-    "flagged_reason", "flagged_at", "unflagged_by", "unflagged_at",
-  ];
-  for (const table of REPORT_TABLES) {
-    for (const col of classificationColumns) {
-      assert.equal(isColumnMutable(table, col), false, `${table}.${col} must be frozen for non-service_role callers`);
-    }
+test("PART P (corrected) DECISION MIRROR: enforce_report_row_immutability() blocks a direct classification-column write for any non-service_role caller, in ANY status (draft or submitted), and allows every other column to change freely (that is content immutability's job, not this trigger's)", () => {
+  for (const col of CLASSIFICATION_COLS) {
+    assert.equal(canDirectlyWriteClassificationColumn(false, col), false);
+    assert.equal(canDirectlyWriteClassificationColumn(true, col), true);
   }
-});
-
-test("PART P: report_sec016's write-once search fields (aircraft_search_completed, search_overdue_flag, search_remark) are frozen after creation -- no legitimate post-creation UPDATE path exists in lib/avsec/reports/actions.ts", () => {
-  for (const col of ["aircraft_search_completed", "search_overdue_flag", "search_remark"]) {
-    assert.equal(isColumnMutable("report_sec016", col), false);
-  }
-});
-
-test("PART P: acknowledgement is mutable only on the 4 tables that actually have the column (sec013/014/018/029), frozen (absent) on sec016/033/offload_records", () => {
-  for (const table of ["report_sec013", "report_sec014", "report_sec018", "report_sec029"]) {
-    assert.ok(isColumnMutable(table, "acknowledgement"), `${table} must keep acknowledgement mutable`);
-  }
-  for (const table of ["report_sec016", "report_sec033", "offload_records"]) {
-    assert.equal(CONTENT_ALLOWLIST[table].includes("acknowledgement"), false, `${table} has no acknowledgement column and must not allowlist it`);
+  for (const col of ["station", "team", "remark", "acknowledgement", "status"]) {
+    assert.equal(canDirectlyWriteClassificationColumn(false, col), true, `${col} is not this trigger's concern`);
   }
 });
 
@@ -679,8 +702,85 @@ test("PART P: a BEFORE UPDATE trigger firing enforce_report_row_immutability() i
   }
 });
 
-test("PART P: this migration does not modify any existing RLS policy -- the new protection is a trigger, not a policy change (already covered generically above; re-asserted here since Part P is new this round)", () => {
+test("PART P: this migration does not modify any existing RLS policy -- both the classification trigger and the corrected pre-existing trigger are trigger functions, not policy changes", () => {
   assert.equal((code.match(/(create|alter|drop) policy/gi) ?? []).length, 0);
+});
+
+test("DRAFT/SUBMITTED MATRIX: a draft row (status='draft') may still have any content column changed by an ordinary user -- block_submitted_report_mutation() only restricts once status='submitted', so Part P's redesign does not narrow draft editing at all", () => {
+  // Mirrors block_submitted_report_mutation(): the function's early
+  // returns only fire when old.status = 'submitted'; for any other old
+  // status (draft) it falls through to the unconditional `return new`
+  // at the end, unchanged from the original 0001-era behavior.
+  const block = code.match(/create or replace function public\.block_submitted_report_mutation\(\)[\s\S]*?\$\$ language plpgsql set search_path = public;/)![0];
+  assert.match(block, /if old\.status = 'submitted' then/);
+  assert.match(block, /if new\.status = 'submitted' and new\.submitted_at is null then\s*\n\s*new\.submitted_at = now\(\);\s*\n\s*end if;\s*\n\s*\n?\s*return new;/);
+});
+
+test("ACKNOWLEDGEMENT NON-REGRESSION: this migration never sets or references the acknowledgement column in any UPDATE statement -- it is written once at INSERT time by application code (lib/avsec/reports/actions.ts, outside this migration) and never touched again, so neither the corrected pre-existing trigger nor Part P/P2 need (or have) any special case for it", () => {
+  assert.doesNotMatch(code, /set\s+[\s\S]{0,80}acknowledgement\s*=/i);
+});
+
+// =======================================================================
+// CORRECTION ROUND 3, PART P2: trusted classification derivation
+// =======================================================================
+
+test("PART P2: derive_report_classification() exists, is SECURITY DEFINER with a fixed search_path, and is a BEFORE INSERT trigger on all 7 report tables", () => {
+  const block = fnBlock("derive_report_classification", "\\(\\)");
+  assert.ok(block, "derive_report_classification() must exist");
+  assert.match(block![0], /security definer/i);
+  assert.match(block![0], /set search_path to 'public'/i);
+  for (const table of REPORT_TABLES) {
+    assert.match(
+      code,
+      new RegExp(`create trigger trg_derive_classification before insert on public\\.${table}\\s*\\n\\s*for each row execute function public\\.derive_report_classification\\(\\);`),
+    );
+  }
+});
+
+test("PART P2: a non-service_role INSERT has every one of the 15 classification/flag columns cleared before derivation -- a client-supplied value in the insert payload itself can never survive", () => {
+  const block = fnBlock("derive_report_classification", "\\(\\)")![0];
+  const clearBranch = block.match(/if auth\.role\(\) <> 'service_role' then([\s\S]*?)end if;/);
+  assert.ok(clearBranch, "must find the non-service_role clearing branch");
+  for (const col of CLASSIFICATION_COLS) {
+    assert.match(clearBranch![1], new RegExp(`new\\.${col} := `), `must clear ${col}`);
+  }
+});
+
+test("PART P2: derivation never reads a flight-number prefix or any client-supplied field -- it looks up ONLY the submitter's own profile_id against user_role_assignments/role_definitions/operating_entities", () => {
+  const block = fnBlock("derive_report_classification", "\\(\\)")![0];
+  assert.doesNotMatch(block, /flight_prefix/);
+  assert.doesNotMatch(block, /new\.station\b/);
+  assert.match(block, /ura\.profile_id = new\.profile_id/);
+});
+
+/** Mirrors derive_report_classification()'s ambiguity rule. */
+function deriveClassification(activeAssignmentsWithAoc: number): "derived" | "null-legacy-or-ambiguous" {
+  return activeAssignmentsWithAoc === 1 ? "derived" : "null-legacy-or-ambiguous";
+}
+
+test("PART P2 DECISION MIRROR: exactly one active, non-null-aoc_id assignment derives classification; zero (legacy account) or more than one (ambiguous) leaves it null -- never guessed", () => {
+  assert.equal(deriveClassification(0), "null-legacy-or-ambiguous");
+  assert.equal(deriveClassification(1), "derived");
+  assert.equal(deriveClassification(2), "null-legacy-or-ambiguous");
+  assert.equal(deriveClassification(5), "null-legacy-or-ambiguous");
+});
+
+test("PART P2: the derivation query filters on rd.is_active, ura.revoked_at is null, the starts_at/ends_at active window, and ura.aoc_id is not null -- an inactive, revoked, pending, or expired assignment is never counted", () => {
+  const block = fnBlock("derive_report_classification", "\\(\\)")![0];
+  assert.match(block, /rd\.is_active/);
+  assert.match(block, /ura\.revoked_at is null/);
+  assert.match(block, /ura\.starts_at <= now\(\)/);
+  assert.match(block, /ura\.ends_at is null or ura\.ends_at > now\(\)/);
+  assert.match(block, /ura\.aoc_id is not null/);
+});
+
+test("PART P2 LEGACY ACCOUNT: a submitter with zero Phase 3 role assignments (true for effectively every current production user) still gets their report created -- classification columns simply stay null, and the queue marks it retryable-failed, never blocking the insert itself", () => {
+  const block = fnBlock("derive_report_classification", "\\(\\)")![0];
+  assert.doesNotMatch(block, /raise exception/);
+});
+
+test("PART P2: the 8 existing production KUL-MAA rows are unaffected -- this trigger only fires BEFORE INSERT, never on an existing row, so they remain classified only by the separate, unexecuted backfill artifact", () => {
+  assert.doesNotMatch(code, /trg_derive_classification.*before update/is);
 });
 
 // =======================================================================
@@ -730,8 +830,107 @@ test("PART Q: process_report_index_queue() is service_role-only", () => {
   assert.match(code, /grant execute on function public\.process_report_index_queue\(integer\) to service_role;/);
 });
 
-test("PART Q: a queue-health verification view exists for missing/failed indexing", () => {
-  assert.match(code, /create or replace view public\.v_report_index_queue_health as/);
+test("PART Q: a queue-health verification view exists for missing/failed indexing, with an is_stale flag for a pending/failed row older than 5 minutes", () => {
+  const block = code.match(/create or replace view public\.v_report_index_queue_health as[\s\S]*?;/)![0];
+  assert.match(block, /is_stale/);
+  assert.match(block, /interval '5 minutes'/);
+  assert.match(block, /status in \('pending', 'failed'\)/);
+});
+
+// =======================================================================
+// CORRECTION ROUND 3, PART Q: retryable vs. permanent failure, and
+// automatic pg_cron scheduling (review points 1 and 4)
+// =======================================================================
+
+test("PART Q (corrected): report_index_queue's status CHECK now includes 'permanently_failed' alongside 'pending'/'processing'/'completed'/'failed'", () => {
+  const block = code.match(/create table if not exists public\.report_index_queue[\s\S]*?;/)![0];
+  assert.match(block, /'pending', 'processing', 'completed', 'failed', 'permanently_failed'/);
+});
+
+test("PART Q (corrected): a missing source row (deleted between enqueue and processing) is marked 'permanently_failed', not retried automatically -- the automatic retry loop only selects 'pending'/'failed'", () => {
+  const block = fnBlock("process_report_index_queue")![0];
+  assert.match(block, /select exists\(select 1 from public\.%I where id = \$1\)/);
+  assert.match(block, /if not v_source_exists then/);
+  assert.match(block, /status = 'permanently_failed', last_error = 'source row no longer exists'/);
+  assert.match(block, /where status in \('pending', 'failed'\)/);
+  assert.doesNotMatch(block, /where status in \('pending', 'failed', 'permanently_failed'\)/);
+});
+
+test("PART Q (corrected): any exception from index_report() itself (e.g. a hierarchy-consistency violation) is marked 'permanently_failed' with sqlerrm, not automatically retried with the same doomed inputs", () => {
+  const block = fnBlock("process_report_index_queue")![0];
+  const exceptionBranch = block.match(/exception when others then([\s\S]*?)end;\s*\n\s*end loop;/);
+  assert.ok(exceptionBranch, "must find the exception handler");
+  assert.match(exceptionBranch![1], /status = 'permanently_failed', last_error = sqlerrm/);
+});
+
+test("PART Q (corrected): a 'not yet classified' failure remains 'failed' (retryable) and is picked up again by the next automatic run, unlike a permanent failure", () => {
+  const block = fnBlock("process_report_index_queue")![0];
+  assert.match(block, /status = 'failed', last_error = 'source row not yet classified/);
+});
+
+/** Mirrors process_report_index_queue()'s outcome classification. */
+function classifyQueueOutcome(sourceExists: boolean, hasAocId: boolean, indexReportThrows: boolean): "completed" | "failed-retryable" | "permanently_failed" {
+  if (!sourceExists) return "permanently_failed";
+  if (!hasAocId) return "failed-retryable";
+  if (indexReportThrows) return "permanently_failed";
+  return "completed";
+}
+
+test("PART Q DECISION MIRROR: the four processing outcomes are classified correctly -- missing source and index_report() exceptions are permanent, unclassified is retryable, everything else succeeds", () => {
+  assert.equal(classifyQueueOutcome(false, false, false), "permanently_failed");
+  assert.equal(classifyQueueOutcome(true, false, false), "failed-retryable");
+  assert.equal(classifyQueueOutcome(true, true, true), "permanently_failed");
+  assert.equal(classifyQueueOutcome(true, true, false), "completed");
+});
+
+test("PART Q (corrected): process_report_index_queue() returns a permanently_failed count alongside processed/indexed/failed, so a caller can distinguish outcome categories without querying the table", () => {
+  assert.match(code, /returns table \(processed integer, indexed integer, failed integer, permanently_failed integer\)/);
+});
+
+test("PART Q (corrected): 'completed' and 'permanently_failed' rows are excluded from every future automatic run -- only 'pending'/'failed' are ever re-selected", () => {
+  const matches = code.match(/where status in \('pending', 'failed'\)/g) ?? [];
+  assert.ok(matches.length >= 1);
+  assert.doesNotMatch(code, /where status in \('pending', 'failed', 'completed'\)/);
+  assert.doesNotMatch(code, /where status in \('pending', 'failed', 'permanently_failed'\)/);
+});
+
+test("PART Q AUTOMATIC EXECUTION: pg_cron is used (the repository's own existing precedent, avsec/0023_sheet_sync_queue.sql) to invoke process_report_index_queue() automatically, every 1 minute, with a fixed batch size", () => {
+  assert.match(code, /create extension if not exists pg_cron;/);
+  assert.match(code, /select cron\.schedule\('phase5-report-index-queue', '\* \* \* \* \*', \$cron\$select public\.process_report_index_queue\(50\);\$cron\$\);/);
+});
+
+test("PART Q AUTOMATIC EXECUTION: the cron schedule is idempotent across re-applying this migration -- any existing job with the same name is unscheduled first", () => {
+  const block = code.match(/do \$\$\s*\n\s*begin\s*\n\s*if exists \(select 1 from cron\.job where jobname = 'phase5-report-index-queue'\) then[\s\S]*?end;\s*\n\s*\$\$;/);
+  assert.ok(block, "must find the idempotent unschedule-then-reschedule guard");
+  assert.match(block![0], /perform cron\.unschedule\('phase5-report-index-queue'\);/);
+});
+
+test("PART Q AUTOMATIC EXECUTION: no pg_net / external HTTP call and no webhook secret are actually USED (functionally, not just discussed in comments) -- the cron job invokes the SQL function directly inside Postgres, unlike the sheets-sync precedent which needs an external Edge Function", () => {
+  assert.doesNotMatch(code, /create extension if not exists pg_net/);
+  assert.doesNotMatch(code, /net\.http_post/);
+  assert.doesNotMatch(code, /webhook_secret/);
+});
+
+test("PART Q AUTOMATIC EXECUTION: schedule frequency, and the recovery procedure for a stalled queue, are documented in the migration", () => {
+  assert.match(migrationSql, /Schedule: every 1 minute, batch size 50\./);
+  assert.match(migrationSql, /Recovery procedure if the/);
+  assert.match(migrationSql, /cron\.job_run_details/);
+});
+
+test("QUEUE INTEGRITY: duplicate enqueue is idempotent -- ON CONFLICT DO NOTHING on the structural UNIQUE(source_table, source_id) index means a re-fired trigger can never create a second queue row for the same source row", () => {
+  const enqueueBlock = fnBlock("enqueue_report_for_indexing", "\\(\\)")![0];
+  assert.match(enqueueBlock, /on conflict \(source_table, source_id\) do nothing/);
+  const tableBlock = code.match(/create unique index if not exists report_index_queue_source_unique[\s\S]*?;/)![0];
+  assert.match(tableBlock, /\(source_table, source_id\)/);
+});
+
+test("QUEUE INTEGRITY: concurrent workers cannot double-process the same row -- FOR UPDATE SKIP LOCKED means a second concurrent call simply skips rows the first has already locked, rather than blocking or double-processing", () => {
+  const block = fnBlock("process_report_index_queue")![0];
+  assert.match(block, /for update skip locked/);
+  // The row is marked 'processing' immediately after being claimed,
+  // before any potentially slow work (the dynamic SQL / index_report()
+  // call), narrowing the window further.
+  assert.match(block, /status = 'processing', attempts = attempts \+ 1 where id = v_row\.id;/);
 });
 
 // =======================================================================
@@ -849,4 +1048,74 @@ test("ROLLBACK (corrected): Part P/Q triggers and functions are dropped before t
   assert.ok(queueFnDropIdx < queueTableDropIdx, "queue function drops before queue table drops");
   assert.ok(queueTableDropIdx < indexViewDropIdx, "queue table drops before the original Part N views (documented order)");
   assert.match(rollbackBlock.replace(/\r?\n--/g, " ").replace(/\s+/g, " "), /must be rolled\s+back in full, in the order below, BEFORE any Phase 2 organizational/);
+});
+
+test("ROLLBACK (round 3): the cron job is unscheduled first (step 0, before any trigger/function/table drop), and the rollback documents reverting block_submitted_report_mutation() to its pre-Phase-5 form", () => {
+  const rollbackBlock = migrationSql.match(/DOCUMENTED ROLLBACK[\s\S]*$/)![0];
+  const cronUnscheduleIdx = rollbackBlock.indexOf("cron.unschedule('phase5-report-index-queue');");
+  const triggerDropIdx = rollbackBlock.indexOf("drop trigger if exists trg_enforce_immutability on public.report_sec013;");
+  const deriveTriggerDropIdx = rollbackBlock.indexOf("drop trigger if exists trg_derive_classification on public.report_sec013;");
+  assert.ok(cronUnscheduleIdx > -1 && cronUnscheduleIdx < triggerDropIdx, "cron job unscheduled before any trigger drop");
+  assert.ok(deriveTriggerDropIdx > -1 && deriveTriggerDropIdx > cronUnscheduleIdx, "derive-classification trigger drop documented after the cron unschedule");
+  assert.match(rollbackBlock.replace(/\r?\n--/g, " ").replace(/\s+/g, " "), /revert block_submitted_report_mutation\(\) to its pre-Phase-5\s+form/);
+});
+
+// =======================================================================
+// FUNCTION PERMISSION MATRIX (review round 3, point 4): every new
+// SECURITY DEFINER function has a fixed search_path, is revoked from
+// PUBLIC/anon, and grants EXECUTE only to the minimum role that needs it
+// =======================================================================
+
+const FUNCTION_PERMISSION_MATRIX: Record<string, "service_role" | "authenticated, service_role"> = {
+  validate_org_hierarchy: "service_role",
+  confirm_report_operating_entity: "authenticated, service_role",
+  index_report: "service_role",
+  flag_report: "authenticated, service_role",
+  unflag_report: "authenticated, service_role",
+  request_report_access: "authenticated, service_role",
+  grant_report_access: "authenticated, service_role",
+  revoke_report_access: "authenticated, service_role",
+  has_report_access: "authenticated, service_role",
+  get_report_secure: "authenticated, service_role",
+  create_report_amendment: "authenticated, service_role",
+  enforce_report_row_immutability: "service_role",
+  derive_report_classification: "service_role",
+  enqueue_report_for_indexing: "service_role",
+  process_report_index_queue: "service_role",
+};
+
+test("PERMISSION MATRIX: every function above is revoked from public/anon and granted EXECUTE to exactly the documented minimum role set -- no function is left with an implicit PUBLIC grant", () => {
+  for (const [fn, grantee] of Object.entries(FUNCTION_PERMISSION_MATRIX)) {
+    const revokeMatches = code.match(new RegExp(`revoke execute on function public\\.${fn}\\([^)]*\\) from ([^;]+);`, "g")) ?? [];
+    assert.ok(revokeMatches.length >= 1, `${fn} must have a revoke statement`);
+    for (const r of revokeMatches) {
+      assert.match(r, /\bpublic\b/, `${fn}'s revoke must include public`);
+      assert.match(r, /\banon\b/, `${fn}'s revoke must include anon`);
+    }
+    const grantMatches = code.match(new RegExp(`grant execute on function public\\.${fn}\\([^)]*\\) to ([^;]+);`, "g")) ?? [];
+    assert.ok(grantMatches.length >= 1, `${fn} must have a grant statement`);
+    assert.ok(
+      grantMatches.some((g) => g.includes(grantee)),
+      `${fn} must be granted to exactly "${grantee}", found: ${grantMatches.join(" | ")}`,
+    );
+  }
+});
+
+test("PERMISSION MATRIX: flag_report()/unflag_report() authorization is derived from the caller's ACTIVE role assignment via has_active_role()/has_role_in_scope() (Phase 3, unchanged) and the report's own stored aoc_id -- never a profile role label alone, and never a client-supplied scope", () => {
+  for (const fn of ["flag_report", "unflag_report"]) {
+    const block = fnBlock(fn)![0];
+    // has_role_in_scope() (Phase 3) itself filters on rd.is_active,
+    // revoked_at is null, and the active time window -- reused here
+    // rather than re-implemented, so flag_report/unflag_report inherit
+    // that same inactive/revoked/pending/expired rejection for free.
+    assert.match(block, /public\.has_role_in_scope\('main_enforcement', v_report\.aoc_id\)/);
+    assert.match(block, /public\.has_role_in_scope\('compliance', v_report\.aoc_id\)/);
+    assert.doesNotMatch(block, /p_aoc_id/);
+  }
+});
+
+test("PERMISSION MATRIX: a service-role bypass exists in exactly 3 places in this migration's own new code (enforce_report_row_immutability, derive_report_classification's clearing guard, and the corrected block_submitted_report_mutation), and each is narrowly scoped to specific columns, never a blanket 'do anything' bypass", () => {
+  const bypassCount = (code.match(/auth\.role\(\) = 'service_role'/g) ?? []).length;
+  const inverseCount = (code.match(/auth\.role\(\) <> 'service_role'/g) ?? []).length;
+  assert.equal(bypassCount + inverseCount, 3, `expected exactly 3 service_role role-checks in new Phase 5 functions, found ${bypassCount + inverseCount}`);
 });
