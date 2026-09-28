@@ -192,6 +192,114 @@ export type Database = {
           { foreignKeyName: "user_role_assignments_team_id_fkey"; columns: ["team_id"]; isOneToOne: false; referencedRelation: "org_teams"; referencedColumns: ["id"] },
         ]
       }
+      user_registration_requests: {
+        Row: {
+          id: string
+          profile_id: string
+          requested_aoc_id: string | null
+          requested_operating_entity_id: string | null
+          requested_department_id: string | null
+          requested_unit_id: string | null
+          requested_hub_id: string | null
+          requested_station_id: string | null
+          requested_team_id: string | null
+          requested_role_code: string | null
+          applicant_notes: string | null
+          status: "pending" | "approved" | "rejected"
+          reviewer_id: string | null
+          reviewed_at: string | null
+          rejection_reason: string | null
+          final_assignment_id: string | null
+          submitted_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          profile_id: string
+          requested_aoc_id?: string | null
+          requested_operating_entity_id?: string | null
+          requested_department_id?: string | null
+          requested_unit_id?: string | null
+          requested_hub_id?: string | null
+          requested_station_id?: string | null
+          requested_team_id?: string | null
+          requested_role_code?: string | null
+          applicant_notes?: string | null
+          status?: "pending" | "approved" | "rejected"
+          reviewer_id?: string | null
+          reviewed_at?: string | null
+          rejection_reason?: string | null
+          final_assignment_id?: string | null
+          submitted_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          profile_id?: string
+          requested_aoc_id?: string | null
+          requested_operating_entity_id?: string | null
+          requested_department_id?: string | null
+          requested_unit_id?: string | null
+          requested_hub_id?: string | null
+          requested_station_id?: string | null
+          requested_team_id?: string | null
+          requested_role_code?: string | null
+          applicant_notes?: string | null
+          status?: "pending" | "approved" | "rejected"
+          reviewer_id?: string | null
+          reviewed_at?: string | null
+          rejection_reason?: string | null
+          final_assignment_id?: string | null
+          submitted_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: "user_registration_requests_profile_id_fkey"; columns: ["profile_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_registration_requests_final_assignment_id_fkey"; columns: ["final_assignment_id"]; isOneToOne: false; referencedRelation: "user_role_assignments"; referencedColumns: ["id"] },
+        ]
+      }
+      user_admin_audit_log: {
+        Row: {
+          id: string
+          actor_id: string | null
+          target_profile_id: string | null
+          action: string
+          previous_state: Json | null
+          new_state: Json | null
+          reason: string | null
+          request_id: string | null
+          assignment_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          actor_id?: string | null
+          target_profile_id?: string | null
+          action: string
+          previous_state?: Json | null
+          new_state?: Json | null
+          reason?: string | null
+          request_id?: string | null
+          assignment_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          actor_id?: string | null
+          target_profile_id?: string | null
+          action?: string
+          previous_state?: Json | null
+          new_state?: Json | null
+          reason?: string | null
+          request_id?: string | null
+          assignment_id?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: "user_admin_audit_log_request_id_fkey"; columns: ["request_id"]; isOneToOne: false; referencedRelation: "user_registration_requests"; referencedColumns: ["id"] },
+          { foreignKeyName: "user_admin_audit_log_assignment_id_fkey"; columns: ["assignment_id"]; isOneToOne: false; referencedRelation: "user_role_assignments"; referencedColumns: ["id"] },
+        ]
+      }
       organizations: {
         Row: {
           id: string
@@ -4179,6 +4287,97 @@ export type Database = {
         }[]
       }
       is_active_supervisor: { Args: never; Returns: boolean }
+      is_entity_admin: { Args: { p_entity_code: string }; Returns: boolean }
+      submit_registration_request: {
+        Args: {
+          p_requested_aoc_id: string | null
+          p_requested_operating_entity_id: string | null
+          p_requested_department_id: string | null
+          p_requested_unit_id: string | null
+          p_requested_hub_id: string | null
+          p_requested_station_id: string | null
+          p_requested_team_id: string | null
+          p_requested_role_code: string
+          p_applicant_notes?: string | null
+        }
+        Returns: string
+      }
+      get_my_registration_request: {
+        Args: never
+        Returns: {
+          id: string
+          status: string
+          requested_role_code: string | null
+          rejection_reason: string | null
+          submitted_at: string
+          reviewed_at: string | null
+        }[]
+      }
+      list_pending_registration_requests: {
+        Args: never
+        Returns: {
+          id: string
+          profile_id: string
+          requested_operating_entity_code: string | null
+          requested_department_code: string | null
+          requested_unit_code: string | null
+          requested_hub_code: string | null
+          requested_station_code: string | null
+          requested_team_name: string | null
+          requested_role_code: string | null
+          applicant_notes: string | null
+          submitted_at: string
+        }[]
+      }
+      approve_registration_request: {
+        Args: {
+          p_request_id: string
+          p_role_code: string
+          p_aoc_id: string
+          p_operating_entity_id: string | null
+          p_department_id: string | null
+          p_unit_id: string | null
+          p_hub_id: string | null
+          p_station_id: string | null
+          p_team_id: string | null
+          p_ops_group?: string | null
+        }
+        Returns: string
+      }
+      reject_registration_request: { Args: { p_request_id: string; p_reason: string }; Returns: undefined }
+      deactivate_assignment: { Args: { p_assignment_id: string; p_reason: string }; Returns: undefined }
+      transfer_assignment_same_entity: {
+        Args: {
+          p_old_assignment_id: string
+          p_new_role_code: string
+          p_new_department_id: string | null
+          p_new_unit_id: string | null
+          p_new_hub_id: string | null
+          p_new_station_id: string | null
+          p_new_team_id: string | null
+          p_reason: string
+        }
+        Returns: string
+      }
+      initiate_cross_entity_transfer: {
+        Args: { p_assignment_id: string; p_to_entity_code: string; p_reason: string }
+        Returns: string
+      }
+      export_entity_user_directory: {
+        Args: { p_entity_code: string }
+        Returns: {
+          profile_id: string
+          name: string
+          staff_no: string
+          role_code: string
+          department_code: string | null
+          unit_code: string | null
+          hub_code: string | null
+          station_code: string | null
+          team_name: string | null
+          assignment_starts_at: string
+        }[]
+      }
       is_monitor_or_above: { Args: never; Returns: boolean }
       next_report_no: {
         Args: { p_form_code: string; p_report_date: string }
