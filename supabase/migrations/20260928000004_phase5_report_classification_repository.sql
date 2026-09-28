@@ -6,8 +6,18 @@
 -- legacy permission is broadened. Existing report creation,
 -- acknowledgement, lookup, history, attachments, and export behavior
 -- (SEC013/014/016/018/029/033 and offload) are completely untouched --
--- current RLS on every report table is not modified, and no existing
--- route/server action calls anything in this migration.
+-- current RLS policies on every report table are not modified, and no
+-- existing route/server action calls anything in this migration.
+--
+-- CORRECTION (review round 2): two BEFORE/AFTER triggers are now added
+-- to all 7 report tables (Parts P and Q) -- direct-write protection and
+-- automatic indexing. Existing RLS policies, columns, and application
+-- code are still untouched; the triggers only ever narrow what a direct
+-- PostgREST write can change (Part P) or run a side-effecting INSERT
+-- into the new, isolated report_index_queue table (Part Q). Legitimate
+-- existing writes (draft creation, submission, acknowledgement) are
+-- unaffected -- see Part P's allowlist for the exact columns each table
+-- keeps mutable.
 --
 -- READ-ONLY PRODUCTION INVENTORY (2026-09-28, before writing any part of
 -- this migration): report_sec013=0, report_sec014=4, report_sec016=4,
@@ -42,6 +52,12 @@
 --   Part M: create_report_amendment() -- race-safe versioning
 --   Part N: read-only index-integrity verification views
 --   Part O: RLS / grants summary
+--   Part P: enforce_report_row_immutability() -- BEFORE UPDATE trigger,
+--           per-table allowlist, closes the direct-write and content-
+--           immutability gaps found in review round 2
+--   Part Q: report_index_queue -- durable, automatic, AFTER INSERT
+--           indexing queue plus process_report_index_queue(), closing
+--           the "client must remember to index" gap
 --
 -- BACKFILL: this migration adds ONLY additive nullable columns and does
 -- NOT backfill a single row. Given the confirmed inventory above (100%
@@ -560,10 +576,26 @@ grant execute on function public.index_report(text, uuid, text, uuid, uuid, uuid
 -- =======================================================================
 -- PART I: flag_report() / unflag_report()
 -- =======================================================================
--- Flagging is a controlled server/database action, never a raw column
--- write -- ordinary users have no UPDATE grant on central_reports_index
--- at all (Part O), and the report source tables' own flag_state column
--- likewise has no direct authenticated write path added here.
+-- CORRECTION (review round 2, point 5): possession of a service-role
+-- client is not business authorization. The original version of these
+-- functions checked only "auth.uid() is not null" -- any signed-in user
+-- calling through any future service-role server action would have been
+-- able to flag or unflag any report. Authorization is now verified
+-- *inside* the function from auth.uid() itself, independent of which
+-- Postgres role executes the call:
+--   * caller must hold main_enforcement or compliance, scoped to the
+--     report's own aoc_id, OR global_reporting_controller (repo-wide);
+--   * the submitter can never flag/unflag their own report;
+--   * GHOD is explicitly denied -- GHOD's access is a *consequence* of
+--     an existing flag (has_report_access, Part K), so allowing GHOD to
+--     flag would let it grant itself access, which is exactly the
+--     self-dealing path the instruction called out;
+--   * MAA/AAX Boss are explicitly denied -- the instruction reserves
+--     entity-Boss/Compliance/Investigation flagging authority for a
+--     later explicit business decision, so only Enforcement/Compliance/
+--     the Global Reporting Controller may flag in this phase.
+-- Grant is widened to `authenticated` because the internal auth.uid()
+-- check is now the real security boundary, not the Postgres grant.
 create or replace function public.flag_report(
   p_repository_report_id uuid,
   p_severity text,
@@ -574,6 +606,8 @@ language plpgsql
 security definer
 set search_path to 'public'
 as $function$
+declare
+  v_report record;
 begin
   if auth.uid() is null then
     raise exception 'Must be signed in to flag a report.';
@@ -581,9 +615,35 @@ begin
   if p_reason is null or length(trim(p_reason)) = 0 then
     raise exception 'A flag reason is required.';
   end if;
+  if p_severity is null or length(trim(p_severity)) = 0 then
+    raise exception 'A severity value is required.';
+  end if;
+
+  select * into v_report from public.central_reports_index where id = p_repository_report_id;
+  if v_report is null then
+    raise exception 'Report not found.';
+  end if;
+
+  if v_report.submitter_profile_id = auth.uid() then
+    raise exception 'Cannot flag your own submitted report.';
+  end if;
+
+  if public.has_active_role('ghod') then
+    raise exception 'GHOD is not authorized to flag reports.';
+  end if;
+
+  if not (
+    public.has_active_role('global_reporting_controller')
+    or (v_report.aoc_id is not null and public.has_role_in_scope('main_enforcement', v_report.aoc_id))
+    or (v_report.aoc_id is not null and public.has_role_in_scope('compliance', v_report.aoc_id))
+  ) then
+    raise exception 'Not authorized to flag this report.';
+  end if;
 
   update public.central_reports_index
-  set flag_state = 'flagged', severity = p_severity, updated_at = now()
+  set flag_state = 'flagged', severity = p_severity,
+      flagged_by = auth.uid(), flagged_reason = p_reason, flagged_at = now(),
+      unflagged_by = null, unflagged_at = null, updated_at = now()
   where id = p_repository_report_id;
 
   insert into public.report_access_audit (actor_id, repository_report_id, action, reason)
@@ -591,8 +651,8 @@ begin
 end;
 $function$;
 
-revoke execute on function public.flag_report(uuid, text, text) from public, anon, authenticated;
-grant execute on function public.flag_report(uuid, text, text) to service_role;
+revoke execute on function public.flag_report(uuid, text, text) from public, anon;
+grant execute on function public.flag_report(uuid, text, text) to authenticated, service_role;
 
 create or replace function public.unflag_report(
   p_repository_report_id uuid,
@@ -603,13 +663,36 @@ language plpgsql
 security definer
 set search_path to 'public'
 as $function$
+declare
+  v_report record;
 begin
   if auth.uid() is null then
     raise exception 'Must be signed in to unflag a report.';
   end if;
 
+  select * into v_report from public.central_reports_index where id = p_repository_report_id;
+  if v_report is null then
+    raise exception 'Report not found.';
+  end if;
+
+  if v_report.submitter_profile_id = auth.uid() then
+    raise exception 'Cannot unflag your own submitted report.';
+  end if;
+
+  if public.has_active_role('ghod') then
+    raise exception 'GHOD is not authorized to unflag reports.';
+  end if;
+
+  if not (
+    public.has_active_role('global_reporting_controller')
+    or (v_report.aoc_id is not null and public.has_role_in_scope('main_enforcement', v_report.aoc_id))
+    or (v_report.aoc_id is not null and public.has_role_in_scope('compliance', v_report.aoc_id))
+  ) then
+    raise exception 'Not authorized to unflag this report.';
+  end if;
+
   update public.central_reports_index
-  set flag_state = 'unflagged', updated_at = now()
+  set flag_state = 'unflagged', unflagged_by = auth.uid(), unflagged_at = now(), updated_at = now()
   where id = p_repository_report_id;
 
   insert into public.report_access_audit (actor_id, repository_report_id, action, reason)
@@ -617,12 +700,13 @@ begin
 end;
 $function$;
 
-revoke execute on function public.unflag_report(uuid, text) from public, anon, authenticated;
-grant execute on function public.unflag_report(uuid, text) to service_role;
--- Both are service_role-only in this phase -- no ordinary role is wired
--- to call them yet (Phase 5 does not activate new role access, per
--- instruction); a future phase adds the specific "which role may flag"
--- server action that calls these with its own verified caller context.
+revoke execute on function public.unflag_report(uuid, text) from public, anon;
+grant execute on function public.unflag_report(uuid, text) to authenticated, service_role;
+-- Flag history is preserved: flag_state transitions are recorded in
+-- report_access_audit (append-only, Part F) on every flag/unflag call,
+-- and flagged_by/flagged_reason/flagged_at/unflagged_by/unflagged_at on
+-- central_reports_index itself retain the most recent transition's
+-- detail. No row is ever deleted from either.
 
 -- =======================================================================
 -- PART J: request_report_access() / grant_report_access() / revoke_report_access()
@@ -687,6 +771,13 @@ begin
   if p_grantee_profile_id = v_admin_id then
     raise exception 'Cannot grant report access to yourself.';
   end if;
+  -- CORRECTION (review round 2, point 6): grantee identity is validated
+  -- beyond the bare FK -- the grantee must be a real, currently-approved
+  -- profile, not merely an id that happens to exist (e.g. a deactivated
+  -- or never-approved account).
+  if not exists (select 1 from public.profiles where id = p_grantee_profile_id and status = 'approved') then
+    raise exception 'Grantee is not an approved profile.';
+  end if;
 
   select * into v_request from public.report_access_requests where id = p_request_id for update;
   if v_request is null then
@@ -694,6 +785,12 @@ begin
   end if;
   if v_request.status <> 'pending' then
     raise exception 'Access request has already been reviewed (status=%).', v_request.status;
+  end if;
+  -- Report-scope validation: the request's target report must still
+  -- exist in the repository (defense-in-depth beyond the FK -- makes
+  -- the failure explicit rather than a generic constraint violation).
+  if not exists (select 1 from public.central_reports_index where id = v_request.repository_report_id) then
+    raise exception 'The requested report no longer exists in the repository.';
   end if;
 
   update public.report_access_requests
@@ -1040,15 +1137,350 @@ revoke all on public.report_access_audit from public, anon, authenticated;
 grant all on public.report_access_audit to service_role;
 
 -- =======================================================================
+-- PART P: report content and classification immutability enforcement
+-- =======================================================================
+-- CORRECTION (review round 2, points 2 and 3). The original migration
+-- assumed service-role-only RPCs were sufficient to keep the 15 new
+-- classification/flag columns safe, and never addressed direct writes
+-- to the 7 report tables' own pre-existing content columns at all. Both
+-- assumptions were wrong: per a live production grant check this round,
+-- `authenticated` holds broad table-level UPDATE on these tables today
+-- (RLS, not table grants, is this project's real access gate), and
+-- Phase 5 never added or touched RLS/policies on any of these 7 tables.
+-- So, unconstrained, an ordinary signed-in user with any row-level
+-- access at all could already rewrite station/team/remark/acknowledgement
+-- -- or now, the new classification/flag columns -- directly through
+-- PostgREST, with no trigger in the way.
+--
+-- One generic trigger function closes both gaps at once with a genuine
+-- per-table ALLOWLIST (never a denylist a future column could bypass):
+-- for each table it names every column an ordinary authenticated user
+-- may still change after row creation; every other column -- including
+-- every new classification/flag column, which appears in no table's
+-- allowlist -- is frozen for any caller that is not service_role.
+--
+-- Allowlist basis (from this round's production column audit and a
+-- code search of lib/avsec/reports/actions.ts and lib/avsec/admin/
+-- actions.ts for any post-creation UPDATE of these tables):
+--   * status, updated_at -- every table's own existing workflow columns.
+--   * acknowledgement -- exists only on report_sec013/014/018/029 and is
+--     written post-submission by the existing acknowledgement feature;
+--     report_sec016/033/offload_records have no acknowledgement column
+--     at all, so it is omitted from their allowlists.
+--   * report_sec016's aircraft_search_completed/search_overdue_flag/
+--     search_remark are NOT allowlisted: a code search found these are
+--     only ever set once, at INSERT time, in lib/avsec/reports/
+--     actions.ts (the >=4-hour-on-ground search-overdue computation
+--     happens before the row is written, never as a later UPDATE) --
+--     no legitimate workflow needs them mutable after creation, so they
+--     are frozen along with every other content column.
+-- If a future phase needs a workflow that legitimately updates a column
+-- not on this list, it must extend this allowlist explicitly and
+-- through service_role/a dedicated RPC -- never left to fall through.
+--
+-- This trigger governs UPDATE only (INSERT -- draft creation and
+-- submission -- is completely unaffected), and is bypassed for
+-- service_role so that index_report() (Part H, itself already
+-- allowlist-validated and idempotent) can still mirror classification
+-- onto the source row, and so existing service-role server actions keep
+-- working unchanged.
+create or replace function public.enforce_report_row_immutability()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_allowed text[];
+  v_old jsonb;
+  v_new jsonb;
+  v_key text;
+begin
+  if auth.role() = 'service_role' then
+    return new;
+  end if;
+
+  v_allowed := case tg_table_name
+    when 'report_sec013' then array['status', 'updated_at', 'acknowledgement']
+    when 'report_sec014' then array['status', 'updated_at', 'acknowledgement']
+    when 'report_sec016' then array['status', 'updated_at']
+    when 'report_sec018' then array['status', 'updated_at', 'acknowledgement']
+    when 'report_sec029' then array['status', 'updated_at', 'acknowledgement']
+    when 'report_sec033' then array['status', 'updated_at']
+    when 'offload_records' then array['status', 'updated_at']
+    else array[]::text[]
+  end;
+
+  v_old := to_jsonb(old);
+  v_new := to_jsonb(new);
+
+  for v_key in select jsonb_object_keys(v_new) loop
+    if v_key = any(v_allowed) then
+      continue;
+    end if;
+    if (v_new -> v_key) is distinct from (v_old -> v_key) then
+      raise exception 'Column % on % cannot be changed directly after creation; only % may change.',
+        v_key, tg_table_name, array_to_string(v_allowed, ', ');
+    end if;
+  end loop;
+
+  return new;
+end;
+$function$;
+
+revoke execute on function public.enforce_report_row_immutability() from public, anon, authenticated;
+grant execute on function public.enforce_report_row_immutability() to service_role;
+
+drop trigger if exists trg_enforce_immutability on public.report_sec013;
+create trigger trg_enforce_immutability before update on public.report_sec013
+  for each row execute function public.enforce_report_row_immutability();
+
+drop trigger if exists trg_enforce_immutability on public.report_sec014;
+create trigger trg_enforce_immutability before update on public.report_sec014
+  for each row execute function public.enforce_report_row_immutability();
+
+drop trigger if exists trg_enforce_immutability on public.report_sec016;
+create trigger trg_enforce_immutability before update on public.report_sec016
+  for each row execute function public.enforce_report_row_immutability();
+
+drop trigger if exists trg_enforce_immutability on public.report_sec018;
+create trigger trg_enforce_immutability before update on public.report_sec018
+  for each row execute function public.enforce_report_row_immutability();
+
+drop trigger if exists trg_enforce_immutability on public.report_sec029;
+create trigger trg_enforce_immutability before update on public.report_sec029
+  for each row execute function public.enforce_report_row_immutability();
+
+drop trigger if exists trg_enforce_immutability on public.report_sec033;
+create trigger trg_enforce_immutability before update on public.report_sec033
+  for each row execute function public.enforce_report_row_immutability();
+
+drop trigger if exists trg_enforce_immutability on public.offload_records;
+create trigger trg_enforce_immutability before update on public.offload_records
+  for each row execute function public.enforce_report_row_immutability();
+-- No client EXECUTE grant is needed on this function at all -- Postgres
+-- does not check EXECUTE privilege for trigger-fired invocation, only
+-- for an explicit call/RPC (same reasoning already applied to Phase 4's
+-- trigger functions). The revoke/grant above is defense-in-depth only.
+
+-- =======================================================================
+-- PART Q: durable, automatic indexing queue
+-- =======================================================================
+-- CORRECTION (review round 2, point 4). index_report() (Part H) was a
+-- pure RPC that nothing in the application called -- the repository
+-- would silently never fill unless a client remembered to invoke it.
+-- This part makes indexing an automatic, durable, server-side
+-- consequence of a report row being created, transparent to existing
+-- application code (no route or action in lib/avsec/reports/actions.ts
+-- changes), with a detectable, non-blocking failure/recovery path.
+create table if not exists public.report_index_queue (
+  id uuid primary key default gen_random_uuid(),
+  source_table text not null check (source_table in (
+    'report_sec013', 'report_sec014', 'report_sec016', 'report_sec018',
+    'report_sec029', 'report_sec033', 'offload_records'
+  )),
+  source_id uuid not null,
+  status text not null default 'pending' check (status in ('pending', 'processing', 'completed', 'failed')),
+  attempts integer not null default 0,
+  last_error text,
+  created_at timestamptz not null default now(),
+  processed_at timestamptz
+);
+
+-- Structural idempotency backstop: a source row can enqueue at most one
+-- queue record, ever (mirrors index_report()'s own idempotency, Part H).
+create unique index if not exists report_index_queue_source_unique
+  on public.report_index_queue (source_table, source_id);
+
+create index if not exists report_index_queue_pending_idx
+  on public.report_index_queue (status) where status in ('pending', 'failed');
+
+alter table public.report_index_queue enable row level security;
+revoke all on public.report_index_queue from public, anon, authenticated;
+grant all on public.report_index_queue to service_role;
+
+-- AFTER INSERT trigger: fires in the SAME transaction as the report
+-- INSERT, so the queue record is committed atomically with the report
+-- itself -- there is no window where a submitted report exists without
+-- a corresponding queue entry. ON CONFLICT DO NOTHING makes this safe
+-- against any retry or re-fire. Because it only ever INSERTs into
+-- report_index_queue (a table no trigger on the 7 report tables reads
+-- or writes), it cannot recurse. Because it is AFTER INSERT only (never
+-- AFTER UPDATE), a later content edit can never re-enqueue or duplicate
+-- an entry.
+create or replace function public.enqueue_report_for_indexing()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  insert into public.report_index_queue (source_table, source_id)
+  values (tg_table_name, new.id)
+  on conflict (source_table, source_id) do nothing;
+  return new;
+end;
+$function$;
+
+revoke execute on function public.enqueue_report_for_indexing() from public, anon, authenticated;
+grant execute on function public.enqueue_report_for_indexing() to service_role;
+
+drop trigger if exists trg_enqueue_indexing on public.report_sec013;
+create trigger trg_enqueue_indexing after insert on public.report_sec013
+  for each row execute function public.enqueue_report_for_indexing();
+
+drop trigger if exists trg_enqueue_indexing on public.report_sec014;
+create trigger trg_enqueue_indexing after insert on public.report_sec014
+  for each row execute function public.enqueue_report_for_indexing();
+
+drop trigger if exists trg_enqueue_indexing on public.report_sec016;
+create trigger trg_enqueue_indexing after insert on public.report_sec016
+  for each row execute function public.enqueue_report_for_indexing();
+
+drop trigger if exists trg_enqueue_indexing on public.report_sec018;
+create trigger trg_enqueue_indexing after insert on public.report_sec018
+  for each row execute function public.enqueue_report_for_indexing();
+
+drop trigger if exists trg_enqueue_indexing on public.report_sec029;
+create trigger trg_enqueue_indexing after insert on public.report_sec029
+  for each row execute function public.enqueue_report_for_indexing();
+
+drop trigger if exists trg_enqueue_indexing on public.report_sec033;
+create trigger trg_enqueue_indexing after insert on public.report_sec033
+  for each row execute function public.enqueue_report_for_indexing();
+
+drop trigger if exists trg_enqueue_indexing on public.offload_records;
+create trigger trg_enqueue_indexing after insert on public.offload_records
+  for each row execute function public.enqueue_report_for_indexing();
+
+-- process_report_index_queue(): service_role-only, called by a future
+-- scheduled job (no cron infrastructure is authorized or wired in this
+-- phase -- this is the processing function that job will call). It never
+-- guesses a classification: a queued row with no aoc_id yet on the
+-- source table (true for every row today, since no classification UI
+-- exists yet) is marked 'failed' with a explicit, detectable reason
+-- rather than being indexed with fabricated values. It is safe to call
+-- repeatedly -- 'completed' rows are never revisited, and index_report()
+-- itself is idempotent if a row is retried after being classified.
+create or replace function public.process_report_index_queue(p_batch_size integer default 50)
+returns table (processed integer, indexed integer, failed integer)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_row record;
+  v_source record;
+  v_processed integer := 0;
+  v_indexed integer := 0;
+  v_failed integer := 0;
+  v_aoc_id uuid;
+begin
+  for v_row in
+    select * from public.report_index_queue
+    where status in ('pending', 'failed')
+    order by created_at
+    limit p_batch_size
+    for update skip locked
+  loop
+    v_processed := v_processed + 1;
+
+    update public.report_index_queue set status = 'processing', attempts = attempts + 1 where id = v_row.id;
+
+    begin
+      execute format('select aoc_id from public.%I where id = $1', v_row.source_table)
+        into v_aoc_id using v_row.source_id;
+
+      if v_aoc_id is null then
+        update public.report_index_queue
+        set status = 'failed', last_error = 'source row not yet classified (aoc_id is null)', processed_at = now()
+        where id = v_row.id;
+        v_failed := v_failed + 1;
+      else
+        -- Re-select the full classification set now that we know it is
+        -- populated; index_report() re-validates everything itself.
+        execute format(
+          'select aoc_id, operating_entity_id, department_id, unit_id, hub_id, org_station_id, org_team_id, report_no, profile_id from public.%I where id = $1',
+          v_row.source_table
+        ) into v_source using v_row.source_id;
+
+        perform public.index_report(
+          v_row.source_table, v_row.source_id, v_source.report_no,
+          v_source.aoc_id, v_source.operating_entity_id, v_source.department_id,
+          v_source.unit_id, v_source.hub_id, v_source.org_station_id, v_source.org_team_id,
+          null, null, v_source.profile_id
+        );
+
+        update public.report_index_queue
+        set status = 'completed', last_error = null, processed_at = now()
+        where id = v_row.id;
+        v_indexed := v_indexed + 1;
+      end if;
+    exception when others then
+      update public.report_index_queue
+      set status = 'failed', last_error = sqlerrm, processed_at = now()
+      where id = v_row.id;
+      v_failed := v_failed + 1;
+    end;
+  end loop;
+
+  return query select v_processed, v_indexed, v_failed;
+end;
+$function$;
+
+revoke execute on function public.process_report_index_queue(integer) from public, anon, authenticated;
+grant execute on function public.process_report_index_queue(integer) to service_role;
+
+-- Verification view: every queue entry that is not cleanly 'completed',
+-- for whoever (a future ops dashboard, or manual inspection) needs to
+-- see missing/failed indexing at a glance.
+create or replace view public.v_report_index_queue_health as
+select source_table, source_id, status, attempts, last_error, created_at, processed_at
+from public.report_index_queue
+where status <> 'completed';
+
+-- =======================================================================
 -- DOCUMENTED ROLLBACK (not executed by this file -- reference only, run
 -- manually and only against a target where this migration was actually
--- applied).
+-- applied). CORRECTION (review round 2, point 9): Phase 5 must be rolled
+-- back in full, in the order below, BEFORE any Phase 2 organizational
+-- table is rolled back -- Parts B, G, H and Q read aocs/operating_
+-- entities/departments/units/hubs/org_stations/org_teams (Phase 2), and
+-- Part K/flag_report/unflag_report read role_definitions/user_role_
+-- assignments via has_active_role()/has_role_in_scope() (Phase 3) and
+-- profiles.status (Phase 2/4). None of those Phase 2/3/4 objects may be
+-- dropped while any Phase 5 object referencing them still exists.
 --
--- 1. Drop the two verification views:
+-- 1. Drop the two triggers per report table (Parts P and Q -- triggers
+--    must go before the functions they call), then the queue's
+--    verification view and the queue-processing/enqueue functions:
+--      drop trigger if exists trg_enforce_immutability on public.report_sec013;
+--      drop trigger if exists trg_enforce_immutability on public.report_sec014;
+--      drop trigger if exists trg_enforce_immutability on public.report_sec016;
+--      drop trigger if exists trg_enforce_immutability on public.report_sec018;
+--      drop trigger if exists trg_enforce_immutability on public.report_sec029;
+--      drop trigger if exists trg_enforce_immutability on public.report_sec033;
+--      drop trigger if exists trg_enforce_immutability on public.offload_records;
+--      drop trigger if exists trg_enqueue_indexing on public.report_sec013;
+--      drop trigger if exists trg_enqueue_indexing on public.report_sec014;
+--      drop trigger if exists trg_enqueue_indexing on public.report_sec016;
+--      drop trigger if exists trg_enqueue_indexing on public.report_sec018;
+--      drop trigger if exists trg_enqueue_indexing on public.report_sec029;
+--      drop trigger if exists trg_enqueue_indexing on public.report_sec033;
+--      drop trigger if exists trg_enqueue_indexing on public.offload_records;
+--      drop view if exists public.v_report_index_queue_health;
+--      drop function if exists public.process_report_index_queue(integer);
+--      drop function if exists public.enqueue_report_for_indexing();
+--      drop function if exists public.enforce_report_row_immutability();
+--
+-- 2. Drop the report_index_queue table:
+--      drop table if exists public.report_index_queue;
+--
+-- 3. Drop the two verification views:
 --      drop view if exists public.v_report_index_current_version_mismatch;
 --      drop view if exists public.v_report_index_classification_gaps;
 --
--- 2. Drop the RPC functions (all reference the new tables, so must go
+-- 4. Drop the RPC functions (all reference the new tables, so must go
 --    before them):
 --      drop function if exists public.create_report_amendment(uuid, text, text, jsonb);
 --      drop function if exists public.get_report_secure(uuid, integer);
@@ -1062,24 +1494,28 @@ grant all on public.report_access_audit to service_role;
 --      drop function if exists public.confirm_report_operating_entity(uuid, text, boolean);
 --      drop function if exists public.validate_org_hierarchy(uuid, uuid, uuid, uuid, uuid, uuid, uuid);
 --
--- 3. Drop the five new tables (dependents first -- report_access_audit
---    and report_access_grants/report_access_requests/report_versions
---    all reference central_reports_index, so it goes last):
+-- 5. Drop the five original new tables (dependents first -- report_
+--    access_audit and report_access_grants/report_access_requests/
+--    report_versions all reference central_reports_index, so it goes
+--    last; these also transitively reference Phase 3/4 objects via
+--    grantee_profile_id/granted_by -> profiles and via role checks in
+--    the functions already dropped in step 4, so this step must also
+--    precede any Phase 4 profiles/role-assignment rollback):
 --      drop table if exists public.report_access_audit;
 --      drop table if exists public.report_access_grants;
 --      drop table if exists public.report_access_requests;
 --      drop table if exists public.report_versions;
 --      drop table if exists public.central_reports_index;
 --
--- 4. Drop the additive classification columns from all 7 report tables
+-- 6. Drop the additive classification columns from all 7 report tables
 --    (each independent of the others -- order among them does not
---    matter):
+--    matter -- but this step must come after step 1, since the Part P
+--    trigger inspects these columns):
 --      alter table public.report_sec013 drop column if exists aoc_id, drop column if exists operating_entity_id, drop column if exists operating_entity_code, drop column if exists department_id, drop column if exists unit_id, drop column if exists hub_id, drop column if exists org_station_id, drop column if exists org_team_id, drop column if exists severity, drop column if exists flag_state, drop column if exists flagged_by, drop column if exists flagged_reason, drop column if exists flagged_at, drop column if exists unflagged_by, drop column if exists unflagged_at;
 --      -- (repeat the same DROP COLUMN list for report_sec014, report_sec016, report_sec018, report_sec029, report_sec033, offload_records)
 --
--- This rolls back cleanly independent of Phases 2-4 -- no Phase 2/3/4
--- table gains a new column or FK from this migration, so there is no
--- new ordering constraint against them (this migration only reads from
--- aocs/operating_entities/departments/units/hubs/org_stations/org_teams/
--- role_definitions/profiles/has_active_role()/has_role_in_scope(),
--- never writes to them).
+-- Only after all 6 steps above are complete may Phase 2's organizational
+-- tables (aocs/operating_entities/.../org_teams), Phase 3's role_
+-- definitions/user_role_assignments, or Phase 4's profiles.status/
+-- approval_state columns be rolled back -- no Phase 5 object references
+-- them anymore at that point.

@@ -531,6 +531,39 @@ export type Database = {
           { foreignKeyName: "report_access_audit_repository_report_id_fkey"; columns: ["repository_report_id"]; isOneToOne: false; referencedRelation: "central_reports_index"; referencedColumns: ["id"] },
         ]
       }
+      report_index_queue: {
+        Row: {
+          id: string
+          source_table: string
+          source_id: string
+          status: string
+          attempts: number
+          last_error: string | null
+          created_at: string
+          processed_at: string | null
+        }
+        Insert: {
+          id?: string
+          source_table: string
+          source_id: string
+          status?: string
+          attempts?: number
+          last_error?: string | null
+          created_at?: string
+          processed_at?: string | null
+        }
+        Update: {
+          id?: string
+          source_table?: string
+          source_id?: string
+          status?: string
+          attempts?: number
+          last_error?: string | null
+          created_at?: string
+          processed_at?: string | null
+        }
+        Relationships: []
+      }
       user_registration_requests: {
         Row: {
           id: string
@@ -2026,6 +2059,21 @@ export type Database = {
           team: string
           ops_group: string | null
           total_bags: number
+          aoc_id: string | null
+          department_id: string | null
+          flag_state: string
+          flagged_at: string | null
+          flagged_by: string | null
+          flagged_reason: string | null
+          hub_id: string | null
+          operating_entity_code: string | null
+          operating_entity_id: string | null
+          org_station_id: string | null
+          org_team_id: string | null
+          severity: string | null
+          unflagged_at: string | null
+          unflagged_by: string | null
+          unit_id: string | null
           updated_at: string
           verified_by_dse_id: string | null
           verified_by_dse_name: string | null
@@ -2050,6 +2098,21 @@ export type Database = {
           team: string
           ops_group: string | null
           total_bags?: number
+          aoc_id?: string | null
+          department_id?: string | null
+          flag_state?: string
+          flagged_at?: string | null
+          flagged_by?: string | null
+          flagged_reason?: string | null
+          hub_id?: string | null
+          operating_entity_code?: string | null
+          operating_entity_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          severity?: string | null
+          unflagged_at?: string | null
+          unflagged_by?: string | null
+          unit_id?: string | null
           updated_at?: string
           verified_by_dse_id?: string | null
           verified_by_dse_name?: string | null
@@ -2074,6 +2137,21 @@ export type Database = {
           team?: string
           ops_group?: string | null
           total_bags?: number
+          aoc_id?: string | null
+          department_id?: string | null
+          flag_state?: string
+          flagged_at?: string | null
+          flagged_by?: string | null
+          flagged_reason?: string | null
+          hub_id?: string | null
+          operating_entity_code?: string | null
+          operating_entity_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          severity?: string | null
+          unflagged_at?: string | null
+          unflagged_by?: string | null
+          unit_id?: string | null
           updated_at?: string
           verified_by_dse_id?: string | null
           verified_by_dse_name?: string | null
@@ -2875,6 +2953,21 @@ export type Database = {
           submitted_at: string | null
           team: string
           ops_group: string | null
+          aoc_id: string | null
+          department_id: string | null
+          flag_state: string
+          flagged_at: string | null
+          flagged_by: string | null
+          flagged_reason: string | null
+          hub_id: string | null
+          operating_entity_code: string | null
+          operating_entity_id: string | null
+          org_station_id: string | null
+          org_team_id: string | null
+          severity: string | null
+          unflagged_at: string | null
+          unflagged_by: string | null
+          unit_id: string | null
           updated_at: string
         }
         Insert: {
@@ -2895,6 +2988,21 @@ export type Database = {
           submitted_at?: string | null
           team: string
           ops_group: string | null
+          aoc_id?: string | null
+          department_id?: string | null
+          flag_state?: string
+          flagged_at?: string | null
+          flagged_by?: string | null
+          flagged_reason?: string | null
+          hub_id?: string | null
+          operating_entity_code?: string | null
+          operating_entity_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          severity?: string | null
+          unflagged_at?: string | null
+          unflagged_by?: string | null
+          unit_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -2915,6 +3023,21 @@ export type Database = {
           submitted_at?: string | null
           team?: string
           ops_group?: string | null
+          aoc_id?: string | null
+          department_id?: string | null
+          flag_state?: string
+          flagged_at?: string | null
+          flagged_by?: string | null
+          flagged_reason?: string | null
+          hub_id?: string | null
+          operating_entity_code?: string | null
+          operating_entity_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          severity?: string | null
+          unflagged_at?: string | null
+          unflagged_by?: string | null
+          unit_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -2999,6 +3122,21 @@ export type Database = {
           submitted_at: string | null
           team: string
           ops_group: string | null
+          aoc_id: string | null
+          department_id: string | null
+          flag_state: string
+          flagged_at: string | null
+          flagged_by: string | null
+          flagged_reason: string | null
+          hub_id: string | null
+          operating_entity_code: string | null
+          operating_entity_id: string | null
+          org_station_id: string | null
+          org_team_id: string | null
+          severity: string | null
+          unflagged_at: string | null
+          unflagged_by: string | null
+          unit_id: string | null
           updated_at: string
         }
         Insert: {
@@ -3018,6 +3156,21 @@ export type Database = {
           submitted_at?: string | null
           team: string
           ops_group: string | null
+          aoc_id?: string | null
+          department_id?: string | null
+          flag_state?: string
+          flagged_at?: string | null
+          flagged_by?: string | null
+          flagged_reason?: string | null
+          hub_id?: string | null
+          operating_entity_code?: string | null
+          operating_entity_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          severity?: string | null
+          unflagged_at?: string | null
+          unflagged_by?: string | null
+          unit_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -3037,6 +3190,21 @@ export type Database = {
           submitted_at?: string | null
           team?: string
           ops_group?: string | null
+          aoc_id?: string | null
+          department_id?: string | null
+          flag_state?: string
+          flagged_at?: string | null
+          flagged_by?: string | null
+          flagged_reason?: string | null
+          hub_id?: string | null
+          operating_entity_code?: string | null
+          operating_entity_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          severity?: string | null
+          unflagged_at?: string | null
+          unflagged_by?: string | null
+          unit_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -3156,6 +3324,21 @@ export type Database = {
           submitted_at: string | null
           team: string
           ops_group: string | null
+          aoc_id: string | null
+          department_id: string | null
+          flag_state: string
+          flagged_at: string | null
+          flagged_by: string | null
+          flagged_reason: string | null
+          hub_id: string | null
+          operating_entity_code: string | null
+          operating_entity_id: string | null
+          org_station_id: string | null
+          org_team_id: string | null
+          severity: string | null
+          unflagged_at: string | null
+          unflagged_by: string | null
+          unit_id: string | null
           updated_at: string
         }
         Insert: {
@@ -3212,6 +3395,21 @@ export type Database = {
           submitted_at?: string | null
           team: string
           ops_group: string | null
+          aoc_id?: string | null
+          department_id?: string | null
+          flag_state?: string
+          flagged_at?: string | null
+          flagged_by?: string | null
+          flagged_reason?: string | null
+          hub_id?: string | null
+          operating_entity_code?: string | null
+          operating_entity_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          severity?: string | null
+          unflagged_at?: string | null
+          unflagged_by?: string | null
+          unit_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -3268,6 +3466,21 @@ export type Database = {
           submitted_at?: string | null
           team?: string
           ops_group?: string | null
+          aoc_id?: string | null
+          department_id?: string | null
+          flag_state?: string
+          flagged_at?: string | null
+          flagged_by?: string | null
+          flagged_reason?: string | null
+          hub_id?: string | null
+          operating_entity_code?: string | null
+          operating_entity_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          severity?: string | null
+          unflagged_at?: string | null
+          unflagged_by?: string | null
+          unit_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -3309,6 +3522,21 @@ export type Database = {
           submitted_at: string | null
           team: string
           ops_group: string | null
+          aoc_id: string | null
+          department_id: string | null
+          flag_state: string
+          flagged_at: string | null
+          flagged_by: string | null
+          flagged_reason: string | null
+          hub_id: string | null
+          operating_entity_code: string | null
+          operating_entity_id: string | null
+          org_station_id: string | null
+          org_team_id: string | null
+          severity: string | null
+          unflagged_at: string | null
+          unflagged_by: string | null
+          unit_id: string | null
           updated_at: string
         }
         Insert: {
@@ -3325,6 +3553,21 @@ export type Database = {
           submitted_at?: string | null
           team: string
           ops_group: string | null
+          aoc_id?: string | null
+          department_id?: string | null
+          flag_state?: string
+          flagged_at?: string | null
+          flagged_by?: string | null
+          flagged_reason?: string | null
+          hub_id?: string | null
+          operating_entity_code?: string | null
+          operating_entity_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          severity?: string | null
+          unflagged_at?: string | null
+          unflagged_by?: string | null
+          unit_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -3341,6 +3584,21 @@ export type Database = {
           submitted_at?: string | null
           team?: string
           ops_group?: string | null
+          aoc_id?: string | null
+          department_id?: string | null
+          flag_state?: string
+          flagged_at?: string | null
+          flagged_by?: string | null
+          flagged_reason?: string | null
+          hub_id?: string | null
+          operating_entity_code?: string | null
+          operating_entity_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          severity?: string | null
+          unflagged_at?: string | null
+          unflagged_by?: string | null
+          unit_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -3442,6 +3700,21 @@ export type Database = {
           ops_group: string | null
           time_commence: string
           time_completed: string
+          aoc_id: string | null
+          department_id: string | null
+          flag_state: string
+          flagged_at: string | null
+          flagged_by: string | null
+          flagged_reason: string | null
+          hub_id: string | null
+          operating_entity_code: string | null
+          operating_entity_id: string | null
+          org_station_id: string | null
+          org_team_id: string | null
+          severity: string | null
+          unflagged_at: string | null
+          unflagged_by: string | null
+          unit_id: string | null
           updated_at: string
         }
         Insert: {
@@ -3474,6 +3747,21 @@ export type Database = {
           ops_group: string | null
           time_commence: string
           time_completed: string
+          aoc_id?: string | null
+          department_id?: string | null
+          flag_state?: string
+          flagged_at?: string | null
+          flagged_by?: string | null
+          flagged_reason?: string | null
+          hub_id?: string | null
+          operating_entity_code?: string | null
+          operating_entity_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          severity?: string | null
+          unflagged_at?: string | null
+          unflagged_by?: string | null
+          unit_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -3506,6 +3794,21 @@ export type Database = {
           ops_group?: string | null
           time_commence?: string
           time_completed?: string
+          aoc_id?: string | null
+          department_id?: string | null
+          flag_state?: string
+          flagged_at?: string | null
+          flagged_by?: string | null
+          flagged_reason?: string | null
+          hub_id?: string | null
+          operating_entity_code?: string | null
+          operating_entity_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          severity?: string | null
+          unflagged_at?: string | null
+          unflagged_by?: string | null
+          unit_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -3583,6 +3886,21 @@ export type Database = {
           submitted_at: string | null
           team: string
           ops_group: string | null
+          aoc_id: string | null
+          department_id: string | null
+          flag_state: string
+          flagged_at: string | null
+          flagged_by: string | null
+          flagged_reason: string | null
+          hub_id: string | null
+          operating_entity_code: string | null
+          operating_entity_id: string | null
+          org_station_id: string | null
+          org_team_id: string | null
+          severity: string | null
+          unflagged_at: string | null
+          unflagged_by: string | null
+          unit_id: string | null
           updated_at: string
         }
         Insert: {
@@ -3600,6 +3918,21 @@ export type Database = {
           submitted_at?: string | null
           team: string
           ops_group: string | null
+          aoc_id?: string | null
+          department_id?: string | null
+          flag_state?: string
+          flagged_at?: string | null
+          flagged_by?: string | null
+          flagged_reason?: string | null
+          hub_id?: string | null
+          operating_entity_code?: string | null
+          operating_entity_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          severity?: string | null
+          unflagged_at?: string | null
+          unflagged_by?: string | null
+          unit_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -3617,6 +3950,21 @@ export type Database = {
           submitted_at?: string | null
           team?: string
           ops_group?: string | null
+          aoc_id?: string | null
+          department_id?: string | null
+          flag_state?: string
+          flagged_at?: string | null
+          flagged_by?: string | null
+          flagged_reason?: string | null
+          hub_id?: string | null
+          operating_entity_code?: string | null
+          operating_entity_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          severity?: string | null
+          unflagged_at?: string | null
+          unflagged_by?: string | null
+          unit_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -4553,6 +4901,34 @@ export type Database = {
         }
         Relationships: []
       }
+      v_report_index_classification_gaps: {
+        Row: {
+          source_table: string | null
+          source_id: string | null
+          repository_report_id: string | null
+        }
+        Relationships: []
+      }
+      v_report_index_current_version_mismatch: {
+        Row: {
+          repository_report_id: string | null
+          current_version: number | null
+          highest_version: number | null
+        }
+        Relationships: []
+      }
+      v_report_index_queue_health: {
+        Row: {
+          source_table: string | null
+          source_id: string | null
+          status: string | null
+          attempts: number | null
+          last_error: string | null
+          created_at: string | null
+          processed_at: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       archive_all_pending: { Args: { p_reason?: string }; Returns: number }
@@ -4684,6 +5060,12 @@ export type Database = {
       }
       revoke_report_access: { Args: { p_grant_id: string; p_reason: string | null }; Returns: undefined }
       has_report_access: { Args: { p_repository_report_id: string }; Returns: boolean }
+      process_report_index_queue: {
+        Args: { p_batch_size?: number | null }
+        Returns: { processed: number; indexed: number; failed: number }[]
+      }
+      enqueue_report_for_indexing: { Args: Record<string, never>; Returns: unknown }
+      enforce_report_row_immutability: { Args: Record<string, never>; Returns: unknown }
       get_report_secure: {
         Args: { p_repository_report_id: string; p_version_number?: number | null }
         Returns: {

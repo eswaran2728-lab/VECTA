@@ -319,11 +319,11 @@ test("IMMUTABILITY: create_report_amendment() requires report access (has_report
 // Flagging / severity
 // =======================================================================
 
-test("FLAGGING: flag_report()/unflag_report() are service_role-only in this phase -- no ordinary role is wired to call them yet (Phase 5 activates no new role access)", () => {
-  assert.match(code, /revoke execute on function public\.flag_report\(uuid, text, text\) from public, anon, authenticated;/);
-  assert.match(code, /grant execute on function public\.flag_report\(uuid, text, text\) to service_role;/);
-  assert.match(code, /revoke execute on function public\.unflag_report\(uuid, text\) from public, anon, authenticated;/);
-  assert.match(code, /grant execute on function public\.unflag_report\(uuid, text\) to service_role;/);
+test("FLAGGING (corrected, review round 2): flag_report()/unflag_report() are granted to `authenticated`, not service_role-only -- authorization now lives inside the function body (main_enforcement/compliance/global_reporting_controller only, see PART I tests below), since a Postgres-role-only gate was found insufficient", () => {
+  assert.match(code, /revoke execute on function public\.flag_report\(uuid, text, text\) from public, anon;/);
+  assert.match(code, /grant execute on function public\.flag_report\(uuid, text, text\) to authenticated, service_role;/);
+  assert.match(code, /revoke execute on function public\.unflag_report\(uuid, text\) from public, anon;/);
+  assert.match(code, /grant execute on function public\.unflag_report\(uuid, text\) to authenticated, service_role;/);
 });
 
 test("FLAGGING: flag_report() requires a non-empty reason and writes an audit row", () => {
@@ -598,4 +598,255 @@ test("STATIC: every new function is SECURITY DEFINER with a fixed search_path", 
     assert.match(block, /security definer/i);
     assert.match(block, /set search_path to 'public'/i);
   }
+});
+
+// =======================================================================
+// CORRECTION ROUND 2 (2026-09-28): direct-write protection and content
+// immutability (review points 2 and 3)
+// =======================================================================
+
+const CONTENT_ALLOWLIST: Record<string, string[]> = {
+  report_sec013: ["status", "updated_at", "acknowledgement"],
+  report_sec014: ["status", "updated_at", "acknowledgement"],
+  report_sec016: ["status", "updated_at"],
+  report_sec018: ["status", "updated_at", "acknowledgement"],
+  report_sec029: ["status", "updated_at", "acknowledgement"],
+  report_sec033: ["status", "updated_at"],
+  offload_records: ["status", "updated_at"],
+};
+
+/** Mirrors enforce_report_row_immutability()'s decision: is a write to
+ * `column` on `table` permitted for a non-service_role caller? */
+function isColumnMutable(table: string, column: string): boolean {
+  return (CONTENT_ALLOWLIST[table] ?? []).includes(column);
+}
+
+test("PART P: enforce_report_row_immutability() exists, bypasses service_role, and is SECURITY DEFINER with a fixed search_path", () => {
+  const block = fnBlock("enforce_report_row_immutability", "\\(\\)");
+  assert.ok(block, "enforce_report_row_immutability() must exist");
+  assert.match(block![0], /auth\.role\(\) = 'service_role'/);
+  assert.match(block![0], /security definer/i);
+  assert.match(block![0], /set search_path to 'public'/i);
+});
+
+test("PART P: the allowlist mirror matches every column referenced in this test file for all 7 tables -- keeps the mirror honest against drift", () => {
+  const block = fnBlock("enforce_report_row_immutability", "\\(\\)")![0];
+  for (const table of REPORT_TABLES) {
+    const allowed = CONTENT_ALLOWLIST[table];
+    const caseLine = new RegExp(`when '${table}' then array\\[([^\\]]*)\\]`);
+    const m = block.match(caseLine);
+    assert.ok(m, `must find CASE branch for ${table}`);
+    const actual = (m![1].match(/'([a-z_]+)'/g) ?? []).map((s) => s.replace(/'/g, ""));
+    assert.deepEqual(actual.sort(), [...allowed].sort(), `${table} allowlist mismatch`);
+  }
+});
+
+test("PART P: every new classification/flag column is frozen (NOT in the allowlist) for all 7 tables -- direct PostgREST reclassification/flagging is blocked", () => {
+  const classificationColumns = [
+    "aoc_id", "operating_entity_id", "operating_entity_code", "department_id", "unit_id",
+    "hub_id", "org_station_id", "org_team_id", "severity", "flag_state", "flagged_by",
+    "flagged_reason", "flagged_at", "unflagged_by", "unflagged_at",
+  ];
+  for (const table of REPORT_TABLES) {
+    for (const col of classificationColumns) {
+      assert.equal(isColumnMutable(table, col), false, `${table}.${col} must be frozen for non-service_role callers`);
+    }
+  }
+});
+
+test("PART P: report_sec016's write-once search fields (aircraft_search_completed, search_overdue_flag, search_remark) are frozen after creation -- no legitimate post-creation UPDATE path exists in lib/avsec/reports/actions.ts", () => {
+  for (const col of ["aircraft_search_completed", "search_overdue_flag", "search_remark"]) {
+    assert.equal(isColumnMutable("report_sec016", col), false);
+  }
+});
+
+test("PART P: acknowledgement is mutable only on the 4 tables that actually have the column (sec013/014/018/029), frozen (absent) on sec016/033/offload_records", () => {
+  for (const table of ["report_sec013", "report_sec014", "report_sec018", "report_sec029"]) {
+    assert.ok(isColumnMutable(table, "acknowledgement"), `${table} must keep acknowledgement mutable`);
+  }
+  for (const table of ["report_sec016", "report_sec033", "offload_records"]) {
+    assert.equal(CONTENT_ALLOWLIST[table].includes("acknowledgement"), false, `${table} has no acknowledgement column and must not allowlist it`);
+  }
+});
+
+test("PART P: a BEFORE UPDATE trigger firing enforce_report_row_immutability() is attached to all 7 report tables", () => {
+  for (const table of REPORT_TABLES) {
+    assert.match(
+      code,
+      new RegExp(`create trigger trg_enforce_immutability before update on public\\.${table}\\s*\\n\\s*for each row execute function public\\.enforce_report_row_immutability\\(\\);`),
+      `${table} must have the immutability trigger attached`,
+    );
+  }
+});
+
+test("PART P: this migration does not modify any existing RLS policy -- the new protection is a trigger, not a policy change (already covered generically above; re-asserted here since Part P is new this round)", () => {
+  assert.equal((code.match(/(create|alter|drop) policy/gi) ?? []).length, 0);
+});
+
+// =======================================================================
+// CORRECTION ROUND 2: automatic, reliable indexing (review point 4)
+// =======================================================================
+
+test("PART Q: report_index_queue table exists with a source_table allowlist CHECK, a structural UNIQUE(source_table, source_id) backstop, and zero grant to anon/authenticated", () => {
+  assert.match(code, /create table if not exists public\.report_index_queue/);
+  const block = code.match(/create table if not exists public\.report_index_queue[\s\S]*?;/)![0];
+  for (const table of REPORT_TABLES) {
+    assert.match(block, new RegExp(`'${table}'`));
+  }
+  assert.match(code, /create unique index if not exists report_index_queue_source_unique\s*\n\s*on public\.report_index_queue \(source_table, source_id\);/);
+  assert.match(code, /revoke all on public\.report_index_queue from public, anon, authenticated;/);
+  assert.match(code, /grant all on public\.report_index_queue to service_role;/);
+});
+
+test("PART Q: an AFTER INSERT trigger enqueues every one of the 7 report tables for indexing, transparent to existing application code", () => {
+  for (const table of REPORT_TABLES) {
+    assert.match(
+      code,
+      new RegExp(`create trigger trg_enqueue_indexing after insert on public\\.${table}\\s*\\n\\s*for each row execute function public\\.enqueue_report_for_indexing\\(\\);`),
+    );
+  }
+});
+
+test("PART Q: enqueue_report_for_indexing() only INSERTs into report_index_queue with ON CONFLICT DO NOTHING -- idempotent, and cannot recurse since it never writes back to a report table", () => {
+  const block = fnBlock("enqueue_report_for_indexing", "\\(\\)")![0];
+  assert.match(block, /insert into public\.report_index_queue \(source_table, source_id\)/);
+  assert.match(block, /on conflict \(source_table, source_id\) do nothing/);
+  assert.doesNotMatch(block, new RegExp(REPORT_TABLES.join("|")));
+});
+
+test("PART Q: process_report_index_queue() never fabricates a classification -- a row with a null aoc_id is marked 'failed' with a detectable reason, never guessed or indexed", () => {
+  const block = fnBlock("process_report_index_queue")![0];
+  assert.match(block, /if v_aoc_id is null then/);
+  assert.match(block, /status = 'failed', last_error = 'source row not yet classified/);
+});
+
+test("PART Q: process_report_index_queue() uses FOR UPDATE SKIP LOCKED so concurrent workers cannot double-process the same queue row", () => {
+  const block = fnBlock("process_report_index_queue")![0];
+  assert.match(block, /for update skip locked/);
+});
+
+test("PART Q: process_report_index_queue() is service_role-only", () => {
+  assert.match(code, /revoke execute on function public\.process_report_index_queue\(integer\) from public, anon, authenticated;/);
+  assert.match(code, /grant execute on function public\.process_report_index_queue\(integer\) to service_role;/);
+});
+
+test("PART Q: a queue-health verification view exists for missing/failed indexing", () => {
+  assert.match(code, /create or replace view public\.v_report_index_queue_health as/);
+});
+
+// =======================================================================
+// CORRECTION ROUND 2: flagging authorization (review point 5)
+// =======================================================================
+
+/** Mirrors flag_report()/unflag_report()'s authorization decision. */
+function canFlagOrUnflag(actor: {
+  isSubmitter: boolean;
+  isGhod: boolean;
+  isGlobalReportingController: boolean;
+  isMainEnforcementInScope: boolean;
+  isComplianceInScope: boolean;
+}): boolean {
+  if (actor.isSubmitter) return false;
+  if (actor.isGhod) return false;
+  return actor.isGlobalReportingController || actor.isMainEnforcementInScope || actor.isComplianceInScope;
+}
+
+test("PART I (corrected): flag_report()/unflag_report() verify the caller's OWN role via auth.uid() internally -- never trust auth.uid() is not null alone, and never trust possession of a service-role caller as authorization", () => {
+  for (const fn of ["flag_report", "unflag_report"]) {
+    const block = fnBlock(fn)![0];
+    assert.match(block, /public\.has_active_role\('global_reporting_controller'\)/);
+    assert.match(block, /public\.has_role_in_scope\('main_enforcement', v_report\.aoc_id\)/);
+    assert.match(block, /public\.has_role_in_scope\('compliance', v_report\.aoc_id\)/);
+  }
+});
+
+test("PART I (corrected): flag_report()/unflag_report() deny the submitter flagging/unflagging their own report", () => {
+  for (const fn of ["flag_report", "unflag_report"]) {
+    const block = fnBlock(fn)![0];
+    assert.match(block, /v_report\.submitter_profile_id = auth\.uid\(\) then\s*\n\s*raise exception 'Cannot (flag|unflag) your own submitted report/);
+  }
+});
+
+test("PART I (corrected): flag_report()/unflag_report() explicitly deny GHOD -- GHOD's access is a consequence of an existing flag (has_report_access), so GHOD must never be able to create that flag itself", () => {
+  for (const fn of ["flag_report", "unflag_report"]) {
+    const block = fnBlock(fn)![0];
+    assert.match(block, /public\.has_active_role\('ghod'\) then\s*\n\s*raise exception 'GHOD is not authorized/);
+  }
+});
+
+test("PART I (corrected): the mirrored decision table matches every combination -- submitter always denied, GHOD always denied regardless of any other role held, GRC/main_enforcement/compliance (in scope) always permitted otherwise", () => {
+  assert.equal(canFlagOrUnflag({ isSubmitter: true, isGhod: false, isGlobalReportingController: true, isMainEnforcementInScope: true, isComplianceInScope: true }), false);
+  assert.equal(canFlagOrUnflag({ isSubmitter: false, isGhod: true, isGlobalReportingController: true, isMainEnforcementInScope: true, isComplianceInScope: true }), false);
+  assert.equal(canFlagOrUnflag({ isSubmitter: false, isGhod: false, isGlobalReportingController: true, isMainEnforcementInScope: false, isComplianceInScope: false }), true);
+  assert.equal(canFlagOrUnflag({ isSubmitter: false, isGhod: false, isGlobalReportingController: false, isMainEnforcementInScope: true, isComplianceInScope: false }), true);
+  assert.equal(canFlagOrUnflag({ isSubmitter: false, isGhod: false, isGlobalReportingController: false, isMainEnforcementInScope: false, isComplianceInScope: true }), true);
+  assert.equal(canFlagOrUnflag({ isSubmitter: false, isGhod: false, isGlobalReportingController: false, isMainEnforcementInScope: false, isComplianceInScope: false }), false);
+});
+
+test("PART I (corrected): flag_report()/unflag_report() are granted to `authenticated` (the internal auth.uid() check is now the real boundary, not the Postgres role)", () => {
+  assert.match(code, /grant execute on function public\.flag_report\(uuid, text, text\) to authenticated, service_role;/);
+  assert.match(code, /grant execute on function public\.unflag_report\(uuid, text\) to authenticated, service_role;/);
+});
+
+test("PART I (corrected): flag history survives every flag/unflag call -- flagged_by/flagged_reason/flagged_at/unflagged_by/unflagged_at are written, and every call still writes an append-only report_access_audit row", () => {
+  const flagBlock = fnBlock("flag_report")![0];
+  assert.match(flagBlock, /flagged_by = auth\.uid\(\), flagged_reason = p_reason, flagged_at = now\(\)/);
+  assert.match(flagBlock, /insert into public\.report_access_audit/);
+  const unflagBlock = fnBlock("unflag_report")![0];
+  assert.match(unflagBlock, /unflagged_by = auth\.uid\(\), unflagged_at = now\(\)/);
+  assert.match(unflagBlock, /insert into public\.report_access_audit/);
+});
+
+// =======================================================================
+// CORRECTION ROUND 2: access request/grant security (review point 6)
+// =======================================================================
+
+test("PART J (corrected): grant_report_access() validates the grantee is a real, currently-approved profile -- not just an id that satisfies the bare FK", () => {
+  const block = fnBlock("grant_report_access")![0];
+  assert.match(block, /select 1 from public\.profiles where id = p_grantee_profile_id and status = 'approved'/);
+});
+
+test("PART J (corrected): grant_report_access() re-validates the target report still exists in the repository before granting", () => {
+  const block = fnBlock("grant_report_access")![0];
+  assert.match(block, /select 1 from public\.central_reports_index where id = v_request\.repository_report_id/);
+});
+
+test("PART J: grant_report_access()/revoke_report_access() never trust a client-supplied reviewer id -- the acting admin is always auth.uid(), never a parameter", () => {
+  for (const fn of ["grant_report_access", "revoke_report_access"]) {
+    const block = fnBlock(fn)![0];
+    assert.match(block, /v_admin_id uuid := auth\.uid\(\)/);
+    assert.doesNotMatch(block, /p_(admin|reviewer|approver)_id/i);
+  }
+});
+
+// =======================================================================
+// CORRECTION ROUND 2: no generic service-role amendment approval exists
+// (review point 11 -- kept explicitly inactive, no business approver
+// role has been selected yet)
+// =======================================================================
+
+test("AMENDMENT: no amendment-approval RPC exists anywhere in this migration -- amendments stay 'pending' forever until a later explicit, gated decision", () => {
+  assert.doesNotMatch(code, /function public\.approve_report_amendment/i);
+  assert.doesNotMatch(code, /function public\.reject_report_amendment/i);
+  const amendBlock = fnBlock("create_report_amendment")![0];
+  assert.match(amendBlock, /'pending', p_amended_content/);
+});
+
+// =======================================================================
+// CORRECTION ROUND 2: rollback ordering (review point 9)
+// =======================================================================
+
+test("ROLLBACK (corrected): Part P/Q triggers and functions are dropped before the report_index_queue table, and the whole Phase 5 rollback precedes any Phase 2/3/4 rollback per the documented note", () => {
+  const rollbackBlock = migrationSql.match(/DOCUMENTED ROLLBACK[\s\S]*$/)![0];
+  const triggerDropIdx = rollbackBlock.indexOf("drop trigger if exists trg_enforce_immutability on public.report_sec013;");
+  const enqueueTriggerDropIdx = rollbackBlock.indexOf("drop trigger if exists trg_enqueue_indexing on public.report_sec013;");
+  const queueFnDropIdx = rollbackBlock.indexOf("drop function if exists public.process_report_index_queue(integer);");
+  const queueTableDropIdx = rollbackBlock.indexOf("drop table if exists public.report_index_queue;");
+  const indexViewDropIdx = rollbackBlock.indexOf("drop view if exists public.v_report_index_current_version_mismatch;");
+  assert.ok(triggerDropIdx > -1 && enqueueTriggerDropIdx > -1 && queueFnDropIdx > -1 && queueTableDropIdx > -1 && indexViewDropIdx > -1);
+  assert.ok(triggerDropIdx < queueFnDropIdx, "immutability trigger drops before queue function drops");
+  assert.ok(enqueueTriggerDropIdx < queueFnDropIdx, "enqueue trigger drops before queue function drops");
+  assert.ok(queueFnDropIdx < queueTableDropIdx, "queue function drops before queue table drops");
+  assert.ok(queueTableDropIdx < indexViewDropIdx, "queue table drops before the original Part N views (documented order)");
+  assert.match(rollbackBlock.replace(/\r?\n--/g, " ").replace(/\s+/g, " "), /must be rolled\s+back in full, in the order below, BEFORE any Phase 2 organizational/);
 });
