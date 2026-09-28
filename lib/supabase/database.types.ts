@@ -295,6 +295,242 @@ export type Database = {
           { foreignKeyName: "user_notifications_membership_id_fkey"; columns: ["membership_id"]; isOneToOne: false; referencedRelation: "user_entity_memberships"; referencedColumns: ["id"] },
         ]
       }
+      central_reports_index: {
+        Row: {
+          id: string
+          source_table: string
+          source_id: string
+          report_type: string
+          aoc_id: string | null
+          operating_entity_id: string | null
+          operating_entity_code: string | null
+          department_id: string | null
+          unit_id: string | null
+          hub_id: string | null
+          station_id: string | null
+          team_id: string | null
+          flight_number: string | null
+          report_date: string | null
+          status: string
+          severity: string | null
+          flag_state: string
+          current_version: number
+          submitter_profile_id: string | null
+          indexed_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          source_table: string
+          source_id: string
+          report_type: string
+          aoc_id?: string | null
+          operating_entity_id?: string | null
+          operating_entity_code?: string | null
+          department_id?: string | null
+          unit_id?: string | null
+          hub_id?: string | null
+          station_id?: string | null
+          team_id?: string | null
+          flight_number?: string | null
+          report_date?: string | null
+          status?: string
+          severity?: string | null
+          flag_state?: string
+          current_version?: number
+          submitter_profile_id?: string | null
+          indexed_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          source_table?: string
+          source_id?: string
+          report_type?: string
+          aoc_id?: string | null
+          operating_entity_id?: string | null
+          operating_entity_code?: string | null
+          department_id?: string | null
+          unit_id?: string | null
+          hub_id?: string | null
+          station_id?: string | null
+          team_id?: string | null
+          flight_number?: string | null
+          report_date?: string | null
+          status?: string
+          severity?: string | null
+          flag_state?: string
+          current_version?: number
+          submitter_profile_id?: string | null
+          indexed_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      report_versions: {
+        Row: {
+          id: string
+          repository_report_id: string
+          version_number: number
+          amendment_type: string
+          reason: string
+          requested_by: string
+          approved_by: string | null
+          effective_status: "pending" | "approved" | "rejected"
+          amended_content: Json | null
+          supersedes_version: number | null
+          created_at: string
+          decided_at: string | null
+        }
+        Insert: {
+          id?: string
+          repository_report_id: string
+          version_number: number
+          amendment_type?: string
+          reason: string
+          requested_by: string
+          approved_by?: string | null
+          effective_status?: "pending" | "approved" | "rejected"
+          amended_content?: Json | null
+          supersedes_version?: number | null
+          created_at?: string
+          decided_at?: string | null
+        }
+        Update: {
+          id?: string
+          repository_report_id?: string
+          version_number?: number
+          amendment_type?: string
+          reason?: string
+          requested_by?: string
+          approved_by?: string | null
+          effective_status?: "pending" | "approved" | "rejected"
+          amended_content?: Json | null
+          supersedes_version?: number | null
+          created_at?: string
+          decided_at?: string | null
+        }
+        Relationships: [
+          { foreignKeyName: "report_versions_repository_report_id_fkey"; columns: ["repository_report_id"]; isOneToOne: false; referencedRelation: "central_reports_index"; referencedColumns: ["id"] },
+        ]
+      }
+      report_access_requests: {
+        Row: {
+          id: string
+          requester_id: string
+          repository_report_id: string
+          business_reason: string
+          requested_duration_days: number | null
+          status: "pending" | "approved" | "rejected"
+          reviewed_by: string | null
+          reviewed_at: string | null
+          decision_reason: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          requester_id: string
+          repository_report_id: string
+          business_reason: string
+          requested_duration_days?: number | null
+          status?: "pending" | "approved" | "rejected"
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          decision_reason?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          requester_id?: string
+          repository_report_id?: string
+          business_reason?: string
+          requested_duration_days?: number | null
+          status?: "pending" | "approved" | "rejected"
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          decision_reason?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: "report_access_requests_repository_report_id_fkey"; columns: ["repository_report_id"]; isOneToOne: false; referencedRelation: "central_reports_index"; referencedColumns: ["id"] },
+        ]
+      }
+      report_access_grants: {
+        Row: {
+          id: string
+          repository_report_id: string
+          grantee_profile_id: string
+          granted_by: string
+          reason: string
+          starts_at: string
+          expires_at: string | null
+          revoked_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          repository_report_id: string
+          grantee_profile_id: string
+          granted_by: string
+          reason: string
+          starts_at?: string
+          expires_at?: string | null
+          revoked_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          repository_report_id?: string
+          grantee_profile_id?: string
+          granted_by?: string
+          reason?: string
+          starts_at?: string
+          expires_at?: string | null
+          revoked_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: "report_access_grants_repository_report_id_fkey"; columns: ["repository_report_id"]; isOneToOne: false; referencedRelation: "central_reports_index"; referencedColumns: ["id"] },
+        ]
+      }
+      report_access_audit: {
+        Row: {
+          id: string
+          actor_id: string | null
+          repository_report_id: string | null
+          version_number: number | null
+          action: string
+          reason: string | null
+          request_id: string | null
+          grant_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          actor_id?: string | null
+          repository_report_id?: string | null
+          version_number?: number | null
+          action: string
+          reason?: string | null
+          request_id?: string | null
+          grant_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          actor_id?: string | null
+          repository_report_id?: string | null
+          version_number?: number | null
+          action?: string
+          reason?: string | null
+          request_id?: string | null
+          grant_id?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: "report_access_audit_repository_report_id_fkey"; columns: ["repository_report_id"]; isOneToOne: false; referencedRelation: "central_reports_index"; referencedColumns: ["id"] },
+        ]
+      }
       user_registration_requests: {
         Row: {
           id: string
@@ -4402,6 +4638,76 @@ export type Database = {
       }
       is_active_supervisor: { Args: never; Returns: boolean }
       is_entity_admin: { Args: { p_entity_code: string }; Returns: boolean }
+      validate_org_hierarchy: {
+        Args: {
+          p_aoc_id: string | null
+          p_operating_entity_id: string | null
+          p_department_id: string | null
+          p_unit_id: string | null
+          p_hub_id: string | null
+          p_station_id: string | null
+          p_team_id: string | null
+        }
+        Returns: undefined
+      }
+      confirm_report_operating_entity: {
+        Args: { p_confirmed_entity_id: string; p_flight_prefix?: string | null; p_override_conflict?: boolean }
+        Returns: string
+      }
+      index_report: {
+        Args: {
+          p_source_table: string
+          p_source_id: string
+          p_report_type: string
+          p_aoc_id: string | null
+          p_operating_entity_id: string | null
+          p_department_id: string | null
+          p_unit_id: string | null
+          p_hub_id: string | null
+          p_station_id: string | null
+          p_team_id: string | null
+          p_flight_number: string | null
+          p_report_date: string | null
+          p_submitter_profile_id: string
+        }
+        Returns: string
+      }
+      flag_report: { Args: { p_repository_report_id: string; p_severity: string | null; p_reason: string }; Returns: undefined }
+      unflag_report: { Args: { p_repository_report_id: string; p_reason: string | null }; Returns: undefined }
+      request_report_access: {
+        Args: { p_repository_report_id: string; p_business_reason: string; p_requested_duration_days?: number | null }
+        Returns: string
+      }
+      grant_report_access: {
+        Args: { p_request_id: string; p_grantee_profile_id: string; p_reason: string; p_expires_at?: string | null }
+        Returns: string
+      }
+      revoke_report_access: { Args: { p_grant_id: string; p_reason: string | null }; Returns: undefined }
+      has_report_access: { Args: { p_repository_report_id: string }; Returns: boolean }
+      get_report_secure: {
+        Args: { p_repository_report_id: string; p_version_number?: number | null }
+        Returns: {
+          id: string
+          source_table: string
+          source_id: string
+          report_type: string
+          operating_entity_code: string | null
+          hub_code: string | null
+          station_code: string | null
+          team_name: string | null
+          flight_number: string | null
+          report_date: string | null
+          status: string
+          severity: string | null
+          flag_state: string
+          version_number: number
+          current_version: number
+        }[]
+      }
+      create_report_amendment: {
+        Args: { p_repository_report_id: string; p_amendment_type: string; p_reason: string; p_amended_content?: Json | null }
+        Returns: string
+      }
       is_authorized_admin_for_assignment: { Args: { p_assignment_id: string }; Returns: boolean }
       sync_primary_operating_entity: { Args: { p_profile_id: string }; Returns: undefined }
       get_or_create_active_membership: {
