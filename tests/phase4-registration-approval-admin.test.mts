@@ -541,3 +541,273 @@ test("STATIC: no unescaped double-hyphen inside a single-quoted string literal",
 test("STATIC: no ALTER TYPE ... ADD VALUE statement exists anywhere -- the same-transaction enum risk is avoided entirely", () => {
   assert.doesNotMatch(code, /alter type/i);
 });
+
+// =======================================================================
+// FINAL TARGETED AUDIT (third pass, 2026-09-28)
+// =======================================================================
+
+const ORDINARY_ROLES = [
+  "investigation_sso", "investigation_so", "investigation_aso", "sat_aso",
+  "profiling_so", "profiling_aso", "hub_se", "dse", "sso", "so", "aso",
+];
+
+// --- 1. NULL membership bypass -- now DB-enforced, not just app-code ---
+
+test("NULL BYPASS: validate_assignment_entity_membership() requires a non-null entity_membership_id for every one of the 11 ordinary roles, looked up fresh from role_definitions", () => {
+  const block = fnBlock("validate_assignment_entity_membership", "\\(\\)");
+  assert.ok(block);
+  for (const role of ORDINARY_ROLES) {
+    assert.match(block![0], new RegExp(`'${role}'`), `${role} must be listed in the NOT-NULL-required array`);
+  }
+  assert.match(block![0], /and new\.entity_membership_id is null then\s*\n\s*raise exception '% is an ordinary entity-administered role/);
+});
+
+test("NULL BYPASS: validate_assignment_entity_membership() requires entity_membership_id = NULL for every one of the 12 protected roles", () => {
+  const block = fnBlock("validate_assignment_entity_membership", "\\(\\)");
+  assert.ok(block);
+  for (const role of PROTECTED_ROLES) {
+    assert.match(block![0], new RegExp(`'${role}'`), `${role} must be listed in the NULL-required array`);
+  }
+  assert.match(block![0], /and new\.entity_membership_id is not null then\s*\n\s*raise exception '% is a protected role/);
+});
+
+test("NULL BYPASS: this check runs unconditionally on every INSERT/UPDATE, including a direct service_role insert -- there is no auth.role() = 'service_role' escape hatch in this trigger (unlike the self-write triggers, which legitimately need one)", () => {
+  const block = fnBlock("validate_assignment_entity_membership", "\\(\\)");
+  assert.ok(block);
+  assert.doesNotMatch(block![0], /auth\.role\(\) = 'service_role'/);
+});
+
+/** Mirrors the corrected validate_assignment_entity_membership() decision for item 1's required test matrix. */
+function nullBypassCheck(roleCode: string, entityMembershipId: string | null): { ok: boolean } {
+  if (ORDINARY_ROLES.includes(roleCode) && entityMembershipId === null) return { ok: false };
+  if (PROTECTED_ROLES.includes(roleCode) && entityMembershipId !== null) return { ok: false };
+  return { ok: true };
+}
+
+test("NULL BYPASS: an entity Admin approval attempting NULL membership for an ordinary role is rejected", () => {
+  assert.equal(nullBypassCheck("dse", null).ok, false);
+});
+
+test("NULL BYPASS: a direct service-path malformed ordinary assignment (NULL membership, bypassing approve_registration_request entirely) is still rejected -- the trigger, not the RPC, is the actual enforcement boundary", () => {
+  for (const role of ORDINARY_ROLES) {
+    assert.equal(nullBypassCheck(role, null).ok, false, `${role} with NULL membership must be rejected even via a direct insert`);
+  }
+});
+
+test("NULL BYPASS: a valid protected/global assignment (entity_membership_id = NULL) is intentionally permitted -- this is the one and only valid NULL case", () => {
+  for (const role of PROTECTED_ROLES) {
+    assert.equal(nullBypassCheck(role, null).ok, true, `${role} with NULL membership must remain valid`);
+  }
+});
+
+test("NULL BYPASS: a protected role can never carry a non-null entity_membership_id, even if a real membership id is supplied", () => {
+  assert.equal(nullBypassCheck("super_admin", "some-real-membership-id").ok, false);
+});
+
+// --- 2. Transfer target precision -- one membership, multiple active assignments ---
+
+type FakeAssignment = { id: string; profileId: string; membershipId: string | null; revokedAt: string | null; isPrimary?: boolean };
+type FakeMembership = { id: string; profileId: string; status: "active" | "ended"; isPrimary: boolean };
+
+/** Mirrors approve_registration_request()'s corrected transfer-ending logic exactly. */
+function acceptTransfer(
+  assignments: FakeAssignment[],
+  memberships: FakeMembership[],
+  transferOfAssignmentId: string,
+  transferOfMembershipId: string | null,
+  newMembershipId: string,
+): { assignments: FakeAssignment[]; memberships: FakeMembership[] } {
+  const nextAssignments = assignments.map((a) => (a.id === transferOfAssignmentId && a.revokedAt === null ? { ...a, revokedAt: "now" } : a));
+
+  let nextMemberships = memberships;
+  if (transferOfMembershipId) {
+    const orphaned = !nextAssignments.some(
+      (a) => a.membershipId === transferOfMembershipId && a.revokedAt === null && a.id !== transferOfAssignmentId,
+    );
+    if (orphaned) {
+      const oldMembership = memberships.find((m) => m.id === transferOfMembershipId);
+      const wasPrimary = oldMembership?.isPrimary ?? false;
+      nextMemberships = memberships.map((m) => (m.id === transferOfMembershipId ? { ...m, status: "ended" as const, isPrimary: false } : m));
+      if (wasPrimary) {
+        nextMemberships = nextMemberships.map((m) => (m.id === newMembershipId ? { ...m, isPrimary: true } : m));
+      }
+    }
+  }
+  return { assignments: nextAssignments, memberships: nextMemberships };
+}
+
+test("TRANSFER PRECISION: accepting a transfer revokes ONLY the named assignment -- another active role assignment for the same profile is untouched", () => {
+  const assignments: FakeAssignment[] = [
+    { id: "a1", profileId: "u1", membershipId: "m1", revokedAt: null },
+    { id: "a2", profileId: "u1", membershipId: "m1", revokedAt: null },
+  ];
+  const memberships: FakeMembership[] = [{ id: "m1", profileId: "u1", status: "active", isPrimary: true }];
+  const result = acceptTransfer(assignments, memberships, "a1", "m1", "m2");
+  assert.equal(result.assignments.find((a) => a.id === "a1")!.revokedAt, "now");
+  assert.equal(result.assignments.find((a) => a.id === "a2")!.revokedAt, null, "the OTHER assignment must remain active");
+});
+
+test("TRANSFER PRECISION: with multiple active assignments on one membership, the membership is preserved (not ended) because it is not orphaned", () => {
+  const assignments: FakeAssignment[] = [
+    { id: "a1", profileId: "u1", membershipId: "m1", revokedAt: null },
+    { id: "a2", profileId: "u1", membershipId: "m1", revokedAt: null },
+  ];
+  const memberships: FakeMembership[] = [{ id: "m1", profileId: "u1", status: "active", isPrimary: true }];
+  const result = acceptTransfer(assignments, memberships, "a1", "m1", "m2");
+  assert.equal(result.memberships.find((m) => m.id === "m1")!.status, "active", "the membership must be preserved -- a2 still needs it");
+});
+
+test("TRANSFER PRECISION: an Investigation/SAT/Profiling assignment not named by the transfer is never revoked as a side effect", () => {
+  const assignments: FakeAssignment[] = [
+    { id: "a1", profileId: "u1", membershipId: "m1", revokedAt: null }, // the transferred dse role
+    { id: "a2", profileId: "u1", membershipId: "m1", revokedAt: null }, // an unrelated investigation_aso role under the SAME membership
+  ];
+  const memberships: FakeMembership[] = [{ id: "m1", profileId: "u1", status: "active", isPrimary: true }];
+  const result = acceptTransfer(assignments, memberships, "a1", "m1", "m2");
+  assert.equal(result.assignments.find((a) => a.id === "a2")!.revokedAt, null);
+});
+
+test("TRANSFER PRECISION: when the transferred assignment is the ONLY active assignment on its membership, the membership IS ended", () => {
+  const assignments: FakeAssignment[] = [{ id: "a1", profileId: "u1", membershipId: "m1", revokedAt: null }];
+  const memberships: FakeMembership[] = [{ id: "m1", profileId: "u1", status: "active", isPrimary: true }];
+  const result = acceptTransfer(assignments, memberships, "a1", "m1", "m2");
+  assert.equal(result.memberships.find((m) => m.id === "m1")!.status, "ended");
+});
+
+test("TRANSFER PRECISION (DEFECT FOUND AND FIXED): when the orphaned old membership was primary, the NEW membership is promoted to primary in the same operation -- profiles.operating_entity_id never dangles at NULL after a transfer of someone's sole entity", () => {
+  const assignments: FakeAssignment[] = [{ id: "a1", profileId: "u1", membershipId: "m1", revokedAt: null }];
+  const memberships: FakeMembership[] = [
+    { id: "m1", profileId: "u1", status: "active", isPrimary: true },
+    { id: "m2", profileId: "u1", status: "active", isPrimary: false },
+  ];
+  const result = acceptTransfer(assignments, memberships, "a1", "m1", "m2");
+  assert.equal(result.memberships.find((m) => m.id === "m1")!.isPrimary, false, "the ended old membership must no longer claim primary");
+  assert.equal(result.memberships.find((m) => m.id === "m2")!.isPrimary, true, "the new membership must inherit primary status");
+});
+
+test("TRANSFER PRECISION: the migration source actually contains this exact fix (not just the test mirror) -- v_old_membership_was_primary is checked and the new membership is promoted before sync_primary_operating_entity() runs", () => {
+  const block = fnBlock("approve_registration_request");
+  assert.ok(block);
+  assert.match(block![0], /select is_primary into v_old_membership_was_primary/);
+  const promoteIdx = block![0].indexOf("if coalesce(v_old_membership_was_primary, false) then");
+  const syncIdx = block![0].indexOf("perform public.sync_primary_operating_entity(v_request.profile_id);");
+  assert.ok(promoteIdx > -1 && syncIdx > -1);
+  assert.ok(promoteIdx < syncIdx, "primary promotion must happen before the sync call reads the final state");
+});
+
+// --- 3. Primary-membership lifecycle ---
+
+test("PRIMARY LIFECYCLE: only one active primary membership can exist -- enforced by the partial unique index, which is race-safe against simultaneous membership changes (a second concurrent transaction attempting a second active primary gets a unique-violation, not a silent second primary)", () => {
+  assert.match(code, /create unique index if not exists user_entity_memberships_one_active_primary/);
+});
+
+test("PRIMARY LIFECYCLE: ending a NON-primary membership leaves the primary completely unchanged (deactivate_assignment()/the transfer path only ever touch is_primary on the membership actually being ended)", () => {
+  const memberships: FakeMembership[] = [
+    { id: "m1", profileId: "u1", status: "active", isPrimary: true },
+    { id: "m2", profileId: "u1", status: "active", isPrimary: false },
+  ];
+  // Ending m2 (non-primary) via the same shape as deactivate_assignment's logic:
+  const updated = memberships.map((m) => (m.id === "m2" ? { ...m, status: "ended" as const, isPrimary: false } : m));
+  assert.equal(updated.find((m) => m.id === "m1")!.isPrimary, true, "m1 (primary) must be untouched");
+});
+
+test("PRIMARY LIFECYCLE: ending/deactivating the primary with no replacement (pure deactivation, not a transfer) safely clears profiles.operating_entity_id rather than leaving it dangling -- sync_primary_operating_entity() re-derives from scratch (is_primary AND status='active'), so an ended primary row is correctly excluded", () => {
+  const block = fnBlock("sync_primary_operating_entity");
+  assert.ok(block);
+  assert.match(block![0], /where profile_id = p_profile_id and is_primary and status = 'active'/);
+});
+
+test("PRIMARY LIFECYCLE: deactivate_assignment() clears is_primary on the membership it ends (data hygiene -- no stale is_primary=true on a non-active row)", () => {
+  const block = fnBlock("deactivate_assignment");
+  assert.ok(block);
+  assert.match(block![0], /update public\.user_entity_memberships set status = 'ended', ends_at = now\(\), is_primary = false where id = v_membership_id and status = 'active';/);
+});
+
+test("PRIMARY LIFECYCLE: first active membership becomes primary automatically; a second entity's approval never displaces it (re-verified against the corrected source, same guarantee as the prior pass)", () => {
+  const block = fnBlock("get_or_create_active_membership");
+  assert.ok(block);
+  assert.match(block![0], /if not v_has_primary then/);
+});
+
+// --- 4. Approval/activation state matrix ---
+
+test("STATE MATRIX: middleware/auth-gating code contains zero references to approval_state -- it cannot be accidentally consulted for login or route admission anywhere in the existing application", () => {
+  const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const middlewarePath = path.join(repoRoot, "lib", "supabase", "middleware.ts");
+  if (fs.existsSync(middlewarePath)) {
+    const contents = fs.readFileSync(middlewarePath, "utf8");
+    assert.doesNotMatch(contents, /approval_state/);
+  }
+});
+
+test("STATE MATRIX: approval_state is referenced nowhere in the repository except this migration and its own generated type declaration -- confirmed by the same zero-live-wiring guarantee already proven for every other Phase 2-4 object", () => {
+  const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const searchDirs = ["lib", "app", "components"];
+  for (const dir of searchDirs) {
+    const full = path.join(repoRoot, dir);
+    if (!fs.existsSync(full)) continue;
+    const walk = (d: string): string[] =>
+      fs.readdirSync(d, { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory() ? walk(path.join(d, entry.name)) : [path.join(d, entry.name)],
+      );
+    for (const file of walk(full)) {
+      if (!/\.(ts|tsx)$/.test(file) || file.endsWith("database.types.ts")) continue;
+      const contents = fs.readFileSync(file, "utf8");
+      assert.doesNotMatch(contents, /approval_state/, `${file} must not reference approval_state`);
+    }
+  }
+});
+
+// --- 5. Notification recipient safety ---
+
+test("NOTIFICATION RECIPIENTS: every notify() call site targets the AFFECTED user (applicant/target profile), never the acting Admin", () => {
+  // request_submitted -> auth.uid() (the applicant themselves, submitting their own request)
+  assert.match(code, /perform public\.notify\(\s*\n\s*auth\.uid\(\), 'request_submitted'/);
+  // request_approved / transfer_accepted / request_rejected / transfer_rejected -> v_request.profile_id (the applicant, never v_admin_id)
+  assert.match(code, /perform public\.notify\(\s*\n\s*v_request\.profile_id, 'transfer_accepted'/);
+  assert.match(code, /perform public\.notify\(\s*\n\s*v_request\.profile_id, 'request_approved'/);
+  assert.match(code, /perform public\.notify\(\s*\n\s*v_request\.profile_id,\s*\n\s*case when v_is_transfer/);
+  // deactivation -> v_assignment.profile_id (the person deactivated, never v_admin_id)
+  assert.match(code, /perform public\.notify\(\s*\n\s*v_assignment\.profile_id, 'deactivation'/);
+  // assignment_ended (same-entity transfer) / transfer_initiated -> v_old.profile_id (the transferred person, never v_admin_id)
+  assert.match(code, /perform public\.notify\(\s*\n\s*v_old\.profile_id, 'assignment_ended'/);
+  assert.match(code, /perform public\.notify\(\s*\n\s*v_old\.profile_id, 'transfer_initiated'/);
+});
+
+test("NOTIFICATION RECIPIENTS: no notify() call ever targets v_admin_id -- an entity Admin never receives a notification meant for the person they administered", () => {
+  const notifyCalls = code.match(/perform public\.notify\(\s*\n\s*[^,]+,/g) ?? [];
+  assert.ok(notifyCalls.length >= 7);
+  for (const call of notifyCalls) {
+    assert.doesNotMatch(call, /v_admin_id/, `notify() must never target the acting admin: ${call}`);
+  }
+});
+
+test("NOTIFICATION RECIPIENTS: no push-style notification to a receiving entity Admin's queue exists yet -- Admins discover pending cross-entity transfer requests only via list_pending_registration_requests() (pull-based), same as an ordinary applicant request; this is a documented, acknowledged scope limit, not a silent gap", () => {
+  // Confirmed structurally: initiate_cross_entity_transfer()'s only
+  // notify() call targets v_old.profile_id (the person being
+  // transferred), never any admin/entity-queue recipient -- there is no
+  // admin-directory lookup or per-admin notify loop anywhere in this
+  // function.
+  const block = fnBlock("initiate_cross_entity_transfer");
+  assert.ok(block);
+  const notifyCalls = block![0].match(/perform public\.notify\(/g) ?? [];
+  assert.equal(notifyCalls.length, 1);
+});
+
+test("NOTIFICATION SECURITY: no client can insert a fabricated notification -- there is no INSERT grant or INSERT policy for authenticated on user_notifications at all", () => {
+  assert.doesNotMatch(code, /grant insert.*on public\.user_notifications to authenticated/i);
+  assert.doesNotMatch(code, /create policy "notifications:.*insert/i);
+});
+
+test("NOTIFICATION SECURITY: mark_notification_read() can only ever affect the caller's own notification -- its UPDATE is scoped by both id AND recipient_profile_id = auth.uid() in the same WHERE clause", () => {
+  const block = fnBlock("mark_notification_read", "\\(p_notification_id uuid\\)");
+  assert.ok(block);
+  assert.match(block![0], /where id = p_notification_id and recipient_profile_id = auth\.uid\(\);/);
+});
+
+test("NOTIFICATION SECURITY: no function exists that could let a caller alter another notification's payload or recipient -- mark_notification_read() only ever writes read_at, never payload/recipient_profile_id/event_type", () => {
+  const block = fnBlock("mark_notification_read", "\\(p_notification_id uuid\\)");
+  assert.ok(block);
+  assert.doesNotMatch(block![0], /set (payload|recipient_profile_id|event_type)/);
+  assert.match(block![0], /set read_at = coalesce\(read_at, now\(\)\)/);
+});

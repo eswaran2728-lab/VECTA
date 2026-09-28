@@ -145,13 +145,27 @@ create trigger trg_user_entity_memberships_updated_at
 alter table public.user_role_assignments
   add column if not exists entity_membership_id uuid references public.user_entity_memberships(id);
 
--- Consistency trigger: if entity_membership_id is set, it must
--- reference an ACTIVE membership belonging to the SAME profile as the
--- assignment, in the SAME aoc_id -- no assignment may ever link to
--- another profile's membership, and no membership bypass via NULL is
--- possible for entity-administered roles because
--- approve_registration_request() (Part L) always sets it for the 11
--- ordinary roles it can grant.
+-- CORRECTED (third pass, per targeted audit): the first version only
+-- validated a NON-NULL entity_membership_id -- it never actually
+-- REQUIRED one for the 11 ordinary entity-administered roles. That left
+-- the NULL bypass enforced only by approve_registration_request()'s own
+-- application code, not by the database itself, exactly the gap the
+-- audit asked to close. This trigger now also enforces, by role
+-- category (looked up fresh from role_definitions every time, never
+-- trusted from the caller):
+--   - every one of the 11 ordinary roles (investigation_sso/so/aso,
+--     sat_aso, profiling_so/aso, hub_se, dse, sso, so, aso) MUST have a
+--     non-null entity_membership_id -- there is no code path, including
+--     a direct service_role insert, that can create one of these with
+--     entity_membership_id = NULL any more.
+--   - every one of the 12 protected roles (the four international/
+--     platform codes plus maa_boss/aax_boss/maa_admin/aax_admin/
+--     operation_manager/main_enforcement/compliance/caterlink_management)
+--     MUST have entity_membership_id = NULL -- none of them are ever
+--     entity-administered through this membership model in this phase
+--     (protected roles have no Phase 4 approval path at all; a future
+--     Super Admin-controlled path is separate, undesigned work, and
+--     this trigger deliberately does not anticipate its shape).
 create or replace function public.validate_assignment_entity_membership()
 returns trigger
 language plpgsql
@@ -160,7 +174,25 @@ set search_path to 'public'
 as $function$
 declare
   v_membership record;
+  v_role_code text;
 begin
+  select rd.code into v_role_code from public.role_definitions rd where rd.id = new.role_definition_id;
+
+  if v_role_code = any(array[
+    'investigation_sso', 'investigation_so', 'investigation_aso', 'sat_aso',
+    'profiling_so', 'profiling_aso', 'hub_se', 'dse', 'sso', 'so', 'aso'
+  ]) and new.entity_membership_id is null then
+    raise exception '% is an ordinary entity-administered role and requires a non-null entity_membership_id; no direct insert, including from service_role, may create one without a valid active membership.', v_role_code;
+  end if;
+
+  if v_role_code = any(array[
+    'airasia_management', 'ghod', 'global_reporting_controller', 'super_admin',
+    'maa_boss', 'aax_boss', 'maa_admin', 'aax_admin',
+    'operation_manager', 'main_enforcement', 'compliance', 'caterlink_management'
+  ]) and new.entity_membership_id is not null then
+    raise exception '% is a protected role with no Phase 4 entity-membership approval path and must carry entity_membership_id = NULL.', v_role_code;
+  end if;
+
   if new.entity_membership_id is null then
     return new;
   end if;
@@ -761,7 +793,8 @@ declare
   v_admin_id uuid := auth.uid();
   v_assignment_id uuid;
   v_membership_id uuid;
-  v_old_membership_still_used boolean;
+  v_old_membership_orphaned boolean;
+  v_old_membership_was_primary boolean;
 begin
   if p_role_code = any(array[
     'airasia_management', 'ghod', 'global_reporting_controller', 'super_admin',
@@ -817,24 +850,53 @@ begin
   -- if orphaned, its OLD membership) atomically here, in the SAME
   -- transaction that activates the new one -- never before this point,
   -- so the person is never without access between initiation and this
-  -- approval.
+  -- approval. The revoke targets EXACTLY transfer_of_assignment_id by
+  -- primary key -- it can never revoke another active role assignment,
+  -- another team assignment, or any assignment not named by this
+  -- specific transfer, including other assignments that happen to share
+  -- the same old membership.
   if v_request.transfer_of_assignment_id is not null then
     update public.user_role_assignments
     set revoked_at = now()
     where id = v_request.transfer_of_assignment_id and revoked_at is null;
 
     if v_request.transfer_of_membership_id is not null then
+      -- v_old_membership_orphaned is true only when NO OTHER active
+      -- assignment still references the old membership -- if one does
+      -- (e.g. the person holds a second role under the same old
+      -- membership that this transfer did not name), the membership AND
+      -- that other assignment are both left completely untouched.
       select not exists (
         select 1 from public.user_role_assignments
         where entity_membership_id = v_request.transfer_of_membership_id
           and revoked_at is null
           and id <> v_request.transfer_of_assignment_id
-      ) into v_old_membership_still_used;
+      ) into v_old_membership_orphaned;
 
-      if v_old_membership_still_used then
-        update public.user_entity_memberships
-        set status = 'ended', ends_at = now()
+      if v_old_membership_orphaned then
+        select is_primary into v_old_membership_was_primary
+        from public.user_entity_memberships
         where id = v_request.transfer_of_membership_id and status = 'active';
+
+        update public.user_entity_memberships
+        set status = 'ended', ends_at = now(), is_primary = false
+        where id = v_request.transfer_of_membership_id and status = 'active';
+
+        -- CORRECTED (targeted audit): without this, a person whose ONLY
+        -- (and therefore primary) membership was just transferred away
+        -- would end up with NO active primary membership at all -- the
+        -- new membership created above never automatically inherits
+        -- primary status (get_or_create_active_membership() only ever
+        -- assigns primary when NO active primary exists yet, and the
+        -- OLD one was still active and primary at that point in this
+        -- same function). Promote the NEW membership to primary here,
+        -- exactly when the OLD one it replaces was primary, so
+        -- profiles.operating_entity_id never dangles at NULL after a
+        -- transfer that should obviously keep the person "primarily"
+        -- affiliated with their (now sole) active entity.
+        if coalesce(v_old_membership_was_primary, false) then
+          update public.user_entity_memberships set is_primary = true where id = v_membership_id;
+        end if;
       end if;
     end if;
 
@@ -973,7 +1035,7 @@ declare
   v_assignment record;
   v_admin_id uuid := auth.uid();
   v_membership_id uuid;
-  v_still_used boolean;
+  v_membership_orphaned boolean;
 begin
   if p_reason is null or length(trim(p_reason)) = 0 then
     raise exception 'A deactivation reason is required.';
@@ -1020,9 +1082,15 @@ begin
     select not exists (
       select 1 from public.user_role_assignments
       where entity_membership_id = v_membership_id and revoked_at is null
-    ) into v_still_used;
-    if v_still_used then
-      update public.user_entity_memberships set status = 'ended', ends_at = now() where id = v_membership_id and status = 'active';
+    ) into v_membership_orphaned;
+    if v_membership_orphaned then
+      -- No replacement assignment/membership exists in a pure
+      -- deactivation (unlike a transfer) -- clearing is_primary here and
+      -- re-syncing safely leaves profiles.operating_entity_id at NULL if
+      -- this was the person's only/primary membership, exactly the
+      -- documented "safely clears the primary" outcome; it never dangles
+      -- pointing at a now-ended row.
+      update public.user_entity_memberships set status = 'ended', ends_at = now(), is_primary = false where id = v_membership_id and status = 'active';
       perform public.sync_primary_operating_entity(v_assignment.profile_id);
     end if;
   end if;
