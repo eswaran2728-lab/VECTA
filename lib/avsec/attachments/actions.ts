@@ -83,29 +83,34 @@ export async function uploadReportAttachment(formData: FormData): Promise<Attach
   return { ok: true, attachment: data };
 }
 
-/** Gallery data for a report's view page. Listing the attachment rows (id/name/size, never
- * the storage path itself) is unrestricted the same way it always was; the security-relevant
- * step is per-attachment signed-URL issuance below, which now goes through the secure
- * repository authorization path instead of trusting RLS on report_attachments alone.
+/** Gallery data for a report's view page -- fully atomic, in the correct
+ * order (Phase 6 round 3 correction): list_report_attachments_secure()
+ * resolves the report's repository entry and checks has_report_access()
+ * FIRST, and returns ZERO rows (not an error) for an unauthorized or
+ * unindexed report -- so no attachment metadata (filename, MIME type,
+ * size, or even a count) is ever visible before authorization succeeds.
+ * The old order (list every row unconditionally, authorize per-row only
+ * before signing) let filenames/sizes/counts for an unauthorized report
+ * leak before any authorization check ran; this replaces it entirely.
  *
- * For each attachment, get_attachment_authorization_secure() (Phase 6): resolves the
- * attachment's own report_type/report_id to its Central Reporting Repository entry, re-checks
- * has_report_access() immediately, and returns the TRUSTED storage_path from that lookup —
- * never the client-supplied path, so cross-report/cross-AOC path substitution is impossible.
- * It fails closed (throws) when the report is not yet indexed or the caller is unauthorized —
- * in either case this returns url: null for that attachment rather than falling back to the
- * old unauthorized direct signed-URL path, and the failure reason is distinguishable via the
- * `deniedReason` field for the UI to show a clear message instead of a silent broken image. */
+ * For each attachment then, get_attachment_authorization_secure() (Phase 6):
+ * re-resolves the attachment's own report_type/report_id to its Central
+ * Reporting Repository entry, re-checks has_report_access() immediately
+ * before signing, and returns the TRUSTED storage_path from that lookup —
+ * never the client-supplied path, so cross-report/cross-AOC path
+ * substitution is impossible. It fails closed (throws) when the report is
+ * not yet indexed or the caller is unauthorized -- in either case this
+ * returns url: null for that attachment rather than falling back to an
+ * unauthorized direct signed-URL path, distinguishable via `deniedReason`
+ * for the UI to show a clear message instead of a silent broken image. */
 export async function getReportAttachments(reportType: ReportType, reportId: string): Promise<ReportAttachment[]> {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("report_attachments")
-    .select("id, file_name, mime_type, size_bytes, created_at")
-    .eq("report_type", reportType)
-    .eq("report_id", reportId)
-    .order("created_at", { ascending: true });
+  const { data } = await supabase.rpc("list_report_attachments_secure", {
+    p_report_type: reportType,
+    p_report_id: reportId,
+  });
 
-  const rows = (data ?? []) as { id: string; file_name: string; mime_type: string; size_bytes: number; created_at: string }[];
+  const rows = data ?? [];
   return Promise.all(
     rows.map(async (r) => {
       const { data: authorized, error: authError } = await supabase

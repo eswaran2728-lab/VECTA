@@ -27,39 +27,35 @@ export interface FlightSummary {
   regNo: string | null;
 }
 
-/** Repository ids for report_sec016/report_sec029 the caller is authorized
- * to see on the given date (search_reports_secure() enforces
- * has_report_access() internally). Used to scope the source-table reads
- * below to an already-authorized set instead of an open table scan.
- * Returns an empty set until the report is indexed into the repository —
- * expected fail-closed behavior until the Phase 5/6 rollout runs. */
-async function authorizedIdsForDate(
+/** Atomic secure fetch: search_reports_secure() (Phase 6) authorizes via
+ * has_report_access() AND returns the full source row (as `content`) in
+ * the SAME database call for report_sec016/report_sec029 on the given
+ * date. No follow-up query against any report source table -- direct
+ * SELECT on these tables is closed at the RLS layer (Phase 6 Part O) for
+ * anyone but the row's own submitter. Returns an empty set until the
+ * report is indexed into the repository -- expected fail-closed behavior
+ * until the Phase 5/6 rollout runs, not a bug. CaterLink `transactions`
+ * below is a separate, pre-existing domain, untouched by this. */
+async function authorizedContentForDate(
   supabase: Awaited<ReturnType<typeof createClient>>,
   sourceTable: "report_sec016" | "report_sec029",
   date: string,
-): Promise<string[]> {
+): Promise<Record<string, unknown>[]> {
   const { data } = await supabase.rpc("search_reports_secure", {
     p_page: 1,
     p_page_size: 100,
     p_from_date: date,
     p_to_date: date,
   });
-  return (data ?? []).filter((r) => r.source_table === sourceTable).map((r) => r.id);
+  return (data ?? []).filter((r) => r.source_table === sourceTable && r.content).map((r) => r.content as Record<string, unknown>);
 }
 
 export async function getFlightsForDate(date: string, station?: string): Promise<FlightSummary[]> {
   const supabase = await createClient();
 
-  const sec016Ids = await authorizedIdsForDate(supabase, "report_sec016", date);
-
-  let sec016Q = supabase
-    .from("report_sec016")
-    .select("flight, station, reg_no")
-    .eq("duty_date", date)
-    .eq("status", "submitted")
-    .not("flight", "is", null)
-    .in("id", sec016Ids); // empty array => zero rows, never an open scan; CaterLink transactions below are unaffected
-  if (station) sec016Q = sec016Q.eq("station", station);
+  const sec016Rows = (await authorizedContentForDate(supabase, "report_sec016", date)).filter(
+    (row) => row.duty_date === date && row.status === "submitted" && row.flight && (!station || row.station === station),
+  );
 
   let txQ = supabase
     .from("transactions")
@@ -70,16 +66,18 @@ export async function getFlightsForDate(date: string, station?: string): Promise
     .lte("created_at", `${date}T23:59:59+08:00`);
   if (station) txQ = txQ.eq("station", station);
 
-  const [{ data: sec016Rows }, { data: txRows }] = await Promise.all([sec016Q, txQ]);
+  const { data: txRows } = await txQ;
 
   const map = new Map<string, FlightSummary>();
-  for (const r of sec016Rows ?? []) {
-    if (!r.flight || !r.station) continue;
-    map.set(`${normFlight(r.flight)}|${r.station}`, {
-      flight: r.flight,
+  for (const r of sec016Rows) {
+    const flight = r.flight as string;
+    const rowStation = r.station as string;
+    if (!flight || !rowStation) continue;
+    map.set(`${normFlight(flight)}|${rowStation}`, {
+      flight,
       date,
-      station: r.station,
-      regNo: r.reg_no,
+      station: rowStation,
+      regNo: (r.reg_no as string | null) ?? null,
     });
   }
   for (const t of txRows ?? []) {
@@ -124,27 +122,20 @@ export async function getFlightDetail(flight: string, date: string, station: str
   const supabase = await createClient();
   const flightNorm = normFlight(flight);
 
-  const [sec016Ids, sec029Ids] = await Promise.all([
-    authorizedIdsForDate(supabase, "report_sec016", date),
-    authorizedIdsForDate(supabase, "report_sec029", date),
+  const [sec016Content, sec029Content] = await Promise.all([
+    authorizedContentForDate(supabase, "report_sec016", date),
+    authorizedContentForDate(supabase, "report_sec029", date),
   ]);
+  const sec016Rows = sec016Content.filter((r) => r.duty_date === date && r.station === station && r.status === "submitted") as unknown as {
+    id: string; flight: string | null; flight_type: string | null; reg_no: string | null; submitted_at: string | null;
+    staff_name: string | null; staff_no: string | null; assisted_by: string | null; shift_leader: string | null;
+  }[];
+  const sec029Rows = sec029Content.filter((r) => r.station === station && r.status === "submitted") as unknown as {
+    id: string; flight_no: string | null; aircraft_registration: string | null; declaration: string | null;
+    submitted_at: string | null; staff_name: string | null; supervising_officer_name: string | null;
+  }[];
 
-  const [{ data: sec016Rows }, { data: sec029Rows }, { data: txRows }] = await Promise.all([
-    supabase
-      .from("report_sec016")
-      .select(
-        "id, flight, flight_type, reg_no, submitted_at, staff_name, staff_no, assisted_by, shift_leader, ramp_agents_baggage, ramp_agents_cargo"
-      )
-      .eq("duty_date", date)
-      .eq("station", station)
-      .eq("status", "submitted")
-      .in("id", sec016Ids),
-    supabase
-      .from("report_sec029")
-      .select("id, flight_no, aircraft_registration, declaration, submitted_at, staff_name, supervising_officer_name, assisted_by_name")
-      .eq("station", station)
-      .eq("status", "submitted")
-      .in("id", sec029Ids),
+  const [{ data: txRows }] = await Promise.all([
     supabase
       .from("transactions")
       .select("id, transaction_number, status, direction, driver_name, escort_officer_name, created_at")
@@ -244,26 +235,23 @@ export interface RegistrationMovement {
   summary: string;
 }
 
-/** Recent movements for a specific physical aircraft, across flights/days. */
+/** Recent movements for a specific physical aircraft, across flights/days.
+ * The report-content half (SEC016/SEC029) is fully atomic: search_movements_
+ * by_registration_secure() (Phase 6) authorizes each candidate row via
+ * has_report_access() AND resolves/matches its registration internally
+ * (report_source_content(), never a follow-up query), bounded to the last
+ * 30 days by default with a hard result cap -- never an unrestricted
+ * historical scan. CaterLink `transactions` is a separate, pre-existing
+ * domain with its own RLS, untouched and queried directly as before. */
 export async function getMovementsByRegistration(reg: string, limit = 50): Promise<RegistrationMovement[]> {
   const supabase = await createClient();
   const regTrim = reg.trim().toUpperCase();
 
-  const [{ data: sec016Rows }, { data: sec029Rows }, { data: txRows }] = await Promise.all([
-    supabase
-      .from("report_sec016")
-      .select("id, flight, station, duty_date, reg_no, submitted_at")
-      .ilike("reg_no", regTrim)
-      .eq("status", "submitted")
-      .order("duty_date", { ascending: false })
-      .limit(limit),
-    supabase
-      .from("report_sec029")
-      .select("id, flight_no, station, submitted_at, aircraft_registration")
-      .ilike("aircraft_registration", regTrim)
-      .eq("status", "submitted")
-      .order("submitted_at", { ascending: false })
-      .limit(limit),
+  const [{ data: reportMovements }, { data: txRows }] = await Promise.all([
+    supabase.rpc("search_movements_by_registration_secure", {
+      p_registration: regTrim,
+      p_max_results: limit,
+    }),
     supabase
       .from("transactions")
       .select("id, flight_number, station, created_at, aircraft_registration")
@@ -274,25 +262,14 @@ export async function getMovementsByRegistration(reg: string, limit = 50): Promi
   ]);
 
   const movements: RegistrationMovement[] = [];
-  for (const r of sec016Rows ?? []) {
+  for (const m of reportMovements ?? []) {
     movements.push({
-      source: "sec016",
-      id: r.id,
-      flight: r.flight,
-      date: r.duty_date ?? "",
-      station: r.station,
-      summary: `SEC016 · ${r.flight ?? "—"} · ${r.duty_date ?? "—"}`,
-    });
-  }
-  for (const r of sec029Rows ?? []) {
-    const date = myDateOf(r.submitted_at);
-    movements.push({
-      source: "sec029",
-      id: r.id,
-      flight: r.flight_no,
-      date,
-      station: r.station,
-      summary: `SEC029 search · ${r.flight_no ?? "—"} · ${date}`,
+      source: m.source === "report_sec016" ? "sec016" : "sec029",
+      id: m.id,
+      flight: m.flight,
+      date: m.report_date ?? "",
+      station: m.station ?? "",
+      summary: m.summary,
     });
   }
   for (const t of txRows ?? []) {

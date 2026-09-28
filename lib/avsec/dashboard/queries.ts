@@ -35,19 +35,20 @@ export interface FilteredSubmission {
   report_no: string | null;
 }
 
-/** Secure two-step pattern (see lib/avsec/search/queries.ts for the same
+/** Atomic secure fetch (see lib/avsec/search/queries.ts for the same
  * approach): list_reports_secure() authorizes via has_report_access()
- * internally and returns only repository ids the caller may see for the
- * requested source_table/date range; the per-type source-table read
- * below is then scoped to exactly that id set. Returns empty per type
- * until reports are indexed into the repository -- expected fail-closed
- * behavior until the Phase 5/6 rollout runs for this environment. */
-async function authorizedIdsForType(
+ * AND returns the full source row (as `content`) in the SAME database
+ * call for the requested source_table/date range -- no follow-up query
+ * against any report source table. Station/team/officer filtering
+ * happens in JS over the already-authorized, already-fetched rows.
+ * Returns empty per type until reports are indexed into the repository
+ * -- expected fail-closed behavior until the Phase 5/6 rollout runs. */
+async function authorizedContentForType(
   supabase: Awaited<ReturnType<typeof createClient>>,
   table: string,
   fromDate: string,
   toDate: string,
-): Promise<string[]> {
+): Promise<Record<string, unknown>[]> {
   const { data } = await supabase.rpc("list_reports_secure", {
     p_page: 1,
     p_page_size: 100,
@@ -55,7 +56,7 @@ async function authorizedIdsForType(
     p_from_date: fromDate,
     p_to_date: toDate,
   });
-  return (data ?? []).map((r) => r.id);
+  return (data ?? []).filter((r) => r.content).map((r) => r.content as Record<string, unknown>);
 }
 
 export async function getFilteredSubmissions(filters: DashboardFilters): Promise<FilteredSubmission[]> {
@@ -66,23 +67,19 @@ export async function getFilteredSubmissions(filters: DashboardFilters): Promise
   const results = await Promise.all(
     types.map(async (type) => {
       const table = REPORT_META[type].table;
-      const ids = await authorizedIdsForType(supabase, table, filters.dateFrom, filters.dateTo);
-      if (ids.length === 0) return [];
+      const rows = await authorizedContentForType(supabase, table, filters.dateFrom, filters.dateTo);
 
-      let query = supabase
-        .from(table as never)
-        .select("*")
-        .eq("status", "submitted")
-        .in("id", ids)
-        .gte("submitted_at", from)
-        .lte("submitted_at", to);
-
-      if (filters.station) query = query.eq("station", filters.station);
-      if (filters.team) query = query.eq("team", filters.team);
-      if (filters.officerId) query = query.eq("profile_id", filters.officerId);
-
-      const { data } = await query.order("submitted_at", { ascending: false });
-      return ((data ?? []) as Record<string, unknown>[]).map((row) => summarize(type, row));
+      return rows
+        .filter((row) => {
+          if (row.status !== "submitted") return false;
+          const submittedAt = row.submitted_at as string | null;
+          if (!submittedAt || submittedAt < from || submittedAt > to) return false;
+          if (filters.station && row.station !== filters.station) return false;
+          if (filters.team && row.team !== filters.team) return false;
+          if (filters.officerId && row.profile_id !== filters.officerId) return false;
+          return true;
+        })
+        .map((row) => summarize(type, row));
     }),
   );
 
@@ -191,19 +188,28 @@ export async function getFlightCoverage(filters: DashboardFilters) {
     p_from_date: from.slice(0, 10),
     p_to_date: to.slice(0, 10),
   });
-  const ids = (authorized ?? []).filter((r) => r.source_table === "report_sec016").map((r) => r.id);
-  if (ids.length === 0) return [];
 
-  let query = supabase
-    .from("report_sec016")
-    .select("id, flight, reg_no, station, team, submitted_at, bay_no, sta_std")
-    .eq("status", "submitted")
-    .in("id", ids)
-    .gte("submitted_at", from)
-    .lte("submitted_at", to);
-  if (filters.station) query = query.eq("station", filters.station);
-  if (filters.team) query = query.eq("team", filters.team);
-  const { data } = await query.order("submitted_at", { ascending: false });
-  return data ?? [];
+  return (authorized ?? [])
+    .filter((r) => r.source_table === "report_sec016" && r.content)
+    .map((r) => r.content as Record<string, unknown>)
+    .filter((row) => {
+      if (row.status !== "submitted") return false;
+      const submittedAt = row.submitted_at as string | null;
+      if (!submittedAt || submittedAt < from || submittedAt > to) return false;
+      if (filters.station && row.station !== filters.station) return false;
+      if (filters.team && row.team !== filters.team) return false;
+      return true;
+    })
+    .map((row) => ({
+      id: row.id as string,
+      flight: row.flight as string | null,
+      reg_no: row.reg_no as string | null,
+      station: row.station as string,
+      team: row.team as string,
+      submitted_at: row.submitted_at as string | null,
+      bay_no: row.bay_no as string | null,
+      sta_std: row.sta_std as string | null,
+    }))
+    .sort((a, b) => ((a.submitted_at ?? "") < (b.submitted_at ?? "") ? 1 : -1));
 }
 

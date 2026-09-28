@@ -25,13 +25,19 @@ export async function GET(
   }
   const type = params.type as ReportType;
 
-  // getReportById() already enforces has_report_access() and fails closed
-  // (ReportNotIndexedError / thrown RPC error) if this report isn't
-  // indexed or the caller isn't authorized. This second call is purely
-  // to record a DISTINCT 'pdf_generated' audit event (vs. getReportById's
-  // own 'detail_view') -- it re-derives the same repository id and is
-  // authorized by the identical has_report_access() check, so it cannot
-  // itself become a bypass or a second, divergent decision.
+  // getReportById() already enforces has_report_access() (atomically,
+  // via get_report_secure()) and fails closed (ReportNotIndexedError /
+  // thrown RPC error) if this report isn't indexed or the caller isn't
+  // authorized -- report content itself is never fetched a second time.
+  // This second, smaller call is purely to record a DISTINCT
+  // 'pdf_generated' audit event (vs. getReportById's own 'detail_view')
+  // -- it re-derives the same repository id and is authorized by the
+  // identical has_report_access() check, so it cannot itself become a
+  // bypass or a second, divergent decision. 'pdf_generated' represents
+  // BOTH generation and delivery: this route renders the PDF buffer and
+  // streams it back in the SAME HTTP response that triggered generation
+  // -- there is no separate, later download step to distinguish (see
+  // Part W of the migration).
   const report = await getReportById(type, params.id);
   if (!report) {
     return NextResponse.json({ error: "Report not found" }, { status: 404 });

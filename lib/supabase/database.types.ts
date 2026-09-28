@@ -5085,6 +5085,7 @@ export type Database = {
           severity: string | null
           flag_state: string
           indexed_at: string
+          content: Json | null
           total_count: number
         }[]
       }
@@ -5117,6 +5118,7 @@ export type Database = {
           severity: string | null
           flag_state: string
           indexed_at: string
+          content: Json | null
           total_count: number
         }[]
       }
@@ -5210,11 +5212,25 @@ export type Database = {
           status: string
           severity: string | null
           flag_state: string
+          content: Json | null
         }[]
       }
       authorize_report_pdf_secure: {
         Args: { p_repository_report_id: string }
         Returns: { source_table: string; source_id: string; report_type: string }[]
+      }
+      report_source_content: { Args: { p_source_table: string; p_source_id: string }; Returns: Json | null }
+      needs_your_action_secure: {
+        Args: Record<string, never>
+        Returns: { report_id: string; staff_name: string; staff_id: string; team: string; submitted_at: string | null }[]
+      }
+      search_movements_by_registration_secure: {
+        Args: { p_registration: string; p_since_date?: string | null; p_max_results?: number | null }
+        Returns: { source: string; id: string; flight: string | null; report_date: string | null; station: string | null; summary: string }[]
+      }
+      list_report_attachments_secure: {
+        Args: { p_report_type: string; p_report_id: string }
+        Returns: { id: string; file_name: string; mime_type: string; size_bytes: number; created_at: string }[]
       }
       process_report_index_queue: {
         Args: { p_batch_size?: number | null }
@@ -5241,6 +5257,7 @@ export type Database = {
           flag_state: string
           version_number: number
           current_version: number
+          content: Json | null
         }[]
       }
       create_report_amendment: {

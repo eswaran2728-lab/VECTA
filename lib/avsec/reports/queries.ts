@@ -140,6 +140,14 @@ export class ReportNotIndexedError extends Error {
   }
 }
 
+/** Atomic: get_report_secure() (Phase 6) authorizes AND returns the full
+ * source row (as `content`, including child patrol/item/hold-check/
+ * profiling-duty arrays -- see report_source_content() in the migration)
+ * in the SAME database call. There is no second, follow-up query against
+ * any report source table here at all -- direct SELECT on these tables
+ * has been closed at the RLS layer (Phase 6 Part O) for anyone other
+ * than the row's own submitter, so a second query wouldn't reliably
+ * return authorized non-owner content anyway even if attempted. */
 export async function getReportById(type: ReportType, id: string) {
   const supabase = await createClient();
   const table = REPORT_META[type].table;
@@ -154,60 +162,15 @@ export async function getReportById(type: ReportType, id: string) {
     throw new ReportNotIndexedError(type, id);
   }
 
-  // Authorization decision + audit happen entirely inside this RPC
-  // (Phase 6 get_report_secure()) -- if it throws, no content is read
-  // below at all. This server-side read of the full row only proceeds
-  // once that authorization has already been confirmed for THIS exact
-  // repository id, in this same request.
-  const { error: authError } = await supabase.rpc("get_report_secure", { p_repository_report_id: indexRow.id });
-  if (authError) {
-    throw new Error(authError.message);
+  const { data, error } = await supabase
+    .rpc("get_report_secure", { p_repository_report_id: indexRow.id })
+    .single();
+  if (error) {
+    throw new Error(error.message);
   }
+  if (!data?.content) return null;
 
-  const { data: rawData } = await supabase.from(table as never).select("*").eq("id", id).single();
-  const data = rawData as Record<string, unknown> | null;
-  if (!data) return null;
-
-  if (type === "sec014") {
-    const { data: patrols } = await supabase
-      .from("report_sec014_patrols")
-      .select("*")
-      .eq("report_id", id)
-      .order("entry_no");
-    return { ...data, patrols: patrols ?? [] };
-  }
-  if (type === "sec018") {
-    const { data: patrols } = await supabase
-      .from("report_sec018_patrols")
-      .select("*")
-      .eq("report_id", id)
-      .order("entry_no");
-    return { ...data, patrols: patrols ?? [] };
-  }
-  if (type === "sec029") {
-    const { data: items } = await supabase
-      .from("report_sec029_items")
-      .select("*")
-      .eq("report_id", id);
-    return { ...data, items: items ?? [] };
-  }
-  if (type === "sec033") {
-    const { data: holdChecks } = await supabase
-      .from("report_sec033_hold_checks")
-      .select("*")
-      .eq("report_id", id)
-      .order("entry_no");
-    return { ...data, hold_checks: holdChecks ?? [] };
-  }
-  if (type === "sec013") {
-    const { data: profilingDuties } = await supabase
-      .from("report_sec013_profiling_duties")
-      .select("*")
-      .eq("report_id", id)
-      .order("entry_no");
-    return { ...data, profiling_duties: profilingDuties ?? [] };
-  }
-  return data;
+  return data.content as Record<string, unknown>;
 }
 
 export interface EligibleOfficer {

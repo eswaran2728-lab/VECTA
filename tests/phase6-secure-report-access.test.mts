@@ -231,9 +231,13 @@ test("ROLE MATRIX: SSO/SO/ASO -- require BOTH station and team to be set on the 
   assert.equal(hasReportAccess({ reportAocId: "aoc1", reportStationId: null, reportTeamId: "t1", hasStationTeamRoleInScope: true }), false);
 });
 
-test("ROLE MATRIX: report acknowledgement/ops_group isolation is unchanged by Phase 6 -- this migration does not touch the acknowledgement column, report_acknowledgements table, or any ops_group check anywhere", () => {
-  assert.doesNotMatch(code, /acknowledgement/);
-  assert.doesNotMatch(code, /ops_group/);
+test("ROLE MATRIX (corrected, round 3): report acknowledgement/ops_group isolation is preserved, not merely untouched -- needs_your_action_secure() (Part S) re-implements the exact existing eligibility rule (SO/DSE role, own station, own team, own ops_group when set) server-side, and it is the ONLY place in this migration that references acknowledgement/ops_group at all", () => {
+  const block = fnBlock("needs_your_action_secure")![0];
+  assert.match(block, /r\.ops_group = v_ops_group/);
+  assert.match(block, /report_acknowledgements/);
+  const withoutNeedsYourAction = code.replace(fnBlock("needs_your_action_secure")![0], "");
+  assert.doesNotMatch(withoutNeedsYourAction, /acknowledgement/);
+  assert.doesNotMatch(withoutNeedsYourAction, /ops_group/);
 });
 
 test("ROLE MATRIX: SAT ASO -- own unit (SAT) AND hub (KUL) together; missing either is denied", () => {
@@ -487,8 +491,12 @@ test("NON-REGRESSION (corrected, round 2): this migration adds exactly one colum
   assert.deepEqual(addColumnMatches, ["add column if not exists access_reason"]);
 });
 
-test("NON-REGRESSION: no RLS policy is created, altered, or dropped -- access remains exclusively through SECURITY DEFINER functions", () => {
-  assert.equal((code.match(/(create|alter|drop) policy/gi) ?? []).length, 0);
+test("NON-REGRESSION (corrected, round 3): Part O intentionally DROPs and re-CREATEs exactly one SELECT policy per report table (own-row only) -- this is the direct-read closure itself, not an accidental regression. No INSERT or UPDATE policy is touched at all.", () => {
+  const dropMatches = code.match(/drop policy if exists "[a-z0-9]+ (station|monitor|rank) select" on public\.\w+;/g) ?? [];
+  const createMatches = code.match(/create policy "[a-z0-9]+ own select" on public\.\w+ for select using \(profile_id = auth\.uid\(\)\);/g) ?? [];
+  assert.ok(dropMatches.length >= 7, `expected at least 7 broad-select policy drops, found ${dropMatches.length}`);
+  assert.equal(createMatches.length, 7, `expected exactly 7 own-select policy (re)creations, found ${createMatches.length}`);
+  assert.doesNotMatch(code, /(create|alter|drop) policy[\s\S]{0,80}for (insert|update)/i, "no INSERT/UPDATE policy is touched");
 });
 
 test("NON-REGRESSION: this migration does not reference report creation, submission, or the block_submitted_report_mutation()/enforce_report_row_immutability()/derive_report_classification() triggers at all -- Phase 6 is read-access only", () => {
@@ -730,5 +738,218 @@ test("PERMISSION MATRIX (round 2): every new function is revoked from public/ano
     const escaped = sig.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     assert.match(code, new RegExp(`revoke execute on function public\\.${fn}\\(${escaped}\\) from public, anon;`), `${fn} missing revoke`);
     assert.match(code, new RegExp(`grant execute on function public\\.${fn}\\(${escaped}\\) to authenticated, service_role;`), `${fn} missing grant`);
+  }
+});
+
+// =======================================================================
+// CORRECTION ROUND 3: atomic secure RPCs, RLS closure, dedicated
+// needs-your-action/registration-search/attachment-listing RPCs
+// =======================================================================
+
+test("PART O: RLS closure drops every historical broad SELECT policy name across avsec/0002, 0009, 0010, 0012, 0013, 0014, 0021 on all 7 report tables, and recreates exactly one own-row-only SELECT policy per table", () => {
+  const expectedDrops: Record<string, string[]> = {
+    report_sec016: ["sec016 station select", "sec016 monitor select", "sec016 rank select"],
+    report_sec014: ["sec014 station select", "sec014 monitor select", "sec014 rank select"],
+    report_sec029: ["sec029 station select", "sec029 monitor select", "sec029 rank select"],
+    report_sec018: ["sec018 station select", "sec018 monitor select", "sec018 rank select"],
+    report_sec033: ["sec033 rank select"],
+    report_sec013: ["sec013 rank select"],
+    offload_records: ["offload rank select"],
+  };
+  for (const [table, policies] of Object.entries(expectedDrops)) {
+    for (const p of policies) {
+      assert.match(code, new RegExp(`drop policy if exists "${p}" on public\\.${table};`), `must drop "${p}" on ${table}`);
+    }
+    assert.match(code, new RegExp(`create policy "[a-z0-9]+ own select" on public\\.${table} for select using \\(profile_id = auth\\.uid\\(\\)\\);`), `must recreate own-select on ${table}`);
+  }
+});
+
+test("PART O: table-level INSERT/UPDATE grants and policies are completely untouched -- report creation and the existing draft/immutability trigger behavior are unaffected by the RLS closure", () => {
+  assert.doesNotMatch(code, /revoke insert/i);
+  assert.doesNotMatch(code, /revoke update/i);
+  assert.doesNotMatch(code, /drop policy.*insert/i);
+  assert.doesNotMatch(code, /drop policy.*update/i);
+});
+
+test("PART P: report_source_content() is service_role-ONLY (never authenticated) -- it performs no authorization check of its own, so only an already-authorized SECURITY DEFINER caller (every atomic RPC below) may reach it", () => {
+  assert.match(code, /revoke execute on function public\.report_source_content\(text, uuid\) from public, anon, authenticated;/);
+  assert.match(code, /grant execute on function public\.report_source_content\(text, uuid\) to service_role;/);
+});
+
+test("PART P: report_source_content() uses a hardcoded IF/ELSIF over literal table names -- never EXECUTE/format() with a table name, and raises on any unsupported value rather than silently returning null", () => {
+  const block = fnBlock("report_source_content")![0];
+  assert.doesNotMatch(block, /execute format\(/);
+  assert.doesNotMatch(block, /execute '/);
+  for (const t of ["report_sec013", "report_sec014", "report_sec016", "report_sec018", "report_sec029", "report_sec033", "offload_records"]) {
+    assert.match(block, new RegExp(`p_source_table = '${t}'`));
+  }
+  assert.match(block, /raise exception 'Unsupported source_table: %', p_source_table;/);
+});
+
+test("PART P: report_source_content() embeds child rows (patrols/items/hold_checks/profiling_duties) into the same jsonb -- an authorized non-owner viewer (e.g. main_enforcement) sees child content too, not just the parent row, since RLS on child tables alone would otherwise hide it from them after Part O", () => {
+  const block = fnBlock("report_source_content")![0];
+  for (const child of ["report_sec013_profiling_duties", "report_sec014_patrols", "report_sec018_patrols", "report_sec029_items", "report_sec033_hold_checks"]) {
+    assert.match(block, new RegExp(child));
+  }
+});
+
+test("PART Q: get_report_secure() v3 is ATOMIC -- has_report_access(), the audit write, and the content join (report_source_content()) all happen inside ONE function body / one statement; there is no separate function call application code must chain afterward for content", () => {
+  const block = fnBlock("get_report_secure")![0];
+  assert.match(block, /public\.report_source_content\(cri\.source_table, cri\.source_id\)/);
+  assert.match(block, /returns table \([\s\S]*?content jsonb\s*\n?\)/);
+});
+
+test("PART R: list_reports_secure()/search_reports_secure() v2 both return `content` populated via report_source_content() inside the same authorized CTE -- atomic, no follow-up query needed by any caller", () => {
+  for (const fn of ["list_reports_secure", "search_reports_secure"]) {
+    const block = fnBlock(fn)![0];
+    assert.match(block, /public\.report_source_content\(a\.source_table, a\.source_id\)/);
+  }
+});
+
+test("PART S: needs_your_action_secure() takes no report-identifying parameter at all -- it derives the caller's own role/station/team/ops_group from auth.uid() exclusively, so it cannot be used to probe another profile's queue", () => {
+  const block = fnBlock("needs_your_action_secure", "\\(\\)")![0];
+  assert.match(block, /where p\.id = auth\.uid\(\)/);
+  assert.doesNotMatch(block, /p_profile_id/);
+});
+
+test("PART S: needs_your_action_secure() returns zero rows (not an error) for a caller who isn't SO/DSE or has no station/team set -- a generic, non-revealing empty result", () => {
+  const block = fnBlock("needs_your_action_secure", "\\(\\)")![0];
+  assert.match(block, /if v_role is null or v_role not in \('SO', 'DSE'\) or v_station is null or v_team is null then\s*\n\s*return;/);
+});
+
+/** Mirrors needs_your_action_secure()'s eligibility + row-matching rule. */
+function needsYourActionEligible(role: string | null, station: string | null, team: string | null): boolean {
+  return (role === "SO" || role === "DSE") && station !== null && team !== null;
+}
+function needsYourActionRowMatches(rowStation: string, callerStation: string, rowTeam: string, callerTeam: string, rowOpsGroup: string | null, callerOpsGroup: string | null): boolean {
+  if (rowStation !== callerStation || rowTeam !== callerTeam) return false;
+  if (callerOpsGroup !== null && rowOpsGroup !== callerOpsGroup) return false;
+  return true;
+}
+
+test("PART S DECISION MIRROR: only SO/DSE with both station and team set are eligible; ops_group narrows further only when the caller has one set", () => {
+  assert.equal(needsYourActionEligible("SO", "KUL", "Alpha"), true);
+  assert.equal(needsYourActionEligible("DSE", "KUL", "Alpha"), true);
+  assert.equal(needsYourActionEligible("ASO", "KUL", "Alpha"), false);
+  assert.equal(needsYourActionEligible("SO", null, "Alpha"), false);
+  assert.equal(needsYourActionEligible("SO", "KUL", null), false);
+  assert.equal(needsYourActionRowMatches("KUL", "KUL", "Alpha", "Alpha", "operation_avsec", "operation_avsec"), true);
+  assert.equal(needsYourActionRowMatches("KUL", "KUL", "Alpha", "Alpha", "ifc_avsec", "operation_avsec"), false);
+  assert.equal(needsYourActionRowMatches("KUL", "PEN", "Alpha", "Alpha", null, null), false);
+  assert.equal(needsYourActionRowMatches("KUL", "KUL", "Bravo", "Alpha", null, null), false);
+});
+
+test("PART S: needs_your_action_secure() excludes already-acknowledged reports via NOT EXISTS against report_acknowledgements, matching report_type = 'sec014' exactly", () => {
+  const block = fnBlock("needs_your_action_secure", "\\(\\)")![0];
+  assert.match(block, /not exists \(\s*\n\s*select 1 from public\.report_acknowledgements a\s*\n\s*where a\.report_type = 'sec014' and a\.report_id = r\.id\s*\n\s*\)/);
+});
+
+test("PART T: search_movements_by_registration_secure() is bounded -- defaults to the last 30 days when no since-date is given, and caps results at 200 regardless of what is requested; it never performs an unrestricted historical scan", () => {
+  const block = fnBlock("search_movements_by_registration_secure")![0];
+  assert.match(block, /coalesce\(p_since_date, \(now\(\) - interval '30 days'\)::date\)/);
+  assert.match(block, /least\(greatest\(coalesce\(p_max_results, 50\), 1\), 200\)/);
+});
+
+test("PART T: search_movements_by_registration_secure() authorizes every candidate row via has_report_access() before it can appear in the result -- scope authorization is per-result, not just per-call", () => {
+  const block = fnBlock("search_movements_by_registration_secure")![0];
+  assert.match(block, /public\.has_report_access\(cri\.id\)/);
+});
+
+test("PART T: search_movements_by_registration_secure() requires a non-empty registration and rejects an empty one explicitly", () => {
+  const block = fnBlock("search_movements_by_registration_secure")![0];
+  assert.match(block, /if v_reg = '' then\s*\n\s*raise exception 'A registration is required\.';/);
+});
+
+test("PART U: list_report_attachments_secure() returns ZERO ROWS (not an error, and not even a count) for an unauthorized or unindexed report -- filenames/MIME types/sizes for a report the caller cannot access are never visible, matching the enumeration-resistance requirement", () => {
+  const block = fnBlock("list_report_attachments_secure")![0];
+  assert.match(block, /if v_repository_id is null or not public\.has_report_access\(v_repository_id\) then\s*\n\s*return;/);
+});
+
+test("PART U: list_report_attachments_secure() authorizes BEFORE any query against report_attachments -- the has_report_access() check happens strictly before the final SELECT, so no row is ever fetched first and filtered after", () => {
+  const block = fnBlock("list_report_attachments_secure")![0];
+  const authIdx = block.indexOf("if v_repository_id is null or not public.has_report_access");
+  const selectIdx = block.indexOf("select a.id, a.file_name, a.mime_type, a.size_bytes, a.created_at");
+  assert.ok(authIdx > -1 && selectIdx > authIdx, "authorization must precede the attachment SELECT");
+});
+
+// =======================================================================
+// EXPLICIT GRANT AUDIT (review round 3, section 5)
+// =======================================================================
+
+test("EXPLICIT GRANT AUDIT: when access succeeds specifically because of a grant, get_report_secure() records BOTH the fact (access_reason = 'explicit_grant:<uuid>') AND the grant reference (grant_id) in the SAME audit row as the detail_view/version_view event -- unambiguous, no separate event needed", () => {
+  const block = fnBlock("get_report_secure")![0];
+  const reasonIdx = block.indexOf("v_reason := public.resolve_report_access_reason");
+  const parseIdx = block.indexOf("v_grant_id := replace(v_reason, 'explicit_grant:', '')::uuid;");
+  const auditIdx = block.indexOf("insert into public.report_access_audit (actor_id, repository_report_id, version_number, action, access_reason, grant_id)");
+  assert.ok(reasonIdx > -1 && parseIdx > reasonIdx && auditIdx > parseIdx, "reason must be resolved, then grant_id parsed, then written together in one insert");
+});
+
+/** Mirrors get_report_secure()'s grant-id extraction. */
+function extractGrantId(accessReason: string | null): string | null {
+  if (accessReason && accessReason.startsWith("explicit_grant:")) {
+    return accessReason.replace("explicit_grant:", "");
+  }
+  return null;
+}
+
+test("EXPLICIT GRANT AUDIT DECISION MIRROR: grant_id is populated only when access_reason is an explicit_grant reason; every other reason (submitter, roles, etc.) leaves grant_id null", () => {
+  assert.equal(extractGrantId("explicit_grant:11111111-1111-1111-1111-111111111111"), "11111111-1111-1111-1111-111111111111");
+  assert.equal(extractGrantId("submitter"), null);
+  assert.equal(extractGrantId("main_enforcement"), null);
+  assert.equal(extractGrantId(null), null);
+});
+
+test("EXPLICIT GRANT AUDIT: 'explicit_grant_used' remains a reserved, CHECK-allowed action value but is never fired by this migration -- documented as intentional (Part W), not a bug", () => {
+  const blocks = [...code.matchAll(/alter table public\.report_access_audit add constraint report_access_audit_action_check check \(action in \(([\s\S]*?)\)\);/g)];
+  const last = blocks[blocks.length - 1]![1];
+  assert.match(last, /'explicit_grant_used'/);
+  assert.doesNotMatch(code, /values\([^)]*'explicit_grant_used'/);
+  assert.doesNotMatch(code, /'explicit_grant_used'\);/);
+});
+
+// =======================================================================
+// REVOCATION IMMEDIATE EFFECT (review round 3, section 8)
+// =======================================================================
+
+test("REVOCATION IMMEDIATE EFFECT: has_report_access() is STABLE (not IMMUTABLE, not cached across calls) and reads report_access_grants/user_role_assignments fresh on every invocation -- a revoked grant or ended assignment takes effect on the very next call, never a stale cached decision", () => {
+  const block = fnBlock("has_report_access")![0];
+  assert.match(code, /create or replace function public\.has_report_access\(p_repository_report_id uuid\)\s*\nreturns boolean\s*\nlanguage plpgsql\s*\nstable/);
+  assert.doesNotMatch(block, /immutable/i);
+  // The grant check itself re-evaluates revoked_at/expires_at every call
+  // -- no materialized/cached grant state exists anywhere in this schema.
+  assert.match(block, /g\.revoked_at is null/);
+  assert.match(block, /g\.expires_at is null or g\.expires_at > now\(\)/);
+});
+
+test("REVOCATION IMMEDIATE EFFECT: every atomic RPC (get_report_secure, list/search/flagged/export) calls has_report_access() itself -- not a cached boolean passed in from an earlier request -- so authorization and content retrieval are evaluated together, atomically, on every single call", () => {
+  for (const fn of ["get_report_secure", "list_reports_secure", "search_reports_secure", "flagged_reports_secure", "export_reports_secure"]) {
+    const block = fnBlock(fn)![0];
+    assert.match(block, /public\.has_report_access\(/, `${fn} must call has_report_access() itself`);
+  }
+});
+
+// =======================================================================
+// EFFECTIVE PRIVILEGE MATRIX (review round 3, section 2)
+// =======================================================================
+
+test("PRIVILEGE MATRIX: PUBLIC and anon never hold EXECUTE on any Phase 6 SECURITY DEFINER function -- every revoke statement includes at least public and, where present, anon", () => {
+  const revokes = code.match(/revoke execute on function public\.\w+\([^)]*\) from ([^;]+);/g) ?? [];
+  assert.ok(revokes.length >= 15, `expected at least 15 revoke statements, found ${revokes.length}`);
+  for (const r of revokes) {
+    assert.match(r, /\bpublic\b/, `every revoke must include public: ${r}`);
+  }
+});
+
+test("PRIVILEGE MATRIX: authenticated holds EXECUTE only on the client-facing RPCs (get_report_secure, list/search/flagged, version/amendment/access-request, dashboard aggregate, export, PDF, attachment, needs-your-action, registration-search) -- never on report_source_content() (service_role-only, no authorization of its own)", () => {
+  assert.match(code, /grant execute on function public\.get_report_secure\(uuid, integer\) to authenticated, service_role;/);
+  assert.match(code, /grant execute on function public\.needs_your_action_secure\(\) to authenticated, service_role;/);
+  assert.match(code, /grant execute on function public\.search_movements_by_registration_secure\(text, date, integer\) to authenticated, service_role;/);
+  assert.match(code, /grant execute on function public\.list_report_attachments_secure\(text, uuid\) to authenticated, service_role;/);
+  assert.doesNotMatch(code, /grant execute on function public\.report_source_content\(text, uuid\) to authenticated/);
+});
+
+test("PRIVILEGE MATRIX: after Part O, the 7 report tables' RLS grants ordinary authenticated users SELECT on their OWN rows only -- never full table content -- documented here as the effective row-visibility rule for authenticated/PUBLIC/anon (PUBLIC and anon have no policy branch at all, so they see nothing; service_role and every SECURITY DEFINER function owner bypass RLS entirely, per the established current_role_name()/current_station() precedent)", () => {
+  for (const table of ["report_sec016", "report_sec014", "report_sec029", "report_sec018", "report_sec033", "report_sec013", "offload_records"]) {
+    assert.match(code, new RegExp(`create policy "[a-z0-9]+ own select" on public\\.${table} for select using \\(profile_id = auth\\.uid\\(\\)\\);`));
   }
 });
