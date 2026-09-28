@@ -14,6 +14,84 @@ export type Database = {
   }
   public: {
     Tables: {
+      aocs: {
+        Row: { id: string; code: string; name: string; is_active: boolean; created_at: string }
+        Insert: { id?: string; code: string; name: string; is_active?: boolean; created_at?: string }
+        Update: { id?: string; code?: string; name?: string; is_active?: boolean; created_at?: string }
+        Relationships: []
+      }
+      operating_entities: {
+        Row: { id: string; aoc_id: string; code: string; name: string; flight_prefix: string; created_at: string }
+        Insert: { id?: string; aoc_id: string; code: string; name: string; flight_prefix: string; created_at?: string }
+        Update: { id?: string; aoc_id?: string; code?: string; name?: string; flight_prefix?: string; created_at?: string }
+        Relationships: [
+          { foreignKeyName: "operating_entities_aoc_id_fkey"; columns: ["aoc_id"]; isOneToOne: false; referencedRelation: "aocs"; referencedColumns: ["id"] },
+        ]
+      }
+      departments: {
+        Row: { id: string; aoc_id: string; code: string; name: string; created_at: string }
+        Insert: { id?: string; aoc_id: string; code: string; name: string; created_at?: string }
+        Update: { id?: string; aoc_id?: string; code?: string; name?: string; created_at?: string }
+        Relationships: [
+          { foreignKeyName: "departments_aoc_id_fkey"; columns: ["aoc_id"]; isOneToOne: false; referencedRelation: "aocs"; referencedColumns: ["id"] },
+        ]
+      }
+      units: {
+        Row: { id: string; department_id: string; code: string; name: string; created_at: string }
+        Insert: { id?: string; department_id: string; code: string; name: string; created_at?: string }
+        Update: { id?: string; department_id?: string; code?: string; name?: string; created_at?: string }
+        Relationships: [
+          { foreignKeyName: "units_department_id_fkey"; columns: ["department_id"]; isOneToOne: false; referencedRelation: "departments"; referencedColumns: ["id"] },
+        ]
+      }
+      hubs: {
+        Row: { id: string; aoc_id: string; code: string; name: string; created_at: string }
+        Insert: { id?: string; aoc_id: string; code: string; name: string; created_at?: string }
+        Update: { id?: string; aoc_id?: string; code?: string; name?: string; created_at?: string }
+        Relationships: [
+          { foreignKeyName: "hubs_aoc_id_fkey"; columns: ["aoc_id"]; isOneToOne: false; referencedRelation: "aocs"; referencedColumns: ["id"] },
+        ]
+      }
+      org_stations: {
+        Row: {
+          id: string
+          hub_id: string
+          code: string
+          name: string
+          classification_status: "classified" | "classification_pending"
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          hub_id: string
+          code: string
+          name: string
+          classification_status?: "classified" | "classification_pending"
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          hub_id?: string
+          code?: string
+          name?: string
+          classification_status?: "classified" | "classification_pending"
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: "org_stations_hub_id_fkey"; columns: ["hub_id"]; isOneToOne: false; referencedRelation: "hubs"; referencedColumns: ["id"] },
+        ]
+      }
+      org_teams: {
+        Row: { id: string; station_id: string; name: string; created_at: string }
+        Insert: { id?: string; station_id: string; name: string; created_at?: string }
+        Update: { id?: string; station_id?: string; name?: string; created_at?: string }
+        Relationships: [
+          { foreignKeyName: "org_teams_station_id_fkey"; columns: ["station_id"]; isOneToOne: false; referencedRelation: "org_stations"; referencedColumns: ["id"] },
+        ]
+      }
       organizations: {
         Row: {
           id: string
@@ -2019,6 +2097,13 @@ export type Database = {
           team: string | null
           unified_role: string | null
           updated_at: string
+          aoc_id: string | null
+          operating_entity_id: string | null
+          department_id: string | null
+          unit_id: string | null
+          hub_id: string | null
+          org_station_id: string | null
+          org_team_id: string | null
         }
         Insert: {
           approved_at?: string | null
@@ -2037,6 +2122,13 @@ export type Database = {
           team?: string | null
           unified_role?: string | null
           updated_at?: string
+          aoc_id?: string | null
+          operating_entity_id?: string | null
+          department_id?: string | null
+          unit_id?: string | null
+          hub_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
         }
         Update: {
           approved_at?: string | null
@@ -2055,6 +2147,13 @@ export type Database = {
           team?: string | null
           unified_role?: string | null
           updated_at?: string
+          aoc_id?: string | null
+          operating_entity_id?: string | null
+          department_id?: string | null
+          unit_id?: string | null
+          hub_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
         }
         Relationships: [
           {
@@ -2064,6 +2163,13 @@ export type Database = {
             referencedRelation: "stations"
             referencedColumns: ["code"]
           },
+          { foreignKeyName: "profiles_aoc_id_fkey"; columns: ["aoc_id"]; isOneToOne: false; referencedRelation: "aocs"; referencedColumns: ["id"] },
+          { foreignKeyName: "profiles_operating_entity_id_fkey"; columns: ["operating_entity_id"]; isOneToOne: false; referencedRelation: "operating_entities"; referencedColumns: ["id"] },
+          { foreignKeyName: "profiles_department_id_fkey"; columns: ["department_id"]; isOneToOne: false; referencedRelation: "departments"; referencedColumns: ["id"] },
+          { foreignKeyName: "profiles_unit_id_fkey"; columns: ["unit_id"]; isOneToOne: false; referencedRelation: "units"; referencedColumns: ["id"] },
+          { foreignKeyName: "profiles_hub_id_fkey"; columns: ["hub_id"]; isOneToOne: false; referencedRelation: "hubs"; referencedColumns: ["id"] },
+          { foreignKeyName: "profiles_org_station_id_fkey"; columns: ["org_station_id"]; isOneToOne: false; referencedRelation: "org_stations"; referencedColumns: ["id"] },
+          { foreignKeyName: "profiles_org_team_id_fkey"; columns: ["org_team_id"]; isOneToOne: false; referencedRelation: "org_teams"; referencedColumns: ["id"] },
         ]
       }
       report_acknowledgements: {
