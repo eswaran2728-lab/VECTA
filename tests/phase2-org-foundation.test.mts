@@ -156,3 +156,51 @@ test("STATIC: every new table declares a primary key", () => {
     assert.match(block, /primary key/i, `table missing a primary key: ${block.slice(0, 80)}`);
   }
 });
+
+// --- Documentation corrections (second pass, 2026-09-28) ---
+
+test("DOCUMENTATION: the migration records operating-entity/station independence, AAX-not-KUL-only, and the feedback-archive decision as RESOLVED, not as open questions", () => {
+  assert.match(migrationSql, /RESOLVED DECISIONS/);
+  assert.match(migrationSql, /AAX is not KUL-only/);
+  assert.match(migrationSql, /Historical public\.feedback_threads rows are NOT touched/);
+  assert.match(migrationSql, /No station in this migration is permanently tied[\s\S]{0,20}to MAA or AAX/);
+});
+
+// --- Rollback order (dependency-safe, second pass, 2026-09-28) ---
+
+test("ROLLBACK: the documented rollback proceeds views -> profiles columns/constraints -> tables, in that exact order -- never tables before profiles' FKs into them", () => {
+  const rollbackBlock = migrationSql.match(/DOCUMENTED ROLLBACK[\s\S]*$/);
+  assert.ok(rollbackBlock, "must find the documented rollback block");
+  const text = rollbackBlock[0];
+
+  const viewsIdx = text.indexOf("drop view if exists public.v_phase2_unclassified_stations");
+  const columnsIdx = text.indexOf("alter table public.profiles drop constraint");
+  const tablesIdx = text.indexOf("drop table if exists public.org_teams");
+  assert.ok(viewsIdx > -1 && columnsIdx > -1 && tablesIdx > -1, "all three rollback steps must be present");
+  assert.ok(viewsIdx < columnsIdx, "views must be dropped before profiles' columns/constraints");
+  assert.ok(columnsIdx < tablesIdx, "profiles' columns/constraints must be dropped before any new table");
+});
+
+test("ROLLBACK: table drops are in strict child-before-parent order (org_teams, org_stations, units, hubs, departments, operating_entities, aocs)", () => {
+  const rollbackBlock = migrationSql.match(/DOCUMENTED ROLLBACK[\s\S]*$/);
+  assert.ok(rollbackBlock);
+  const text = rollbackBlock[0];
+  const expectedOrder = ["org_teams", "org_stations", "units", "hubs", "departments", "operating_entities", "aocs"];
+  const indices = expectedOrder.map((t) => text.indexOf(`drop table if exists public.${t};`));
+  for (const [i, idx] of indices.entries()) {
+    assert.ok(idx > -1, `missing rollback DROP TABLE for ${expectedOrder[i]}`);
+  }
+  for (let i = 1; i < indices.length; i++) {
+    assert.ok(indices[i] > indices[i - 1], `${expectedOrder[i]} must be dropped after ${expectedOrder[i - 1]}`);
+  }
+});
+
+test("ROLLBACK: every one of the seven profiles FK constraints has an explicit documented drop", () => {
+  const rollbackBlock = migrationSql.match(/DOCUMENTED ROLLBACK[\s\S]*$/);
+  assert.ok(rollbackBlock);
+  const text = rollbackBlock[0];
+  for (const col of ["aoc_id", "operating_entity_id", "department_id", "unit_id", "hub_id", "org_station_id", "org_team_id"]) {
+    assert.match(text, new RegExp(`drop constraint if exists profiles_${col}_fkey`));
+    assert.match(text, new RegExp(`drop column if exists ${col}`));
+  }
+});

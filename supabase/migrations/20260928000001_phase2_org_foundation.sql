@@ -24,6 +24,31 @@
 --   - no change to public.users (CaterLink identity stays separate,
 --     per explicit instruction not to collapse profiles and CaterLink
 --     users during early phases)
+--
+-- RESOLVED DECISIONS (recorded here so later phases don't re-litigate
+-- them as open questions -- these are settled, not pending):
+--   - Operating entity is a property of each relevant flight/report
+--     record, never of a station. org_stations intentionally has no
+--     operating_entity_id column (see Part B) -- this was a correct
+--     design decision from the first version of this file, not a
+--     pending question.
+--   - AK/D7 are input-helper suggestions only (MAA/AAX respectively).
+--     The saved, explicit operating_entity_id on the flight/report row
+--     is the sole authorization and reporting source of truth. Phase 5
+--     implements the confirm-on-mismatch behavior on report/flight
+--     tables; this phase does not touch reports at all.
+--   - AAX is not KUL-only. Any Malaysia operating entity may operate at
+--     any Malaysia station -- this is exactly why org_stations has no
+--     entity column. No station in this migration is permanently tied
+--     to MAA or AAX, including 'KUL - MAA'/'KUL - AAX', which are
+--     station CODES preserving the existing free-text values, not an
+--     entity-exclusivity constraint.
+--   - Historical public.feedback_threads rows are NOT touched, read,
+--     copied or referenced anywhere in this migration, and will not be
+--     migrated into the future anonymous-discussion tables (Phase 10) --
+--     they remain exactly as they are today until Phase 10 places them
+--     in a read-only legacy archive. This phase makes no change to that
+--     table at all.
 
 -- =======================================================================
 -- PART A: aocs, operating_entities, departments, units
@@ -323,3 +348,61 @@ revoke all on public.org_teams from public, anon, authenticated;
 grant all on public.aocs, public.operating_entities, public.departments,
   public.units, public.hubs, public.org_stations, public.org_teams
   to service_role;
+
+-- =======================================================================
+-- DOCUMENTED ROLLBACK (not executed by this file -- reference only, run
+-- manually and only against a target where this migration was actually
+-- applied). Dependency-safe order: the new profiles columns hold foreign
+-- keys INTO the new tables, so profiles' columns/constraints must be
+-- dropped BEFORE the tables they reference -- the new tables can NOT
+-- always be dropped first while profiles still references them. Every
+-- statement below is idempotent (IF EXISTS) and reversed relative to
+-- this file's creation order (children before parents, dependents
+-- before their dependencies):
+--
+-- 1. Drop the verification views (they read profiles' new columns and
+--    org_stations, so they depend on both and must go first):
+--      drop view if exists public.v_phase2_unclassified_stations;
+--      drop view if exists public.v_phase2_backfill_coverage;
+--
+-- 2. Drop the seven new profiles columns (this implicitly drops their FK
+--    constraints along with them -- no separate DROP CONSTRAINT step is
+--    needed in Postgres, but is shown explicitly here for clarity/audit):
+--      alter table public.profiles drop constraint if exists profiles_aoc_id_fkey;
+--      alter table public.profiles drop constraint if exists profiles_operating_entity_id_fkey;
+--      alter table public.profiles drop constraint if exists profiles_department_id_fkey;
+--      alter table public.profiles drop constraint if exists profiles_unit_id_fkey;
+--      alter table public.profiles drop constraint if exists profiles_hub_id_fkey;
+--      alter table public.profiles drop constraint if exists profiles_org_station_id_fkey;
+--      alter table public.profiles drop constraint if exists profiles_org_team_id_fkey;
+--      alter table public.profiles
+--        drop column if exists aoc_id,
+--        drop column if exists operating_entity_id,
+--        drop column if exists department_id,
+--        drop column if exists unit_id,
+--        drop column if exists hub_id,
+--        drop column if exists org_station_id,
+--        drop column if exists org_team_id;
+--
+-- 3. Drop the new tables in strict child-before-parent order (org_teams
+--    references org_stations; org_stations references hubs; units
+--    references departments; departments/operating_entities/hubs all
+--    reference aocs -- so aocs must be last):
+--      drop table if exists public.org_teams;
+--      drop table if exists public.org_stations;
+--      drop table if exists public.units;
+--      drop table if exists public.hubs;
+--      drop table if exists public.departments;
+--      drop table if exists public.operating_entities;
+--      drop table if exists public.aocs;
+--
+-- Reversing this order (e.g. dropping aocs before operating_entities, or
+-- dropping any new table before step 2 removes profiles' FKs into it)
+-- fails with a foreign-key-violation error from Postgres -- this exact
+-- ordering is what makes the rollback actually executable, not merely
+-- documented. Verified statically by
+-- tests/phase2-org-foundation.test.mts's rollback-order test, which
+-- parses this comment block and asserts steps 1-2-3 appear in this
+-- sequence and that every DROP TABLE line in step 3 appears in the
+-- correct child-to-parent order relative to the CREATE TABLE order
+-- earlier in this same file.
