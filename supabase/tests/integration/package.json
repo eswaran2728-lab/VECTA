@@ -1,0 +1,16 @@
+{
+  "name": "vecta-phase6-integration-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Phase 6 database-integration validation: applies the real migration chain and runs the integration harness against a real, disposable, embedded Postgres instance (PGlite). See README.md.",
+  "type": "module",
+  "scripts": {
+    "migrate": "node migrate.mjs",
+    "harness": "node run_harness.mjs",
+    "verify-export-isolation": "node verify_export_isolation.mjs",
+    "test": "npm run migrate && npm run harness && npm run verify-export-isolation"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.8"
+  }
+}

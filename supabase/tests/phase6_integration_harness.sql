@@ -26,13 +26,19 @@
 --   1. A disposable Postgres instance -- NEVER production, NEVER shared
 --      staging. A local `supabase start` project, a throwaway Docker
 --      Postgres with the Supabase extensions (pgcrypto, pgjwt-style
---      auth schema stubs), or an ephemeral CI Postgres all qualify.
+--      auth schema stubs), an ephemeral CI Postgres, or PGlite (see
+--      supabase/tests/integration/, which sets all of this up
+--      automatically) all qualify.
 --   2. The full avsec schema history applied in order:
---        supabase/migrations/avsec/0001_init_schema.sql .. 0023_*.sql
+--        supabase/migrations/avsec/0001_init_schema.sql .. 0026_*.sql
 --   3. Every later upgrade migration applied in order:
---        supabase/migrations/202609*.sql (Phase 2-4), then
+--        supabase/migrations/202609*.sql (Phase 1-4), then
 --        20260928000004_phase5_report_classification_repository.sql,
 --        then 20260928000005_phase6_secure_report_access.sql.
+--      supabase/tests/integration/migrate.mjs applies exactly this
+--      chain (plus two structural undated migrations) and prints a
+--      manifest of every file's status -- see that directory's
+--      README.md for the full, exact, reproducible dependency list.
 --   4. A minimal `auth.users`/`auth.uid()` simulation -- this harness
 --      assumes the standard Supabase local-dev convention where
 --      `auth.uid()` reads `request.jwt.claims->>'sub'` via a GUC; each
@@ -44,7 +50,12 @@
 --      change.
 --
 -- USAGE:
---   psql "$DISPOSABLE_DB_URL" -f supabase/tests/phase6_integration_harness.sql
+--   Against any real, disposable Postgres instance:
+--     psql "$DISPOSABLE_DB_URL" -f supabase/tests/phase6_integration_harness.sql
+--   Reproducibly, against PGlite (no server/Docker/network needed --
+--   see supabase/tests/integration/README.md for full details):
+--     cd supabase/tests/integration && npm install
+--     node migrate.mjs && node run_harness.mjs
 --
 -- This file raises a NOTICE for each passing assertion and a real
 -- EXCEPTION (aborting the whole script) on the first failure, so a
