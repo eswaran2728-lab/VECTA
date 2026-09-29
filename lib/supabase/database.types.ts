@@ -5154,6 +5154,10 @@ export type Database = {
         Returns: undefined
       }
       enforce_child_write_before_finalization: { Args: Record<string, never>; Returns: unknown }
+      get_child_row_count_secure: {
+        Args: { p_source_table: string; p_source_id: string }
+        Returns: number
+      }
       search_reports_by_number_secure: {
         Args: { p_prefix: string; p_limit?: number | null }
         Returns: {

@@ -548,8 +548,170 @@ $$;
 
 perform pg_temp.clear_simulation();
 
+-- =======================================================================
+-- SCENARIO 15 (round 7): caller-supplied zero for a REQUIRED-child type
+-- is rejected -- p_expected_child_count is a consistency check only, and
+-- cannot override the per-type minimum enforced independently of it.
+-- Distinct from SCENARIO 9 (a claimed-but-nonexistent nonzero count
+-- against an OPTIONAL type is caught by the consistency check alone) and
+-- SCENARIO 10 (a genuinely optional type legitimately finalizes at 0).
+-- report_sec013 requires >=1 profiling_duties row (sec013.ts:29,
+-- `.min(1, ...)`).
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+begin
+  insert into public.report_sec013 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
+  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'sec013 required-zero fixture', false)
+  returning id into v_report_id;
+
+  -- Zero actual child rows exist. The caller claims p_expected_child_count
+  -- = 0, which MATCHES the actual count (0) -- the consistency check
+  -- alone would pass this. The independent per-type minimum must still
+  -- reject it, because report_sec013 requires at least 1.
+  begin
+    perform public.mark_report_ready_for_indexing('report_sec013', v_report_id, 0);
+    raise exception 'SCENARIO 15 FAILED: finalizing report_sec013 with a caller-supplied (and matching) expected count of 0 should have been rejected -- this type requires at least 1 child row regardless of what the caller claims';
+  exception when others then
+    if sqlerrm like '%is missing required child content%' then
+      raise notice 'PASS: SCENARIO 15: report_sec013 finalization is rejected at 0 actual children even though the caller''s claimed count (0) matches reality -- the per-type minimum overrides a merely-consistent caller claim';
+    else
+      raise exception 'SCENARIO 15 FAILED: rejected for the wrong reason: %', sqlerrm;
+    end if;
+  end;
+
+  perform pg_temp.assert(
+    not exists (select 1 from public.report_index_queue where source_table = 'report_sec013' and source_id = v_report_id),
+    'SCENARIO 15: the rejected finalization attempt left no queue entry behind'
+  );
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 16 (round 7): child reassignment to a different parent report
+-- is forbidden outright
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id_1 uuid;
+  v_report_id_2 uuid;
+  v_child_id uuid;
+begin
+  insert into public.report_sec014 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
+  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'reassignment fixture parent 1', false)
+  returning id into v_report_id_1;
+
+  insert into public.report_sec014 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
+  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'reassignment fixture parent 2', false)
+  returning id into v_report_id_2;
+
+  insert into public.report_sec014_patrols (report_id, entry_no, location, description)
+  values (v_report_id_1, 1, 'Gate E1', 'reassignment target row')
+  returning id into v_child_id;
+
+  begin
+    update public.report_sec014_patrols set report_id = v_report_id_2 where id = v_child_id;
+    raise exception 'SCENARIO 16 FAILED: reassigning a child row''s report_id to a different parent should have been rejected outright';
+  exception when others then
+    if sqlerrm like '%Reassigning a child row to a different report is not supported%' then
+      raise notice 'PASS: SCENARIO 16: enforce_child_write_before_finalization() forbids changing report_sec014_patrols.report_id on UPDATE, for EITHER parent (finalized or not)';
+    else
+      raise exception 'SCENARIO 16 FAILED: rejected for the wrong reason: %', sqlerrm;
+    end if;
+  end;
+
+  perform pg_temp.assert(
+    (select report_id from public.report_sec014_patrols where id = v_child_id) = v_report_id_1,
+    'SCENARIO 16: the child row still belongs to its original parent -- the rejected UPDATE did not partially apply'
+  );
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 17 (round 7): application retry without duplicate parents --
+-- SQL-level simulation of resumeReportFinalization() (case (b): child
+-- rows already complete and correct, only the finalization RPC call
+-- itself needs to be retried -- e.g. after a transient network error
+-- between the app and the database). This cannot invoke the actual
+-- TypeScript action from psql, so it exercises the exact same two RPC
+-- calls resumeReportFinalization() makes, in the same order:
+-- get_child_row_count_secure() then mark_report_ready_for_indexing().
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+  v_child_count integer;
+  v_parent_count_before integer;
+  v_parent_count_after integer;
+  v_queue_count_after integer;
+begin
+  insert into public.report_sec014 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
+  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'resume-retry fixture', false)
+  returning id into v_report_id;
+
+  -- Child rows are written successfully (as they always are before the
+  -- app's finalization call, per actions.ts's ordering). The app's own
+  -- call to mark_report_ready_for_indexing() is presumed to have failed
+  -- for a transient reason (e.g. a dropped connection) -- simulated
+  -- here simply by not calling it yet, leaving the report in exactly
+  -- the "child rows complete, finalization pending" state that
+  -- resumeReportFinalization() exists to recover.
+  insert into public.report_sec014_patrols (report_id, entry_no, location, description)
+  values (v_report_id, 1, 'Gate F1', 'resume-retry child row');
+
+  select count(*) into v_parent_count_before from public.report_sec014 where profile_id = auth.uid() and remark = 'resume-retry fixture';
+  perform pg_temp.assert(v_parent_count_before = 1, 'SCENARIO 17: exactly one parent row exists before any resume attempt');
+
+  -- Step 1 of resumeReportFinalization(): get_child_row_count_secure().
+  select public.get_child_row_count_secure('report_sec014', v_report_id) into v_child_count;
+  perform pg_temp.assert(v_child_count = 1, 'SCENARIO 17: get_child_row_count_secure() correctly reports 1 actual child row, ownership-checked, without direct child-table SELECT');
+
+  -- Step 2: mark_report_ready_for_indexing() using that counted value,
+  -- exactly as resumeReportFinalization() does (p_expected_child_count:
+  -- childCount ?? 0).
+  perform public.mark_report_ready_for_indexing('report_sec014', v_report_id, v_child_count);
+
+  select count(*) into v_queue_count_after from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id;
+  perform pg_temp.assert(v_queue_count_after = 1, 'SCENARIO 17: the resumed finalization call succeeds and enqueues the report exactly once');
+
+  select count(*) into v_parent_count_after from public.report_sec014 where profile_id = auth.uid() and remark = 'resume-retry fixture';
+  perform pg_temp.assert(v_parent_count_after = 1, 'SCENARIO 17: still exactly one parent row after the resume -- retrying finalization never created a duplicate parent');
+
+  -- A second resume attempt (e.g. the user double-clicking "retry")
+  -- must remain a no-op, not a duplicate -- mark_report_ready_for_indexing()
+  -- is idempotent (ON CONFLICT DO NOTHING), independently confirmed in
+  -- SCENARIO 13.
+  perform public.mark_report_ready_for_indexing('report_sec014', v_report_id, v_child_count);
+  select count(*) into v_queue_count_after from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id;
+  perform pg_temp.assert(v_queue_count_after = 1, 'SCENARIO 17: a second resume attempt on an already-finalized report remains idempotent -- still exactly one queue entry');
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
 rollback; -- discard every synthetic fixture and result; this harness never commits.
 
 -- If every NOTICE above printed PASS and this script reached this
 -- comment without a raised exception, every listed scenario passed
 -- against this disposable database.
+--
+-- Scenarios 1-11, 13-17 are ordinary, executable-in-sequence assertions.
+-- Scenario 12 is the sole exception: genuine cross-transaction
+-- concurrency cannot be exercised within one linear script/connection,
+-- so it is documented (with exact manual two-session steps) rather than
+-- executed -- keep this distinction explicit in any report describing
+-- what this harness covers. As with every prior round, this entire file
+-- remains PREPARED BUT NOT EXECUTED: no local/disposable Postgres,
+-- Docker, or Supabase CLI has been available in this development
+-- environment at any point in Phase 6.

@@ -57,6 +57,67 @@ async function ensureCheckedIn(profileId: string): Promise<string | null> {
   return checkedIn ? null : "You must check in for duty (/duty) before submitting a report.";
 }
 
+const SOURCE_TABLE_BY_TYPE: Record<string, string> = {
+  sec013: "report_sec013",
+  sec014: "report_sec014",
+  sec016: "report_sec016",
+  sec018: "report_sec018",
+  sec029: "report_sec029",
+  sec033: "report_sec033",
+  offload: "offload_records",
+};
+
+/** Resume a submission whose finalization RPC failed after its child
+ * rows were already written successfully (review round 7, case (b) of
+ * the two possible partial-failure states -- see the PART S4 comment in
+ * the Phase 6 migration for the full analysis: a multi-row child INSERT
+ * is atomic in Postgres, so a report reaches this state only when child
+ * rows are already complete and correct, and only the report_index_
+ * queue entry is missing). This retries JUST the finalization step
+ * against the SAME existing report id -- it never re-inserts a parent
+ * row and never creates a duplicate report. mark_report_ready_for_
+ * indexing() is itself idempotent and re-validates completeness on
+ * every call, so this is safe to call repeatedly, including on a report
+ * that was already successfully finalized (it will simply no-op).
+ *
+ * NOTE (scope boundary, honestly documented rather than silently
+ * declared solved): this does NOT resume case (a) -- a report whose
+ * child-row INSERT itself failed, leaving zero child rows. That case
+ * requires re-submitting the original child-row data (which this
+ * server-only function has no access to; the client's form still holds
+ * it, but wiring a "resume with existing id" parameter through all 7
+ * submitXXX actions' zod-validated inputs is a larger, separate change
+ * not made this round). A case-(a) report remains a harmless orphan --
+ * never indexed, never searchable, but still visible to its own
+ * submitter via getMySubmissions() regardless of finalization state --
+ * until either this gap is closed in a future round or the user
+ * resubmits the report (creating a new, separate parent; the orphan is
+ * never deleted or overwritten). */
+export async function resumeReportFinalization(reportType: string, reportId: string): Promise<ActionResult> {
+  const profile = await requireProfileId();
+  if (!profile) return { ok: false, error: "Not authenticated" };
+
+  const sourceTable = SOURCE_TABLE_BY_TYPE[reportType];
+  if (!sourceTable) return { ok: false, error: "Unknown report type." };
+
+  const supabase = await createClient();
+  const { data: childCount, error: countError } = await supabase.rpc("get_child_row_count_secure", {
+    p_source_table: sourceTable,
+    p_source_id: reportId,
+  });
+  if (countError) return { ok: false, error: countError.message };
+
+  const { error: readyError } = await supabase.rpc("mark_report_ready_for_indexing", {
+    p_source_table: sourceTable,
+    p_source_id: reportId,
+    p_expected_child_count: childCount ?? 0,
+  });
+  if (readyError) {
+    return { ok: false, error: `Still could not be finalized: ${readyError.message}`, id: reportId };
+  }
+  return { ok: true, id: reportId };
+}
+
 // ---------- SEC 016 ----------
 
 export async function submitSec016(input: unknown): Promise<ActionResult> {
@@ -280,7 +341,7 @@ export async function submitSec014(input: unknown): Promise<ActionResult> {
       description: p.description,
     }));
     const { error: patrolError } = await supabase.from("report_sec014_patrols").insert(rows);
-    if (patrolError) return { ok: false, error: patrolError.message };
+    if (patrolError) return { ok: false, error: patrolError.message, id: report.id };
   }
 
   // Explicit indexing-readiness call, made only after the optional
@@ -385,7 +446,7 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
     remark_text: item.remark_text || null,
   }));
   const { error: itemError } = await supabase.from("report_sec029_items").insert(itemRows);
-  if (itemError) return { ok: false, error: itemError.message };
+  if (itemError) return { ok: false, error: itemError.message, id: report.id };
 
   // Clear any open Bay Board entry for this registration at this station.
   await supabase
@@ -458,7 +519,7 @@ export async function submitSec018(input: unknown): Promise<ActionResult> {
       description: p.description,
     }));
     const { error: patrolError } = await supabase.from("report_sec018_patrols").insert(rows);
-    if (patrolError) return { ok: false, error: patrolError.message };
+    if (patrolError) return { ok: false, error: patrolError.message, id: report.id };
   }
 
   // Explicit indexing-readiness call, made only after the optional
@@ -520,7 +581,7 @@ export async function submitSec033(input: unknown): Promise<ActionResult> {
     remarks: h.remarks || null,
   }));
   const { error: holdCheckError } = await supabase.from("report_sec033_hold_checks").insert(rows);
-  if (holdCheckError) return { ok: false, error: holdCheckError.message };
+  if (holdCheckError) return { ok: false, error: holdCheckError.message, id: report.id };
 
   // Explicit indexing-readiness call, made only after the hold-check
   // child rows above have already been written.
@@ -588,7 +649,7 @@ export async function submitSec013(input: unknown): Promise<ActionResult> {
     incident_remark: d.incident_remark || null,
   }));
   const { error: dutyError } = await supabase.from("report_sec013_profiling_duties").insert(rows);
-  if (dutyError) return { ok: false, error: dutyError.message };
+  if (dutyError) return { ok: false, error: dutyError.message, id: report.id };
 
   // Explicit indexing-readiness call, made only after the profiling-duty
   // child rows above have already been written.
@@ -656,7 +717,7 @@ export async function submitOffload(input: unknown): Promise<ActionResult> {
     weight_kg: it.weight_kg ? Number(it.weight_kg) : null,
   }));
   const { error: itemsError } = await supabase.from("offload_items").insert(rows);
-  if (itemsError) return { ok: false, error: itemsError.message };
+  if (itemsError) return { ok: false, error: itemsError.message, id: report.id };
 
   // Explicit indexing-readiness call, made only after the offload item
   // child rows above have already been written.

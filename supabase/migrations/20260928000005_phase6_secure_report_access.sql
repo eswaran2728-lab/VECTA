@@ -1942,35 +1942,64 @@ drop trigger if exists trg_enqueue_indexing on public.report_sec029;
 drop trigger if exists trg_enqueue_indexing on public.report_sec033;
 drop trigger if exists trg_enqueue_indexing on public.offload_records;
 
--- CORRECTION (review round 6): an ownership check alone let a caller
--- mark ANY of their own reports ready -- including one whose child rows
--- had not actually been written yet (premature finalization), or one
--- where a concurrent child INSERT was still in flight (a genuine race
--- between finalization and child writes). Fixed with two changes,
--- neither a timing heuristic:
---   1. p_expected_child_count: the CALLER states how many child rows it
---      believes it wrote (0 is valid and expected for report_sec016/
---      offload_records-without-a-table-at-all... no, every table except
---      report_sec016 HAS a child table; 0 is a legitimate value for any
---      of them, since sec014/sec018's patrol entries are genuinely
---      optional in the application schema). This function then counts
---      the ACTUAL rows in the child table and requires an exact match --
---      it never trusts the caller's claim, only uses it as the
---      expectation to verify against the database's own count. report_
---      sec016 has no child table at all, so its expected count must be
---      exactly 0 and no count query runs.
---   2. `for update`: the parent row is locked before counting children,
---      and enforce_child_write_before_finalization() (the new trigger
---      on all 6 child tables, below) locks the SAME parent row before
---      permitting any child INSERT/UPDATE/DELETE. Because both paths
---      lock the identical row, Postgres serializes them -- a concurrent
---      child write blocks until finalization's transaction commits (at
---      which point the child write's own check sees report_index_queue
---      already has an entry and is rejected) or rolls back (at which
---      point the child write proceeds against a still-open report,
---      unaffected). This is the "appropriate locking shared by all
---      affected write paths" the review asked for -- not two
---      independent checks that could still interleave.
+-- CORRECTION (review round 7): p_expected_child_count (round 6) is
+-- CALLER-CONTROLLED -- matching it against the database's actual count
+-- proves only "what the caller claims equals what exists," never "what
+-- this report TYPE actually requires." A caller (buggy or malicious)
+-- could claim 0 for a type whose form validation requires at least one
+-- child row, and the round-6 check alone would have accepted it. Fixed
+-- by treating p_expected_child_count as a consistency check ONLY, and
+-- separately enforcing each type's own minimum-child requirement
+-- server-side, independent of anything the caller claims.
+--
+-- EXACT PER-TYPE REQUIREMENT, taken directly from each type's existing
+-- zod form-validation schema (lib/avsec/schemas/*.ts) -- no new business
+-- rule is invented here, only what already exists is now also enforced
+-- server-side:
+--   report_sec013 -- profiling_duties: `.min(1, ...)` (sec013.ts:29)
+--                    => REQUIRED, minimum 1.
+--   report_sec014 -- patrols: `z.array(...)`, no .min(), default []
+--                    (sec014.ts:22,39) => OPTIONAL, minimum 0.
+--   report_sec016 -- no child table at all => always 0, not applicable.
+--   report_sec018 -- patrols: `.max(6, ...)`, no .min(), default []
+--                    (sec018.ts:21,35) => OPTIONAL, minimum 0.
+--   report_sec029 -- items: `.length(SEC029_ITEMS.length)` (sec029.ts:50)
+--                    -- an EXACT fixed count (currently 20, the SEC029
+--                    inspection checklist length), not merely "at least
+--                    one." That exact number has NO independently
+--                    stored source of truth on the database side (no
+--                    reference table, no CHECK constraint enumerating
+--                    the checklist) -- only lib/avsec/reference-data.ts's
+--                    SEC029_ITEMS array defines it, and duplicating that
+--                    literal count into this migration would silently
+--                    drift the moment the checklist changes in
+--                    application code without a matching migration.
+--                    Per the review's own instruction not to claim a
+--                    guarantee the schema cannot independently verify:
+--                    this function enforces only REQUIRED, minimum 1
+--                    for report_sec029 -- the same structural floor as
+--                    every other required-child type -- and does NOT
+--                    claim to verify the exact checklist count of 20.
+--                    The exact-20 guarantee remains the application
+--                    zod schema's responsibility alone, honestly
+--                    documented here rather than silently overclaimed.
+--   report_sec033 -- hold_checks: `.min(1, ...)` (sec033.ts:22)
+--                    => REQUIRED, minimum 1.
+--   offload_records -- items: `.min(1, ...)` (offload.ts:45)
+--                    => REQUIRED, minimum 1.
+--
+-- "Required children must remain required even when the caller supplies
+-- zero": the minimum check below runs INDEPENDENTLY of
+-- p_expected_child_count -- a caller claiming p_expected_child_count = 0
+-- for report_sec013/029/033/offload_records is rejected by the minimum
+-- check even though its claim would trivially match an actual count of
+-- 0 (which would otherwise pass the consistency check alone).
+--
+-- Race safety unchanged from round 6: the parent row is locked with
+-- `for update` before counting children, and
+-- enforce_child_write_before_finalization() (the trigger on all 6 child
+-- tables, below) locks the SAME parent row before permitting any child
+-- INSERT/UPDATE/DELETE, so the two paths cannot race independently.
 create or replace function public.mark_report_ready_for_indexing(p_source_table text, p_source_id uuid, p_expected_child_count integer default 0)
 returns void
 language plpgsql
@@ -1980,6 +2009,7 @@ as $function$
 declare
   v_owner uuid;
   v_actual_children integer;
+  v_required_minimum integer;
 begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
@@ -2034,6 +2064,19 @@ begin
     raise exception 'Report % is not yet complete: expected % child row(s), found %: cannot mark ready for indexing until every child row has actually been committed.', p_source_id, coalesce(p_expected_child_count, 0), v_actual_children;
   end if;
 
+  -- Per-type minimum, enforced independently of p_expected_child_count
+  -- (see the header comment above for the exact source of each number).
+  v_required_minimum := case p_source_table
+    when 'report_sec013' then 1
+    when 'report_sec029' then 1
+    when 'report_sec033' then 1
+    when 'offload_records' then 1
+    else 0
+  end;
+  if v_actual_children < v_required_minimum then
+    raise exception 'Report % is missing required child content: this report type requires at least % child row(s), found %: a caller-supplied expected count cannot override this requirement.', p_source_id, v_required_minimum, v_actual_children;
+  end if;
+
   -- Idempotent AND safe to call repeatedly: ON CONFLICT DO NOTHING means
   -- a retried finalization call (after a prior attempt's transient
   -- failure, or simply called twice) never creates a duplicate queue
@@ -2074,6 +2117,23 @@ grant execute on function public.mark_report_ready_for_indexing(text, uuid, inte
 -- reaches the parent row's lock first completes before the other
 -- proceeds, so a child write either lands cleanly before finalization
 -- or is correctly rejected after it, never both/neither.
+-- CORRECTION (review round 7): an UPDATE that changes a child row's own
+-- report_id (reassigning it to a DIFFERENT parent) was checked against
+-- only ONE parent -- coalesce(new.report_id, old.report_id) always
+-- resolves to NEW.report_id for an UPDATE, so the OLD parent's
+-- finalization state was never checked at all, meaning a child row
+-- could be silently moved OUT of an already-finalized report's child
+-- set without that report's freeze being respected. No application code
+-- anywhere in this codebase ever updates a child row's report_id
+-- (confirmed by source search: zero `.update(...)` calls against any of
+-- the 6 child tables in lib/) -- per the review's own preference,
+-- reassignment is forbidden outright rather than supported with dual-
+-- parent locking the application has no use for. If a future phase
+-- genuinely needs reassignment, this must be revisited deliberately
+-- (lock both parents in a fixed, consistent order -- e.g. by id -- to
+-- avoid a deadlock between two concurrent reassignments crossing in
+-- opposite directions -- and reject if EITHER parent is finalized), not
+-- silently re-enabled.
 create or replace function public.enforce_child_write_before_finalization()
 returns trigger
 language plpgsql
@@ -2087,6 +2147,10 @@ declare
 begin
   if auth.role() = 'service_role' then
     return coalesce(new, old);
+  end if;
+
+  if tg_op = 'UPDATE' and new.report_id is distinct from old.report_id then
+    raise exception 'Reassigning a child row to a different report is not supported.';
   end if;
 
   v_parent_table := case tg_table_name
@@ -2163,6 +2227,98 @@ create trigger trg_enforce_child_finalization before insert or update or delete 
 -- every submit action inserts child rows BEFORE calling
 -- mark_report_ready_for_indexing() (Part S2), so report_index_queue has
 -- no entry yet at INSERT time and this trigger's EXISTS check passes.
+
+-- =======================================================================
+-- PART S4: application-retry support -- resume the SAME parent id
+-- instead of resubmitting a duplicate
+-- =======================================================================
+-- CORRECTION (review round 7): "returning the report id in an error
+-- message is not itself a usable retry workflow." Postgres's own INSERT
+-- semantics make the two possible partial-failure states precise:
+--   (a) the child-row INSERT itself fails (e.g. a unique_violation) --
+--       a multi-row INSERT is atomic in Postgres, so this always leaves
+--       EXACTLY ZERO child rows, never a partial set. The submit action
+--       returns { ok: false, error } immediately, BEFORE finalization is
+--       ever attempted -- distinguishable from a finalization failure by
+--       the error message alone (it never contains "could not be
+--       finalized").
+--   (b) child rows insert successfully, but the finalization RPC call
+--       itself fails (e.g. a transient network error) -- the report's
+--       child rows are already complete and correct; only the
+--       report_index_queue entry is missing. The submit action's error
+--       message explicitly says "Report saved, but could not be
+--       finalized," distinguishing this case from (a).
+--
+-- get_child_row_count_secure(): lets the application check case (a) vs.
+-- (b) for a given report WITHOUT needing direct child-table SELECT
+-- (which Part O/round-5 correctly revoked entirely) -- ownership-
+-- checked, returns only a count, never row content.
+create or replace function public.get_child_row_count_secure(p_source_table text, p_source_id uuid)
+returns integer
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_owner uuid;
+  v_count integer;
+begin
+  if auth.uid() is null then
+    raise exception 'Must be signed in.';
+  end if;
+  if p_source_table not in (
+    'report_sec013', 'report_sec014', 'report_sec016', 'report_sec018',
+    'report_sec029', 'report_sec033', 'offload_records'
+  ) then
+    raise exception 'Unsupported source_table: %', p_source_table;
+  end if;
+
+  if p_source_table = 'report_sec013' then
+    select profile_id into v_owner from public.report_sec013 where id = p_source_id;
+  elsif p_source_table = 'report_sec014' then
+    select profile_id into v_owner from public.report_sec014 where id = p_source_id;
+  elsif p_source_table = 'report_sec016' then
+    select profile_id into v_owner from public.report_sec016 where id = p_source_id;
+  elsif p_source_table = 'report_sec018' then
+    select profile_id into v_owner from public.report_sec018 where id = p_source_id;
+  elsif p_source_table = 'report_sec029' then
+    select profile_id into v_owner from public.report_sec029 where id = p_source_id;
+  elsif p_source_table = 'report_sec033' then
+    select profile_id into v_owner from public.report_sec033 where id = p_source_id;
+  elsif p_source_table = 'offload_records' then
+    select profile_id into v_owner from public.offload_records where id = p_source_id;
+  end if;
+
+  if v_owner is null then
+    raise exception 'Report not found.';
+  end if;
+  if v_owner <> auth.uid() and auth.role() <> 'service_role' then
+    raise exception 'Only the submitting profile may check its own report.';
+  end if;
+
+  if p_source_table = 'report_sec013' then
+    select count(*) into v_count from public.report_sec013_profiling_duties where report_id = p_source_id;
+  elsif p_source_table = 'report_sec014' then
+    select count(*) into v_count from public.report_sec014_patrols where report_id = p_source_id;
+  elsif p_source_table = 'report_sec016' then
+    v_count := 0;
+  elsif p_source_table = 'report_sec018' then
+    select count(*) into v_count from public.report_sec018_patrols where report_id = p_source_id;
+  elsif p_source_table = 'report_sec029' then
+    select count(*) into v_count from public.report_sec029_items where report_id = p_source_id;
+  elsif p_source_table = 'report_sec033' then
+    select count(*) into v_count from public.report_sec033_hold_checks where report_id = p_source_id;
+  elsif p_source_table = 'offload_records' then
+    select count(*) into v_count from public.offload_items where report_id = p_source_id;
+  end if;
+
+  return v_count;
+end;
+$function$;
+
+revoke execute on function public.get_child_row_count_secure(text, uuid) from public, anon;
+grant execute on function public.get_child_row_count_secure(text, uuid) to authenticated, service_role;
 
 -- =======================================================================
 -- PART T: search_movements_by_registration_secure() -- dedicated,

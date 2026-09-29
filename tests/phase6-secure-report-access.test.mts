@@ -1232,10 +1232,13 @@ test("PARTIAL FAILURE HANDLING: all 7 submit actions check and propagate mark_re
     path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
     "utf8",
   );
+  // 7 submit actions + resumeReportFinalization() (round 7), which
+  // legitimately reuses the identical call-and-check pattern to retry
+  // finalization for an already-submitted report.
   const matches = actionsSrc.match(/const \{ error: readyError \} = await supabase\.rpc\("mark_report_ready_for_indexing"/g) ?? [];
-  assert.equal(matches.length, 7, `expected all 7 submit actions to check the finalization RPC's error, found ${matches.length}`);
+  assert.equal(matches.length, 8, `expected all 7 submit actions plus resumeReportFinalization() to check the finalization RPC's error, found ${matches.length}`);
   const guardMatches = actionsSrc.match(/if \(readyError\) \{\s*\n\s*return \{ ok: false, error: `Report saved, but could not be finalized/g) ?? [];
-  assert.equal(guardMatches.length, 7, `expected all 7 to return ok: false on a finalization error, found ${guardMatches.length}`);
+  assert.equal(guardMatches.length, 7, `expected all 7 submit actions to return ok: false on a finalization error, found ${guardMatches.length}`);
 });
 
 test("PARTIAL FAILURE HANDLING: the finalization error message includes the report id, so a stranded (created but unfinalized) report can be identified and its finalization retried later without resubmitting -- mark_report_ready_for_indexing() is idempotent (ON CONFLICT DO NOTHING) so a bare retry of just that call is always safe", () => {
@@ -1245,4 +1248,148 @@ test("PARTIAL FAILURE HANDLING: the finalization error message includes the repo
   );
   const matches = actionsSrc.match(/Contact support with report id \$\{(report|data)\.id\}/g) ?? [];
   assert.equal(matches.length, 7);
+});
+
+// =======================================================================
+// CORRECTION ROUND 7: per-type completion minimums, reassignment
+// closure, resume-safe retry, corrected immutability description
+// =======================================================================
+
+// Ground truth, taken directly from lib/avsec/schemas/*.ts (re-verified
+// against the actual source files, not assumed):
+//   sec013.ts:29  profiling_duties: z.array(...).min(1, ...)
+//   sec014.ts:22  patrols: z.array(...)              -- no .min()
+//   sec018.ts:21  patrols: z.array(...).max(6, ...)   -- no .min()
+//   sec029.ts:50  items: z.array(...).length(SEC029_ITEMS.length)
+//   sec033.ts:22  hold_checks: z.array(...).min(1, ...)
+//   offload.ts:45 items: z.array(...).min(1, ...)
+const REQUIRED_MIN_CHILD_TABLES = ["report_sec013", "report_sec029", "report_sec033", "offload_records"];
+const OPTIONAL_CHILD_TABLES = ["report_sec014", "report_sec018"];
+
+test("COMPLETION MINIMUM (round 7): mark_report_ready_for_indexing() enforces a per-type minimum INDEPENDENT of p_expected_child_count -- report_sec013/029/033/offload_records require at least 1 actual child row even if the caller claims 0", () => {
+  const block = fnBlock("mark_report_ready_for_indexing")![0];
+  assert.match(block, /v_required_minimum := case p_source_table/);
+  for (const table of REQUIRED_MIN_CHILD_TABLES) {
+    assert.match(block, new RegExp(`when '${table}' then 1`), `${table} must require minimum 1`);
+  }
+  assert.match(block, /if v_actual_children < v_required_minimum then/);
+  assert.match(block, /raise exception 'Report % is missing required child content/);
+});
+
+test("COMPLETION MINIMUM: the minimum check is textually AFTER (independent of) the consistency check, and does not reference p_expected_child_count at all in its condition -- a caller cannot satisfy the minimum by simply also claiming 0", () => {
+  const block = fnBlock("mark_report_ready_for_indexing")![0];
+  const consistencyIdx = block.indexOf("if v_actual_children <> coalesce(p_expected_child_count, 0) then");
+  const minimumIdx = block.indexOf("if v_actual_children < v_required_minimum then");
+  assert.ok(consistencyIdx > -1 && minimumIdx > consistencyIdx);
+  const minimumCheckLine = block.slice(minimumIdx, block.indexOf(";", minimumIdx));
+  assert.doesNotMatch(minimumCheckLine, /p_expected_child_count/);
+});
+
+/** Mirrors mark_report_ready_for_indexing()'s two-stage completion check. */
+function canFinalizeV2(sourceTable: string, expectedChildCount: number, actualChildCount: number): boolean {
+  if (actualChildCount !== expectedChildCount) return false;
+  const requiredMinimum = REQUIRED_MIN_CHILD_TABLES.includes(sourceTable) ? 1 : 0;
+  return actualChildCount >= requiredMinimum;
+}
+
+test("COMPLETION MINIMUM DECISION MIRROR: a required-child type cannot finalize with 0 children even when the caller's claim matches (0 == 0) -- the minimum check rejects it independently; an optional-child type finalizes fine with 0", () => {
+  assert.equal(canFinalizeV2("report_sec013", 0, 0), false, "sec013 requires >=1, caller's matching claim of 0 is still rejected");
+  assert.equal(canFinalizeV2("report_sec029", 0, 0), false);
+  assert.equal(canFinalizeV2("report_sec033", 0, 0), false);
+  assert.equal(canFinalizeV2("offload_records", 0, 0), false);
+  assert.equal(canFinalizeV2("report_sec014", 0, 0), true, "sec014 patrols are optional, 0 is legitimate");
+  assert.equal(canFinalizeV2("report_sec018", 0, 0), true);
+  assert.equal(canFinalizeV2("report_sec016", 0, 0), true, "sec016 has no child table at all");
+  assert.equal(canFinalizeV2("report_sec013", 1, 1), true, "sec013 with 1 actual child, correctly claimed, finalizes");
+});
+
+test("COMPLETION MINIMUM: report_sec029's TRUE requirement (exactly SEC029_ITEMS.length, a fixed checklist) is explicitly documented as NOT independently verified by the database -- only the structural minimum-1 floor is enforced, since the exact count has no DB-side source of truth", () => {
+  // Uses the RAW (comment-preserving) migrationSql here, not `code` /
+  // fnBlock() -- `code` strips every `--` comment line before matching,
+  // so the header comment (which is what documents this) is never
+  // present in `code` at all.
+  const rawSql = migrationSql.replace(/\r\n/g, "\n");
+  const fnStart = rawSql.indexOf("create or replace function public.mark_report_ready_for_indexing");
+  const headerStart = rawSql.lastIndexOf("-- CORRECTION (review round 7): p_expected_child_count", fnStart);
+  const headerAndFn = rawSql.slice(headerStart, fnStart + 3000);
+  assert.match(headerAndFn, /SEC029_ITEMS\.length/);
+  assert.match(headerAndFn, /does NOT\s*\n--\s*claim to verify the exact checklist count of 20/);
+});
+
+test("CHILD REASSIGNMENT (round 7): enforce_child_write_before_finalization() forbids changing a child row's report_id outright on UPDATE -- confirmed unnecessary by source search (zero .update() calls against any of the 6 child tables in lib/avsec/reports/actions.ts)", () => {
+  const block = fnBlock("enforce_child_write_before_finalization", "\\(\\)")![0];
+  assert.match(block, /if tg_op = 'UPDATE' and new\.report_id is distinct from old\.report_id then/);
+  assert.match(block, /raise exception 'Reassigning a child row to a different report is not supported\.';/);
+  const actionsSrc = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
+    "utf8",
+  );
+  for (const child of ["report_sec014_patrols", "report_sec018_patrols", "report_sec029_items", "report_sec033_hold_checks", "report_sec013_profiling_duties", "offload_items"]) {
+    assert.doesNotMatch(actionsSrc, new RegExp(`\\.from\\("${child}"\\)[\\s\\S]{0,40}?\\.update\\(`), `no UPDATE against ${child} should exist -- reassignment support is genuinely unused`);
+  }
+});
+
+test("CHILD REASSIGNMENT: the reassignment check runs BEFORE any lock/finalization check -- a reassignment attempt is rejected outright regardless of either parent's state", () => {
+  const block = fnBlock("enforce_child_write_before_finalization", "\\(\\)")![0];
+  const reassignIdx = block.indexOf("if tg_op = 'UPDATE' and new.report_id is distinct from old.report_id then");
+  const lockIdx = block.indexOf("v_parent_table := case tg_table_name");
+  assert.ok(reassignIdx > -1 && lockIdx > reassignIdx);
+});
+
+test("PARENT IMMUTABILITY DESCRIPTION (corrected, round 7): block_submitted_report_mutation() is precisely NOT unconditional for every caller -- it is unconditional for every NON-service_role caller (the real security boundary), but explicitly permits a service_role caller to change ONLY the 15 named classification/flag columns on a submitted row (the exception index_report() itself relies on). This is Phase 5's own, unchanged function -- shown here as evidence, not rewritten.", () => {
+  const phase5Sql = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations", "20260928000004_phase5_report_classification_repository.sql"),
+    "utf8",
+  );
+  const block = phase5Sql.match(/create or replace function public\.block_submitted_report_mutation\(\)[\s\S]*?\$\$ language plpgsql set search_path = public;/)![0];
+  // Unconditional block for DELETE, no exception for anyone.
+  assert.match(block, /if old\.status = 'submitted' then\s*\n\s*raise exception 'Submitted reports are immutable and cannot be deleted\./);
+  // For UPDATE: the service_role branch is checked FIRST and is the
+  // ONLY path that can proceed past old.status = 'submitted' -- every
+  // other caller (100% of ordinary authenticated users) falls through
+  // to the unconditional raise immediately after it.
+  const serviceRoleBranch = block.match(/if old\.status = 'submitted' then\s*\n\s*if auth\.role\(\) = 'service_role' then([\s\S]*?)end if;\s*\n\s*raise exception 'Submitted reports are immutable and cannot be edited\. Submit an amendment instead\.';/);
+  assert.ok(serviceRoleBranch, "must find the service_role-only exception branch immediately followed by the unconditional fallback raise");
+  // Even inside the service_role branch, only the 15 classification/
+  // flag columns may change -- any other column change still raises,
+  // even for service_role.
+  assert.match(serviceRoleBranch![1], /not \(v_key = any\(v_classification_cols\)\) then\s*\n\s*raise exception 'Submitted reports are immutable and cannot be edited/);
+});
+
+test("RESUME/RETRY (round 7): get_child_row_count_secure() is ownership-checked (same ownership pattern as mark_report_ready_for_indexing()) and returns only a count, never row content -- lets the application distinguish a child-insert failure (count stays 0) from a finalization-only failure (count already matches) without needing direct child-table SELECT", () => {
+  const block = fnBlock("get_child_row_count_secure")![0];
+  assert.match(block, /if v_owner <> auth\.uid\(\) and auth\.role\(\) <> 'service_role' then/);
+  assert.match(block, /returns integer/);
+});
+
+test("RESUME/RETRY: resumeReportFinalization() retries ONLY the finalization step against the SAME existing report id -- it never inserts a new parent row, and passes the database's own child count (not a client-supplied guess) as the expected count", () => {
+  const actionsSrc = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
+    "utf8",
+  );
+  const fnStart = actionsSrc.indexOf("export async function resumeReportFinalization");
+  const fnBody = actionsSrc.slice(fnStart, fnStart + 1200);
+  assert.match(fnBody, /\.rpc\("get_child_row_count_secure"/);
+  assert.match(fnBody, /\.rpc\("mark_report_ready_for_indexing", \{\s*\n\s*p_source_table: sourceTable,\s*\n\s*p_source_id: reportId,\s*\n\s*p_expected_child_count: childCount \?\? 0,/);
+  assert.doesNotMatch(fnBody, /\.insert\(/, "resumeReportFinalization() must never INSERT a parent row");
+});
+
+test("RESUME/RETRY: the scope boundary (case-(a) child-insert-failure resume is NOT implemented this round) is documented honestly in code, not silently declared solved", () => {
+  const actionsSrc = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
+    "utf8",
+  );
+  assert.match(actionsSrc, /this does NOT resume case \(a\)/);
+});
+
+test("RESUME/RETRY: every child-row-insert failure return now includes the parent id (id: report.id), so an orphaned (case-(a)) report is always identifiable even though this round does not yet resume it", () => {
+  const actionsSrc = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
+    "utf8",
+  );
+  for (const errVar of ["patrolError", "itemError", "holdCheckError", "dutyError", "itemsError"]) {
+    const re = new RegExp(`if \\(${errVar}\\) return \\{ ok: false, error: ${errVar}\\.message, id: report\\.id \\};`, "g");
+    const matches = actionsSrc.match(re) ?? [];
+    assert.ok(matches.length >= 1, `expected at least one id-carrying failure return for ${errVar}`);
+  }
 });

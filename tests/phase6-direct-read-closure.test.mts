@@ -199,11 +199,23 @@ test("DIRECT-READ CLOSURE: lib/dashboard/needs-your-action.ts contains no report
 
 test("DIRECT-READ CLOSURE: lib/avsec/reports/actions.ts's report-table references are all INSERT (create), never SELECT/UPDATE against report content", () => {
   const content = fs.readFileSync(path.join(ROOT, "lib/avsec/reports/actions.ts"), "utf8");
+  // Round 7 added SOURCE_TABLE_BY_TYPE, a plain string-constant map (used
+  // only to route resumeReportFinalization()'s RPC calls) that also
+  // contains each table name as a bare string, with no .from(...)/.insert(
+  // call anywhere near it. Only an actual `.from("<table>")` call site is
+  // a real report-table reference for this check's purpose -- a bare
+  // string constant is neither a SELECT/UPDATE nor an INSERT.
   for (const t of REPORT_TABLE_NAMES) {
-    if (!content.includes(`"${t}"`)) continue;
-    const idx = content.indexOf(`"${t}"`);
-    const nextChunk = content.slice(idx, idx + 200);
-    assert.match(nextChunk, /\.insert\(/, `expected .insert( shortly after "${t}" in reports/actions.ts`);
+    const fromCall = `.from("${t}")`;
+    let idx = content.indexOf(fromCall);
+    let found = false;
+    while (idx !== -1) {
+      found = true;
+      const nextChunk = content.slice(idx, idx + 200);
+      assert.match(nextChunk, /\.insert\(/, `expected .insert( shortly after .from("${t}") in reports/actions.ts`);
+      idx = content.indexOf(fromCall, idx + 1);
+    }
+    void found;
   }
 });
 
