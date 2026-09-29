@@ -148,8 +148,8 @@ Executed with genuinely independent database connections (`clientA`, `clientB`, 
 ## 7. Defects & Safeguards Found, Corrected & Added
 1. **Idempotent Cluster Setup**:
    - `supabase/tests/integration/00_platform_stubs.sql` initially attempted bare `CREATE ROLE anon; ...` and `CREATE PUBLICATION supabase_realtime;`. In a persistent or re-run PostgreSQL cluster where roles are cluster-wide, re-execution resulted in `duplicate_object` errors. Wrapped role creation and publication creation in conditional DO blocks.
-2. **TypeScript Compilation Collision with Bundled PGAdmin 4**:
-   - Unpacking PostgreSQL binaries into `supabase/tests/integration/pg17` introduced bundled `pgAdmin 4` TypeScript files under `pgsql/pgAdmin 4/...`. The root `tsconfig.json` included `**/*.ts`, causing `npm run typecheck` to attempt typechecking pgAdmin's internal static scripts. Added `"supabase/tests"` to `tsconfig.json` `exclude`.
+2. **TypeScript Compilation Isolation**:
+   - Unpacking PostgreSQL binaries into `supabase/tests/integration/pg17` introduced bundled `pgAdmin 4` TypeScript files under `pgsql/pgAdmin 4/...`. Additionally, `supabase/tests/integration/node_modules` contains package-level type declarations. The root `tsconfig.json` exclusion was narrowed specifically to `"supabase/tests/integration/pg17"` and `"supabase/tests/integration/node_modules"`, preserving full typechecking across all project-owned tests and application code.
 3. **Disposable Target Security Safeguards**:
    - Implemented strict safeguards in `supabase/tests/integration/safeguards.mjs`. All 4 native runners (`migrate.mjs`, `run_harness.mjs`, `verify_export_isolation.mjs`, `verify_concurrency_native.mjs`) verify that the target host is exclusively a local loopback (`127.0.0.1` or `localhost`) and that target database names match a strict whitelist (`vecta_phase6_test`, `vecta_phase6_harness_run`, `vecta_phase6_export_isolation_run`, `vecta_phase6_concurrency_run`). Any attempt to run against a remote host or non-whitelisted database throws immediately before any connection or destructive DROP/CREATE is executed.
 4. **Repository Hygiene**:
@@ -168,7 +168,7 @@ Executed with genuinely independent database connections (`clientA`, `clientB`, 
 - **`supabase/tests/integration/package-lock.json`**: Locked `pg` dependency.
 - **`supabase/tests/integration/.gitignore`**: Added `progress_native.json` and `pg17/`.
 - **`supabase/tests/integration/README.md`**: Documented native PostgreSQL test commands and multi-connection concurrency verification.
-- **`tsconfig.json`**: Excluded `"supabase/tests"` to prevent pgAdmin 4 types from contaminating application TypeScript checks.
+- **`tsconfig.json`**: Narrowed exclusion to `"supabase/tests/integration/pg17"` and `"supabase/tests/integration/node_modules"` to isolate portable vendor scripts without excluding project test code.
 - **`supabase/tests/integration/ANTIGRAVITY_HANDOFF.md`** *(new file)*: Handover documentation.
 
 ---
@@ -179,12 +179,21 @@ Executed with genuinely independent database connections (`clientA`, `clientB`, 
 
 ---
 
-## 10. Remaining Blockers
-- **None**: All Phase 6 validation objectives, migration dependencies, RLS policies, export isolation, and multi-connection concurrency scenarios (12 and 26) are fully verified and passing.
+## 10. Remaining Supabase Platform & Deployment Rollout Requirements
+The local database validation exercises PostgreSQL 17.11 directly, verifying schema migrations, RLS policies, custom stored procedures, transaction isolation, and row-level locking. For production rollout, the following platform-level steps remain (limited strictly to components used by VECTA):
+1. **Apply Migrations to Managed Supabase**:
+   - Push versioned migrations to the remote Supabase PostgreSQL database using the canonical Supabase CLI (`supabase db push`) or deployment CI/CD pipeline.
+2. **Supabase Auth & Session Verification**:
+   - Verify live auth session cookie exchange and refresh via `@supabase/ssr` against actual Supabase Auth endpoints in the preview/staging deployment.
+3. **Supabase Storage Verification**:
+   - Verify upload, signed URL generation, and download access on the configured `icms-attachments` storage bucket.
+4. **Vercel Production Deployment**:
+   - Trigger and verify the Next.js production build and branch deployment on Vercel once credentials/tokens are provided.
+   *(Note: No Vault, KMS, or non-standard external services are required by this application.)*
 
 ---
 
 ## 11. Exact Next Action for Claude
-- Review this document (`supabase/tests/integration/ANTIGRAVITY_HANDOFF.md`) and the test outputs.
+- Review this document (`supabase/tests/integration/ANTIGRAVITY_HANDOFF.md`) and the verified test outputs.
 - Verify that `git status` reflects only the intended integration test harness adaptations and exclusions.
 - If satisfied, proceed with Phase 6 wrap-up, commit the Phase 6 integration validation additions, or prepare the branch for review.
