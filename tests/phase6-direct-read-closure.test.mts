@@ -55,14 +55,14 @@ const ALLOWLIST: Record<string, string> = {
   "lib/avsec/dashboard/queries.ts": "Table name passed only as an RPC parameter (list_reports_secure/search_reports_secure) -- zero .from(\"report_sec...\") calls.",
   "lib/avsec/search/queries.ts": "Table name passed only as an RPC parameter (search_reports_secure) -- zero .from(\"report_sec...\") calls.",
   "lib/dashboard/flight-detail.ts": "Table name passed only as an RPC parameter (search_reports_secure/search_movements_by_registration_secure) -- zero .from(\"report_sec...\") calls.",
-  "lib/avsec/reports/queries.ts":
-    "getMySubmissions() reads each report table filtered by `.eq(\"profile_id\", profileId)`, and both call sites " +
-    "(app/(avsec)/avsec/history and .../home) pass the CALLER'S OWN profile.id -- never an arbitrary other profile. " +
-    "This is safe independent of that convention because the RLS 'own select' policy (Phase 6 Part O) caps every " +
-    "read on these tables to profile_id = auth.uid() regardless of what profileId is passed: an attempt to pass a " +
-    "different id would return zero rows via RLS, not another person's reports. getReportById() itself (the " +
-    "general detail-read path) is fully atomic via get_report_secure() and is asserted separately below.",
 };
+// CORRECTION (review round 4): lib/avsec/reports/queries.ts previously
+// needed an allowlist entry for getMySubmissions()'s own-row direct
+// read. That read is now GONE entirely -- getMySubmissions() and
+// searchByReportNoPrefix() both call dedicated secure RPCs
+// (list_my_submissions_secure()/search_reports_by_number_secure()) and
+// this file contains zero literal report-table-name references at all,
+// so it is removed from the allowlist rather than re-justified.
 
 function listFiles(dir: string): string[] {
   const out: string[] = [];
@@ -118,19 +118,10 @@ test("DIRECT-READ CLOSURE: the allowlist itself only names files that currently 
   }
 });
 
-// The ONLY file permitted a direct .from("report_sec...").select(...) read
-// at all: getMySubmissions() in lib/avsec/reports/queries.ts, which is
-// structurally safe regardless of the caller-supplied profileId because
-// of the RLS "own select" policy (see its ALLOWLIST entry above) -- it is
-// the sole, explicitly justified exception to the round-3 "no direct
-// report-table SELECT anywhere" rule.
-const DIRECT_SELECT_EXCEPTIONS = new Set(["lib/avsec/reports/queries.ts"]);
-
-test("DIRECT-READ CLOSURE (round 3): NO file anywhere in lib/app/components contains a `.from(\"report_sec...\")` SELECT, except the one explicitly justified exception above -- the round-2 two-step pattern is fully removed, not merely tolerated", () => {
+test("DIRECT-READ CLOSURE (round 4): NO file anywhere in lib/app/components contains a `.from(\"report_sec...\")` SELECT -- ZERO exceptions now, including getMySubmissions()/searchByReportNoPrefix() (lib/avsec/reports/queries.ts), both migrated to dedicated secure RPCs (list_my_submissions_secure()/search_reports_by_number_secure()) this round", () => {
   const offenders: string[] = [];
   for (const file of ALL_FILES) {
     const rel = path.relative(ROOT, file).replace(/\\/g, "/");
-    if (DIRECT_SELECT_EXCEPTIONS.has(rel)) continue;
     const content = fs.readFileSync(file, "utf8");
     if (directFromSelect(content)) {
       offenders.push(rel);
@@ -139,10 +130,12 @@ test("DIRECT-READ CLOSURE (round 3): NO file anywhere in lib/app/components cont
   assert.deepEqual(offenders, [], `Direct .from("report_sec...") read found in: ${offenders.join(", ")}`);
 });
 
-test("DIRECT-READ CLOSURE: the one exception (getMySubmissions) is exactly and only profile_id-filtered -- own rows only, never an open scan", () => {
+test("DIRECT-READ CLOSURE: lib/avsec/reports/queries.ts's getMySubmissions() and searchByReportNoPrefix() call their dedicated secure RPCs and pass no profile-id/report-scope parameter that could widen results beyond the authenticated caller's own identity or authorized set", () => {
   const content = fs.readFileSync(path.join(ROOT, "lib/avsec/reports/queries.ts"), "utf8");
-  const fnBody = content.slice(content.indexOf("export async function getMySubmissions"), content.indexOf("export async function getMySubmissions") + 600);
-  assert.match(fnBody, /\.eq\("profile_id", profileId\)/);
+  assert.match(content, /\.rpc\("list_my_submissions_secure"/);
+  assert.match(content, /\.rpc\("search_reports_by_number_secure"/);
+  const mySubmissionsBody = content.slice(content.indexOf("export async function getMySubmissions"), content.indexOf("export async function getMySubmissions") + 600);
+  assert.doesNotMatch(mySubmissionsBody, /p_profile_id/, "list_my_submissions_secure() must never be called with a profile id -- it derives the caller from auth.uid() only");
 });
 
 test("DIRECT-READ CLOSURE (round 3): NO file contains the two-step 'authorize then .in(\"id\", ids)' pattern -- .in(\"id\", ...) never appears paired with a report source table anywhere", () => {

@@ -5085,7 +5085,15 @@ export type Database = {
           severity: string | null
           flag_state: string
           indexed_at: string
-          content: Json | null
+          staff_name: string | null
+          station: string | null
+          team: string | null
+          remark_excerpt: string | null
+          secondary_identifier: string | null
+          reg_no: string | null
+          bay_no: string | null
+          sta_std: string | null
+          submitter_profile_id: string | null
           total_count: number
         }[]
       }
@@ -5118,8 +5126,59 @@ export type Database = {
           severity: string | null
           flag_state: string
           indexed_at: string
-          content: Json | null
+          staff_name: string | null
+          station: string | null
+          team: string | null
+          remark_excerpt: string | null
+          secondary_identifier: string | null
+          reg_no: string | null
+          bay_no: string | null
+          sta_std: string | null
+          submitter_profile_id: string | null
           total_count: number
+        }[]
+      }
+      report_source_summary: {
+        Args: { p_source_table: string; p_source_id: string }
+        Returns: {
+          staff_name: string | null
+          station: string | null
+          team: string | null
+          remark_excerpt: string | null
+          secondary_identifier: string | null
+          reg_no: string | null
+          bay_no: string | null
+          sta_std: string | null
+          submitter_profile_id: string | null
+        }[]
+      }
+      search_reports_by_number_secure: {
+        Args: { p_prefix: string; p_limit?: number | null }
+        Returns: {
+          id: string
+          source_table: string
+          report_no: string | null
+          status: string
+          report_date: string | null
+          station: string | null
+          team: string | null
+          staff_name: string | null
+          secondary_identifier: string | null
+        }[]
+      }
+      list_my_submissions_secure: {
+        Args: { p_limit?: number | null }
+        Returns: {
+          id: string
+          source_table: string
+          report_no: string | null
+          status: string
+          submitted_at: string | null
+          created_at: string
+          staff_name: string | null
+          station: string | null
+          team: string | null
+          secondary_identifier: string | null
         }[]
       }
       flagged_reports_secure: {

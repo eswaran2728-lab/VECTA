@@ -6,27 +6,45 @@ import { hoursSince } from "@/lib/avsec/datetime";
 
 const FOUR_HOURS = 4;
 
-/** Prefix search across all 6 report tables for the report-number reverse lookup —
+const TABLE_TO_TYPE = new Map(REPORT_TYPES.map((t) => [REPORT_META[t].table, t]));
+
+/** Prefix search across all 7 report tables for the report-number reverse lookup —
  * "AASEC16-20260818" (no sequence yet) matches every SEC016 report filed that day.
- * RLS scopes results to whatever the caller can already see, same as any other query. */
+ * Atomic and authorized (Phase 6, round 4): search_reports_by_number_secure()
+ * runs the same has_report_access()-authorized CTE as list/search and returns
+ * only card fields via report_source_summary() -- never a full row, and never
+ * reads a report table directly (this previously relied entirely on the now-
+ * closed legacy RLS "station select"/"rank select" policies, unscoped by
+ * profile_id at all). */
 export async function searchByReportNoPrefix(prefix: string): Promise<ReportListItem[]> {
   const supabase = await createClient();
   const cleaned = prefix.trim().toUpperCase();
   if (!cleaned) return [];
 
-  const results = await Promise.all(
-    REPORT_TYPES.map(async (type) => {
-      const { data } = await supabase
-        .from(REPORT_META[type].table as never)
-        .select("*")
-        .ilike("report_no", `${cleaned}%`)
-        .order("report_no", { ascending: false })
-        .limit(50);
-      return ((data ?? []) as Record<string, unknown>[]).map((row) => toListItem(type, row));
-    }),
-  );
+  const { data } = await supabase.rpc("search_reports_by_number_secure", {
+    p_prefix: cleaned,
+    p_limit: 50,
+  });
 
-  return results.flat().sort((a, b) => (a.report_no ?? "") < (b.report_no ?? "") ? 1 : -1);
+  return (data ?? [])
+    .map((row): ReportListItem | null => {
+      const type = TABLE_TO_TYPE.get(row.source_table);
+      if (!type) return null;
+      return {
+        id: row.id,
+        type,
+        status: row.status as "draft" | "submitted",
+        submitted_at: null,
+        created_at: row.report_date ?? "",
+        station: row.station ?? "",
+        team: row.team ?? "",
+        summary: row.secondary_identifier ?? row.staff_name ?? "",
+        report_no: row.report_no,
+        flight_type: undefined,
+      };
+    })
+    .filter((item): item is ReportListItem => item !== null)
+    .sort((a, b) => ((a.report_no ?? "") < (b.report_no ?? "") ? 1 : -1));
 }
 
 export async function getOverdueAircraft(station: string): Promise<
@@ -62,68 +80,44 @@ interface MySubmissionsOptions {
   limit?: number;
 }
 
+/** CORRECTION (review round 4): this previously read full source rows
+ * directly, scoped by `.eq("profile_id", profileId)` -- safe in the
+ * sense that RLS's "own row" policy structurally capped it to the
+ * caller's own reports regardless of what profileId was passed, but
+ * still a direct full-content SELECT of every column including remark/
+ * declaration/etc. Replaced with list_my_submissions_secure() (Phase 6),
+ * which no longer accepts a profileId parameter AT ALL -- it derives the
+ * caller's identity from auth.uid() exclusively, so it can never be used
+ * to read anyone else's submissions even in principle, and returns only
+ * card fields (never full content) via report_source_summary(). The
+ * profileId parameter is kept on this function's own signature only for
+ * caller-side compatibility (both existing call sites already pass the
+ * signed-in user's own id) -- it is not forwarded to the RPC. */
 export async function getMySubmissions({
-  profileId,
   limit = 20,
 }: MySubmissionsOptions): Promise<ReportListItem[]> {
   const supabase = await createClient();
-  const types: ReportType[] = [...REPORT_TYPES];
 
-  const results = await Promise.all(
-    types.map(async (type) => {
-      const table = REPORT_META[type].table;
-      const { data } = await supabase
-        .from(table as never)
-        .select("*")
-        .eq("profile_id", profileId)
-        .order("created_at", { ascending: false })
-        .limit(limit);
-      return ((data ?? []) as Record<string, unknown>[]).map((row) => toListItem(type, row));
-    }),
-  );
+  const { data } = await supabase.rpc("list_my_submissions_secure", { p_limit: limit });
 
-  return results
-    .flat()
-    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
-    .slice(0, limit);
-}
-
-function toListItem(type: ReportType, row: Record<string, unknown>): ReportListItem {
-  let summary = "";
-  switch (type) {
-    case "sec016": {
-      const dirTag = row.flight_type === "departure" ? "[DEP]" : "[ARR]";
-      summary = `${dirTag} Flight ${row.flight} · Reg ${row.reg_no}`;
-      break;
-    }
-    case "sec014":
-      summary = `Patrol duty · ${row.remark ? String(row.remark).slice(0, 60) : ""}`;
-      break;
-    case "sec029":
-      summary = `${row.aircraft_registration} · Bay ${row.parking_bay}`;
-      break;
-    case "sec018":
-      summary = "Night patrol";
-      break;
-    case "sec033":
-      summary = "Aircraft hold checklist";
-      break;
-    case "sec013":
-      summary = `Profiling duty · ${row.remark ? String(row.remark).slice(0, 60) : ""}`;
-      break;
-  }
-  return {
-    id: String(row.id),
-    type,
-    status: row.status as "draft" | "submitted",
-    submitted_at: (row.submitted_at as string | null) ?? null,
-    created_at: String(row.created_at),
-    station: String(row.station),
-    team: String(row.team),
-    summary,
-    report_no: (row.report_no as string | null) ?? null,
-    flight_type: (row.flight_type as "arrival" | "departure" | undefined) ?? undefined,
-  };
+  return (data ?? [])
+    .map((row): ReportListItem | null => {
+      const type = TABLE_TO_TYPE.get(row.source_table);
+      if (!type) return null;
+      return {
+        id: row.id,
+        type,
+        status: row.status as "draft" | "submitted",
+        submitted_at: row.submitted_at,
+        created_at: row.created_at,
+        station: row.station ?? "",
+        team: row.team ?? "",
+        summary: row.secondary_identifier ?? row.staff_name ?? "",
+        report_no: row.report_no,
+        flight_type: undefined,
+      };
+    })
+    .filter((item): item is ReportListItem => item !== null);
 }
 
 /** Thrown when a report exists but has not yet been indexed into the

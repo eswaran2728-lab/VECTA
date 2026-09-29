@@ -65,8 +65,19 @@ test("STATIC: every new function is SECURITY DEFINER with a fixed search_path, r
   }
 });
 
-test("STATIC: no arbitrary table-name execution -- no dynamic SQL (EXECUTE/format) anywhere in this migration's new functions", () => {
-  assert.doesNotMatch(code, /execute format\(/i);
+test("STATIC (corrected, round 4): the only EXECUTE format(...) in this migration is the column-grant closure DO block, which iterates a FIXED, migration-authored literal array -- never a client- or caller-supplied table name. No other dynamic SQL exists anywhere.", () => {
+  const executeFormatMatches = [...code.matchAll(/execute format\('([^']*)'/g)];
+  assert.equal(executeFormatMatches.length, 2, `expected exactly 2 execute format(...) calls (revoke + grant in the column-grant DO block), found ${executeFormatMatches.length}`);
+  for (const m of executeFormatMatches) {
+    assert.match(m[1], /^(revoke|grant) select/i);
+  }
+  // The array driving the loop is hardcoded in the same DO block, not a
+  // parameter or any external input.
+  const doBlock = code.match(/do \$\$\s*\ndeclare\s*\n\s*v_table text;\s*\nbegin\s*\n\s*foreach v_table in array array\[[\s\S]*?end;\s*\n\$\$;/);
+  assert.ok(doBlock, "must find the column-grant DO block with a hardcoded table array");
+  for (const t of ["report_sec013", "report_sec014", "report_sec016", "report_sec018", "report_sec029", "report_sec033", "offload_records"]) {
+    assert.match(doBlock![0], new RegExp(`'${t}'`));
+  }
   assert.doesNotMatch(code, /\bexecute\s+'/i);
 });
 
@@ -509,8 +520,11 @@ test("NON-REGRESSION: CaterLink is never referenced by has_report_access() or an
   assert.doesNotMatch(code, /caterlink_transactions|icms_/i);
 });
 
-test("PHASE BOUNDARY: this migration does not execute the Phase 5 backfill, does not activate or reference the Malaysia production hierarchy, and does not migrate existing production accounts -- purely additive schema/function work", () => {
-  assert.doesNotMatch(code, /insert into public\.central_reports_index/);
+test("PHASE BOUNDARY (corrected, round 4): this migration does not execute the Phase 5 backfill or migrate existing production accounts -- the one 'insert into public.central_reports_index' is inside index_report()'s own function BODY (re-declared here only to add the version-1 snapshot fix), never a bare top-level INSERT statement that would itself write rows when this file is applied", () => {
+  const bareTopLevelInsert = code.match(/^insert into public\.central_reports_index/m);
+  assert.equal(bareTopLevelInsert, null, "must not contain a bare, migration-level INSERT into central_reports_index");
+  const insertCount = (code.match(/insert into public\.central_reports_index/g) ?? []).length;
+  assert.equal(insertCount, 1, "the only occurrence must be inside index_report()'s function body");
   assert.doesNotMatch(code, /update public\.profiles/);
 });
 
@@ -638,9 +652,29 @@ test("PART L: get_report_dashboard_aggregate_secure() only groups by a fixed, co
   assert.doesNotMatch(block, /format\(/);
 });
 
-test("PART L: get_report_dashboard_aggregate_secure() counts over the SAME has_report_access()-filtered set as list/search/flagged -- AirAsia Management/GHOD/MAA-AAX Boss/Operation Manager/etc. each see only counts of reports they could already see individually, never a broader aggregate", () => {
+test("PART L (corrected, round 4): get_report_dashboard_aggregate_secure() counts over the has_report_access()-filtered set for MOST roles, but is INDEPENDENT of it for airasia_management/ghod/global_reporting_controller -- their aggregate visibility is a deliberately separate, count-only, never-per-report authorization path", () => {
   const block = fnBlock("get_report_dashboard_aggregate_secure")![0];
-  assert.match(block, /where public\.has_report_access\(cri\.id\)/);
+  assert.match(block, /where v_global or public\.has_report_access\(cri\.id\)/);
+  assert.match(block, /v_global := public\.has_active_role\('airasia_management'\)/);
+  assert.match(block, /public\.has_active_role\('ghod'\)/);
+  assert.match(block, /public\.has_active_role\('global_reporting_controller'\)/);
+  // This function returns ONLY group_value + report_count -- never id,
+  // never content -- so widening v_global's count visibility can never
+  // leak individual report identity/content to airasia_management.
+  assert.match(block, /returns table \(\s*\n\s*group_value text,\s*\n\s*report_count bigint\s*\n\)/);
+});
+
+/** Mirrors get_report_dashboard_aggregate_secure()'s global-vs-scoped
+ * decision. */
+function aggregateIsGlobal(hasAirAsiaManagement: boolean, hasGhod: boolean, hasGrc: boolean): boolean {
+  return hasAirAsiaManagement || hasGhod || hasGrc;
+}
+
+test("PART L DECISION MIRROR: AirAsia Management receives global aggregate totals even though it never appears in has_report_access() and can never open a report detail -- the two permissions are wired independently, confirmed by this mirror plus the source-text assertions above", () => {
+  assert.equal(aggregateIsGlobal(true, false, false), true);
+  assert.equal(aggregateIsGlobal(false, false, false), false);
+  assert.equal(aggregateIsGlobal(false, true, false), true);
+  assert.equal(aggregateIsGlobal(false, false, true), true);
 });
 
 test("PART L: dashboard aggregates are NOT audited per call -- an aggregate refresh is not a 'detail' access, matching the explicit 'must not flood detail-access auditing' requirement", () => {
@@ -799,11 +833,41 @@ test("PART Q: get_report_secure() v3 is ATOMIC -- has_report_access(), the audit
   assert.match(block, /returns table \([\s\S]*?content jsonb\s*\n?\)/);
 });
 
-test("PART R: list_reports_secure()/search_reports_secure() v2 both return `content` populated via report_source_content() inside the same authorized CTE -- atomic, no follow-up query needed by any caller", () => {
+test("PART R (corrected, round 4): list_reports_secure()/search_reports_secure() v3 return only CARD fields (via report_source_summary(), a narrow, separate function) inside the same authorized CTE -- atomic, no follow-up query needed, and crucially NO full report_source_content() jsonb, since that belongs only behind an audited detail/PDF/export/version read", () => {
   for (const fn of ["list_reports_secure", "search_reports_secure"]) {
     const block = fnBlock(fn)![0];
-    assert.match(block, /public\.report_source_content\(a\.source_table, a\.source_id\)/);
+    assert.match(block, /cross join lateral public\.report_source_summary\(a\.source_table, a\.source_id\) s/);
+    assert.doesNotMatch(block, /report_source_content/, `${fn} must not call the full-content function`);
+    assert.doesNotMatch(block, /content jsonb/, `${fn} must not return a content jsonb column`);
   }
+});
+
+test("PART R: report_source_summary() itself never returns a full remark/declaration/corrective_action field -- only an 80-char-truncated excerpt, and never any child-table row at all", () => {
+  const block = fnBlock("report_source_summary")![0];
+  assert.match(block, /left\(coalesce\(t\.remark, ''\), 80\)/);
+  assert.doesNotMatch(block, /corrective_action/);
+  assert.doesNotMatch(block, /declaration/);
+  assert.doesNotMatch(block, /_patrols|_items|_hold_checks|_profiling_duties/);
+});
+
+test("PART R: report_source_summary() is service_role-ONLY (never authenticated) -- same reasoning as report_source_content(): it performs no authorization check of its own", () => {
+  assert.match(code, /revoke execute on function public\.report_source_summary\(text, uuid\) from public, anon, authenticated;/);
+  assert.match(code, /grant execute on function public\.report_source_summary\(text, uuid\) to service_role;/);
+});
+
+test("PART R: list_my_submissions_secure() takes no profile-id parameter at all -- it can only ever return the caller's OWN reports, derived from auth.uid(), across all 7 tables via a fixed UNION ALL (never a client-supplied table name)", () => {
+  const block = fnBlock("list_my_submissions_secure", "\\(p_limit integer default 20\\)")![0];
+  assert.doesNotMatch(block, /p_profile_id/);
+  for (const t of ["report_sec013", "report_sec014", "report_sec016", "report_sec018", "report_sec029", "report_sec033", "offload_records"]) {
+    assert.match(block, new RegExp(`from public\\.${t} t where t\\.profile_id = auth\\.uid\\(\\)`));
+  }
+});
+
+test("PART R: search_reports_by_number_secure() is authorized through the same has_report_access() decision as every other read path, and returns only card fields via report_source_summary()", () => {
+  const block = fnBlock("search_reports_by_number_secure")![0];
+  assert.match(block, /public\.has_report_access\(cri\.id\)/);
+  assert.match(block, /public\.report_source_summary\(cri\.source_table, cri\.source_id\)/);
+  assert.doesNotMatch(block, /report_source_content/);
 });
 
 test("PART S: needs_your_action_secure() takes no report-identifying parameter at all -- it derives the caller's own role/station/team/ops_group from auth.uid() exclusively, so it cannot be used to probe another profile's queue", () => {
@@ -952,4 +1016,53 @@ test("PRIVILEGE MATRIX: after Part O, the 7 report tables' RLS grants ordinary a
   for (const table of ["report_sec016", "report_sec014", "report_sec029", "report_sec018", "report_sec033", "report_sec013", "offload_records"]) {
     assert.match(code, new RegExp(`create policy "[a-z0-9]+ own select" on public\\.${table} for select using \\(profile_id = auth\\.uid\\(\\)\\);`));
   }
+});
+
+// =======================================================================
+// CORRECTION ROUND 4: own-report reads, list/search minimization,
+// aggregate independence, child-table coverage, version-1 immutability
+// =======================================================================
+
+test("PRIVILEGE MATRIX (round 4): SELECT is revoked at the table level from `authenticated` on all 7 report tables, then re-granted on ONLY the 3 RETURNING columns (id, submitted_at, report_no) report creation actually needs -- RLS's row-level 'own select' policy is no longer the only barrier; column-level privilege closes full-row content access even on the caller's own row", () => {
+  const block = code.match(/do \$\$\s*\ndeclare\s*\n\s*v_table text;[\s\S]*?end;\s*\n\$\$;/)![0];
+  assert.match(block, /revoke select on public\.%I from authenticated/);
+  assert.match(block, /grant select \(id, submitted_at, report_no\) on public\.%I to authenticated/);
+});
+
+test("CHILD-TABLE COVERAGE (round 4): all 5 child tables (patrols/items/hold_checks/profiling_duties) have their broad 'via parent select' policy dropped and replaced with an own-row-only policy -- correcting round 3's incorrect assumption that narrowing the parent's policy alone was sufficient", () => {
+  const children: [string, string, string][] = [
+    ["report_sec014_patrols", "report_sec014", "sec014_patrols"],
+    ["report_sec018_patrols", "report_sec018", "sec018_patrols"],
+    ["report_sec029_items", "report_sec029", "sec029_items"],
+    ["report_sec033_hold_checks", "report_sec033", "sec033_hold_checks"],
+    ["report_sec013_profiling_duties", "report_sec013", "sec013_profiling_duties"],
+  ];
+  for (const [child, parent, shortName] of children) {
+    assert.match(code, new RegExp(`drop policy if exists "${shortName} via parent select" on public\\.${child};`), `must drop the old broad policy on ${child}`);
+    assert.match(code, new RegExp(`create policy "[a-z0-9_]+ own select" on public\\.${child} for select\\s*\\n\\s*using \\(exists \\(select 1 from public\\.${parent} r where r\\.id = report_id and r\\.profile_id = auth\\.uid\\(\\)\\)\\);`), `must create an own-row-only replacement on ${child}`);
+  }
+});
+
+test("CHILD-TABLE COVERAGE: the 5 child tables' own-row-only policies query through report_source_content(), which embeds the SAME child rows into the parent's jsonb for an authorized non-owner viewer -- so a scoped role (e.g. main_enforcement) still sees patrol/item/hold-check/profiling-duty content via the audited detail path, even though direct table access is now closed to them", () => {
+  const block = fnBlock("report_source_content")![0];
+  for (const child of ["report_sec014_patrols", "report_sec018_patrols", "report_sec029_items", "report_sec033_hold_checks", "report_sec013_profiling_duties"]) {
+    assert.match(block, new RegExp(child));
+  }
+});
+
+test("VERSION-1 IMMUTABILITY (round 4): index_report() v2 now captures version 1's amended_content via report_source_content() at indexing time -- a genuine snapshot, not a null placeholder -- and this insert happens exactly once, never revisited by any UPDATE anywhere in this codebase (report_versions has no UPDATE statement targeting amended_content in either migration)", () => {
+  const block = fnBlock("index_report")![0];
+  assert.match(block, /amended_content\)\s*\n\s*values \(v_index_id, 1, 'original', 'Initial submission\.', p_submitter_profile_id, 'approved', now\(\), public\.report_source_content\(p_source_table, p_source_id\)\)/);
+  assert.doesNotMatch(code, /update public\.report_versions set[^;]*amended_content/);
+});
+
+test("VERSION-1 IMMUTABILITY: get_report_version_content_secure() returns the STORED report_versions.amended_content snapshot for the requested version, never a live re-fetch of the current source row -- so a version-1 request returns the original as captured at indexing time, not today's row (which happen to be identical for a submitted report, since content is frozen, but the code path is genuinely snapshot-based, not current-row-based)", () => {
+  const block = fnBlock("get_report_version_content_secure")![0];
+  assert.match(block, /select rv\.version_number, rv\.amendment_type, rv\.reason, rv\.requested_by, rv\.approved_by,\s*\n\s*rv\.effective_status, rv\.amended_content, rv\.supersedes_version, rv\.created_at, rv\.decided_at\s*\n\s*from public\.report_versions rv/);
+  assert.doesNotMatch(block, /report_source_content/, "must read the stored snapshot, not re-derive it from the live source row");
+});
+
+test("INDEX_REPORT ROLLBACK: the documented rollback now includes reverting index_report() to its exact Phase 5 form, positioned before the has_report_access()/get_report_secure() reverts (matching the dependency direction: index_report() calls report_source_content(), a Phase 6 function)", () => {
+  const rollbackBlock = migrationSql.match(/DOCUMENTED ROLLBACK[\s\S]*$/)![0];
+  assert.match(rollbackBlock, /Revert index_report\(\) to its exact Phase 5 form/);
 });

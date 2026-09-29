@@ -730,13 +730,29 @@ grant execute on function public.get_access_request_status_secure(uuid) to authe
 -- PART L: get_report_dashboard_aggregate_secure() -- coarse, role-scoped
 -- counts only
 -- =======================================================================
--- Groups the SAME has_report_access()-authorized set already used by
--- list/search/flagged by one coarse, fixed dimension -- never by a
+-- Groups the authorized set by one coarse, fixed dimension -- never by a
 -- combination fine enough to reconstruct an individual report (e.g.
 -- never by exact date+station+team together, which could isolate a
 -- single row). Not audited per call -- this is the explicit "aggregate
 -- refreshes must not flood detail-access auditing" requirement; nothing
 -- about an aggregate count is a "detail" access.
+--
+-- CORRECTION (review round 4): aggregate visibility must be independent
+-- of per-report DETAIL permission -- AirAsia Management (and GHOD/GRC,
+-- who already have detail access but should see the true global total
+-- regardless) must receive real dashboard totals even though
+-- airasia_management never appears in has_report_access() at all (by
+-- design, Phase 5 Part K -- "executive aggregates are a separate ...
+-- dashboard RPC, never a per-report grant"). Filtering this function's
+-- counts through has_report_access() for those roles would silently
+-- return zero for airasia_management forever, which is not "aggregate-
+-- only access" -- it is a different, broader, and INTENTIONAL
+-- authorization path specific to counts, never to row identity/content
+-- (this function returns group_value + report_count only, never an id,
+-- never content). Every other caller's counts remain has_report_access()
+-- -scoped exactly as before -- this only WIDENS the three named
+-- aggregate-dashboard roles' count visibility, never any role's access
+-- to individual report detail.
 create or replace function public.get_report_dashboard_aggregate_secure(p_group_by text default 'source_table')
 returns table (
   group_value text,
@@ -747,6 +763,8 @@ stable
 security definer
 set search_path to 'public'
 as $function$
+declare
+  v_global boolean;
 begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
@@ -757,6 +775,10 @@ begin
   if p_group_by not in ('source_table', 'flag_state', 'status', 'severity', 'operating_entity_code') then
     raise exception 'Unsupported group_by dimension.';
   end if;
+
+  v_global := public.has_active_role('airasia_management')
+    or public.has_active_role('ghod')
+    or public.has_active_role('global_reporting_controller');
 
   return query
   select
@@ -769,7 +791,7 @@ begin
     end as group_value,
     count(*) as report_count
   from public.central_reports_index cri
-  where public.has_report_access(cri.id)
+  where v_global or public.has_report_access(cri.id)
   group by 1;
 end;
 $function$;
@@ -1035,29 +1057,81 @@ create policy "offload own select" on public.offload_records for select using (p
 -- reached only through their parent report's own id, and their existing
 -- "via parent select" policies already resolve through the SAME parent
 -- row's own profile_id/station condition -- since the parent's own
--- broad access has been narrowed above, these are narrowed too, with no
--- separate DROP/CREATE needed on the child tables themselves (their
--- policies are `exists (select 1 from <parent> where ... and
--- (r.profile_id = auth.uid() or (broad clause)))`-shaped and still
--- reference the parent table, whose own visibility to the *caller*
--- executing that EXISTS subquery is now the same narrowed "own row"
--- policy). A future phase should further tighten these child-table
--- policies explicitly rather than relying on this transitive effect,
--- documented as a known limitation in the Phase 6 report.
+-- broad access has been narrowed above. Child tables are NOT narrowed
+-- transitively.
+--
+-- CORRECTION (review round 4): round 3's claim above -- that narrowing
+-- the parent's own SELECT policy transitively narrows these child
+-- policies -- was WRONG and is corrected here. Each child policy embeds
+-- its OWN broad clause directly inside its EXISTS subquery
+-- (`r.profile_id = auth.uid() or (is_supervisor_or_above() and
+-- (is_manager_or_above() or r.station = current_station()))`), evaluated
+-- against the joined parent ROW's data, not gated by the parent table's
+-- RLS policy at all (an EXISTS subquery inside a policy definition does
+-- not itself re-apply RLS from the outer query's perspective the way
+-- application code querying the parent table would). Every one of these
+-- 5 child-table policies is dropped and replaced with an own-row-only
+-- equivalent, exactly mirroring Part O's own correction:
+drop policy if exists "sec014_patrols via parent select" on public.report_sec014_patrols;
+create policy "sec014_patrols own select" on public.report_sec014_patrols for select
+  using (exists (select 1 from public.report_sec014 r where r.id = report_id and r.profile_id = auth.uid()));
 
--- Table-level grants for these 7 tables are unchanged by this migration
--- (INSERT/UPDATE/SELECT privilege at the table-grant level was already
--- broad, per the round-1 production audit) -- RLS above is now the
--- actual enforcement boundary, matching the established pattern for
--- every other table in this project (see avsec/0002_rls.sql's own
--- comment: "RLS", not table grants, is this project's real access
--- gate). Narrowing the table-level GRANT itself to column-level SELECT
--- was considered and rejected in favor of RLS: report creation's
--- `.insert().select("id, submitted_at, report_no")` pattern already
--- works correctly under the new "own row" policy without any grant
--- change, and a second, parallel column-level-grant mechanism would add
--- complexity without closing any additional gap RLS does not already
--- close.
+drop policy if exists "sec018_patrols via parent select" on public.report_sec018_patrols;
+create policy "sec018_patrols own select" on public.report_sec018_patrols for select
+  using (exists (select 1 from public.report_sec018 r where r.id = report_id and r.profile_id = auth.uid()));
+
+drop policy if exists "sec029_items via parent select" on public.report_sec029_items;
+create policy "sec029_items own select" on public.report_sec029_items for select
+  using (exists (select 1 from public.report_sec029 r where r.id = report_id and r.profile_id = auth.uid()));
+
+drop policy if exists "sec033_hold_checks via parent select" on public.report_sec033_hold_checks;
+create policy "sec033_hold_checks own select" on public.report_sec033_hold_checks for select
+  using (exists (select 1 from public.report_sec033 r where r.id = report_id and r.profile_id = auth.uid()));
+
+drop policy if exists "sec013_profiling_duties via parent select" on public.report_sec013_profiling_duties;
+create policy "sec013_profiling_duties own select" on public.report_sec013_profiling_duties for select
+  using (exists (select 1 from public.report_sec013 r where r.id = report_id and r.profile_id = auth.uid()));
+-- The "via parent write" policies on these same 5 tables are untouched
+-- -- they already gate on `r.profile_id = auth.uid()` only (own-row
+-- write, needed for report creation's own child-row inserts) and never
+-- had a broad-visibility clause to begin with.
+
+-- CORRECTION (review round 4): column-level grant closure. RLS alone is
+-- ROW-level -- the "own row" policy above still permits an ordinary
+-- authenticated caller to `select *` on their OWN submitted report,
+-- including remark/declaration/corrective_action/every other content
+-- column, directly, unaudited. "Remove direct authenticated access to
+-- full source-row content, including own rows" requires closing this at
+-- the COLUMN level too: SELECT is revoked entirely at the table-grant
+-- level, then re-granted on ONLY the 3 columns report creation's
+-- existing `.insert({...}).select("id, submitted_at, report_no")` /
+-- `.select("id")` RETURNING pattern actually needs (confirmed by a
+-- source search of every submit action in lib/avsec/reports/actions.ts
+-- -- every one of the 7 report tables' insert calls selects exactly
+-- `id, submitted_at, report_no`, or `id` alone for report_sec033/
+-- offload_records/report_sec013). No table's full-row content is
+-- selectable by `authenticated` anymore, even on the caller's own row --
+-- list_my_submissions_secure() (Part R) replaces that need, via
+-- SECURITY DEFINER, returning card fields only.
+do $$
+declare
+  v_table text;
+begin
+  foreach v_table in array array[
+    'report_sec013', 'report_sec014', 'report_sec016', 'report_sec018',
+    'report_sec029', 'report_sec033', 'offload_records'
+  ] loop
+    execute format('revoke select on public.%I from authenticated', v_table);
+    execute format('grant select (id, submitted_at, report_no) on public.%I to authenticated', v_table);
+  end loop;
+end;
+$$;
+-- Note: the four EXECUTE format(...) calls above target only fixed,
+-- hardcoded literal table names from the array declared in this same
+-- block -- never a client- or caller-supplied value -- so this does not
+-- violate the "no arbitrary table-name dynamic SQL" requirement, which
+-- concerns runtime-supplied identifiers, not a closed, migration-authored
+-- allowlist.
 
 -- =======================================================================
 -- PART P: report_source_content() -- the one shared, hardcoded,
@@ -1127,6 +1201,121 @@ grant execute on function public.report_source_content(text, uuid) to service_ro
 -- callable directly by a client; every atomic RPC below is itself
 -- SECURITY DEFINER and calls it internally after its OWN
 -- has_report_access() check, which is the only path that reaches it.
+
+-- =======================================================================
+-- PART P2: index_report() v2 -- version 1 now captures a true immutable
+-- snapshot
+-- =======================================================================
+-- CORRECTION (review round 4): Phase 5's index_report() (unchanged until
+-- now) inserted version 1's report_versions row with amended_content
+-- left NULL -- version 1 was never actually a captured snapshot, only a
+-- placeholder row. Since submitted-content is already frozen by
+-- block_submitted_report_mutation() the moment a report is submitted,
+-- this was not actively WRONG (the current source row IS the original,
+-- because it can never change) -- but get_report_version_content_secure()
+-- requesting version 1 explicitly would return amended_content: null,
+-- not "the requested immutable snapshot," which review round 4 asked to
+-- be verified. Fixed: CREATE OR REPLACE of index_report() (Phase 5,
+-- 20260928000004 -- corrected here, from within Phase 6, following the
+-- same pattern already used for has_report_access()/get_report_secure())
+-- populates version 1's amended_content with report_source_content()'s
+-- full jsonb snapshot, captured once, at indexing time, never touched
+-- again (report_versions has no UPDATE path for amended_content
+-- anywhere in this codebase). Every other line of index_report() is
+-- unchanged from Phase 5's original.
+create or replace function public.index_report(
+  p_source_table text,
+  p_source_id uuid,
+  p_report_type text,
+  p_aoc_id uuid,
+  p_operating_entity_id uuid,
+  p_department_id uuid,
+  p_unit_id uuid,
+  p_hub_id uuid,
+  p_station_id uuid,
+  p_team_id uuid,
+  p_flight_number text,
+  p_report_date date,
+  p_submitter_profile_id uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_index_id uuid;
+  v_entity_code text;
+begin
+  if p_source_table not in (
+    'report_sec013', 'report_sec014', 'report_sec016', 'report_sec018',
+    'report_sec029', 'report_sec033', 'offload_records'
+  ) then
+    raise exception 'Unsupported report source table %; not on the indexing allowlist.', p_source_table;
+  end if;
+
+  perform public.validate_org_hierarchy(p_aoc_id, p_operating_entity_id, p_department_id, p_unit_id, p_hub_id, p_station_id, p_team_id);
+
+  if p_operating_entity_id is not null then
+    select code into v_entity_code from public.operating_entities where id = p_operating_entity_id;
+  end if;
+
+  select id into v_index_id from public.central_reports_index
+  where source_table = p_source_table and source_id = p_source_id;
+
+  if v_index_id is not null then
+    return v_index_id;
+  end if;
+
+  insert into public.central_reports_index (
+    source_table, source_id, report_type, aoc_id, operating_entity_id, operating_entity_code,
+    department_id, unit_id, hub_id, station_id, team_id, flight_number, report_date,
+    status, current_version, submitter_profile_id
+  ) values (
+    p_source_table, p_source_id, p_report_type, p_aoc_id, p_operating_entity_id, v_entity_code,
+    p_department_id, p_unit_id, p_hub_id, p_station_id, p_team_id, p_flight_number, p_report_date,
+    'submitted', 1, p_submitter_profile_id
+  )
+  on conflict (source_table, source_id) do nothing
+  returning id into v_index_id;
+
+  if v_index_id is null then
+    select id into v_index_id from public.central_reports_index
+    where source_table = p_source_table and source_id = p_source_id;
+    return v_index_id;
+  end if;
+
+  -- Version 1 = the immutable original -- now captures a real content
+  -- snapshot (review round 4 correction), taken exactly once and never
+  -- updated afterward.
+  insert into public.report_versions (repository_report_id, version_number, amendment_type, reason, requested_by, effective_status, decided_at, amended_content)
+  values (v_index_id, 1, 'original', 'Initial submission.', p_submitter_profile_id, 'approved', now(), public.report_source_content(p_source_table, p_source_id));
+
+  if p_source_table = 'report_sec013' then
+    update public.report_sec013 set aoc_id = p_aoc_id, operating_entity_id = p_operating_entity_id, operating_entity_code = v_entity_code, department_id = p_department_id, unit_id = p_unit_id, hub_id = p_hub_id, org_station_id = p_station_id, org_team_id = p_team_id where id = p_source_id;
+  elsif p_source_table = 'report_sec014' then
+    update public.report_sec014 set aoc_id = p_aoc_id, operating_entity_id = p_operating_entity_id, operating_entity_code = v_entity_code, department_id = p_department_id, unit_id = p_unit_id, hub_id = p_hub_id, org_station_id = p_station_id, org_team_id = p_team_id where id = p_source_id;
+  elsif p_source_table = 'report_sec016' then
+    update public.report_sec016 set aoc_id = p_aoc_id, operating_entity_id = p_operating_entity_id, operating_entity_code = v_entity_code, department_id = p_department_id, unit_id = p_unit_id, hub_id = p_hub_id, org_station_id = p_station_id, org_team_id = p_team_id where id = p_source_id;
+  elsif p_source_table = 'report_sec018' then
+    update public.report_sec018 set aoc_id = p_aoc_id, operating_entity_id = p_operating_entity_id, operating_entity_code = v_entity_code, department_id = p_department_id, unit_id = p_unit_id, hub_id = p_hub_id, org_station_id = p_station_id, org_team_id = p_team_id where id = p_source_id;
+  elsif p_source_table = 'report_sec029' then
+    update public.report_sec029 set aoc_id = p_aoc_id, operating_entity_id = p_operating_entity_id, operating_entity_code = v_entity_code, department_id = p_department_id, unit_id = p_unit_id, hub_id = p_hub_id, org_station_id = p_station_id, org_team_id = p_team_id where id = p_source_id;
+  elsif p_source_table = 'report_sec033' then
+    update public.report_sec033 set aoc_id = p_aoc_id, operating_entity_id = p_operating_entity_id, operating_entity_code = v_entity_code, department_id = p_department_id, unit_id = p_unit_id, hub_id = p_hub_id, org_station_id = p_station_id, org_team_id = p_team_id where id = p_source_id;
+  elsif p_source_table = 'offload_records' then
+    update public.offload_records set aoc_id = p_aoc_id, operating_entity_id = p_operating_entity_id, operating_entity_code = v_entity_code, department_id = p_department_id, unit_id = p_unit_id, hub_id = p_hub_id, org_station_id = p_station_id, org_team_id = p_team_id where id = p_source_id;
+  end if;
+
+  insert into public.report_access_audit (actor_id, repository_report_id, version_number, action)
+  values (p_submitter_profile_id, v_index_id, 1, 'index');
+
+  return v_index_id;
+end;
+$function$;
+
+revoke execute on function public.index_report(text, uuid, text, uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, date, uuid) from public, anon, authenticated;
+grant execute on function public.index_report(text, uuid, text, uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, date, uuid) to service_role;
 
 -- =======================================================================
 -- PART Q: get_report_secure() v3 -- atomic: authorize AND return full
@@ -1223,13 +1412,69 @@ revoke execute on function public.get_report_secure(uuid, integer) from public, 
 grant execute on function public.get_report_secure(uuid, integer) to authenticated, service_role;
 
 -- =======================================================================
--- PART R: list_reports_secure() / search_reports_secure() v2 -- atomic
--- content, no follow-up source-table query
+-- PART R: report_source_summary() and list_reports_secure() /
+-- search_reports_secure() v3 -- CARD FIELDS ONLY, never a full report body
 -- =======================================================================
--- Same authorized-first CTE and total_count-from-authorized-set pattern
--- as before; the only change is an added `content` column populated via
--- report_source_content() for each row in the SAME query, so a caller
--- never needs a second statement to render a list/search result.
+-- CORRECTION (review round 4): v2 (this round's own earlier draft, never
+-- pushed) added a full `content jsonb` column to list/search results --
+-- the entire source row, including remark text, evidence-adjacent
+-- fields, and (via report_source_content()) child-table arrays, exposed
+-- through an UNAUDITED list/search response. That over-corrects: full
+-- content belongs only behind an audited detail/PDF/export/version read
+-- (get_report_secure(), authorize_report_pdf_secure(),
+-- export_reports_secure(), get_report_version_content_secure() -- each
+-- audited, each individually authorized). list/search results now carry
+-- only card-appropriate fields via a new, narrower, separate function.
+--
+-- report_source_summary(): the same hardcoded-per-table, no-dynamic-SQL,
+-- service_role-only pattern as report_source_content(), but returns a
+-- FIXED small set of display fields only -- never remark/declaration/
+-- corrective_action in full (remark_excerpt is truncated to 80 chars,
+-- matching the truncation already used by the pre-existing
+-- getFilteredSubmissions() summary), never child-table rows, never any
+-- other content column. This is the ONLY function list_reports_secure()/
+-- search_reports_secure() use to add per-row display detail.
+create or replace function public.report_source_summary(p_source_table text, p_source_id uuid)
+returns table (
+  staff_name text,
+  station text,
+  team text,
+  remark_excerpt text,
+  secondary_identifier text,
+  reg_no text,
+  bay_no text,
+  sta_std text,
+  submitter_profile_id uuid
+)
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if p_source_table = 'report_sec013' then
+    return query select t.staff_name, t.station, t.team, left(coalesce(t.remark, ''), 80), null::text, null::text, null::text, null::text, t.profile_id from public.report_sec013 t where t.id = p_source_id;
+  elsif p_source_table = 'report_sec014' then
+    return query select t.staff_name, t.station, t.team, left(coalesce(t.remark, ''), 80), null::text, null::text, null::text, null::text, t.profile_id from public.report_sec014 t where t.id = p_source_id;
+  elsif p_source_table = 'report_sec016' then
+    return query select t.staff_name, t.station, t.team, null::text, ('Flight ' || coalesce(t.flight, '?') || ' · Reg ' || coalesce(t.reg_no, '?')), t.reg_no, t.bay_no, t.sta_std, t.profile_id from public.report_sec016 t where t.id = p_source_id;
+  elsif p_source_table = 'report_sec018' then
+    return query select t.staff_name, t.station, t.team, null::text, null::text, null::text, null::text, null::text, t.profile_id from public.report_sec018 t where t.id = p_source_id;
+  elsif p_source_table = 'report_sec029' then
+    return query select t.staff_name, t.station, t.team, null::text, ('Flight ' || coalesce(t.flight_no, '?') || ' · Reg ' || coalesce(t.aircraft_registration, '?')), t.aircraft_registration, null::text, null::text, t.profile_id from public.report_sec029 t where t.id = p_source_id;
+  elsif p_source_table = 'report_sec033' then
+    return query select t.staff_name, t.station, t.team, null::text, null::text, null::text, null::text, null::text, t.profile_id from public.report_sec033 t where t.id = p_source_id;
+  elsif p_source_table = 'offload_records' then
+    return query select t.staff_name, t.station, t.team, null::text, ('Flight ' || coalesce(t.flight_no, '?') || ' · ' || coalesce(t.destination, '?')), null::text, null::text, null::text, t.profile_id from public.offload_records t where t.id = p_source_id;
+  else
+    raise exception 'Unsupported source_table: %', p_source_table;
+  end if;
+end;
+$function$;
+
+revoke execute on function public.report_source_summary(text, uuid) from public, anon, authenticated;
+grant execute on function public.report_source_summary(text, uuid) to service_role;
+
 create or replace function public.list_reports_secure(
   p_page integer default 1,
   p_page_size integer default 25,
@@ -1250,7 +1495,15 @@ returns table (
   severity text,
   flag_state text,
   indexed_at timestamptz,
-  content jsonb,
+  staff_name text,
+  station text,
+  team text,
+  remark_excerpt text,
+  secondary_identifier text,
+  reg_no text,
+  bay_no text,
+  sta_std text,
+  submitter_profile_id uuid,
   total_count bigint
 )
 language plpgsql
@@ -1294,9 +1547,10 @@ begin
   select
     a.id, a.source_table, a.report_type, a.operating_entity_code, a.flight_number,
     a.report_date, a.status, a.severity, a.flag_state, a.indexed_at,
-    public.report_source_content(a.source_table, a.source_id),
+    s.staff_name, s.station, s.team, s.remark_excerpt, s.secondary_identifier, s.reg_no, s.bay_no, s.sta_std, s.submitter_profile_id,
     c.n
   from authorized a, counted c
+  cross join lateral public.report_source_summary(a.source_table, a.source_id) s
   order by a.indexed_at desc, a.id
   limit v_page_size
   offset (v_page - 1) * v_page_size;
@@ -1334,7 +1588,15 @@ returns table (
   severity text,
   flag_state text,
   indexed_at timestamptz,
-  content jsonb,
+  staff_name text,
+  station text,
+  team text,
+  remark_excerpt text,
+  secondary_identifier text,
+  reg_no text,
+  bay_no text,
+  sta_std text,
+  submitter_profile_id uuid,
   total_count bigint
 )
 language plpgsql
@@ -1377,9 +1639,10 @@ begin
   select
     a.id, a.source_table, a.report_type, a.operating_entity_code, a.flight_number,
     a.report_date, a.status, a.severity, a.flag_state, a.indexed_at,
-    public.report_source_content(a.source_table, a.source_id),
+    s.staff_name, s.station, s.team, s.remark_excerpt, s.secondary_identifier, s.reg_no, s.bay_no, s.sta_std, s.submitter_profile_id,
     c.n
   from authorized a, counted c
+  cross join lateral public.report_source_summary(a.source_table, a.source_id) s
   order by a.indexed_at desc, a.id
   limit v_page_size
   offset (v_page - 1) * v_page_size;
@@ -1388,6 +1651,119 @@ $function$;
 
 revoke execute on function public.search_reports_secure(integer, integer, text, text, uuid, text, uuid, uuid, uuid, uuid, uuid, text, text, text, uuid) from public, anon;
 grant execute on function public.search_reports_secure(integer, integer, text, text, uuid, text, uuid, uuid, uuid, uuid, uuid, text, text, text, uuid) to authenticated, service_role;
+
+-- list_my_submissions_secure(): the caller's OWN reports across all 7
+-- source tables, card fields only (via report_source_summary()) -- the
+-- replacement for the direct full-row SELECT getMySubmissions() used to
+-- perform. SECURITY DEFINER + service_role-owned, so it reads every
+-- table regardless of the column-level grant closure below; it never
+-- accepts a profile id parameter, so it can only ever return the
+-- CALLER's own reports (auth.uid()), never anyone else's.
+create or replace function public.list_my_submissions_secure(p_limit integer default 20)
+returns table (
+  id uuid,
+  source_table text,
+  report_no text,
+  status text,
+  submitted_at timestamptz,
+  created_at timestamptz,
+  staff_name text,
+  station text,
+  team text,
+  secondary_identifier text
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_limit integer := least(greatest(coalesce(p_limit, 20), 1), 200);
+begin
+  if auth.uid() is null then
+    raise exception 'Must be signed in.';
+  end if;
+
+  return query
+  with mine as (
+    select 'report_sec013' as source_table, t.id, t.report_no, t.status::text, t.submitted_at, t.created_at from public.report_sec013 t where t.profile_id = auth.uid()
+    union all
+    select 'report_sec014', t.id, t.report_no, t.status::text, t.submitted_at, t.created_at from public.report_sec014 t where t.profile_id = auth.uid()
+    union all
+    select 'report_sec016', t.id, t.report_no, t.status::text, t.submitted_at, t.created_at from public.report_sec016 t where t.profile_id = auth.uid()
+    union all
+    select 'report_sec018', t.id, t.report_no, t.status::text, t.submitted_at, t.created_at from public.report_sec018 t where t.profile_id = auth.uid()
+    union all
+    select 'report_sec029', t.id, t.report_no, t.status::text, t.submitted_at, t.created_at from public.report_sec029 t where t.profile_id = auth.uid()
+    union all
+    select 'report_sec033', t.id, t.report_no, t.status::text, t.submitted_at, t.created_at from public.report_sec033 t where t.profile_id = auth.uid()
+    union all
+    select 'offload_records', t.id, t.report_no, t.status::text, t.submitted_at, t.created_at from public.offload_records t where t.profile_id = auth.uid()
+  )
+  select
+    m.id, m.source_table, m.report_no, m.status, m.submitted_at, m.created_at,
+    s.staff_name, s.station, s.team, s.secondary_identifier
+  from mine m
+  cross join lateral public.report_source_summary(m.source_table, m.id) s
+  order by m.created_at desc
+  limit v_limit;
+end;
+$function$;
+
+revoke execute on function public.list_my_submissions_secure(integer) from public, anon;
+grant execute on function public.list_my_submissions_secure(integer) to authenticated, service_role;
+
+-- search_reports_by_number_secure(): CORRECTION (review round 4,
+-- discovered while fixing getMySubmissions() -- an adjacent direct
+-- full-row read, searchByReportNoPrefix() in the same source file, was
+-- found reading `.from(table).select("*")` unscoped by profile_id at
+-- all, relying entirely on the now-closed legacy RLS). Authorized via
+-- the same has_report_access() CTE as list/search, narrow card fields
+-- only via report_source_summary() -- never full content.
+create or replace function public.search_reports_by_number_secure(p_prefix text, p_limit integer default 50)
+returns table (
+  id uuid,
+  source_table text,
+  report_no text,
+  status text,
+  report_date date,
+  station text,
+  team text,
+  staff_name text,
+  secondary_identifier text
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_limit integer := least(greatest(coalesce(p_limit, 50), 1), 200);
+  v_cleaned text := upper(trim(coalesce(p_prefix, '')));
+begin
+  if auth.uid() is null then
+    raise exception 'Must be signed in.';
+  end if;
+  if not exists (select 1 from public.profiles where id = auth.uid() and status = 'approved') then
+    raise exception 'Only an approved account may search reports.';
+  end if;
+  if v_cleaned = '' then
+    return;
+  end if;
+
+  return query
+  select
+    cri.id, cri.source_table, cri.report_type, cri.status, cri.report_date,
+    s.station, s.team, s.staff_name, s.secondary_identifier
+  from public.central_reports_index cri
+  cross join lateral public.report_source_summary(cri.source_table, cri.source_id) s
+  where public.has_report_access(cri.id)
+    and upper(cri.report_type) like v_cleaned || '%'
+  order by cri.report_type desc
+  limit v_limit;
+end;
+$function$;
+
+revoke execute on function public.search_reports_by_number_secure(text, integer) from public, anon;
+grant execute on function public.search_reports_by_number_secure(text, integer) to authenticated, service_role;
 
 -- =======================================================================
 -- PART S: needs_your_action_secure() -- dedicated, atomic, preserves
@@ -1706,22 +2082,39 @@ grant execute on function public.export_reports_secure(integer, text, uuid, text
 --      drop function if exists public.get_report_version_content_secure(uuid, integer);
 --      drop function if exists public.get_attachment_authorization_secure(uuid);
 --      drop function if exists public.flagged_reports_secure(integer, integer);
+--      drop function if exists public.list_my_submissions_secure(integer);
 --      drop function if exists public.search_reports_secure(integer, integer, text, text, uuid, text, uuid, uuid, uuid, uuid, uuid, text, text, text, uuid);
 --      drop function if exists public.list_reports_secure(integer, integer, text, text, text, date, date);
+--      drop function if exists public.report_source_summary(text, uuid);
 --
--- 2. Revert get_report_secure() to its exact Phase 5 form (re-run its
+-- 2. Revert index_report() to its exact Phase 5 form (re-run its CREATE
+--    OR REPLACE from 20260928000004's Part H) -- drops the version-1
+--    amended_content snapshot capture; any version-1 rows already
+--    populated by the corrected form keep their snapshot (this is a
+--    function-behavior revert, not a data rollback).
+--
+-- 3. Revert get_report_secure() to its exact Phase 5 form (re-run its
 --    CREATE OR REPLACE from 20260928000004's Part L) -- it must revert
 --    BEFORE resolve_report_access_reason() is dropped, since the Phase
 --    6-v2 body calls it; the reverted Phase 5 body does not.
 --      drop function if exists public.resolve_report_access_reason(uuid);
 --
--- 3. Revert has_report_access() to its exact Phase 5 form (re-run the
+-- 4. Revert has_report_access() to its exact Phase 5 form (re-run the
 --    CREATE OR REPLACE from 20260928000004_phase5_report_classification_repository.sql
 --    Part K) -- do not simply DROP it, since Phase 5's own functions
 --    (get_report_secure(), flag_report(), unflag_report()) still depend
 --    on it existing.
 --
--- 4. Revert report_access_audit's CHECK constraint to its Phase 5 form
+-- 5. Restore the 7 report tables' table-level SELECT grant and the 5
+--    child-table SELECT policies to their pre-Phase-6 form:
+--      grant select on public.report_sec013, public.report_sec014, public.report_sec016, public.report_sec018, public.report_sec029, public.report_sec033, public.offload_records to authenticated;
+--      (re-run the exact CREATE POLICY statements for the 5 child
+--      "via parent select" policies from avsec/0002/0009/0010/0012_*.sql,
+--      matching whichever of those was actually the live production
+--      form before Phase 6 -- see this migration's Part O comment for
+--      the full historical policy-name list.)
+--
+-- 6. Revert report_access_audit's CHECK constraint to its Phase 5 form
 --    and drop the access_reason column:
 --      alter table public.report_access_audit drop constraint if exists report_access_audit_action_check;
 --      alter table public.report_access_audit add constraint report_access_audit_action_check check (action in (
@@ -1737,7 +2130,7 @@ grant execute on function public.export_reports_secure(integer, text, uuid, text
 --    rows may exist by the time a rollback is considered; back up
 --    report_access_audit before this step in that case.)
 --
--- 5. Drop the new indexes (each independent, order does not matter):
+-- 7. Drop the new indexes (each independent, order does not matter):
 --      drop index if exists public.central_reports_index_report_date_idx;
 --      drop index if exists public.central_reports_index_indexed_at_idx;
 --      drop index if exists public.central_reports_index_flight_number_idx;

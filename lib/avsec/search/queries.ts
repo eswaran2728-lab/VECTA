@@ -11,24 +11,38 @@ export interface StaffReportResult {
   detail: string;
 }
 
-/** Atomic secure fetch: search_reports_secure() (Phase 6) authorizes via
- * has_report_access() AND returns the full source row (as `content`) in
- * the SAME database call -- there is no follow-up query against any
- * report source table anywhere in this file. Direct SELECT on these
- * tables is closed at the RLS layer (Phase 6 Part O) for anyone other
- * than the row's own submitter, so a second query would not reliably
- * return authorized non-owner content even if one were attempted.
- * Content-based filtering (staff name) happens in JS over the already-
- * authorized, already-fetched rows only -- it can never widen which
- * rows were read. Returns empty until a report is indexed into the
- * repository -- expected fail-closed behavior until the Phase 5/6
- * rollout runs for this environment, not a bug. */
+type SearchRow = {
+  id: string;
+  source_table: string;
+  status: string;
+  submitted_at: string | null;
+  staff_name: string | null;
+  station: string | null;
+  team: string | null;
+  remark_excerpt: string | null;
+  secondary_identifier: string | null;
+};
+
+/** Atomic secure fetch: search_reports_secure() (Phase 6, round 4)
+ * authorizes via has_report_access() AND returns only CARD-appropriate
+ * display fields (staff_name, station, team, an 80-char remark excerpt,
+ * a per-type secondary identifier such as "Flight AK123 · Reg 9M-ABC")
+ * in the SAME database call, via report_source_summary() -- never the
+ * complete report body. There is no follow-up query against any report
+ * source table anywhere in this file, and no full-content field is ever
+ * requested or exposed through this unaudited search path (complete
+ * content is available only through the audited get_report_secure()
+ * detail read, PDF, export, or version-content RPCs). Content-based
+ * filtering (staff name) happens in JS over the already-authorized,
+ * already-fetched rows only -- it can never widen which rows were read.
+ * Returns empty until a report is indexed into the repository --
+ * expected fail-closed behavior until the Phase 5/6 rollout runs. */
 async function authorizedRows(
   supabase: Awaited<ReturnType<typeof createClient>>,
   sourceTable: "report_sec013" | "report_sec014" | "report_sec016" | "report_sec018" | "report_sec029" | "report_sec033" | "offload_records",
   fromDate: string,
   toDate: string,
-): Promise<Record<string, unknown>[]> {
+): Promise<SearchRow[]> {
   const { data, error } = await supabase.rpc("search_reports_secure", {
     p_page: 1,
     p_page_size: 100,
@@ -36,9 +50,17 @@ async function authorizedRows(
     p_to_date: toDate,
   });
   if (error || !data) return [];
-  return data
-    .filter((r) => r.source_table === sourceTable && r.content)
-    .map((r) => r.content as Record<string, unknown>);
+  return data.filter((r) => r.source_table === sourceTable).map((r) => ({
+    id: r.id,
+    source_table: r.source_table,
+    status: r.status,
+    submitted_at: r.indexed_at ?? null,
+    staff_name: r.staff_name,
+    station: r.station,
+    team: r.team,
+    remark_excerpt: r.remark_excerpt,
+    secondary_identifier: r.secondary_identifier,
+  }));
 }
 
 // End-of-shift lookup: "did this staff member file their daily report today?" Filters by
@@ -54,15 +76,15 @@ export async function searchDailyReportsByStaff(
   const rows = await authorizedRows(supabase, "report_sec014", from, to);
 
   return rows
-    .filter((row) => row.status === "submitted" && String(row.staff_name ?? "").toLowerCase().includes(needle))
+    .filter((row) => row.status === "submitted" && (row.staff_name ?? "").toLowerCase().includes(needle))
     .map((row) => ({
       reportType: "sec014" as const,
-      reportId: String(row.id),
-      staffName: String(row.staff_name ?? ""),
-      station: String(row.station ?? ""),
-      team: String(row.team ?? ""),
-      submittedAt: (row.submitted_at as string | null) ?? null,
-      detail: row.remark ? String(row.remark).slice(0, 80) : "No remarks",
+      reportId: row.id,
+      staffName: row.staff_name ?? "",
+      station: row.station ?? "",
+      team: row.team ?? "",
+      submittedAt: row.submitted_at,
+      detail: row.remark_excerpt ? row.remark_excerpt : "No remarks",
     }))
     .sort((a, b) => ((a.submittedAt ?? "") < (b.submittedAt ?? "") ? 1 : -1));
 }
@@ -84,43 +106,43 @@ export async function searchAircraftReportsByStaff(
     authorizedRows(supabase, "report_sec018", from, to),
   ]);
 
-  const matches = (row: Record<string, unknown>) =>
-    row.status === "submitted" && String(row.staff_name ?? "").toLowerCase().includes(needle);
+  const matches = (row: SearchRow) =>
+    row.status === "submitted" && (row.staff_name ?? "").toLowerCase().includes(needle);
 
   const results: StaffReportResult[] = [];
 
   for (const row of sec016.filter(matches)) {
     results.push({
       reportType: "sec016",
-      reportId: String(row.id),
-      staffName: String(row.staff_name ?? ""),
-      station: String(row.station ?? ""),
-      team: String(row.team ?? ""),
-      submittedAt: (row.submitted_at as string | null) ?? null,
-      detail: `Flight ${row.flight} · Reg ${row.reg_no}`,
+      reportId: row.id,
+      staffName: row.staff_name ?? "",
+      station: row.station ?? "",
+      team: row.team ?? "",
+      submittedAt: row.submitted_at,
+      detail: row.secondary_identifier ?? "",
     });
   }
 
   for (const row of sec029.filter(matches)) {
     results.push({
       reportType: "sec029",
-      reportId: String(row.id),
-      staffName: String(row.staff_name ?? ""),
-      station: String(row.station ?? ""),
-      team: String(row.team ?? ""),
-      submittedAt: (row.submitted_at as string | null) ?? null,
-      detail: `Flight ${row.flight_no} · Reg ${row.aircraft_registration}`,
+      reportId: row.id,
+      staffName: row.staff_name ?? "",
+      station: row.station ?? "",
+      team: row.team ?? "",
+      submittedAt: row.submitted_at,
+      detail: row.secondary_identifier ?? "",
     });
   }
 
   for (const row of sec018.filter(matches)) {
     results.push({
       reportType: "sec018",
-      reportId: String(row.id),
-      staffName: String(row.staff_name ?? ""),
-      station: String(row.station ?? ""),
-      team: String(row.team ?? ""),
-      submittedAt: (row.submitted_at as string | null) ?? null,
+      reportId: row.id,
+      staffName: row.staff_name ?? "",
+      station: row.station ?? "",
+      team: row.team ?? "",
+      submittedAt: row.submitted_at,
       detail: "Patrolling of aircraft at parking bay",
     });
   }

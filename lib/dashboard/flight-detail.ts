@@ -27,34 +27,56 @@ export interface FlightSummary {
   regNo: string | null;
 }
 
-/** Atomic secure fetch: search_reports_secure() (Phase 6) authorizes via
- * has_report_access() AND returns the full source row (as `content`) in
- * the SAME database call for report_sec016/report_sec029 on the given
- * date. No follow-up query against any report source table -- direct
- * SELECT on these tables is closed at the RLS layer (Phase 6 Part O) for
- * anyone but the row's own submitter. Returns an empty set until the
- * report is indexed into the repository -- expected fail-closed behavior
- * until the Phase 5/6 rollout runs, not a bug. CaterLink `transactions`
- * below is a separate, pre-existing domain, untouched by this. */
-async function authorizedContentForDate(
+type FlightSearchRow = {
+  id: string;
+  source_table: string;
+  status: string;
+  report_date: string | null;
+  flight_number: string | null;
+  station: string | null;
+  team: string | null;
+  reg_no: string | null;
+};
+
+/** Atomic secure fetch: search_reports_secure() (Phase 6, round 4)
+ * authorizes via has_report_access() AND returns only CARD-appropriate
+ * fields (never the complete report body) in the SAME database call for
+ * report_sec016/report_sec029 on the given date. No follow-up query
+ * against any report source table -- direct SELECT on these tables is
+ * closed at both the RLS layer (Phase 6 Part O) and the column-grant
+ * layer for anyone but the row's own submitter's own 3 return-only
+ * columns. Returns an empty set until the report is indexed into the
+ * repository -- expected fail-closed behavior until the Phase 5/6
+ * rollout runs, not a bug. CaterLink `transactions` below is a
+ * separate, pre-existing domain, untouched by this. */
+async function authorizedRowsForDate(
   supabase: Awaited<ReturnType<typeof createClient>>,
   sourceTable: "report_sec016" | "report_sec029",
   date: string,
-): Promise<Record<string, unknown>[]> {
+): Promise<FlightSearchRow[]> {
   const { data } = await supabase.rpc("search_reports_secure", {
     p_page: 1,
     p_page_size: 100,
     p_from_date: date,
     p_to_date: date,
   });
-  return (data ?? []).filter((r) => r.source_table === sourceTable && r.content).map((r) => r.content as Record<string, unknown>);
+  return (data ?? []).filter((r) => r.source_table === sourceTable).map((r) => ({
+    id: r.id,
+    source_table: r.source_table,
+    status: r.status,
+    report_date: r.report_date,
+    flight_number: r.flight_number,
+    station: r.station,
+    team: r.team,
+    reg_no: r.reg_no,
+  }));
 }
 
 export async function getFlightsForDate(date: string, station?: string): Promise<FlightSummary[]> {
   const supabase = await createClient();
 
-  const sec016Rows = (await authorizedContentForDate(supabase, "report_sec016", date)).filter(
-    (row) => row.duty_date === date && row.status === "submitted" && row.flight && (!station || row.station === station),
+  const sec016Rows = (await authorizedRowsForDate(supabase, "report_sec016", date)).filter(
+    (row) => row.report_date === date && row.status === "submitted" && row.flight_number && (!station || row.station === station),
   );
 
   let txQ = supabase
@@ -70,14 +92,14 @@ export async function getFlightsForDate(date: string, station?: string): Promise
 
   const map = new Map<string, FlightSummary>();
   for (const r of sec016Rows) {
-    const flight = r.flight as string;
-    const rowStation = r.station as string;
+    const flight = r.flight_number;
+    const rowStation = r.station;
     if (!flight || !rowStation) continue;
     map.set(`${normFlight(flight)}|${rowStation}`, {
       flight,
       date,
       station: rowStation,
-      regNo: (r.reg_no as string | null) ?? null,
+      regNo: r.reg_no,
     });
   }
   for (const t of txRows ?? []) {
@@ -118,24 +140,41 @@ export interface FlightDetail {
   officers: AssignedOfficer[];
 }
 
+/** Officer names, staff ids, and declarations are DETAIL-level content
+ * (review round 4: "complete content belongs in authorized, audited
+ * detail ... operations"), not list/search card fields. This flight
+ * detail view genuinely needs them, so -- rather than route them through
+ * the unaudited list/search summary -- each matched report is opened via
+ * the audited get_report_secure() detail RPC individually (typically a
+ * small handful of reports per flight/date/station), exactly the same
+ * authorization and audit trail a direct report-view page would produce. */
+async function detailContentFor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  repositoryId: string,
+): Promise<Record<string, unknown> | null> {
+  const { data, error } = await supabase.rpc("get_report_secure", { p_repository_report_id: repositoryId }).single();
+  if (error || !data?.content) return null;
+  return data.content as Record<string, unknown>;
+}
+
 export async function getFlightDetail(flight: string, date: string, station: string): Promise<FlightDetail> {
   const supabase = await createClient();
   const flightNorm = normFlight(flight);
 
-  const [sec016Content, sec029Content] = await Promise.all([
-    authorizedContentForDate(supabase, "report_sec016", date),
-    authorizedContentForDate(supabase, "report_sec029", date),
+  const [sec016Candidates, sec029Candidates] = await Promise.all([
+    authorizedRowsForDate(supabase, "report_sec016", date),
+    authorizedRowsForDate(supabase, "report_sec029", date),
   ]);
-  const sec016Rows = sec016Content.filter((r) => r.duty_date === date && r.station === station && r.status === "submitted") as unknown as {
-    id: string; flight: string | null; flight_type: string | null; reg_no: string | null; submitted_at: string | null;
-    staff_name: string | null; staff_no: string | null; assisted_by: string | null; shift_leader: string | null;
-  }[];
-  const sec029Rows = sec029Content.filter((r) => r.station === station && r.status === "submitted") as unknown as {
-    id: string; flight_no: string | null; aircraft_registration: string | null; declaration: string | null;
-    submitted_at: string | null; staff_name: string | null; supervising_officer_name: string | null;
-  }[];
+  const sec016Matches = sec016Candidates.filter(
+    (r) => r.report_date === date && r.station === station && r.status === "submitted" && r.flight_number && normFlight(r.flight_number) === flightNorm,
+  );
+  const sec029Matches = sec029Candidates.filter(
+    (r) => r.station === station && r.status === "submitted" && r.flight_number && normFlight(r.flight_number) === flightNorm,
+  );
 
-  const [{ data: txRows }] = await Promise.all([
+  const [sec016Content, sec029Content, { data: txRows }] = await Promise.all([
+    Promise.all(sec016Matches.map((r) => detailContentFor(supabase, r.id))),
+    Promise.all(sec029Matches.map((r) => detailContentFor(supabase, r.id))),
     supabase
       .from("transactions")
       .select("id, transaction_number, status, direction, driver_name, escort_officer_name, created_at")
@@ -144,10 +183,16 @@ export async function getFlightDetail(flight: string, date: string, station: str
       .not("flight_number", "is", null),
   ]);
 
-  const sec016 = (sec016Rows ?? []).filter((r) => r.flight && normFlight(r.flight) === flightNorm);
-  const sec029 = (sec029Rows ?? []).filter(
-    (r) => r.flight_no && normFlight(r.flight_no) === flightNorm && myDateOf(r.submitted_at) === date
-  );
+  const sec016 = sec016Content.filter((r): r is Record<string, unknown> => r !== null) as unknown as {
+    id: string; flight: string | null; flight_type: string | null; reg_no: string | null; submitted_at: string | null;
+    staff_name: string | null; staff_no: string | null; assisted_by: string | null; shift_leader: string | null;
+  }[];
+  const sec029 = sec029Content
+    .filter((r): r is Record<string, unknown> => r !== null && myDateOf(r.submitted_at as string | null) === date) as unknown as {
+      id: string; flight_no: string | null; aircraft_registration: string | null; declaration: string | null;
+      submitted_at: string | null; staff_name: string | null; supervising_officer_name: string | null;
+    }[];
+
   const flightTx = (txRows ?? []).filter(
     (t) => (t as unknown as { flight_number: string | null }).flight_number
   ) as unknown as { id: string; transaction_number: string; status: string; direction: string | null; driver_name: string | null; escort_officer_name: string | null; created_at: string; flight_number: string }[];

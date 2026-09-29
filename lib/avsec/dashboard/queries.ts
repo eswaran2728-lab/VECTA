@@ -35,20 +35,34 @@ export interface FilteredSubmission {
   report_no: string | null;
 }
 
+type ListRow = {
+  id: string;
+  report_type: string; // NOTE: central_reports_index.report_type actually stores the report's report_no value (index_report()'s p_report_type parameter is populated from the source row's report_no column) -- not a type label.
+  status: string;
+  indexed_at: string;
+  station: string | null;
+  team: string | null;
+  staff_name: string | null;
+  secondary_identifier: string | null;
+  submitter_profile_id: string | null;
+};
+
 /** Atomic secure fetch (see lib/avsec/search/queries.ts for the same
  * approach): list_reports_secure() authorizes via has_report_access()
- * AND returns the full source row (as `content`) in the SAME database
- * call for the requested source_table/date range -- no follow-up query
- * against any report source table. Station/team/officer filtering
- * happens in JS over the already-authorized, already-fetched rows.
- * Returns empty per type until reports are indexed into the repository
- * -- expected fail-closed behavior until the Phase 5/6 rollout runs. */
-async function authorizedContentForType(
+ * AND returns only CARD-appropriate display fields (never a full report
+ * body) in the SAME database call for the requested source_table/date
+ * range -- no follow-up query against any report source table, and no
+ * unaudited exposure of remark/evidence/child-record content. Station/
+ * team/officer filtering happens in JS over the already-authorized,
+ * already-fetched rows. Returns empty per type until reports are
+ * indexed into the repository -- expected fail-closed behavior until
+ * the Phase 5/6 rollout runs. */
+async function authorizedRowsForType(
   supabase: Awaited<ReturnType<typeof createClient>>,
   table: string,
   fromDate: string,
   toDate: string,
-): Promise<Record<string, unknown>[]> {
+): Promise<ListRow[]> {
   const { data } = await supabase.rpc("list_reports_secure", {
     p_page: 1,
     p_page_size: 100,
@@ -56,7 +70,17 @@ async function authorizedContentForType(
     p_from_date: fromDate,
     p_to_date: toDate,
   });
-  return (data ?? []).filter((r) => r.content).map((r) => r.content as Record<string, unknown>);
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    report_type: r.report_type,
+    status: r.status,
+    indexed_at: r.indexed_at,
+    station: r.station,
+    team: r.team,
+    staff_name: r.staff_name,
+    secondary_identifier: r.secondary_identifier,
+    submitter_profile_id: r.submitter_profile_id,
+  }));
 }
 
 export async function getFilteredSubmissions(filters: DashboardFilters): Promise<FilteredSubmission[]> {
@@ -67,16 +91,15 @@ export async function getFilteredSubmissions(filters: DashboardFilters): Promise
   const results = await Promise.all(
     types.map(async (type) => {
       const table = REPORT_META[type].table;
-      const rows = await authorizedContentForType(supabase, table, filters.dateFrom, filters.dateTo);
+      const rows = await authorizedRowsForType(supabase, table, filters.dateFrom, filters.dateTo);
 
       return rows
         .filter((row) => {
           if (row.status !== "submitted") return false;
-          const submittedAt = row.submitted_at as string | null;
-          if (!submittedAt || submittedAt < from || submittedAt > to) return false;
+          if (row.indexed_at < from || row.indexed_at > to) return false;
           if (filters.station && row.station !== filters.station) return false;
           if (filters.team && row.team !== filters.team) return false;
-          if (filters.officerId && row.profile_id !== filters.officerId) return false;
+          if (filters.officerId && row.submitter_profile_id !== filters.officerId) return false;
           return true;
         })
         .map((row) => summarize(type, row));
@@ -86,37 +109,17 @@ export async function getFilteredSubmissions(filters: DashboardFilters): Promise
   return results.flat().sort((a, b) => ((a.submitted_at ?? "") < (b.submitted_at ?? "") ? 1 : -1));
 }
 
-function summarize(type: ReportType, row: Record<string, unknown>): FilteredSubmission {
-  let summary = "";
-  switch (type) {
-    case "sec016":
-      summary = `Flight ${row.flight} · ${row.reg_no}`;
-      break;
-    case "sec014":
-      summary = `${row.staff_name}`;
-      break;
-    case "sec029":
-      summary = `${row.aircraft_registration} · Bay ${row.parking_bay}`;
-      break;
-    case "sec018":
-      summary = `${row.staff_name}`;
-      break;
-    case "sec033":
-      summary = `${row.staff_name} · Bay checklist`;
-      break;
-    case "sec013":
-      summary = `${row.staff_name} · Profiling duty`;
-      break;
-  }
+function summarize(type: ReportType, row: ListRow): FilteredSubmission {
+  const summary = row.secondary_identifier ?? row.staff_name ?? "";
   return {
-    id: String(row.id),
+    id: row.id,
     type,
-    station: String(row.station),
-    team: String(row.team),
-    submitted_at: (row.submitted_at as string | null) ?? null,
-    profile_id: String(row.profile_id),
+    station: row.station ?? "",
+    team: row.team ?? "",
+    submitted_at: row.indexed_at,
+    profile_id: row.submitter_profile_id ?? "",
     summary,
-    report_no: (row.report_no as string | null) ?? null,
+    report_no: row.report_type,
   };
 }
 
@@ -190,25 +193,23 @@ export async function getFlightCoverage(filters: DashboardFilters) {
   });
 
   return (authorized ?? [])
-    .filter((r) => r.source_table === "report_sec016" && r.content)
-    .map((r) => r.content as Record<string, unknown>)
+    .filter((r) => r.source_table === "report_sec016")
     .filter((row) => {
       if (row.status !== "submitted") return false;
-      const submittedAt = row.submitted_at as string | null;
-      if (!submittedAt || submittedAt < from || submittedAt > to) return false;
+      if (row.indexed_at < from || row.indexed_at > to) return false;
       if (filters.station && row.station !== filters.station) return false;
       if (filters.team && row.team !== filters.team) return false;
       return true;
     })
     .map((row) => ({
-      id: row.id as string,
-      flight: row.flight as string | null,
-      reg_no: row.reg_no as string | null,
-      station: row.station as string,
-      team: row.team as string,
-      submitted_at: row.submitted_at as string | null,
-      bay_no: row.bay_no as string | null,
-      sta_std: row.sta_std as string | null,
+      id: row.id,
+      flight: row.flight_number,
+      reg_no: row.reg_no,
+      station: row.station ?? "",
+      team: row.team ?? "",
+      submitted_at: row.indexed_at,
+      bay_no: row.bay_no,
+      sta_std: row.sta_std,
     }))
     .sort((a, b) => ((a.submitted_at ?? "") < (b.submitted_at ?? "") ? 1 : -1));
 }
