@@ -181,13 +181,17 @@ Executed with genuinely independent database connections (`clientA`, `clientB`, 
 
 ## 10. Remaining Supabase Platform & Deployment Rollout Requirements
 The local database validation exercises PostgreSQL 17.11 directly, verifying schema migrations, RLS policies, custom stored procedures, transaction isolation, and row-level locking. For production rollout, the following platform-level steps remain (limited strictly to components used by VECTA):
-1. **Apply Migrations to Managed Supabase**:
-   - Push versioned migrations to the remote Supabase PostgreSQL database using the canonical Supabase CLI (`supabase db push`) or deployment CI/CD pipeline.
-2. **Supabase Auth & Session Verification**:
+1. **Migration Reconciliation & Target Database Rollout**:
+   - Before rollout, compare the target database’s actual migration history and schema against the repository. Identify only pending migrations and explicit reconciliation steps. Do not replay the disposable test setup, platform stubs, synthetic fixtures or all 65 test migrations against production. Previously applied migration files edited during development will not automatically rerun; determine whether a new forward migration is necessary. Review the resulting deployment plan before execution.
+2. **Real Queue Scheduling & Indexing Worker Verification**:
+   - Local validation used platform substitutions (stubbing `pg_cron` and `pg_net` in `00_platform_stubs.sql` and invoking `process_report_index_queue` / `index_report` synchronously). On the live Supabase platform, verify that the `pg_cron` extension is active and the background job (`phase5-report-index-queue` scheduled every minute for `SELECT public.process_report_index_queue(50);`) runs reliably under its configured role.
+3. **Report Attachment Storage Buckets & Policies Verification**:
+   - Verify the actual storage buckets and policies based on repository configuration evidence rather than assuming a single bucket covers all attachments:
+     - **AVSEC Report Attachments**: Private bucket `report-attachments` (defined in `supabase/migrations/avsec/0020_report_attachments.sql`, referenced in `lib/avsec/attachments/actions.ts`), governed by `can_view_report()` on SELECT and `get_report_submitter()` on INSERT.
+     - **ICMS Storage**: Private buckets `signatures`, `incident-photos`, and `completed-forms` (defined in `supabase/migrations/icms/20260101000002_rls.sql` and `20260718000007_completed_form_pdf.sql`, referenced in `lib/icms/storage.ts`), governed by authenticated upload and signed URL generation server-side.
+4. **Supabase Auth & Session Verification**:
    - Verify live auth session cookie exchange and refresh via `@supabase/ssr` against actual Supabase Auth endpoints in the preview/staging deployment.
-3. **Supabase Storage Verification**:
-   - Verify upload, signed URL generation, and download access on the configured `icms-attachments` storage bucket.
-4. **Vercel Production Deployment**:
+5. **Vercel Production Deployment**:
    - Trigger and verify the Next.js production build and branch deployment on Vercel once credentials/tokens are provided.
    *(Note: No Vault, KMS, or non-standard external services are required by this application.)*
 
