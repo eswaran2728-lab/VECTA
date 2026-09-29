@@ -67,33 +67,55 @@ const SOURCE_TABLE_BY_TYPE: Record<string, string> = {
   offload: "offload_records",
 };
 
-/** Resume a submission whose finalization RPC failed after its child
- * rows were already written successfully (review round 7, case (b) of
- * the two possible partial-failure states -- see the PART S4 comment in
- * the Phase 6 migration for the full analysis: a multi-row child INSERT
- * is atomic in Postgres, so a report reaches this state only when child
- * rows are already complete and correct, and only the report_index_
- * queue entry is missing). This retries JUST the finalization step
- * against the SAME existing report id -- it never re-inserts a parent
- * row and never creates a duplicate report. mark_report_ready_for_
- * indexing() is itself idempotent and re-validates completeness on
- * every call, so this is safe to call repeatedly, including on a report
- * that was already successfully finalized (it will simply no-op).
+/** Resumes a stranded submission -- one whose parent report row was
+ * already created, but which failed to complete, for either of the two
+ * possible partial-failure states (review round 7's analysis, extended
+ * in round 8 to actually resume BOTH cases, not just one):
  *
- * NOTE (scope boundary, honestly documented rather than silently
- * declared solved): this does NOT resume case (a) -- a report whose
- * child-row INSERT itself failed, leaving zero child rows. That case
- * requires re-submitting the original child-row data (which this
- * server-only function has no access to; the client's form still holds
- * it, but wiring a "resume with existing id" parameter through all 7
- * submitXXX actions' zod-validated inputs is a larger, separate change
- * not made this round). A case-(a) report remains a harmless orphan --
- * never indexed, never searchable, but still visible to its own
- * submitter via getMySubmissions() regardless of finalization state --
- * until either this gap is closed in a future round or the user
- * resubmits the report (creating a new, separate parent; the orphan is
- * never deleted or overwritten). */
-export async function resumeReportFinalization(reportType: string, reportId: string): Promise<ActionResult> {
+ *   (a) the child-row INSERT itself failed (e.g. a unique_violation) --
+ *       a multi-row INSERT is atomic in Postgres, so this always leaves
+ *       EXACTLY ZERO child rows, never a partial set.
+ *   (b) child rows inserted successfully, but the finalization RPC call
+ *       itself failed (e.g. a transient network error) -- the report's
+ *       child rows are already complete and correct; only the
+ *       report_index_queue entry is missing.
+ *
+ * `input` must be the SAME full report payload (unknown, re-validated
+ * here against the exact same per-type zod schema every fresh
+ * submission uses) that the original failed submit attempt had already
+ * validated -- the caller (the report's own form component) still has
+ * it in memory after a failed submit, so nothing is re-typed or lost.
+ * Re-validating against the same schema here means a retry can never
+ * carry WEAKER child content than a fresh submission would require --
+ * every .min()/.max()/.length() rule in the schema applies identically.
+ *
+ * get_child_row_count_secure() (ownership-checked, ownership re-verified
+ * on every call -- ownership is never cached or trusted from a prior
+ * call) distinguishes which case this report is in:
+ *   - count === 0: case (a). The validated child rows are inserted now,
+ *     for the first time, against the SAME existing parent id.
+ *   - count > 0: case (b). Child rows already exist; they are never
+ *     re-inserted (which would create duplicate children) -- only
+ *     finalization is retried, using the database's own actual count
+ *     (not a client-supplied number) as the consistency-check value.
+ *
+ * Either way, mark_report_ready_for_indexing()'s OWN independent
+ * per-type minimum/maximum/exact-checklist enforcement (Phase 6
+ * migration, rounds 7-8) still applies in full on every call -- passing
+ * the database's own measured count as p_expected_child_count is a
+ * consistency check only, never a way to weaken or bypass that
+ * independent requirement (a caller cannot "replace the original
+ * expectation with whatever count currently exists" to sneak past the
+ * true per-type rule, because that rule is checked separately and does
+ * not trust p_expected_child_count at all).
+ *
+ * Never creates a duplicate parent (the same reportId is reused
+ * throughout) and never creates duplicate children (case (a) only
+ * inserts when the count is confirmed zero; case (b) never inserts).
+ * mark_report_ready_for_indexing() is itself idempotent (ON CONFLICT DO
+ * NOTHING), so calling this repeatedly -- including after it has already
+ * succeeded -- is always safe. */
+export async function resumeReportSubmission(reportType: string, reportId: string, input: unknown): Promise<ActionResult> {
   const profile = await requireProfileId();
   if (!profile) return { ok: false, error: "Not authenticated" };
 
@@ -101,20 +123,147 @@ export async function resumeReportFinalization(reportType: string, reportId: str
   if (!sourceTable) return { ok: false, error: "Unknown report type." };
 
   const supabase = await createClient();
-  const { data: childCount, error: countError } = await supabase.rpc("get_child_row_count_secure", {
+
+  // Ownership-checked (raises if the caller does not own this report) and
+  // gives the true, server-measured child-row count without needing
+  // direct child-table SELECT (revoked entirely -- round 5).
+  const { data: existingChildCount, error: countError } = await supabase.rpc("get_child_row_count_secure", {
     p_source_table: sourceTable,
     p_source_id: reportId,
   });
   if (countError) return { ok: false, error: countError.message };
 
+  let expectedChildCount = existingChildCount ?? 0;
+
+  if (!existingChildCount) {
+    // Case (a): re-validate the full payload against the same schema a
+    // fresh submission would use, then insert the child rows for the
+    // first time -- mirrors each submitXXX() action's own child-row
+    // mapping exactly.
+    switch (reportType) {
+      case "sec013": {
+        const parsed = sec013Schema.safeParse(input);
+        if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; "), id: reportId };
+        const rows = parsed.data.profiling_duties.map((d, idx) => ({
+          report_id: reportId,
+          entry_no: idx + 1,
+          duty_area: d.duty_area,
+          time_from: d.time_from,
+          time_to: d.time_to,
+          location: d.location,
+          sector_flight: d.sector_flight,
+          description: d.description,
+          incident_remark: d.incident_remark || null,
+        }));
+        const { error: insertError } = await supabase.from("report_sec013_profiling_duties").insert(rows);
+        if (insertError) return { ok: false, error: insertError.message, id: reportId };
+        expectedChildCount = rows.length;
+        break;
+      }
+      case "sec014": {
+        const parsed = sec014Schema.safeParse(input);
+        if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; "), id: reportId };
+        if (parsed.data.patrols.length > 0) {
+          const rows = parsed.data.patrols.map((p, idx) => ({
+            report_id: reportId,
+            entry_no: idx + 1,
+            location: p.location,
+            time_from: p.time_from || null,
+            time_to: p.time_to || null,
+            description: p.description,
+          }));
+          const { error: insertError } = await supabase.from("report_sec014_patrols").insert(rows);
+          if (insertError) return { ok: false, error: insertError.message, id: reportId };
+          expectedChildCount = rows.length;
+        } else {
+          expectedChildCount = 0;
+        }
+        break;
+      }
+      case "sec018": {
+        const parsed = sec018Schema.safeParse(input);
+        if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; "), id: reportId };
+        if (parsed.data.patrols.length > 0) {
+          const rows = parsed.data.patrols.map((p, idx) => ({
+            report_id: reportId,
+            entry_no: idx + 1,
+            time_from: p.time_from || null,
+            time_to: p.time_to || null,
+            parking_bay: p.parking_bay || null,
+            aircraft_type: p.aircraft_type || null,
+            reg_no: p.reg_no || null,
+            description: p.description,
+          }));
+          const { error: insertError } = await supabase.from("report_sec018_patrols").insert(rows);
+          if (insertError) return { ok: false, error: insertError.message, id: reportId };
+          expectedChildCount = rows.length;
+        } else {
+          expectedChildCount = 0;
+        }
+        break;
+      }
+      case "sec029": {
+        const parsed = sec029Schema.safeParse(input);
+        if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; "), id: reportId };
+        const rows = parsed.data.items.map((item) => ({
+          report_id: reportId,
+          item_code: item.item_code,
+          checked: item.checked,
+          remark_type: item.remark_type,
+          remark_text: item.remark_text || null,
+        }));
+        const { error: insertError } = await supabase.from("report_sec029_items").insert(rows);
+        if (insertError) return { ok: false, error: insertError.message, id: reportId };
+        expectedChildCount = rows.length;
+        break;
+      }
+      case "sec033": {
+        const parsed = sec033Schema.safeParse(input);
+        if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; "), id: reportId };
+        const rows = parsed.data.hold_checks.map((h, idx) => ({
+          report_id: reportId,
+          entry_no: idx + 1,
+          parking_bay_no: h.parking_bay_no,
+          aircraft_registration_no: h.aircraft_registration_no,
+          remarks: h.remarks || null,
+        }));
+        const { error: insertError } = await supabase.from("report_sec033_hold_checks").insert(rows);
+        if (insertError) return { ok: false, error: insertError.message, id: reportId };
+        expectedChildCount = rows.length;
+        break;
+      }
+      case "offload": {
+        const parsed = offloadSchema.safeParse(input);
+        if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; "), id: reportId };
+        const rows = parsed.data.items.map((it, idx) => ({
+          report_id: reportId,
+          entry_no: idx + 1,
+          baggage_tag_no: it.baggage_tag_no,
+          reason: it.reason || null,
+          weight_kg: it.weight_kg ? Number(it.weight_kg) : null,
+        }));
+        const { error: insertError } = await supabase.from("offload_items").insert(rows);
+        if (insertError) return { ok: false, error: insertError.message, id: reportId };
+        expectedChildCount = rows.length;
+        break;
+      }
+      case "sec016":
+        // No child table -- nothing to insert; expectedChildCount stays 0.
+        break;
+      default:
+        return { ok: false, error: "Unknown report type.", id: reportId };
+    }
+  }
+
   const { error: readyError } = await supabase.rpc("mark_report_ready_for_indexing", {
     p_source_table: sourceTable,
     p_source_id: reportId,
-    p_expected_child_count: childCount ?? 0,
+    p_expected_child_count: expectedChildCount,
   });
   if (readyError) {
     return { ok: false, error: `Still could not be finalized: ${readyError.message}`, id: reportId };
   }
+  revalidatePath("/avsec/history");
   return { ok: true, id: reportId };
 }
 

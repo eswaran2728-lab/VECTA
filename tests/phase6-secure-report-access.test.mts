@@ -494,8 +494,16 @@ test("INDEXES: no index is created on an insecure view -- every index in this mi
 // Non-regression / phase-boundary checks
 // =======================================================================
 
-test("NON-REGRESSION (corrected, round 2): this migration adds exactly one column (report_access_audit.access_reason, additive/nullable) and no CREATE TABLE / DROP TABLE / DROP COLUMN anywhere", () => {
-  assert.doesNotMatch(code, /create table/i);
+test("NON-REGRESSION (corrected, round 8): this migration adds exactly one column (report_access_audit.access_reason, additive/nullable), exactly one new reference table (sec029_checklist_items, round 8 -- purely additive, `if not exists`, no existing table/column touched), and no DROP TABLE / DROP COLUMN anywhere", () => {
+  // Round 8 deliberately introduces public.sec029_checklist_items -- a
+  // brand-new, purely additive reference table (create table if not
+  // exists) needed to enforce SEC029's exact checklist requirement
+  // against a real database-side source of truth instead of a bare
+  // count (see PART S1B). This is a legitimate, explicit exception to
+  // the round-2 "no new tables" rule -- documented here, not silently
+  // permitted -- and does not touch any pre-existing table.
+  const createTableMatches = code.match(/create table if not exists public\.(\w+)/g) ?? [];
+  assert.deepEqual(createTableMatches, ["create table if not exists public.sec029_checklist_items"], "no unexpected new table -- only the round-8 SEC029 checklist reference table");
   assert.doesNotMatch(code, /drop table/i);
   assert.doesNotMatch(code, /drop column/i);
   const addColumnMatches = code.match(/add column if not exists (\w+)/g) ?? [];
@@ -1232,11 +1240,11 @@ test("PARTIAL FAILURE HANDLING: all 7 submit actions check and propagate mark_re
     path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
     "utf8",
   );
-  // 7 submit actions + resumeReportFinalization() (round 7), which
+  // 7 submit actions + resumeReportSubmission() (round 7-8), which
   // legitimately reuses the identical call-and-check pattern to retry
   // finalization for an already-submitted report.
   const matches = actionsSrc.match(/const \{ error: readyError \} = await supabase\.rpc\("mark_report_ready_for_indexing"/g) ?? [];
-  assert.equal(matches.length, 8, `expected all 7 submit actions plus resumeReportFinalization() to check the finalization RPC's error, found ${matches.length}`);
+  assert.equal(matches.length, 8, `expected all 7 submit actions plus resumeReportSubmission() to check the finalization RPC's error, found ${matches.length}`);
   const guardMatches = actionsSrc.match(/if \(readyError\) \{\s*\n\s*return \{ ok: false, error: `Report saved, but could not be finalized/g) ?? [];
   assert.equal(guardMatches.length, 7, `expected all 7 submit actions to return ok: false on a finalization error, found ${guardMatches.length}`);
 });
@@ -1303,17 +1311,65 @@ test("COMPLETION MINIMUM DECISION MIRROR: a required-child type cannot finalize 
   assert.equal(canFinalizeV2("report_sec013", 1, 1), true, "sec013 with 1 actual child, correctly claimed, finalizes");
 });
 
-test("COMPLETION MINIMUM: report_sec029's TRUE requirement (exactly SEC029_ITEMS.length, a fixed checklist) is explicitly documented as NOT independently verified by the database -- only the structural minimum-1 floor is enforced, since the exact count has no DB-side source of truth", () => {
-  // Uses the RAW (comment-preserving) migrationSql here, not `code` /
-  // fnBlock() -- `code` strips every `--` comment line before matching,
-  // so the header comment (which is what documents this) is never
-  // present in `code` at all.
-  const rawSql = migrationSql.replace(/\r\n/g, "\n");
-  const fnStart = rawSql.indexOf("create or replace function public.mark_report_ready_for_indexing");
-  const headerStart = rawSql.lastIndexOf("-- CORRECTION (review round 7): p_expected_child_count", fnStart);
-  const headerAndFn = rawSql.slice(headerStart, fnStart + 3000);
-  assert.match(headerAndFn, /SEC029_ITEMS\.length/);
-  assert.match(headerAndFn, /does NOT\s*\n--\s*claim to verify the exact checklist count of 20/);
+test("COMPLETION MINIMUM (round 8, supersedes round 7's honest gap): report_sec029 now has a real, versioned, database-side checklist definition -- sec029_checklist_items -- and mark_report_ready_for_indexing() checks the report's item_codes against it directly, not merely a count", () => {
+  assert.match(code, /create table if not exists public\.sec029_checklist_items\s*\(\s*\n\s*version integer not null,\s*\n\s*code text not null,/);
+  assert.match(code, /primary key \(version, code\)/);
+
+  const versionFnBlock = fnBlock("current_sec029_checklist_version", "\\(\\)")![0];
+  assert.match(versionFnBlock, /select 1;/, "version 1 is the current checklist version");
+
+  const validateFnBlock = fnBlock("validate_sec029_item_code", "\\(\\)")![0];
+  assert.match(validateFnBlock, /not exists \(\s*\n\s*select 1 from public\.sec029_checklist_items\s*\n\s*where version = public\.current_sec029_checklist_version\(\) and code = new\.item_code\s*\n\s*\)/);
+  assert.match(code, /create trigger trg_validate_sec029_item_code before insert or update on public\.report_sec029_items\s*\n\s*for each row execute function public\.validate_sec029_item_code\(\);/);
+
+  const readyBlock = fnBlock("mark_report_ready_for_indexing")![0];
+  assert.match(readyBlock, /if p_source_table = 'report_sec029' then\s*\n\s*select array_agg\(c\.code order by c\.code\) into v_missing_checklist_codes/, "the exact-set check queries the versioned checklist table, not a hardcoded count");
+  assert.match(readyBlock, /is missing required SEC029 checklist item\(s\)/);
+});
+
+test("COMPLETION MINIMUM: the round-8 seeded checklist (sec029_checklist_items, version 1) has exactly the same 20 item codes as lib/avsec/reference-data.ts's SEC029_ITEMS array -- statically compared so the two representations cannot silently drift apart", () => {
+  const referenceDataSrc = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reference-data.ts"),
+    "utf8",
+  );
+  const tsArrayMatch = referenceDataSrc.match(/export const SEC029_ITEMS:[\s\S]*?\]\s*=\s*\[([\s\S]*?)\n\];/);
+  assert.ok(tsArrayMatch, "could not locate SEC029_ITEMS array in reference-data.ts");
+  const tsCodes = Array.from(tsArrayMatch![1].matchAll(/code:\s*"([^"]+)"/g)).map((m) => m[1]).sort();
+  assert.equal(tsCodes.length, 20, "SEC029_ITEMS is expected to currently have 20 items -- if this legitimately changed, the migration's version-1 seed (or a new version) must be updated to match");
+
+  const seedMatch = migrationSql.match(/insert into public\.sec029_checklist_items[\s\S]*?on conflict \(version, code\) do nothing;/);
+  assert.ok(seedMatch, "could not locate the sec029_checklist_items version-1 seed in the migration");
+  const seedCodes = Array.from(seedMatch![0].matchAll(/\(1, '([^']+)',/g)).map((m) => m[1]).sort();
+  assert.equal(seedCodes.length, 20);
+
+  assert.deepEqual(seedCodes, tsCodes, "the database's version-1 checklist codes must exactly match lib/avsec/reference-data.ts's SEC029_ITEMS codes");
+});
+
+test("COMPLETION MINIMUM: sec029_checklist_items is read-only reference data for ordinary callers -- authenticated may SELECT it, only service_role may write it", () => {
+  assert.match(code, /revoke all on public\.sec029_checklist_items from public, anon, authenticated;/);
+  assert.match(code, /grant select on public\.sec029_checklist_items to authenticated, service_role;/);
+});
+
+test("COMPLETION MAXIMUM (round 8): report_sec018 now has its existing .max(6, ...) form rule (sec018.ts:21) enforced at the database boundary too, independent of the caller's claim -- legitimate zero-child sec018 reports are unaffected (no minimum was added)", () => {
+  const readyBlock = fnBlock("mark_report_ready_for_indexing")![0];
+  assert.match(readyBlock, /v_required_maximum := case p_source_table\s*\n\s*when 'report_sec018' then 6\s*\n\s*else null\s*\n\s*end;/);
+  assert.match(readyBlock, /if v_required_maximum is not null and v_actual_children > v_required_maximum then/);
+  assert.match(readyBlock, /has too much child content/);
+});
+
+function canFinalizeV3(sourceTable: string, actualChildCount: number, sec029MissingCodes = 0): boolean {
+  if (!canFinalizeV2(sourceTable, actualChildCount, actualChildCount)) return false;
+  if (sourceTable === "report_sec018" && actualChildCount > 6) return false;
+  if (sourceTable === "report_sec029" && sec029MissingCodes > 0) return false;
+  return true;
+}
+
+test("COMPLETION DECISION MIRROR (round 8): sec018 rejects 7 children (exceeds the max of 6), accepts 6 and accepts 0; sec029 rejects any missing checklist code even with a plausible-looking count", () => {
+  assert.equal(canFinalizeV3("report_sec018", 7), false, "7 patrol entries exceeds the max of 6");
+  assert.equal(canFinalizeV3("report_sec018", 6), true, "exactly 6 is the allowed maximum");
+  assert.equal(canFinalizeV3("report_sec018", 0), true, "sec018 remains legitimately optional at 0 -- no new minimum was introduced");
+  assert.equal(canFinalizeV3("report_sec029", 20, 1), false, "20 rows but at least one required checklist code missing (and presumably one invalid/duplicate code instead) is still rejected");
+  assert.equal(canFinalizeV3("report_sec029", 20, 0), true, "20 rows, zero missing required codes, finalizes");
 });
 
 test("CHILD REASSIGNMENT (round 7): enforce_child_write_before_finalization() forbids changing a child row's report_id outright on UPDATE -- confirmed unnecessary by source search (zero .update() calls against any of the 6 child tables in lib/avsec/reports/actions.ts)", () => {
@@ -1362,24 +1418,37 @@ test("RESUME/RETRY (round 7): get_child_row_count_secure() is ownership-checked 
   assert.match(block, /returns integer/);
 });
 
-test("RESUME/RETRY: resumeReportFinalization() retries ONLY the finalization step against the SAME existing report id -- it never inserts a new parent row, and passes the database's own child count (not a client-supplied guess) as the expected count", () => {
+test("RESUME/RETRY (round 8): resumeReportSubmission() checks the server-measured child count first, and only inserts child rows when that count is confirmed zero (case (a)) -- it never blindly re-inserts, which would create duplicate children when case (b) (children already exist, only finalization failed) applies", () => {
   const actionsSrc = fs.readFileSync(
     path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
     "utf8",
   );
-  const fnStart = actionsSrc.indexOf("export async function resumeReportFinalization");
-  const fnBody = actionsSrc.slice(fnStart, fnStart + 1200);
+  const fnStart = actionsSrc.indexOf("export async function resumeReportSubmission");
+  assert.ok(fnStart > -1, "resumeReportSubmission() must exist");
+  const fnEnd = actionsSrc.indexOf("\n// ---------- SEC 016 ----------", fnStart);
+  const fnBody = actionsSrc.slice(fnStart, fnEnd > -1 ? fnEnd : fnStart + 12000);
   assert.match(fnBody, /\.rpc\("get_child_row_count_secure"/);
-  assert.match(fnBody, /\.rpc\("mark_report_ready_for_indexing", \{\s*\n\s*p_source_table: sourceTable,\s*\n\s*p_source_id: reportId,\s*\n\s*p_expected_child_count: childCount \?\? 0,/);
-  assert.doesNotMatch(fnBody, /\.insert\(/, "resumeReportFinalization() must never INSERT a parent row");
+  assert.match(fnBody, /if \(!existingChildCount\) \{/, "child rows are only (re)inserted when the server-measured count is confirmed zero");
+  assert.match(fnBody, /\.rpc\("mark_report_ready_for_indexing", \{\s*\n\s*p_source_table: sourceTable,\s*\n\s*p_source_id: reportId,\s*\n\s*p_expected_child_count: expectedChildCount,/);
 });
 
-test("RESUME/RETRY: the scope boundary (case-(a) child-insert-failure resume is NOT implemented this round) is documented honestly in code, not silently declared solved", () => {
+test("RESUME/RETRY (round 8): resumeReportSubmission() never inserts a new PARENT row for any of the 7 report types -- reportId (the existing parent) is always reused, closing the round-7 gap where case (a) (child-insert failure) recovery was left unimplemented", () => {
   const actionsSrc = fs.readFileSync(
     path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
     "utf8",
   );
-  assert.match(actionsSrc, /this does NOT resume case \(a\)/);
+  const fnStart = actionsSrc.indexOf("export async function resumeReportSubmission");
+  const fnEnd = actionsSrc.indexOf("\n// ---------- SEC 016 ----------", fnStart);
+  const fnBody = actionsSrc.slice(fnStart, fnEnd > -1 ? fnEnd : fnStart + 12000);
+  for (const table of ["report_sec013", "report_sec014", "report_sec018", "report_sec029", "report_sec033", "offload_records"]) {
+    assert.doesNotMatch(fnBody, new RegExp(`\\.from\\("${table}"\\)\\.insert`), `resumeReportSubmission() must never insert a new parent row into ${table}`);
+  }
+  // Every case-(a) child re-validation re-parses the SAME per-type zod
+  // schema a fresh submission uses -- a retry can never carry weaker
+  // child content than a fresh submission would require.
+  for (const schema of ["sec013Schema", "sec014Schema", "sec018Schema", "sec029Schema", "sec033Schema", "offloadSchema"]) {
+    assert.match(fnBody, new RegExp(`${schema}\\.safeParse\\(input\\)`), `resumeReportSubmission() must re-validate against ${schema}`);
+  }
 });
 
 test("RESUME/RETRY: every child-row-insert failure return now includes the parent id (id: report.id), so an orphaned (case-(a)) report is always identifiable even though this round does not yet resume it", () => {

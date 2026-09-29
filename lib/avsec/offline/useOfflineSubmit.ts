@@ -11,7 +11,10 @@ type SubmitFn = (input: unknown) => Promise<ActionResult>;
 export type SubmitOutcome =
   | { kind: "submitted"; id: string; submittedAt?: string; reportNo?: string; attachmentErrors?: string[] }
   | { kind: "queued"; localId: string }
-  | { kind: "error"; message: string };
+  // `id`, when present, means the parent report row was already created
+  // server-side before this failure (a stranded, recoverable report --
+  // round 7) -- never a fresh, un-persisted validation failure.
+  | { kind: "error"; message: string; id?: string };
 
 async function uploadAttachments(reportType: string, reportId: string, attachments: QueuedAttachment[]): Promise<string[] | undefined> {
   const errors: string[] = [];
@@ -59,7 +62,7 @@ export function useOfflineSubmit(type: QueueItemType, submitFn: SubmitFn, ownerI
           };
         }
         if (!result.ok && result.error) {
-          return { kind: "error", message: result.error };
+          return { kind: "error", message: result.error, id: result.id };
         }
         return { kind: "error", message: "Unknown submission error" };
       } catch (err) {

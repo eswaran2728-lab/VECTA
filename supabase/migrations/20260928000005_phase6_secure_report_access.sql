@@ -1892,6 +1892,142 @@ revoke execute on function public.needs_your_action_secure() from public, anon;
 grant execute on function public.needs_your_action_secure() to authenticated, service_role;
 
 -- =======================================================================
+-- PART S1B (round 8): SEC029 checklist versioning -- an explicit,
+-- maintainable database representation of the checklist, so "exactly the
+-- 20 required items, no duplicates, no invalid codes" can actually be
+-- enforced at the database boundary, not merely at count = 20.
+-- =======================================================================
+-- CORRECTION (review round 8): round 7 deliberately did NOT enforce
+-- report_sec029's true requirement (SEC029_ITEMS.length, currently 20
+-- SPECIFIC checklist items) because the exact count had "no independently
+-- stored source of truth" on the database side -- only a structural
+-- minimum-1 floor was enforced, honestly documented as a gap rather than
+-- overclaimed. This part closes that gap by giving the checklist an
+-- explicit, maintainable, VERSIONED database representation -- the
+-- database no longer merely trusts a count, it knows the actual set of
+-- required item codes for the current checklist version and can check
+-- against it directly.
+--
+-- Versioned (not a single unversioned table) because the checklist HAS
+-- changed before (see lib/avsec/reference-data.ts's own Rev.03 comment:
+-- items removed, renamed, and one added -- SEC029_LEGACY_ITEM_LABELS
+-- exists specifically to keep historical reports, recorded against an
+-- older checklist, rendering correctly). A single unversioned table would
+-- force an awkward choice on the next legitimate checklist revision:
+-- either break enforcement for reports already in flight against the old
+-- checklist, or silently accept the new checklist's items as "invalid"
+-- until the table is manually updated in lockstep with a code deploy.
+-- Versioning means a new checklist revision is a new row set at a new
+-- version number, with the "current" version pointed to explicitly --
+-- old reports remain valid against whatever version was current when
+-- they were validated, and a revision is a pure addition, never a
+-- mutation of history.
+--
+-- current_sec029_checklist_version() below returns a literal constant
+-- (1) rather than reading a mutable "current version" row -- this is a
+-- deliberate, minimal design: introducing a separately-writable "current
+-- version" pointer would itself need its own authorization/audit trail
+-- (who may advance it, when) that is out of scope for this round and
+-- unnecessary until a second checklist revision actually exists. Bumping
+-- to a new version is a two-line change (a new INSERT block for the new
+-- version's items, and updating this function's returned literal) done
+-- as part of the same migration that changes SEC029_ITEMS in application
+-- code -- never a silent, independent drift.
+create table if not exists public.sec029_checklist_items (
+  version integer not null,
+  code text not null,
+  section text not null,
+  label text not null,
+  allow_not_applicable boolean not null default false,
+  primary key (version, code)
+);
+
+revoke all on public.sec029_checklist_items from public, anon, authenticated;
+grant select on public.sec029_checklist_items to authenticated, service_role;
+-- Read-only reference data for authenticated users (e.g. a future UI
+-- that renders the canonical checklist from the database instead of a
+-- hardcoded TS array); only service_role/migrations may write it.
+
+create or replace function public.current_sec029_checklist_version()
+returns integer
+language sql
+immutable
+as $function$
+  select 1;
+$function$;
+
+revoke execute on function public.current_sec029_checklist_version() from public, anon;
+grant execute on function public.current_sec029_checklist_version() to authenticated, service_role;
+
+-- Version 1 seed -- MUST match lib/avsec/reference-data.ts's SEC029_ITEMS
+-- array exactly (same 20 codes, same order irrelevant but same set).
+-- tests/phase6-secure-report-access.test.mts statically asserts this
+-- agreement by parsing both this seed and that TS array and comparing
+-- their code sets.
+insert into public.sec029_checklist_items (version, code, section, label, allow_not_applicable) values
+  (1, 'A_I', 'A. GALLEY', 'A(I) ALL STOWAGE COMPARTMENT', false),
+  (1, 'A_II', 'A. GALLEY', 'A(II) WASTE BIN', false),
+  (1, 'B_I', 'B. LAVATORY', 'B(I) ALL STOWAGE COMPARTMENT', false),
+  (1, 'B_II', 'B. LAVATORY', 'B(II) WASTE BIN', false),
+  (1, 'B_III', 'B. LAVATORY', 'B(III) DRAWER', false),
+  (1, 'B_IV', 'B. LAVATORY', 'B(IV) TOILET BOWLS', false),
+  (1, 'C_I', 'C. SEAT', 'C(I) ARM REST', false),
+  (1, 'C_II', 'C. SEAT', 'C(II) SEAT POCKETS', false),
+  (1, 'C_III', 'C. SEAT', 'C(III) LIFE JACKET POUCHES', false),
+  (1, 'A1', 'OTHER ACCESSIBLE COMPARTMENTS', 'A1. OVERHEAD COMPARTMENTS', false),
+  (1, 'B1', 'OTHER ACCESSIBLE COMPARTMENTS', 'B1. CREW SEATS & SEAT COMPARTMENTS', false),
+  (1, 'A2', 'COCKPIT AREA', 'A2. SEATS', false),
+  (1, 'B2', 'COCKPIT AREA', 'B2. FLOOR AREA', false),
+  (1, 'C2', 'COCKPIT AREA', 'C2. COMPARTMENTS', false),
+  (1, 'US_SEALS', '4. U.S FLIGHTS ONLY', 'LAVATORY SHROUDS SECURITY SEALS', true),
+  (1, 'A_EXT_II', 'A. AIRCRAFT VISUAL INSPECTION (EXTERNAL)', 'I. LANDING GEAR BAY', false),
+  (1, 'A_EXT_III', 'A. AIRCRAFT VISUAL INSPECTION (EXTERNAL)', '(A) III. WHEELS AND BODIES', false),
+  (1, 'B_EXT_V', 'CARGO HOLD (EXTERNAL)', '(B) V. DOOR, FLOOR & WALL CEILING', false),
+  (1, 'B_EXT_VI', 'CARGO HOLD (EXTERNAL)', '(B) VI. RESTRAINT NETS', false),
+  (1, 'B_EXT_VII', 'CARGO HOLD (EXTERNAL)', '(C) Inspect any cavities, compartments inside the hold', false)
+on conflict (version, code) do nothing;
+
+-- CORRECTION (review round 8): "validate the expected distinct item
+-- identifiers -- not merely a count." report_sec029_items already has a
+-- unique(report_id, item_code) constraint (avsec/0001_init_schema.sql),
+-- which already rejects a literal duplicate item_code at the database
+-- level -- that part of "duplicate ... items rejected" was already true
+-- before this round. What was NOT enforced is that item_code is one of
+-- the CURRENT checklist's actual codes -- an application bug (or a
+-- direct RPC caller bypassing the UI) could otherwise insert 20 rows
+-- with 20 UNIQUE but entirely made-up item_codes and satisfy every
+-- check that existed before this round. This trigger closes that: every
+-- inserted/updated item_code must belong to the current checklist
+-- version, checked against the versioned table above rather than a
+-- hardcoded list, so a genuine future checklist revision (adding this
+-- version's rows under a new version number and bumping
+-- current_sec029_checklist_version()) does not require touching this
+-- trigger function at all.
+create or replace function public.validate_sec029_item_code()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if not exists (
+    select 1 from public.sec029_checklist_items
+    where version = public.current_sec029_checklist_version() and code = new.item_code
+  ) then
+    raise exception 'Invalid SEC029 checklist item code: % is not part of checklist version %.', new.item_code, public.current_sec029_checklist_version();
+  end if;
+  return new;
+end;
+$function$;
+
+revoke execute on function public.validate_sec029_item_code() from public, anon, authenticated;
+grant execute on function public.validate_sec029_item_code() to service_role;
+
+drop trigger if exists trg_validate_sec029_item_code on public.report_sec029_items;
+create trigger trg_validate_sec029_item_code before insert or update on public.report_sec029_items
+  for each row execute function public.validate_sec029_item_code();
+
+-- =======================================================================
 -- PART S2: explicit indexing readiness -- closes the immutable-snapshot
 -- completeness race
 -- =======================================================================
@@ -1962,27 +2098,36 @@ drop trigger if exists trg_enqueue_indexing on public.offload_records;
 --                    (sec014.ts:22,39) => OPTIONAL, minimum 0.
 --   report_sec016 -- no child table at all => always 0, not applicable.
 --   report_sec018 -- patrols: `.max(6, ...)`, no .min(), default []
---                    (sec018.ts:21,35) => OPTIONAL, minimum 0.
+--                    (sec018.ts:21,35) => OPTIONAL, minimum 0, MAXIMUM 6.
+--                    CORRECTION (review round 8): round 7 enforced only
+--                    the (trivial, always-true) minimum of 0 for this
+--                    type and left the existing max(6) form rule
+--                    unenforced at the database boundary. Now checked
+--                    below via v_required_maximum -- no new business
+--                    rule, the app schema already had this limit.
 --   report_sec029 -- items: `.length(SEC029_ITEMS.length)` (sec029.ts:50)
---                    -- an EXACT fixed count (currently 20, the SEC029
---                    inspection checklist length), not merely "at least
---                    one." That exact number has NO independently
---                    stored source of truth on the database side (no
---                    reference table, no CHECK constraint enumerating
---                    the checklist) -- only lib/avsec/reference-data.ts's
---                    SEC029_ITEMS array defines it, and duplicating that
---                    literal count into this migration would silently
---                    drift the moment the checklist changes in
---                    application code without a matching migration.
---                    Per the review's own instruction not to claim a
---                    guarantee the schema cannot independently verify:
---                    this function enforces only REQUIRED, minimum 1
---                    for report_sec029 -- the same structural floor as
---                    every other required-child type -- and does NOT
---                    claim to verify the exact checklist count of 20.
---                    The exact-20 guarantee remains the application
---                    zod schema's responsibility alone, honestly
---                    documented here rather than silently overclaimed.
+--                    -- an EXACT fixed set of 20 SPECIFIC checklist item
+--                    codes, not merely "at least one" or "exactly 20 of
+--                    anything." Round 7 left this as an honestly-
+--                    documented gap: only a structural minimum-1 floor
+--                    was enforced, because the exact set had no
+--                    independently stored database-side source of truth.
+--                    CORRECTION (review round 8): that gap is now closed
+--                    with a real, maintainable, VERSIONED database
+--                    representation -- see PART S1B above
+--                    (sec029_checklist_items,
+--                    current_sec029_checklist_version(),
+--                    validate_sec029_item_code()). This function now
+--                    checks that the report's DISTINCT item_codes are
+--                    exactly the current checklist version's code set --
+--                    no missing codes (checked below), and no extra/
+--                    invalid/duplicate codes are even insertable in the
+--                    first place (validate_sec029_item_code() rejects an
+--                    unrecognized code at INSERT/UPDATE time; the
+--                    pre-existing unique(report_id, item_code) constraint
+--                    rejects a literal duplicate at INSERT time) -- so
+--                    "no missing codes" is sufficient here to prove an
+--                    exact set match, not merely a count.
 --   report_sec033 -- hold_checks: `.min(1, ...)` (sec033.ts:22)
 --                    => REQUIRED, minimum 1.
 --   offload_records -- items: `.min(1, ...)` (offload.ts:45)
@@ -1993,7 +2138,9 @@ drop trigger if exists trg_enqueue_indexing on public.offload_records;
 -- p_expected_child_count -- a caller claiming p_expected_child_count = 0
 -- for report_sec013/029/033/offload_records is rejected by the minimum
 -- check even though its claim would trivially match an actual count of
--- 0 (which would otherwise pass the consistency check alone).
+-- 0 (which would otherwise pass the consistency check alone). Likewise
+-- the new report_sec018 maximum check is independent of whatever the
+-- caller claims.
 --
 -- Race safety unchanged from round 6: the parent row is locked with
 -- `for update` before counting children, and
@@ -2010,6 +2157,8 @@ declare
   v_owner uuid;
   v_actual_children integer;
   v_required_minimum integer;
+  v_required_maximum integer;
+  v_missing_checklist_codes text[];
 begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
@@ -2075,6 +2224,37 @@ begin
   end;
   if v_actual_children < v_required_minimum then
     raise exception 'Report % is missing required child content: this report type requires at least % child row(s), found %: a caller-supplied expected count cannot override this requirement.', p_source_id, v_required_minimum, v_actual_children;
+  end if;
+
+  -- Per-type maximum (round 8), enforced the same way: independent of
+  -- whatever the caller claims. Only report_sec018 has one currently
+  -- (sec018.ts:21, `.max(6, ...)`).
+  v_required_maximum := case p_source_table
+    when 'report_sec018' then 6
+    else null
+  end;
+  if v_required_maximum is not null and v_actual_children > v_required_maximum then
+    raise exception 'Report % has too much child content: this report type allows at most % child row(s), found %.', p_source_id, v_required_maximum, v_actual_children;
+  end if;
+
+  -- SEC029 exact-checklist match (round 8): the report's distinct item
+  -- codes must be exactly the current checklist version's code set. No
+  -- extra/invalid codes can exist (validate_sec029_item_code() rejects
+  -- them at INSERT/UPDATE time) and no duplicate codes can exist (the
+  -- pre-existing unique(report_id, item_code) constraint rejects them at
+  -- INSERT time), so checking for zero MISSING codes is sufficient to
+  -- prove the set is exactly right, not merely a count of 20.
+  if p_source_table = 'report_sec029' then
+    select array_agg(c.code order by c.code) into v_missing_checklist_codes
+    from public.sec029_checklist_items c
+    where c.version = public.current_sec029_checklist_version()
+      and not exists (
+        select 1 from public.report_sec029_items i
+        where i.report_id = p_source_id and i.item_code = c.code
+      );
+    if v_missing_checklist_codes is not null and array_length(v_missing_checklist_codes, 1) > 0 then
+      raise exception 'Report % is missing required SEC029 checklist item(s): %.', p_source_id, array_to_string(v_missing_checklist_codes, ', ');
+    end if;
   end if;
 
   -- Idempotent AND safe to call repeatedly: ON CONFLICT DO NOTHING means

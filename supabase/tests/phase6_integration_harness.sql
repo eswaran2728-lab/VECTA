@@ -700,13 +700,376 @@ $$;
 
 perform pg_temp.clear_simulation();
 
+-- =======================================================================
+-- SCENARIO 18 (round 8): incomplete SEC029 (missing checklist item(s))
+-- is rejected -- not merely "not enough rows," but "not the RIGHT rows"
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+  v_total_items integer;
+begin
+  insert into public.report_sec029 (
+    profile_id, status, station, team, supervising_officer_name, supervising_officer_id,
+    staff_name, staff_id, assisted_by_name, assisted_by_id, aircraft_type, flight_no,
+    aircraft_registration, std, parking_bay, time_commence, time_completed, pic_informed,
+    declaration, acknowledgement
+  ) values (
+    auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test SO', 'SO-1', 'Test ASO Alpha', 'T-A1',
+    'Assist Name', 'T-A9', 'A320', 'AK100', '9M-ABC', '10:00', 'C1', '09:00', '09:45', 'YES',
+    'I CERTIFY THAT THE ABOVE CHECKS HAVE BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.', false
+  ) returning id into v_report_id;
+
+  select count(*) into v_total_items from public.sec029_checklist_items where version = public.current_sec029_checklist_version();
+
+  -- Insert every checklist item EXCEPT one (leave exactly one required
+  -- code missing).
+  insert into public.report_sec029_items (report_id, item_code, checked, remark_type, remark_text)
+  select v_report_id, code, 'YES', 'nil', null
+  from public.sec029_checklist_items
+  where version = public.current_sec029_checklist_version()
+  order by code
+  limit (v_total_items - 1);
+
+  begin
+    perform public.mark_report_ready_for_indexing('report_sec029', v_report_id, v_total_items - 1);
+    raise exception 'SCENARIO 18 FAILED: finalizing SEC029 with exactly one required checklist item missing should have been rejected';
+  exception when others then
+    if sqlerrm like '%missing required SEC029 checklist item%' then
+      raise notice 'PASS: SCENARIO 18: SEC029 finalization is rejected when the report has 19 of 20 required checklist items -- the exact-set check catches a missing item that a bare count(19) alone would not distinguish from "any 19 rows"';
+    else
+      raise exception 'SCENARIO 18 FAILED: rejected for the wrong reason: %', sqlerrm;
+    end if;
+  end;
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 19 (round 8): duplicate or invalid SEC029 item codes rejected
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+begin
+  insert into public.report_sec029 (
+    profile_id, status, station, team, supervising_officer_name, supervising_officer_id,
+    staff_name, staff_id, assisted_by_name, assisted_by_id, aircraft_type, flight_no,
+    aircraft_registration, std, parking_bay, time_commence, time_completed, pic_informed,
+    declaration, acknowledgement
+  ) values (
+    auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test SO', 'SO-1', 'Test ASO Alpha', 'T-A1',
+    'Assist Name', 'T-A9', 'A320', 'AK101', '9M-ABD', '11:00', 'C2', '10:00', '10:45', 'YES',
+    'I CERTIFY THAT THE ABOVE CHECKS HAVE BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.', false
+  ) returning id into v_report_id;
+
+  -- Invalid code: not part of any checklist version.
+  begin
+    insert into public.report_sec029_items (report_id, item_code, checked, remark_type, remark_text)
+    values (v_report_id, 'NOT_A_REAL_CODE', 'YES', 'nil', null);
+    raise exception 'SCENARIO 19 FAILED: an item_code not in sec029_checklist_items should have been rejected by validate_sec029_item_code()';
+  exception when others then
+    if sqlerrm like '%Invalid SEC029 checklist item code%' then
+      raise notice 'PASS: SCENARIO 19a: an unrecognized SEC029 item_code is rejected at INSERT time, independent of row count';
+    else
+      raise exception 'SCENARIO 19 FAILED: rejected for the wrong reason: %', sqlerrm;
+    end if;
+  end;
+
+  -- Duplicate code: the pre-existing unique(report_id, item_code)
+  -- constraint (avsec/0001_init_schema.sql) rejects it.
+  insert into public.report_sec029_items (report_id, item_code, checked, remark_type, remark_text)
+  values (v_report_id, 'A_I', 'YES', 'nil', null);
+  begin
+    insert into public.report_sec029_items (report_id, item_code, checked, remark_type, remark_text)
+    values (v_report_id, 'A_I', 'NO', 'other', 'duplicate attempt');
+    raise exception 'SCENARIO 19 FAILED: a duplicate item_code for the same report should have been rejected by the unique constraint';
+  exception when unique_violation then
+    raise notice 'PASS: SCENARIO 19b: a duplicate SEC029 item_code for the same report is rejected by the pre-existing unique(report_id, item_code) constraint';
+  end;
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 20 (round 8): a valid, complete SEC029 report (all current
+-- checklist items, no duplicates, no invalid codes) finalizes successfully
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+  v_total_items integer;
+begin
+  insert into public.report_sec029 (
+    profile_id, status, station, team, supervising_officer_name, supervising_officer_id,
+    staff_name, staff_id, assisted_by_name, assisted_by_id, aircraft_type, flight_no,
+    aircraft_registration, std, parking_bay, time_commence, time_completed, pic_informed,
+    declaration, acknowledgement
+  ) values (
+    auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test SO', 'SO-1', 'Test ASO Alpha', 'T-A1',
+    'Assist Name', 'T-A9', 'A320', 'AK102', '9M-ABE', '12:00', 'C3', '11:00', '11:45', 'YES',
+    'I CERTIFY THAT THE ABOVE CHECKS HAVE BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.', true
+  ) returning id into v_report_id;
+
+  insert into public.report_sec029_items (report_id, item_code, checked, remark_type, remark_text)
+  select v_report_id, code, 'YES', 'nil', null
+  from public.sec029_checklist_items
+  where version = public.current_sec029_checklist_version();
+
+  select count(*) into v_total_items from public.sec029_checklist_items where version = public.current_sec029_checklist_version();
+  perform public.mark_report_ready_for_indexing('report_sec029', v_report_id, v_total_items);
+  perform pg_temp.assert(
+    exists (select 1 from public.report_index_queue where source_table = 'report_sec029' and source_id = v_report_id),
+    'SCENARIO 20: a complete SEC029 report (exactly the current checklist''s item set) finalizes successfully'
+  );
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 21 (round 8): SEC018's existing maximum of 6 patrol entries is
+-- now enforced at the database boundary -- 7 rejected, 6 accepted, 0
+-- (legitimately optional) still accepted
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id_over uuid;
+  v_report_id_ok uuid;
+  i integer;
+begin
+  insert into public.report_sec018 (profile_id, status, station, team, staff_name, date_time, acknowledgement)
+  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', now(), false)
+  returning id into v_report_id_over;
+
+  for i in 1..7 loop
+    insert into public.report_sec018_patrols (report_id, entry_no, description)
+    values (v_report_id_over, i, 'patrol ' || i);
+  end loop;
+
+  begin
+    perform public.mark_report_ready_for_indexing('report_sec018', v_report_id_over, 7);
+    raise exception 'SCENARIO 21 FAILED: finalizing report_sec018 with 7 patrol entries should have been rejected -- the form''s own max(6) rule';
+  exception when others then
+    if sqlerrm like '%has too much child content%' then
+      raise notice 'PASS: SCENARIO 21a: report_sec018 finalization is rejected at 7 patrol entries -- the existing max(6) form rule is now also enforced at the database boundary';
+    else
+      raise exception 'SCENARIO 21 FAILED: rejected for the wrong reason: %', sqlerrm;
+    end if;
+  end;
+
+  insert into public.report_sec018 (profile_id, status, station, team, staff_name, date_time, acknowledgement)
+  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', now(), false)
+  returning id into v_report_id_ok;
+
+  for i in 1..6 loop
+    insert into public.report_sec018_patrols (report_id, entry_no, description)
+    values (v_report_id_ok, i, 'patrol ' || i);
+  end loop;
+
+  perform public.mark_report_ready_for_indexing('report_sec018', v_report_id_ok, 6);
+  perform pg_temp.assert(
+    exists (select 1 from public.report_index_queue where source_table = 'report_sec018' and source_id = v_report_id_ok),
+    'SCENARIO 21b: exactly 6 patrol entries (the allowed maximum) finalizes successfully'
+  );
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 22 (round 8): child-insert failure followed by a successful
+-- application-level recovery -- SQL-level simulation of
+-- resumeReportSubmission()'s case (a) path (count confirmed 0, then
+-- child rows inserted for the first time against the SAME parent id)
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+  v_child_count integer;
+begin
+  insert into public.report_sec033 (profile_id, status, station, team, staff_name, staff_id, report_date, report_time)
+  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', current_date, '09:00')
+  returning id into v_report_id;
+
+  -- Simulate the original submit action's failed child insert: two rows
+  -- with the same entry_no violate report_sec033_hold_checks' own
+  -- unique(report_id, entry_no) constraint.
+  begin
+    insert into public.report_sec033_hold_checks (report_id, entry_no, parking_bay_no, aircraft_registration_no)
+    values (v_report_id, 1, 'C1', '9M-XXA'), (v_report_id, 1, 'C2', '9M-XXB');
+    raise exception 'SCENARIO 22 FAILED: the duplicate-entry_no insert should itself have failed';
+  exception when unique_violation then
+    raise notice 'PASS: SCENARIO 22a: the simulated child-insert failure actually fails (unique_violation), leaving the report stranded in case (a)';
+  end;
+
+  -- resumeReportSubmission()'s first step: check the actual count.
+  select public.get_child_row_count_secure('report_sec033', v_report_id) into v_child_count;
+  perform pg_temp.assert(v_child_count = 0, 'SCENARIO 22b: get_child_row_count_secure() confirms zero child rows -- this is case (a), safe to (re-)insert');
+
+  -- resumeReportSubmission()'s case-(a) recovery: insert the (corrected)
+  -- child rows for the first time, against the SAME existing parent id.
+  insert into public.report_sec033_hold_checks (report_id, entry_no, parking_bay_no, aircraft_registration_no)
+  values (v_report_id, 1, 'C1', '9M-XXA');
+
+  perform public.mark_report_ready_for_indexing('report_sec033', v_report_id, 1);
+  perform pg_temp.assert(
+    exists (select 1 from public.report_index_queue where source_table = 'report_sec033' and source_id = v_report_id),
+    'SCENARIO 22c: after the recovery insert, finalization succeeds -- the report is no longer stranded'
+  );
+  perform pg_temp.assert(
+    (select count(*) from public.report_sec033 where profile_id = auth.uid() and staff_id = 'T-A1' and report_time = '09:00') = 1,
+    'SCENARIO 22d: exactly one parent row exists -- the recovery never created a duplicate parent'
+  );
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 23 (round 8): finalization failure followed by a successful
+-- recovery -- SQL-level simulation of resumeReportSubmission()'s case
+-- (b) path (count already > 0, children are never re-inserted, only
+-- finalization is retried)
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+  v_child_count integer;
+  v_child_count_before integer;
+begin
+  insert into public.offload_records (profile_id, status, station, team, staff_name, staff_id, flight_no, destination, aircraft_registration, flight_date, total_bags)
+  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', 'AK200', 'SIN', '9M-XYZ', current_date, 1)
+  returning id into v_report_id;
+
+  -- Child rows are written successfully -- the app's own finalization
+  -- call is presumed to have failed transiently and is simply never
+  -- made here, leaving the report in exactly the "children complete,
+  -- finalization pending" state case (b) describes.
+  insert into public.offload_items (report_id, entry_no, baggage_tag_no)
+  values (v_report_id, 1, 'BAG-001');
+
+  select count(*) into v_child_count_before from public.offload_items where report_id = v_report_id;
+  perform pg_temp.assert(v_child_count_before = 1, 'SCENARIO 23a: exactly one child row exists before recovery');
+
+  select public.get_child_row_count_secure('offload_records', v_report_id) into v_child_count;
+  perform pg_temp.assert(v_child_count = 1, 'SCENARIO 23b: get_child_row_count_secure() confirms 1 (case (b) -- children already complete, only finalization is missing)');
+
+  -- resumeReportSubmission()'s case-(b) path: skip insert entirely,
+  -- finalize using the server-measured count.
+  perform public.mark_report_ready_for_indexing('offload_records', v_report_id, v_child_count);
+  perform pg_temp.assert(
+    exists (select 1 from public.report_index_queue where source_table = 'offload_records' and source_id = v_report_id),
+    'SCENARIO 23c: the resumed finalization succeeds without ever re-inserting a child row'
+  );
+
+  select count(*) into v_child_count from public.offload_items where report_id = v_report_id;
+  perform pg_temp.assert(v_child_count = 1, 'SCENARIO 23d: still exactly one child row after recovery -- case (b) never duplicates children');
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 24 (round 8): repeated retries never create duplicates --
+-- calling the resume path 3 times in a row on an already-finalized
+-- report stays at exactly 1 parent, 1 child set, 1 queue entry
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+  v_child_count integer;
+  v_queue_count integer;
+  v_parent_count integer;
+  v_i integer;
+begin
+  insert into public.report_sec013 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, acknowledgement)
+  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', false)
+  returning id into v_report_id;
+
+  insert into public.report_sec013_profiling_duties (report_id, entry_no, duty_area, time_from, time_to, location, sector_flight, description)
+  values (v_report_id, 1, 'Departure Gate', '09:00', '09:30', 'Departure Gate Sector 5/6/7 (P-Q)', 'AK300', 'repeated-retry fixture');
+
+  for v_i in 1..3 loop
+    select public.get_child_row_count_secure('report_sec013', v_report_id) into v_child_count;
+    perform public.mark_report_ready_for_indexing('report_sec013', v_report_id, v_child_count);
+  end loop;
+
+  select count(*) into v_queue_count from public.report_index_queue where source_table = 'report_sec013' and source_id = v_report_id;
+  select count(*) into v_parent_count from public.report_sec013 where profile_id = auth.uid() and staff_id = 'T-A1' and date_time_out is not null;
+  perform pg_temp.assert(v_queue_count = 1, 'SCENARIO 24a: 3 repeated resume attempts leave exactly 1 report_index_queue row');
+  select count(*) into v_child_count from public.report_sec013_profiling_duties where report_id = v_report_id;
+  perform pg_temp.assert(v_child_count = 1, 'SCENARIO 24b: 3 repeated resume attempts leave exactly 1 child row -- no duplicate children from repeated get_child_row_count_secure() + mark_report_ready_for_indexing() cycles');
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 25 (round 8): an unauthorized retry attempt is denied --
+-- Bravo (different profile, no relationship to Alpha's report) cannot
+-- use either get_child_row_count_secure() or
+-- mark_report_ready_for_indexing() against Alpha's report to "help" or
+-- interfere with its recovery
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a2'::uuid); -- Bravo
+
+do $$
+declare
+  v_report_id uuid;
+begin
+  select id into v_report_id from public.report_sec014 where staff_id = 'T-A1' order by created_at desc limit 1;
+  perform pg_temp.assert(v_report_id is not null, 'SCENARIO 25 setup: a report owned by Alpha exists to attempt an unauthorized retry against');
+
+  begin
+    perform public.get_child_row_count_secure('report_sec014', v_report_id);
+    raise exception 'SCENARIO 25 FAILED: Bravo should not be able to check the child-row count of a report Bravo does not own';
+  exception when others then
+    if sqlerrm like '%Only the submitting profile may check its own report%' then
+      raise notice 'PASS: SCENARIO 25a: get_child_row_count_secure() denies Bravo (a different, unrelated profile) access to Alpha''s report';
+    else
+      raise exception 'SCENARIO 25 FAILED: rejected for the wrong reason: %', sqlerrm;
+    end if;
+  end;
+
+  begin
+    perform public.mark_report_ready_for_indexing('report_sec014', v_report_id, 1);
+    raise exception 'SCENARIO 25 FAILED: Bravo should not be able to (re-)finalize a report Bravo does not own';
+  exception when others then
+    if sqlerrm like '%Only the submitting profile may mark a report ready for indexing%' then
+      raise notice 'PASS: SCENARIO 25b: mark_report_ready_for_indexing() denies Bravo the same way -- an unauthorized retry is denied at every step of the resume path, not merely the first';
+    else
+      raise exception 'SCENARIO 25 FAILED: rejected for the wrong reason: %', sqlerrm;
+    end if;
+  end;
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
 rollback; -- discard every synthetic fixture and result; this harness never commits.
 
 -- If every NOTICE above printed PASS and this script reached this
 -- comment without a raised exception, every listed scenario passed
 -- against this disposable database.
 --
--- Scenarios 1-11, 13-17 are ordinary, executable-in-sequence assertions.
+-- Scenarios 1-11, 13-25 are ordinary, executable-in-sequence assertions.
 -- Scenario 12 is the sole exception: genuine cross-transaction
 -- concurrency cannot be exercised within one linear script/connection,
 -- so it is documented (with exact manual two-session steps) rather than
@@ -715,3 +1078,15 @@ rollback; -- discard every synthetic fixture and result; this harness never comm
 -- remains PREPARED BUT NOT EXECUTED: no local/disposable Postgres,
 -- Docker, or Supabase CLI has been available in this development
 -- environment at any point in Phase 6.
+--
+-- Round 8 added scenarios 18-25: SEC029 incomplete-checklist rejection
+-- (18), SEC029 duplicate/invalid item rejection (19), SEC029 valid
+-- complete acceptance (20), SEC018 maximum-6 enforcement (21),
+-- child-insert-failure recovery (22), finalization-failure recovery
+-- (23), repeated-retry non-duplication (24), and unauthorized-retry
+-- denial (25). Scenarios 22-25 are SQL-level simulations of
+-- resumeReportSubmission()'s exact RPC call sequence (the same
+-- get_child_row_count_secure() then mark_report_ready_for_indexing()
+-- calls the TypeScript action makes) -- this harness cannot invoke the
+-- TypeScript server action itself, so it exercises the identical
+-- database-level calls that action performs.

@@ -18,6 +18,7 @@ import {
   EntryCard,
 } from "@/components/avsec/forms/fields";
 import { SubmissionConfirmation } from "@/components/avsec/forms/SubmissionConfirmation";
+import { SubmissionRecovery } from "@/components/avsec/forms/SubmissionRecovery";
 import { AttachmentUpload, revokeAttachmentPreviews, type PendingAttachment } from "@/components/avsec/forms/AttachmentUpload";
 import { combineDateTimeMY } from "@/lib/avsec/datetime";
 import type { Profile } from "@/lib/avsec/types";
@@ -67,6 +68,7 @@ export function Sec018Form({
     | null
   >(null);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [recovery, setRecovery] = useState<{ id: string; message: string; payload: unknown } | null>(null);
 
   const {
     register,
@@ -128,6 +130,8 @@ export function Sec018Form({
       setResult({ kind: "queued", pendingAttachments: attachments.length });
       revokeAttachmentPreviews(attachments);
       setAttachments([]);
+    } else if (outcome.id) {
+      setRecovery({ id: outcome.id, message: outcome.message, payload: parsed.data });
     } else {
       alert(outcome.message);
     }
@@ -154,6 +158,22 @@ export function Sec018Form({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      {recovery && (
+        <SubmissionRecovery
+          reportType="sec018"
+          reportId={recovery.id}
+          message={recovery.message}
+          payload={recovery.payload}
+          onRecovered={(r) => {
+            setRecovery(null);
+            clearLocalDraft(profile.id, "sec018");
+            revokeAttachmentPreviews(attachments);
+            setAttachments([]);
+            setResult({ kind: "submitted", id: r.id, submittedAt: r.submittedAt, reportNo: r.reportNo });
+          }}
+          onGiveUp={() => setRecovery(null)}
+        />
+      )}
       <FormStepIndicator
         code={meta.code}
         draftNote={savedAt ? `DRAFT SAVED ${savedAt.toLocaleTimeString()}` : "AUTOSAVING…"}
