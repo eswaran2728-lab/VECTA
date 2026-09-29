@@ -107,11 +107,31 @@ end $$;
 
 -- 3. Super Admin RLS Policies for Organizations table
 -- Platform super admins can manage organizations.
+-- CORRECTION (round 11, database-integration validation): `role =
+-- 'SUPER_ADMIN'` compared profiles.role (the `user_role` enum) directly
+-- against a literal that is not, and has never been, a member of that
+-- enum -- avsec/0008/0011 (the only two migrations that ever widen this
+-- enum) add ENFORCEMENT and MANAGEMENT only. Every later migration that
+-- checks for a super admin (e.g.
+-- 20260923000003_super_admin_privilege_containment.sql) consistently
+-- uses the SAFE `role::text = 'SUPER_ADMIN'` form instead -- this is the
+-- one place that used the unsafe direct-enum form, and Postgres rejects
+-- it outright at evaluation time ("invalid input value for enum
+-- user_role"), which a real database-integration run (round 10)
+-- surfaced for the first time; no prior static test could catch it.
+-- The canonical representation for a super admin, evidenced by every
+-- other migration's own consistent choice, is `unified_role =
+-- 'super_admin'` (already the second half of this same OR condition) --
+-- this fix does not add the enum value (that would be reintroducing a
+-- representation the codebase has consistently moved away from since
+-- unified_role_model.sql); it only makes this one comparison as safe as
+-- every other one already is, preserving the exact same intended
+-- authorization outcome.
 create policy "organizations_super_admin_all" on public.organizations
   for all using (
     exists (
       select 1 from public.profiles
-      where id = auth.uid() and (role = 'SUPER_ADMIN' or unified_role = 'super_admin')
+      where id = auth.uid() and (role::text = 'SUPER_ADMIN' or unified_role = 'super_admin')
     ) or exists (
       select 1 from public.users
       where id = auth.uid() and (role = 'super_admin' or unified_role = 'super_admin')

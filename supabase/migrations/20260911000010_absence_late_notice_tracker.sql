@@ -52,9 +52,27 @@ create policy "absence_notices_select_elevated" on public.absence_notices
     exists (
       select 1 from public.profiles p
       where p.id = auth.uid()
-        and p.role in ('DSE', 'ENFORCEMENT', 'MANAGEMENT', 'ADMIN', 'SUPER_ADMIN')
+-- CORRECTION (round 11, database-integration validation): every
+-- `role IN (...)` / `role::text` list below that includes the literal
+-- 'SUPER_ADMIN' originally compared the bare (uncast) `role` enum
+-- column against that list. 'SUPER_ADMIN' is not, and has never been, a
+-- member of the user_role enum (avsec/0008/0011 are the only migrations
+-- that ever widen it, adding ENFORCEMENT and MANAGEMENT only) -- an
+-- IN-list comparison against an enum column requires every literal to
+-- be castable to that enum type, so Postgres rejected the WHOLE
+-- comparison outright the instant it was evaluated, for every row,
+-- regardless of whether that row actually matched one of the OTHER,
+-- valid literals (ADMIN/MANAGEMENT/ENFORCEMENT/DSE all remain valid).
+-- Confirmed only by actually executing this migration against a real
+-- Postgres instance (round 10/11) -- no static test could catch it.
+-- Fixed by casting to role::text, the same safe pattern already used
+-- elsewhere in this codebase (e.g.
+-- 20260923000003_super_admin_privilege_containment.sql); the intended
+-- authorization outcome (grant if role is one of these, matched by
+-- exact string) is unchanged for every valid role.
+        and p.role::text in ('DSE', 'ENFORCEMENT', 'MANAGEMENT', 'ADMIN', 'SUPER_ADMIN')
         and (
-          p.role in ('MANAGEMENT', 'ADMIN', 'ENFORCEMENT', 'SUPER_ADMIN')
+          p.role::text in ('MANAGEMENT', 'ADMIN', 'ENFORCEMENT', 'SUPER_ADMIN')
           or (p.role = 'DSE' and (p.station is null or p.station = absence_notices.station))
         )
     )

@@ -312,12 +312,25 @@ where my.code = 'MY'
 -- RLS note at the top of this file); for Claude Code / migration-owner
 -- use only, via the Supabase SQL tool, until Phase 3 defines who (if
 -- anyone) may read them directly.
+-- CORRECTION (round 11, database-integration validation): this view had
+-- no FROM clause at all -- every column below (aoc_id, station) is
+-- unqualified with nothing in scope to resolve it against, which real
+-- Postgres rejects outright (not merely a PGlite quirk -- confirmed by
+-- actually attempting to create this view). The view's own name and its
+-- four aggregate columns (total_profiles, backfilled_profiles,
+-- deterministic_gap_profiles, ambiguous_profiles) make its intended
+-- source unambiguous: this migration's own backfill (immediately above)
+-- operates on public.profiles, and this view is meant to report
+-- coverage over exactly that backfill. Fixed by adding the missing
+-- `from public.profiles` -- no other change; the four aggregate
+-- expressions are unchanged.
 create or replace view public.v_phase2_backfill_coverage as
 select
   count(*) as total_profiles,
   count(*) filter (where aoc_id is not null) as backfilled_profiles,
   count(*) filter (where aoc_id is null and station is not null) as deterministic_gap_profiles,
-  count(*) filter (where station is null) as ambiguous_profiles;
+  count(*) filter (where station is null) as ambiguous_profiles
+from public.profiles;
 
 create or replace view public.v_phase2_unclassified_stations as
 select code, name, classification_status
