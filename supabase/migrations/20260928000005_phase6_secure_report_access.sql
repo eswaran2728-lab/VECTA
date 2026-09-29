@@ -1942,7 +1942,36 @@ drop trigger if exists trg_enqueue_indexing on public.report_sec029;
 drop trigger if exists trg_enqueue_indexing on public.report_sec033;
 drop trigger if exists trg_enqueue_indexing on public.offload_records;
 
-create or replace function public.mark_report_ready_for_indexing(p_source_table text, p_source_id uuid)
+-- CORRECTION (review round 6): an ownership check alone let a caller
+-- mark ANY of their own reports ready -- including one whose child rows
+-- had not actually been written yet (premature finalization), or one
+-- where a concurrent child INSERT was still in flight (a genuine race
+-- between finalization and child writes). Fixed with two changes,
+-- neither a timing heuristic:
+--   1. p_expected_child_count: the CALLER states how many child rows it
+--      believes it wrote (0 is valid and expected for report_sec016/
+--      offload_records-without-a-table-at-all... no, every table except
+--      report_sec016 HAS a child table; 0 is a legitimate value for any
+--      of them, since sec014/sec018's patrol entries are genuinely
+--      optional in the application schema). This function then counts
+--      the ACTUAL rows in the child table and requires an exact match --
+--      it never trusts the caller's claim, only uses it as the
+--      expectation to verify against the database's own count. report_
+--      sec016 has no child table at all, so its expected count must be
+--      exactly 0 and no count query runs.
+--   2. `for update`: the parent row is locked before counting children,
+--      and enforce_child_write_before_finalization() (the new trigger
+--      on all 6 child tables, below) locks the SAME parent row before
+--      permitting any child INSERT/UPDATE/DELETE. Because both paths
+--      lock the identical row, Postgres serializes them -- a concurrent
+--      child write blocks until finalization's transaction commits (at
+--      which point the child write's own check sees report_index_queue
+--      already has an entry and is rejected) or rolls back (at which
+--      point the child write proceeds against a still-open report,
+--      unaffected). This is the "appropriate locking shared by all
+--      affected write paths" the review asked for -- not two
+--      independent checks that could still interleave.
+create or replace function public.mark_report_ready_for_indexing(p_source_table text, p_source_id uuid, p_expected_child_count integer default 0)
 returns void
 language plpgsql
 security definer
@@ -1950,6 +1979,7 @@ set search_path to 'public'
 as $function$
 declare
   v_owner uuid;
+  v_actual_children integer;
 begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
@@ -1962,19 +1992,19 @@ begin
   end if;
 
   if p_source_table = 'report_sec013' then
-    select profile_id into v_owner from public.report_sec013 where id = p_source_id;
+    select profile_id into v_owner from public.report_sec013 where id = p_source_id for update;
   elsif p_source_table = 'report_sec014' then
-    select profile_id into v_owner from public.report_sec014 where id = p_source_id;
+    select profile_id into v_owner from public.report_sec014 where id = p_source_id for update;
   elsif p_source_table = 'report_sec016' then
-    select profile_id into v_owner from public.report_sec016 where id = p_source_id;
+    select profile_id into v_owner from public.report_sec016 where id = p_source_id for update;
   elsif p_source_table = 'report_sec018' then
-    select profile_id into v_owner from public.report_sec018 where id = p_source_id;
+    select profile_id into v_owner from public.report_sec018 where id = p_source_id for update;
   elsif p_source_table = 'report_sec029' then
-    select profile_id into v_owner from public.report_sec029 where id = p_source_id;
+    select profile_id into v_owner from public.report_sec029 where id = p_source_id for update;
   elsif p_source_table = 'report_sec033' then
-    select profile_id into v_owner from public.report_sec033 where id = p_source_id;
+    select profile_id into v_owner from public.report_sec033 where id = p_source_id for update;
   elsif p_source_table = 'offload_records' then
-    select profile_id into v_owner from public.offload_records where id = p_source_id;
+    select profile_id into v_owner from public.offload_records where id = p_source_id for update;
   end if;
 
   if v_owner is null then
@@ -1984,14 +2014,155 @@ begin
     raise exception 'Only the submitting profile may mark a report ready for indexing.';
   end if;
 
+  if p_source_table = 'report_sec013' then
+    select count(*) into v_actual_children from public.report_sec013_profiling_duties where report_id = p_source_id;
+  elsif p_source_table = 'report_sec014' then
+    select count(*) into v_actual_children from public.report_sec014_patrols where report_id = p_source_id;
+  elsif p_source_table = 'report_sec016' then
+    v_actual_children := 0;
+  elsif p_source_table = 'report_sec018' then
+    select count(*) into v_actual_children from public.report_sec018_patrols where report_id = p_source_id;
+  elsif p_source_table = 'report_sec029' then
+    select count(*) into v_actual_children from public.report_sec029_items where report_id = p_source_id;
+  elsif p_source_table = 'report_sec033' then
+    select count(*) into v_actual_children from public.report_sec033_hold_checks where report_id = p_source_id;
+  elsif p_source_table = 'offload_records' then
+    select count(*) into v_actual_children from public.offload_items where report_id = p_source_id;
+  end if;
+
+  if v_actual_children <> coalesce(p_expected_child_count, 0) then
+    raise exception 'Report % is not yet complete: expected % child row(s), found %: cannot mark ready for indexing until every child row has actually been committed.', p_source_id, coalesce(p_expected_child_count, 0), v_actual_children;
+  end if;
+
+  -- Idempotent AND safe to call repeatedly: ON CONFLICT DO NOTHING means
+  -- a retried finalization call (after a prior attempt's transient
+  -- failure, or simply called twice) never creates a duplicate queue
+  -- entry, and re-verifies the same completeness check every time --
+  -- repeated finalization is always safe, never silently accepted
+  -- without re-checking.
   insert into public.report_index_queue (source_table, source_id)
   values (p_source_table, p_source_id)
   on conflict (source_table, source_id) do nothing;
 end;
 $function$;
 
-revoke execute on function public.mark_report_ready_for_indexing(text, uuid) from public, anon;
-grant execute on function public.mark_report_ready_for_indexing(text, uuid) to authenticated, service_role;
+revoke execute on function public.mark_report_ready_for_indexing(text, uuid, integer) from public, anon;
+grant execute on function public.mark_report_ready_for_indexing(text, uuid, integer) to authenticated, service_role;
+
+-- =======================================================================
+-- PART S3: freeze child content after finalization, race-safe
+-- =======================================================================
+-- CORRECTION (review round 6): block_submitted_report_mutation()
+-- already freezes the PARENT row's own content completely the instant
+-- status transitions to 'submitted' (avsec/0001_init_schema.sql,
+-- corrected for the service_role/classification exception in Phase 6
+-- Part P -- EVIDENCE: `if old.status = 'submitted' then ... raise
+-- exception 'Submitted reports are immutable...'`, unconditional for
+-- any non-service_role caller). That has been true since before this
+-- session and needed no change here.
+--
+-- Child tables had NO equivalent freeze at all: their "via parent
+-- write" policies (avsec/0001/0013/0014/0021_*.sql) check only
+-- `r.profile_id = auth.uid()`, never the parent's status or finalization
+-- state -- a submitter could INSERT/UPDATE/DELETE a patrol/item/hold-
+-- check/profiling-duty/offload-item row at ANY time after submission,
+-- including after the report has been finalized (marked ready for
+-- indexing) or even after it has already been indexed into an immutable
+-- version 1 snapshot. This trigger closes that gap, using the SAME
+-- shared lock mark_report_ready_for_indexing() takes on the parent row
+-- (Part S2, above) so the two paths cannot race: whichever transaction
+-- reaches the parent row's lock first completes before the other
+-- proceeds, so a child write either lands cleanly before finalization
+-- or is correctly rejected after it, never both/neither.
+create or replace function public.enforce_child_write_before_finalization()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_report_id uuid := coalesce(new.report_id, old.report_id);
+  v_parent_table text;
+  v_locked_id uuid;
+begin
+  if auth.role() = 'service_role' then
+    return coalesce(new, old);
+  end if;
+
+  v_parent_table := case tg_table_name
+    when 'report_sec013_profiling_duties' then 'report_sec013'
+    when 'report_sec014_patrols' then 'report_sec014'
+    when 'report_sec018_patrols' then 'report_sec018'
+    when 'report_sec029_items' then 'report_sec029'
+    when 'report_sec033_hold_checks' then 'report_sec033'
+    when 'offload_items' then 'offload_records'
+    else null
+  end;
+  if v_parent_table is null then
+    raise exception 'Unrecognized child table: %', tg_table_name;
+  end if;
+
+  if v_parent_table = 'report_sec013' then
+    select id into v_locked_id from public.report_sec013 where id = v_report_id for update;
+  elsif v_parent_table = 'report_sec014' then
+    select id into v_locked_id from public.report_sec014 where id = v_report_id for update;
+  elsif v_parent_table = 'report_sec018' then
+    select id into v_locked_id from public.report_sec018 where id = v_report_id for update;
+  elsif v_parent_table = 'report_sec029' then
+    select id into v_locked_id from public.report_sec029 where id = v_report_id for update;
+  elsif v_parent_table = 'report_sec033' then
+    select id into v_locked_id from public.report_sec033 where id = v_report_id for update;
+  elsif v_parent_table = 'offload_records' then
+    select id into v_locked_id from public.offload_records where id = v_report_id for update;
+  end if;
+
+  if v_locked_id is null then
+    raise exception 'Parent report not found for child write.';
+  end if;
+
+  if exists (
+    select 1 from public.report_index_queue
+    where source_table = v_parent_table and source_id = v_report_id
+  ) then
+    raise exception 'This report has already been finalized (marked ready for indexing): child content can no longer be added, changed, or removed.';
+  end if;
+
+  return coalesce(new, old);
+end;
+$function$;
+
+revoke execute on function public.enforce_child_write_before_finalization() from public, anon, authenticated;
+grant execute on function public.enforce_child_write_before_finalization() to service_role;
+-- No client EXECUTE grant needed -- trigger-fired only, same reasoning
+-- as every other trigger function in this migration.
+
+drop trigger if exists trg_enforce_child_finalization on public.report_sec013_profiling_duties;
+create trigger trg_enforce_child_finalization before insert or update or delete on public.report_sec013_profiling_duties
+  for each row execute function public.enforce_child_write_before_finalization();
+
+drop trigger if exists trg_enforce_child_finalization on public.report_sec014_patrols;
+create trigger trg_enforce_child_finalization before insert or update or delete on public.report_sec014_patrols
+  for each row execute function public.enforce_child_write_before_finalization();
+
+drop trigger if exists trg_enforce_child_finalization on public.report_sec018_patrols;
+create trigger trg_enforce_child_finalization before insert or update or delete on public.report_sec018_patrols
+  for each row execute function public.enforce_child_write_before_finalization();
+
+drop trigger if exists trg_enforce_child_finalization on public.report_sec029_items;
+create trigger trg_enforce_child_finalization before insert or update or delete on public.report_sec029_items
+  for each row execute function public.enforce_child_write_before_finalization();
+
+drop trigger if exists trg_enforce_child_finalization on public.report_sec033_hold_checks;
+create trigger trg_enforce_child_finalization before insert or update or delete on public.report_sec033_hold_checks
+  for each row execute function public.enforce_child_write_before_finalization();
+
+drop trigger if exists trg_enforce_child_finalization on public.offload_items;
+create trigger trg_enforce_child_finalization before insert or update or delete on public.offload_items
+  for each row execute function public.enforce_child_write_before_finalization();
+-- Legitimate child-row creation during report submission is unaffected:
+-- every submit action inserts child rows BEFORE calling
+-- mark_report_ready_for_indexing() (Part S2), so report_index_queue has
+-- no entry yet at INSERT time and this trigger's EXISTS check passes.
 
 -- =======================================================================
 -- PART T: search_movements_by_registration_secure() -- dedicated,

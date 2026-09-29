@@ -210,13 +210,19 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
     revalidatePath("/avsec/bay-board");
   }
 
-  // Report completion is now explicit (review round 5): parent + any
+  // Report completion is now explicit (review round 5/6): parent + any
   // Bay Board side-effects are done, so this report is safe for the
   // repository to index -- see mark_report_ready_for_indexing() in the
-  // Phase 6 migration for why automatic AFTER INSERT enqueueing was
-  // removed (it could enqueue a report before this point, and for the
-  // 6 other types, before their child rows exist at all).
-  await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec016", p_source_id: data.id });
+  // Phase 6 migration. report_sec016 has no child table, so the
+  // expected count is always 0. The RPC's own error is checked and
+  // propagated (round 6) -- a failed finalization must not be reported
+  // to the caller as a successful submission; the report row itself
+  // still exists and can be finalized later by retrying this same RPC
+  // call (idempotent, ON CONFLICT DO NOTHING) without resubmitting.
+  const { error: readyError } = await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec016", p_source_id: data.id, p_expected_child_count: 0 });
+  if (readyError) {
+    return { ok: false, error: `Report saved, but could not be finalized for search/audit: ${readyError.message}. Contact support with report id ${data.id}.` };
+  }
   await clearDraft("sec016");
   await notifyReportSubmission({
     reportType: "sec016",
@@ -280,7 +286,12 @@ export async function submitSec014(input: unknown): Promise<ActionResult> {
   // Explicit indexing-readiness call, made only after the optional
   // patrol child rows above have already been written -- see the
   // sec016 comment above for why this replaced automatic enqueueing.
-  await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec014", p_source_id: report.id });
+  // The expected count (v.patrols.length) is verified against the
+  // database's own count inside the RPC, not merely trusted.
+  const { error: readyError } = await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec014", p_source_id: report.id, p_expected_child_count: v.patrols.length });
+  if (readyError) {
+    return { ok: false, error: `Report saved, but could not be finalized for search/audit: ${readyError.message}. Contact support with report id ${report.id}.` };
+  }
   await clearDraft("sec014");
   await notifyReportSubmission({
     reportType: "sec014",
@@ -386,7 +397,10 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
 
   // Explicit indexing-readiness call, made only after the item child
   // rows above have already been written.
-  await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec029", p_source_id: report.id });
+  const { error: readyError } = await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec029", p_source_id: report.id, p_expected_child_count: v.items.length });
+  if (readyError) {
+    return { ok: false, error: `Report saved, but could not be finalized for search/audit: ${readyError.message}. Contact support with report id ${report.id}.` };
+  }
   await clearDraft("sec029");
   await notifyReportSubmission({
     reportType: "sec029",
@@ -449,7 +463,10 @@ export async function submitSec018(input: unknown): Promise<ActionResult> {
 
   // Explicit indexing-readiness call, made only after the optional
   // patrol child rows above have already been written.
-  await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec018", p_source_id: report.id });
+  const { error: readyError } = await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec018", p_source_id: report.id, p_expected_child_count: v.patrols.length });
+  if (readyError) {
+    return { ok: false, error: `Report saved, but could not be finalized for search/audit: ${readyError.message}. Contact support with report id ${report.id}.` };
+  }
   await clearDraft("sec018");
   await notifyReportSubmission({
     reportType: "sec018",
@@ -507,7 +524,10 @@ export async function submitSec033(input: unknown): Promise<ActionResult> {
 
   // Explicit indexing-readiness call, made only after the hold-check
   // child rows above have already been written.
-  await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec033", p_source_id: report.id });
+  const { error: readyError } = await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec033", p_source_id: report.id, p_expected_child_count: v.hold_checks.length });
+  if (readyError) {
+    return { ok: false, error: `Report saved, but could not be finalized for search/audit: ${readyError.message}. Contact support with report id ${report.id}.` };
+  }
   await clearDraft("sec033");
   await notifyReportSubmission({
     reportType: "sec033",
@@ -572,7 +592,10 @@ export async function submitSec013(input: unknown): Promise<ActionResult> {
 
   // Explicit indexing-readiness call, made only after the profiling-duty
   // child rows above have already been written.
-  await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec013", p_source_id: report.id });
+  const { error: readyError } = await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec013", p_source_id: report.id, p_expected_child_count: v.profiling_duties.length });
+  if (readyError) {
+    return { ok: false, error: `Report saved, but could not be finalized for search/audit: ${readyError.message}. Contact support with report id ${report.id}.` };
+  }
   await clearDraft("sec013");
   await notifyReportSubmission({
     reportType: "sec013",
@@ -637,7 +660,10 @@ export async function submitOffload(input: unknown): Promise<ActionResult> {
 
   // Explicit indexing-readiness call, made only after the offload item
   // child rows above have already been written.
-  await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "offload_records", p_source_id: report.id });
+  const { error: readyError } = await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "offload_records", p_source_id: report.id, p_expected_child_count: v.items.length });
+  if (readyError) {
+    return { ok: false, error: `Report saved, but could not be finalized for search/audit: ${readyError.message}. Contact support with report id ${report.id}.` };
+  }
   await clearDraft("offload");
   await notifyReportSubmission({
     reportType: "offload",

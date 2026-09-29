@@ -1129,3 +1129,120 @@ test("AGGREGATE SAFETY (round 5): get_report_dashboard_aggregate_secure() only e
   const caseMatches = block.match(/case p_group_by/g) ?? [];
   assert.equal(caseMatches.length, 1);
 });
+
+// =======================================================================
+// CORRECTION ROUND 6: enforced completion, race-safe child freeze,
+// partial-failure handling
+// =======================================================================
+
+test("COMPLETION ENFORCEMENT: mark_report_ready_for_indexing() verifies the caller's claimed p_expected_child_count against the DATABASE's own count in the relevant child table -- it never trusts the claim, only uses it as the value to verify", () => {
+  const block = fnBlock("mark_report_ready_for_indexing")![0];
+  assert.match(block, /if v_actual_children <> coalesce\(p_expected_child_count, 0\) then/);
+  assert.match(block, /raise exception 'Report % is not yet complete/);
+  for (const [table, child] of [
+    ["report_sec013", "report_sec013_profiling_duties"],
+    ["report_sec014", "report_sec014_patrols"],
+    ["report_sec018", "report_sec018_patrols"],
+    ["report_sec029", "report_sec029_items"],
+    ["report_sec033", "report_sec033_hold_checks"],
+    ["offload_records", "offload_items"],
+  ]) {
+    assert.match(block, new RegExp(`select count\\(\\*\\) into v_actual_children from public\\.${child} where report_id = p_source_id`), `must count ${child} for ${table}`);
+  }
+  // report_sec016 has no child table -- expected/actual is always 0,
+  // never a count query against a nonexistent table.
+  assert.match(block, /elsif p_source_table = 'report_sec016' then\s*\n\s*v_actual_children := 0;/);
+});
+
+/** Mirrors mark_report_ready_for_indexing()'s completeness check. */
+function canFinalize(expectedChildCount: number, actualChildCount: number): boolean {
+  return actualChildCount === expectedChildCount;
+}
+
+test("COMPLETION ENFORCEMENT DECISION MIRROR: finalization succeeds only when the expected count exactly matches the actual count -- zero is a valid match (legitimate zero-child report), any mismatch in either direction is rejected", () => {
+  assert.equal(canFinalize(0, 0), true);
+  assert.equal(canFinalize(1, 0), false, "premature finalization: expected 1, none exist yet");
+  assert.equal(canFinalize(0, 1), false, "under-claimed: a child row exists but wasn't accounted for");
+  assert.equal(canFinalize(2, 2), true);
+  assert.equal(canFinalize(2, 3), false);
+});
+
+test("COMPLETION ENFORCEMENT: the parent row is locked with FOR UPDATE before the child count is checked, for every one of the 7 source tables -- this is the shared lock enforce_child_write_before_finalization() (below) also takes, so the two paths cannot race independently", () => {
+  const block = fnBlock("mark_report_ready_for_indexing")![0];
+  for (const table of ["report_sec013", "report_sec014", "report_sec016", "report_sec018", "report_sec029", "report_sec033", "offload_records"]) {
+    assert.match(block, new RegExp(`from public\\.${table} where id = p_source_id for update`), `must lock ${table} with FOR UPDATE`);
+  }
+});
+
+test("COMPLETION ENFORCEMENT: repeated finalization re-runs the FULL completeness check every time -- it is not a short-circuit 'already queued, skip validation' path", () => {
+  const block = fnBlock("mark_report_ready_for_indexing")![0];
+  // The ON CONFLICT DO NOTHING insert is the LAST statement in the
+  // function body, after the ownership lock and the completeness check
+  // -- there is no earlier return/exit that could skip validation for
+  // an already-queued report.
+  const insertIdx = block.indexOf("insert into public.report_index_queue");
+  const checkIdx = block.indexOf("if v_actual_children <> coalesce(p_expected_child_count, 0) then");
+  assert.ok(checkIdx > -1 && insertIdx > checkIdx, "the completeness check must run before the (idempotent) queue insert on every call");
+});
+
+test("CHILD FREEZE: enforce_child_write_before_finalization() locks the SAME parent row (via the same hardcoded per-table FOR UPDATE pattern) that mark_report_ready_for_indexing() locks, so a concurrent child write and a concurrent finalization call serialize against each other instead of racing", () => {
+  const finalizeBlock = fnBlock("mark_report_ready_for_indexing")![0];
+  const freezeBlock = fnBlock("enforce_child_write_before_finalization", "\\(\\)")![0];
+  for (const table of ["report_sec013", "report_sec014", "report_sec018", "report_sec029", "report_sec033", "offload_records"]) {
+    assert.match(finalizeBlock, new RegExp(`from public\\.${table} where id = p_source_id for update`));
+    assert.match(freezeBlock, new RegExp(`from public\\.${table} where id = v_report_id for update`));
+  }
+});
+
+test("CHILD FREEZE: enforce_child_write_before_finalization() rejects INSERT/UPDATE/DELETE once report_index_queue has an entry for the parent -- it checks AFTER acquiring the parent lock (per-table hardcoded FOR UPDATE, asserted above), so it always sees a finalization that already committed", () => {
+  const block = fnBlock("enforce_child_write_before_finalization", "\\(\\)")![0];
+  assert.match(block, /if exists \(\s*\n\s*select 1 from public\.report_index_queue\s*\n\s*where source_table = v_parent_table and source_id = v_report_id\s*\n\s*\) then/);
+  assert.match(block, /raise exception 'This report has already been finalized/);
+});
+
+test("CHILD FREEZE: the trigger fires on INSERT, UPDATE, AND DELETE (not just INSERT) on all 6 child tables -- content cannot be added, changed, OR removed after finalization", () => {
+  for (const child of ["report_sec013_profiling_duties", "report_sec014_patrols", "report_sec018_patrols", "report_sec029_items", "report_sec033_hold_checks", "offload_items"]) {
+    assert.match(code, new RegExp(`create trigger trg_enforce_child_finalization before insert or update or delete on public\\.${child}\\s*\\n\\s*for each row execute function public\\.enforce_child_write_before_finalization\\(\\);`));
+  }
+});
+
+test("CHILD FREEZE: legitimate child-row creation DURING submission is unaffected -- the trigger only rejects writes once report_index_queue already has an entry, and every submit action inserts child rows BEFORE calling mark_report_ready_for_indexing()", () => {
+  const actionsSrc = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
+    "utf8",
+  );
+  // For each type with a child table, the child .insert( call must
+  // appear BEFORE that type's mark_report_ready_for_indexing() call.
+  for (const [childCall, table] of [
+    ['.from("report_sec014_patrols").insert', "report_sec014"],
+    ['.from("report_sec018_patrols").insert', "report_sec018"],
+    ['.from("report_sec029_items").insert', "report_sec029"],
+    ['.from("report_sec033_hold_checks").insert', "report_sec033"],
+    ['.from("report_sec013_profiling_duties").insert', "report_sec013"],
+    ['.from("offload_items").insert', "offload_records"],
+  ]) {
+    const childIdx = actionsSrc.indexOf(childCall);
+    const readyIdx = actionsSrc.indexOf(`p_source_table: "${table}"`);
+    assert.ok(childIdx > -1 && readyIdx > childIdx, `${table}'s child insert must precede its mark_report_ready_for_indexing() call`);
+  }
+});
+
+test("PARTIAL FAILURE HANDLING: all 7 submit actions check and propagate mark_report_ready_for_indexing()'s error -- a failed finalization must not be reported to the caller as a successful submission", () => {
+  const actionsSrc = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
+    "utf8",
+  );
+  const matches = actionsSrc.match(/const \{ error: readyError \} = await supabase\.rpc\("mark_report_ready_for_indexing"/g) ?? [];
+  assert.equal(matches.length, 7, `expected all 7 submit actions to check the finalization RPC's error, found ${matches.length}`);
+  const guardMatches = actionsSrc.match(/if \(readyError\) \{\s*\n\s*return \{ ok: false, error: `Report saved, but could not be finalized/g) ?? [];
+  assert.equal(guardMatches.length, 7, `expected all 7 to return ok: false on a finalization error, found ${guardMatches.length}`);
+});
+
+test("PARTIAL FAILURE HANDLING: the finalization error message includes the report id, so a stranded (created but unfinalized) report can be identified and its finalization retried later without resubmitting -- mark_report_ready_for_indexing() is idempotent (ON CONFLICT DO NOTHING) so a bare retry of just that call is always safe", () => {
+  const actionsSrc = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
+    "utf8",
+  );
+  const matches = actionsSrc.match(/Contact support with report id \$\{(report|data)\.id\}/g) ?? [];
+  assert.equal(matches.length, 7);
+});

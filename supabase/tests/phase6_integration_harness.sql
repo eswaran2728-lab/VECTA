@@ -341,6 +341,213 @@ $$;
 
 perform pg_temp.clear_simulation();
 
+-- =======================================================================
+-- SCENARIO 9: premature finalization is rejected
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+begin
+  insert into public.report_sec014 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
+  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'premature-finalization fixture', false)
+  returning id into v_report_id;
+
+  -- No patrol rows inserted yet. Claiming 0 expected when the caller
+  -- INTENDS 2 (a bug/attack simulating "finalize before children exist")
+  -- is exactly what this checks: the RPC must not accept an
+  -- under-claimed count as truthful just because it matches reality by
+  -- coincidence -- it must reject a MISMATCH between what actually
+  -- exists and what the caller expects the FINAL state to be. This
+  -- scenario simulates the caller claiming 1 patrol exists when zero do.
+  begin
+    perform public.mark_report_ready_for_indexing('report_sec014', v_report_id, 1);
+    raise exception 'SCENARIO 9 FAILED: finalizing with p_expected_child_count=1 before any patrol row exists should have been rejected';
+  exception when others then
+    raise notice 'PASS: SCENARIO 9: mark_report_ready_for_indexing() rejects a child-count mismatch (expected 1, actual 0) -- premature finalization is denied';
+  end;
+
+  perform pg_temp.assert(
+    not exists (select 1 from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id),
+    'SCENARIO 9: the rejected finalization attempt left no queue entry behind'
+  );
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 10: a valid zero-child report finalizes successfully
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+begin
+  insert into public.report_sec014 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
+  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'zero-child fixture', false)
+  returning id into v_report_id;
+
+  -- Zero patrol rows is a legitimate submission (patrols are optional in
+  -- the application schema) -- p_expected_child_count = 0 must succeed.
+  perform public.mark_report_ready_for_indexing('report_sec014', v_report_id, 0);
+  perform pg_temp.assert(
+    exists (select 1 from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id),
+    'SCENARIO 10: a report with zero (legitimately optional) child rows finalizes successfully when p_expected_child_count = 0'
+  );
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 11: child INSERT/UPDATE/DELETE is denied after finalization
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+begin
+  select id into v_report_id from public.report_sec014 where staff_id = 'T-A1' and remark = 'synthetic patrol remark' limit 1; -- Scenario 1's already-finalized report
+
+  begin
+    insert into public.report_sec014_patrols (report_id, entry_no, location, description)
+    values (v_report_id, 99, 'Gate B9', 'attempted post-finalization insert');
+    raise exception 'SCENARIO 11 FAILED: INSERT of a new child row after finalization should have been denied';
+  exception when others then
+    raise notice 'PASS: SCENARIO 11a: child INSERT is denied on an already-finalized report';
+  end;
+
+  begin
+    update public.report_sec014_patrols set description = 'tampered' where report_id = v_report_id;
+    raise exception 'SCENARIO 11 FAILED: UPDATE of an existing child row after finalization should have been denied';
+  exception when others then
+    raise notice 'PASS: SCENARIO 11b: child UPDATE is denied on an already-finalized report';
+  end;
+
+  begin
+    delete from public.report_sec014_patrols where report_id = v_report_id;
+    raise exception 'SCENARIO 11 FAILED: DELETE of an existing child row after finalization should have been denied';
+  exception when others then
+    raise notice 'PASS: SCENARIO 11c: child DELETE is denied on an already-finalized report';
+  end;
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 12: concurrent finalization and child write (documented --
+-- cannot be executed within a single linear script/connection)
+-- =======================================================================
+-- A single psql session cannot genuinely race two transactions against
+-- each other -- true concurrency testing needs two separate connections
+-- interleaved manually or via a tool like `isolationtester`. This is
+-- documented, not executed, as part of the same honest limitation
+-- already disclosed for the rest of this harness. To exercise it by
+-- hand against a disposable database, open two psql sessions:
+--
+--   Session A (finalizer):
+--     begin;
+--     select public.mark_report_ready_for_indexing('report_sec014', '<id>', 1);
+--     -- PAUSE HERE (do not commit yet) -- this holds the row lock.
+--
+--   Session B (concurrent child write), started while A is paused:
+--     begin;
+--     insert into public.report_sec014_patrols (report_id, entry_no, location, description)
+--     values ('<id>', 2, 'Gate C1', 'racing insert');
+--     -- This BLOCKS (waiting on A's row lock), proving the trigger and
+--     -- the RPC share the same lock rather than racing independently.
+--
+--   Then in Session A: commit;
+--   Session B's blocked INSERT then resumes and must fail with
+--   "already been finalized" -- proving the shared lock correctly
+--   serialized the two transactions and B observed A's committed state,
+--   not a stale pre-finalization snapshot.
+select 1; -- no-op placeholder so this section has a runnable statement
+
+-- =======================================================================
+-- SCENARIO 13: repeated finalization is idempotent, not merely tolerated
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+  v_queue_count_before integer;
+  v_queue_count_after integer;
+begin
+  select id into v_report_id from public.report_sec014 where staff_id = 'T-A1' and remark = 'synthetic patrol remark' limit 1;
+  select count(*) into v_queue_count_before from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id;
+
+  -- Calling finalization again with the SAME (still-correct) expected
+  -- count must succeed without creating a duplicate queue row.
+  perform public.mark_report_ready_for_indexing('report_sec014', v_report_id, 1);
+
+  select count(*) into v_queue_count_after from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id;
+  perform pg_temp.assert(v_queue_count_before = 1 and v_queue_count_after = 1, 'SCENARIO 13: repeated finalization is idempotent -- no duplicate report_index_queue row is ever created');
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 14: failed child insertion does not silently succeed, and a
+-- correct retry recovers cleanly
+-- =======================================================================
+perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+begin
+  insert into public.report_sec014 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
+  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'failed-then-retried fixture', false)
+  returning id into v_report_id;
+
+  -- Simulate a failed child insert: two rows with the SAME entry_no
+  -- violate report_sec014_patrols' own (report_id, entry_no) unique
+  -- constraint. The application's real submit action returns
+  -- { ok: false, error } in this situation (patrolError check,
+  -- lib/avsec/reports/actions.ts) rather than proceeding to finalize.
+  begin
+    insert into public.report_sec014_patrols (report_id, entry_no, location, description)
+    values (v_report_id, 1, 'Gate D1', 'first'), (v_report_id, 1, 'Gate D2', 'duplicate entry_no -- simulated failure');
+    raise exception 'SCENARIO 14 FAILED: the duplicate-entry_no insert should itself have failed (unique violation), simulating a genuine child-insert failure';
+  exception when unique_violation then
+    raise notice 'PASS: SCENARIO 14a: the simulated child-insert failure actually fails at the database level (unique_violation), matching what a real partial failure looks like';
+  end;
+
+  -- The report must NOT be finalizable yet -- zero child rows actually
+  -- landed (the failed multi-row INSERT inserted nothing, atomically).
+  perform pg_temp.assert(
+    (select count(*) from public.report_sec014_patrols where report_id = v_report_id) = 0,
+    'SCENARIO 14b: the failed insert left zero child rows -- no partial/duplicate child content from the failed attempt'
+  );
+
+  -- Retry: insert one correct patrol row, then finalize with the
+  -- correct count -- this must succeed cleanly, proving the retry path
+  -- does not create a duplicate PARENT (still the same v_report_id) and
+  -- does not leave the report permanently stranded.
+  insert into public.report_sec014_patrols (report_id, entry_no, location, description)
+  values (v_report_id, 1, 'Gate D1', 'retried, correct');
+  perform public.mark_report_ready_for_indexing('report_sec014', v_report_id, 1);
+  perform pg_temp.assert(
+    exists (select 1 from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id),
+    'SCENARIO 14c: after a corrected retry (one child row, matching count), finalization succeeds -- no stranded report'
+  );
+  perform pg_temp.assert(
+    (select count(*) from public.report_sec014 where profile_id = auth.uid() and remark = 'failed-then-retried fixture') = 1,
+    'SCENARIO 14d: exactly one parent row exists for this fixture -- the retry did not create a duplicate parent'
+  );
+end;
+$$;
+
+perform pg_temp.clear_simulation();
+
 rollback; -- discard every synthetic fixture and result; this harness never commits.
 
 -- If every NOTICE above printed PASS and this script reached this

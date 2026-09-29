@@ -5150,9 +5150,10 @@ export type Database = {
         }[]
       }
       mark_report_ready_for_indexing: {
-        Args: { p_source_table: string; p_source_id: string }
+        Args: { p_source_table: string; p_source_id: string; p_expected_child_count?: number | null }
         Returns: undefined
       }
+      enforce_child_write_before_finalization: { Args: Record<string, never>; Returns: unknown }
       search_reports_by_number_secure: {
         Args: { p_prefix: string; p_limit?: number | null }
         Returns: {
