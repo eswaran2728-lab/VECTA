@@ -116,6 +116,22 @@ export function AppSidebar({
       },
     ];
 
+    // Phase 7: entry point for the new Phase 3 role-scoped dashboards
+    // (International Executive, Operation Manager). Shown for every
+    // org-wide account since Phase 3 role assignments aren't reflected in
+    // any prop passed to this component yet -- a profile with no active
+    // Phase 3 assignment is safely redirected back to the existing
+    // dashboard by the route itself, so this link is never a dead end.
+    // Hidden navigation is not authorization either way: the route enforces
+    // its own scope server-side regardless of who can see this link.
+    if (isOrgWide) {
+      operationsItems.push({
+        href: "/avsec/my-dashboard",
+        label: "My Dashboard (Phase 7)",
+        icon: Sparkles,
+      });
+    }
+
     if (!isOrgWide) {
       operationsItems.push({
         href: "/avsec/duty",

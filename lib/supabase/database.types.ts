@@ -5254,6 +5254,26 @@ export type Database = {
         Args: { p_group_by?: string | null }
         Returns: { group_value: string | null; report_count: number }[]
       }
+      resolve_ops_dashboard_station_scope: {
+        Args: Record<PropertyKey, never>
+        Returns: string[] | null
+      }
+      get_ops_dashboard_aggregate_secure: {
+        Args: { p_duty_date?: string | null }
+        Returns: {
+          scope_kind: string
+          checked_in_count: number
+          pending_count: number
+          absent_count: number
+          total_staff: number
+          overdue_bay_board_count: number
+          generated_at: string
+        }[]
+      }
+      get_ops_dashboard_hub_breakdown_secure: {
+        Args: { p_duty_date?: string | null }
+        Returns: { hub_code: string; checked_in_count: number; total_staff: number }[]
+      }
       sanitize_csv_value: { Args: { p_value: string | null }; Returns: string | null }
       export_reports_secure: {
         Args: {

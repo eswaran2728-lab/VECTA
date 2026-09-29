@@ -8,12 +8,14 @@
     "migrate": "node migrate.mjs",
     "harness": "node run_harness.mjs",
     "verify-export-isolation": "node verify_export_isolation.mjs",
-    "test": "npm run migrate && npm run harness && npm run verify-export-isolation",
+    "verify-phase7-dashboard-aggregates": "node verify_phase7_dashboard_aggregates.mjs",
+    "test": "npm run migrate && npm run harness && npm run verify-export-isolation && npm run verify-phase7-dashboard-aggregates",
     "migrate:native": "node migrate.mjs --native",
     "harness:native": "node run_harness.mjs --native",
     "verify-export-isolation:native": "node verify_export_isolation.mjs --native",
+    "verify-phase7-dashboard-aggregates:native": "node verify_phase7_dashboard_aggregates.mjs --native",
     "verify-concurrency:native": "node verify_concurrency_native.mjs",
-    "test:native": "npm run migrate:native && npm run harness:native && npm run verify-export-isolation:native && npm run verify-concurrency:native"
+    "test:native": "npm run migrate:native && npm run harness:native && npm run verify-export-isolation:native && npm run verify-phase7-dashboard-aggregates:native && npm run verify-concurrency:native"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.8",
