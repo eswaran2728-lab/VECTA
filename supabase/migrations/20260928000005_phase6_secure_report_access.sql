@@ -1091,28 +1091,45 @@ create policy "sec033_hold_checks own select" on public.report_sec033_hold_check
 drop policy if exists "sec013_profiling_duties via parent select" on public.report_sec013_profiling_duties;
 create policy "sec013_profiling_duties own select" on public.report_sec013_profiling_duties for select
   using (exists (select 1 from public.report_sec013 r where r.id = report_id and r.profile_id = auth.uid()));
--- The "via parent write" policies on these same 5 tables are untouched
--- -- they already gate on `r.profile_id = auth.uid()` only (own-row
--- write, needed for report creation's own child-row inserts) and never
--- had a broad-visibility clause to begin with.
 
--- CORRECTION (review round 4): column-level grant closure. RLS alone is
--- ROW-level -- the "own row" policy above still permits an ordinary
--- authenticated caller to `select *` on their OWN submitted report,
--- including remark/declaration/corrective_action/every other content
--- column, directly, unaudited. "Remove direct authenticated access to
--- full source-row content, including own rows" requires closing this at
--- the COLUMN level too: SELECT is revoked entirely at the table-grant
--- level, then re-granted on ONLY the 3 columns report creation's
--- existing `.insert({...}).select("id, submitted_at, report_no")` /
--- `.select("id")` RETURNING pattern actually needs (confirmed by a
--- source search of every submit action in lib/avsec/reports/actions.ts
--- -- every one of the 7 report tables' insert calls selects exactly
--- `id, submitted_at, report_no`, or `id` alone for report_sec033/
--- offload_records/report_sec013). No table's full-row content is
--- selectable by `authenticated` anymore, even on the caller's own row --
--- list_my_submissions_secure() (Part R) replaces that need, via
--- SECURITY DEFINER, returning card fields only.
+drop policy if exists "offload_items via parent select" on public.offload_items;
+create policy "offload_items own select" on public.offload_items for select
+  using (exists (select 1 from public.offload_records r where r.id = report_id and r.profile_id = auth.uid()));
+-- The "via parent write" policies on these 6 tables are untouched --
+-- they already gate on `r.profile_id = auth.uid()` only (own-row write,
+-- needed for report creation's own child-row inserts) and never had a
+-- broad-visibility clause to begin with.
+
+-- CORRECTION (review round 5): the own-row SELECT policies above are
+-- not the real closure -- RLS is only reached if SELECT is grantable at
+-- all. None of the 6 child tables' inserts are ever followed by a
+-- `.select(...)` in lib/avsec/reports/actions.ts (confirmed by source
+-- search: every child-row `.insert(rows)` call destructures only
+-- `{ error }`), so SELECT is revoked from `authenticated` on all 6
+-- child tables entirely -- no column-level re-grant needed, since
+-- nothing in this codebase ever needs to read a child row back directly.
+-- An authenticated owner can no longer retrieve child content (patrol
+-- entries, profiling duties, hold checks, offload items) through
+-- PostgREST at all; it is reachable only through report_source_content()
+-- (audited detail/PDF/export/version paths), which is SECURITY DEFINER
+-- and bypasses RLS/grants entirely, same as every other read in this
+-- migration. INSERT is completely untouched, so child-row creation
+-- during report submission is unaffected.
+revoke select on public.report_sec014_patrols, public.report_sec018_patrols, public.report_sec029_items, public.report_sec033_hold_checks, public.report_sec013_profiling_duties, public.offload_items from authenticated;
+
+-- CORRECTION (review round 5): the round-4 column-level grant on the 7
+-- PARENT tables (id, submitted_at, report_no) was incomplete -- it broke
+-- lib/avsec/admin/actions.ts's count-only deleteUserAccount() check,
+-- which filters `.eq("profile_id", profileId)`: Postgres requires
+-- column-level SELECT privilege on every column referenced anywhere in
+-- the query, including a WHERE/eq filter, not only columns in the
+-- explicit select() list. profile_id is re-added to the grant --
+-- harmless to expose (a bare foreign-key id, not content), and this is
+-- the exact "count-only queries are not automatically compatible with
+-- restricted SELECT grants" gap the review flagged. No other column is
+-- added: content columns (remark, declaration, station, team, staff_*,
+-- every type-specific field) remain unselectable by `authenticated`
+-- directly, on any row, including the caller's own.
 do $$
 declare
   v_table text;
@@ -1122,16 +1139,34 @@ begin
     'report_sec029', 'report_sec033', 'offload_records'
   ] loop
     execute format('revoke select on public.%I from authenticated', v_table);
-    execute format('grant select (id, submitted_at, report_no) on public.%I to authenticated', v_table);
+    execute format('grant select (id, submitted_at, report_no, profile_id) on public.%I to authenticated', v_table);
   end loop;
 end;
 $$;
--- Note: the four EXECUTE format(...) calls above target only fixed,
+-- Note: the EXECUTE format(...) calls above target only fixed,
 -- hardcoded literal table names from the array declared in this same
 -- block -- never a client- or caller-supplied value -- so this does not
 -- violate the "no arbitrary table-name dynamic SQL" requirement, which
 -- concerns runtime-supplied identifiers, not a closed, migration-authored
 -- allowlist.
+--
+-- Verified compatible with every remaining direct query against these 7
+-- tables after this grant:
+--   * INSERT ... RETURNING "id, submitted_at, report_no" or "id" alone
+--     (every submit action, lib/avsec/reports/actions.ts) -- all 3
+--     granted columns present.
+--   * deleteUserAccount()'s count-only check,
+--     `.select("id", { count: "exact", head: true }).eq("profile_id", profileId)`
+--     (lib/avsec/admin/actions.ts) -- both id and profile_id granted;
+--     COUNT itself never requires SELECT on any column beyond what the
+--     query actually references.
+--   * getMySubmissions()/searchByReportNoPrefix() -- no longer query
+--     these tables directly at all (Part R, round 4); unaffected.
+--   * Acknowledgement writes -- report_acknowledgements is a SEPARATE
+--     table (avsec/0012_*.sql) with its own, untouched grants/RLS; the
+--     `acknowledgement` boolean column on the 4 tables that have it is
+--     written once at INSERT time only (confirmed by source search,
+--     Phase 5) and never read back directly by any caller.
 
 -- =======================================================================
 -- PART P: report_source_content() -- the one shared, hardcoded,
@@ -1187,6 +1222,15 @@ begin
     v_content := v_content || jsonb_build_object('hold_checks', v_children);
   elsif p_source_table = 'offload_records' then
     select to_jsonb(t) into v_content from public.offload_records t where t.id = p_source_id;
+    -- CORRECTION (review round 5): offload_records has its own child
+    -- table (offload_items, avsec/0021_offload_module.sql) that was
+    -- missed entirely in the original version of this function --
+    -- an authorized viewer's version-1 snapshot and detail read would
+    -- have silently omitted every offload item. Fixed the same way as
+    -- the other 5 child tables.
+    select coalesce(jsonb_agg(to_jsonb(c) order by c.entry_no), '[]'::jsonb) into v_children
+      from public.offload_items c where c.report_id = p_source_id;
+    v_content := v_content || jsonb_build_object('items', v_children);
   else
     raise exception 'Unsupported source_table: %', p_source_table;
   end if;
@@ -1429,17 +1473,38 @@ grant execute on function public.get_report_secure(uuid, integer) to authenticat
 -- report_source_summary(): the same hardcoded-per-table, no-dynamic-SQL,
 -- service_role-only pattern as report_source_content(), but returns a
 -- FIXED small set of display fields only -- never remark/declaration/
--- corrective_action in full (remark_excerpt is truncated to 80 chars,
--- matching the truncation already used by the pre-existing
--- getFilteredSubmissions() summary), never child-table rows, never any
--- other content column. This is the ONLY function list_reports_secure()/
--- search_reports_secure() use to add per-row display detail.
+-- corrective_action in any form, never a truncated excerpt of them
+-- either, never child-table rows, never any other content column. This
+-- is the ONLY function list_reports_secure()/search_reports_secure()
+-- use to add per-row display detail. See its own header comment for the
+-- exact, documented field allowlist.
+-- CORRECTION (review round 5): the original version of this round's own
+-- draft included a remark_excerpt field, truncated to 80 chars. An
+-- 80-char truncation is still free text -- the review's instruction is
+-- explicit that "free-text remarks, declarations and child content must
+-- remain behind audited detail access," full stop, not merely
+-- shortened. The final, documented card-field allowlist below is:
+--   * staff_name -- who filed the report (needed for every list/search
+--     card and for "my submissions").
+--   * station, team -- where/which team (needed for dashboard/shift-
+--     compliance filtering and card display).
+--   * secondary_identifier -- a STRUCTURED (never free-text) label
+--     built only from flight number / registration / destination
+--     fields, e.g. "Flight AK123 · Reg 9M-ABC" -- never touches remark/
+--     declaration/corrective_action.
+--   * reg_no, bay_no, sta_std -- SEC016-specific structured routing/
+--     logistics fields (needed by the flight-coverage dashboard panel),
+--     never free text.
+--   * submitter_profile_id -- a bare id, needed for "is this my own
+--     report" filtering client-side.
+-- Nothing else is returned. No function anywhere in this migration
+-- reads or returns remark/declaration/corrective_action outside
+-- report_source_content() (the audited-path-only full-content join).
 create or replace function public.report_source_summary(p_source_table text, p_source_id uuid)
 returns table (
   staff_name text,
   station text,
   team text,
-  remark_excerpt text,
   secondary_identifier text,
   reg_no text,
   bay_no text,
@@ -1453,19 +1518,19 @@ set search_path to 'public'
 as $function$
 begin
   if p_source_table = 'report_sec013' then
-    return query select t.staff_name, t.station, t.team, left(coalesce(t.remark, ''), 80), null::text, null::text, null::text, null::text, t.profile_id from public.report_sec013 t where t.id = p_source_id;
+    return query select t.staff_name, t.station, t.team, null::text, null::text, null::text, null::text, t.profile_id from public.report_sec013 t where t.id = p_source_id;
   elsif p_source_table = 'report_sec014' then
-    return query select t.staff_name, t.station, t.team, left(coalesce(t.remark, ''), 80), null::text, null::text, null::text, null::text, t.profile_id from public.report_sec014 t where t.id = p_source_id;
+    return query select t.staff_name, t.station, t.team, null::text, null::text, null::text, null::text, t.profile_id from public.report_sec014 t where t.id = p_source_id;
   elsif p_source_table = 'report_sec016' then
-    return query select t.staff_name, t.station, t.team, null::text, ('Flight ' || coalesce(t.flight, '?') || ' · Reg ' || coalesce(t.reg_no, '?')), t.reg_no, t.bay_no, t.sta_std, t.profile_id from public.report_sec016 t where t.id = p_source_id;
+    return query select t.staff_name, t.station, t.team, ('Flight ' || coalesce(t.flight, '?') || ' · Reg ' || coalesce(t.reg_no, '?')), t.reg_no, t.bay_no, t.sta_std, t.profile_id from public.report_sec016 t where t.id = p_source_id;
   elsif p_source_table = 'report_sec018' then
-    return query select t.staff_name, t.station, t.team, null::text, null::text, null::text, null::text, null::text, t.profile_id from public.report_sec018 t where t.id = p_source_id;
+    return query select t.staff_name, t.station, t.team, null::text, null::text, null::text, null::text, t.profile_id from public.report_sec018 t where t.id = p_source_id;
   elsif p_source_table = 'report_sec029' then
-    return query select t.staff_name, t.station, t.team, null::text, ('Flight ' || coalesce(t.flight_no, '?') || ' · Reg ' || coalesce(t.aircraft_registration, '?')), t.aircraft_registration, null::text, null::text, t.profile_id from public.report_sec029 t where t.id = p_source_id;
+    return query select t.staff_name, t.station, t.team, ('Flight ' || coalesce(t.flight_no, '?') || ' · Reg ' || coalesce(t.aircraft_registration, '?')), t.aircraft_registration, null::text, null::text, t.profile_id from public.report_sec029 t where t.id = p_source_id;
   elsif p_source_table = 'report_sec033' then
-    return query select t.staff_name, t.station, t.team, null::text, null::text, null::text, null::text, null::text, t.profile_id from public.report_sec033 t where t.id = p_source_id;
+    return query select t.staff_name, t.station, t.team, null::text, null::text, null::text, null::text, t.profile_id from public.report_sec033 t where t.id = p_source_id;
   elsif p_source_table = 'offload_records' then
-    return query select t.staff_name, t.station, t.team, null::text, ('Flight ' || coalesce(t.flight_no, '?') || ' · ' || coalesce(t.destination, '?')), null::text, null::text, null::text, t.profile_id from public.offload_records t where t.id = p_source_id;
+    return query select t.staff_name, t.station, t.team, ('Flight ' || coalesce(t.flight_no, '?') || ' · ' || coalesce(t.destination, '?')), null::text, null::text, null::text, t.profile_id from public.offload_records t where t.id = p_source_id;
   else
     raise exception 'Unsupported source_table: %', p_source_table;
   end if;
@@ -1498,7 +1563,6 @@ returns table (
   staff_name text,
   station text,
   team text,
-  remark_excerpt text,
   secondary_identifier text,
   reg_no text,
   bay_no text,
@@ -1547,7 +1611,7 @@ begin
   select
     a.id, a.source_table, a.report_type, a.operating_entity_code, a.flight_number,
     a.report_date, a.status, a.severity, a.flag_state, a.indexed_at,
-    s.staff_name, s.station, s.team, s.remark_excerpt, s.secondary_identifier, s.reg_no, s.bay_no, s.sta_std, s.submitter_profile_id,
+    s.staff_name, s.station, s.team, s.secondary_identifier, s.reg_no, s.bay_no, s.sta_std, s.submitter_profile_id,
     c.n
   from authorized a, counted c
   cross join lateral public.report_source_summary(a.source_table, a.source_id) s
@@ -1591,7 +1655,6 @@ returns table (
   staff_name text,
   station text,
   team text,
-  remark_excerpt text,
   secondary_identifier text,
   reg_no text,
   bay_no text,
@@ -1639,7 +1702,7 @@ begin
   select
     a.id, a.source_table, a.report_type, a.operating_entity_code, a.flight_number,
     a.report_date, a.status, a.severity, a.flag_state, a.indexed_at,
-    s.staff_name, s.station, s.team, s.remark_excerpt, s.secondary_identifier, s.reg_no, s.bay_no, s.sta_std, s.submitter_profile_id,
+    s.staff_name, s.station, s.team, s.secondary_identifier, s.reg_no, s.bay_no, s.sta_std, s.submitter_profile_id,
     c.n
   from authorized a, counted c
   cross join lateral public.report_source_summary(a.source_table, a.source_id) s
@@ -1827,6 +1890,108 @@ $function$;
 
 revoke execute on function public.needs_your_action_secure() from public, anon;
 grant execute on function public.needs_your_action_secure() to authenticated, service_role;
+
+-- =======================================================================
+-- PART S2: explicit indexing readiness -- closes the immutable-snapshot
+-- completeness race
+-- =======================================================================
+-- CORRECTION (review round 5): 6 of the 7 report tables (every one
+-- except report_sec016) have a separate child table (patrols/items/
+-- hold-checks/profiling-duties), written by application code in a
+-- SEPARATE, LATER statement after the parent row's own INSERT commits
+-- (lib/avsec/reports/actions.ts -- e.g. submitSec014() inserts the
+-- parent row, gets its id back via RETURNING, THEN inserts patrol rows
+-- referencing that id). Phase 5's automatic AFTER INSERT enqueue
+-- trigger on the PARENT table fires the instant the parent row commits
+-- -- before the child insert has necessarily happened. Since Phase 5's
+-- pg_cron job runs process_report_index_queue() every 1 minute, a
+-- queued row could be picked up and indexed (capturing version 1's
+-- immutable snapshot) in the narrow window between the parent commit
+-- and the child insert completing, permanently capturing an incomplete
+-- report -- version 1 is written exactly once and this codebase has no
+-- (and must not have) a path that overwrites it to repair an early
+-- snapshot.
+--
+-- Fixed with an explicit-completion model, not a timing heuristic:
+--   1. The automatic AFTER INSERT enqueue triggers (Phase 5 Part Q) are
+--      dropped from all 7 report tables.
+--   2. mark_report_ready_for_indexing() is a new, narrow, authenticated-
+--      callable RPC that ONLY inserts into report_index_queue (the same
+--      idempotent ON CONFLICT DO NOTHING pattern as the old trigger) --
+--      it grants no other privilege and performs no classification or
+--      content read itself.
+--   3. Every one of the 7 submit actions in lib/avsec/reports/actions.ts
+--      now calls this RPC explicitly, as the LAST step after any child-
+--      row insert has already completed (and after checking for a
+--      child-insert error) -- so a report can only ever be enqueued once
+--      it is genuinely complete. report_sec016 (no child table) also
+--      uses this same explicit call now, for one consistent pattern
+--      instead of a special-cased automatic trigger for one table only.
+-- The caller identity check (profile_id = auth.uid()) prevents this RPC
+-- from being used to enqueue an arbitrary other person's report early
+-- (not itself a security boundary bypass -- enqueueing only queues a
+-- row for the existing has_report_access()-independent indexing
+-- process, it grants no read access -- but the check keeps the
+-- function's authority scoped to "my own report is now complete," which
+-- is the only case any legitimate caller ever has).
+drop trigger if exists trg_enqueue_indexing on public.report_sec013;
+drop trigger if exists trg_enqueue_indexing on public.report_sec014;
+drop trigger if exists trg_enqueue_indexing on public.report_sec016;
+drop trigger if exists trg_enqueue_indexing on public.report_sec018;
+drop trigger if exists trg_enqueue_indexing on public.report_sec029;
+drop trigger if exists trg_enqueue_indexing on public.report_sec033;
+drop trigger if exists trg_enqueue_indexing on public.offload_records;
+
+create or replace function public.mark_report_ready_for_indexing(p_source_table text, p_source_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_owner uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Must be signed in.';
+  end if;
+  if p_source_table not in (
+    'report_sec013', 'report_sec014', 'report_sec016', 'report_sec018',
+    'report_sec029', 'report_sec033', 'offload_records'
+  ) then
+    raise exception 'Unsupported source_table: %', p_source_table;
+  end if;
+
+  if p_source_table = 'report_sec013' then
+    select profile_id into v_owner from public.report_sec013 where id = p_source_id;
+  elsif p_source_table = 'report_sec014' then
+    select profile_id into v_owner from public.report_sec014 where id = p_source_id;
+  elsif p_source_table = 'report_sec016' then
+    select profile_id into v_owner from public.report_sec016 where id = p_source_id;
+  elsif p_source_table = 'report_sec018' then
+    select profile_id into v_owner from public.report_sec018 where id = p_source_id;
+  elsif p_source_table = 'report_sec029' then
+    select profile_id into v_owner from public.report_sec029 where id = p_source_id;
+  elsif p_source_table = 'report_sec033' then
+    select profile_id into v_owner from public.report_sec033 where id = p_source_id;
+  elsif p_source_table = 'offload_records' then
+    select profile_id into v_owner from public.offload_records where id = p_source_id;
+  end if;
+
+  if v_owner is null then
+    raise exception 'Report not found.';
+  end if;
+  if v_owner <> auth.uid() and auth.role() <> 'service_role' then
+    raise exception 'Only the submitting profile may mark a report ready for indexing.';
+  end if;
+
+  insert into public.report_index_queue (source_table, source_id)
+  values (p_source_table, p_source_id)
+  on conflict (source_table, source_id) do nothing;
+end;
+$function$;
+
+revoke execute on function public.mark_report_ready_for_indexing(text, uuid) from public, anon;
+grant execute on function public.mark_report_ready_for_indexing(text, uuid) to authenticated, service_role;
 
 -- =======================================================================
 -- PART T: search_movements_by_registration_secure() -- dedicated,

@@ -5088,7 +5088,6 @@ export type Database = {
           staff_name: string | null
           station: string | null
           team: string | null
-          remark_excerpt: string | null
           secondary_identifier: string | null
           reg_no: string | null
           bay_no: string | null
@@ -5129,7 +5128,6 @@ export type Database = {
           staff_name: string | null
           station: string | null
           team: string | null
-          remark_excerpt: string | null
           secondary_identifier: string | null
           reg_no: string | null
           bay_no: string | null
@@ -5144,13 +5142,16 @@ export type Database = {
           staff_name: string | null
           station: string | null
           team: string | null
-          remark_excerpt: string | null
           secondary_identifier: string | null
           reg_no: string | null
           bay_no: string | null
           sta_std: string | null
           submitter_profile_id: string | null
         }[]
+      }
+      mark_report_ready_for_indexing: {
+        Args: { p_source_table: string; p_source_id: string }
+        Returns: undefined
       }
       search_reports_by_number_secure: {
         Args: { p_prefix: string; p_limit?: number | null }

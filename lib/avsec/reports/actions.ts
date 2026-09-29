@@ -210,6 +210,13 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
     revalidatePath("/avsec/bay-board");
   }
 
+  // Report completion is now explicit (review round 5): parent + any
+  // Bay Board side-effects are done, so this report is safe for the
+  // repository to index -- see mark_report_ready_for_indexing() in the
+  // Phase 6 migration for why automatic AFTER INSERT enqueueing was
+  // removed (it could enqueue a report before this point, and for the
+  // 6 other types, before their child rows exist at all).
+  await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec016", p_source_id: data.id });
   await clearDraft("sec016");
   await notifyReportSubmission({
     reportType: "sec016",
@@ -270,6 +277,10 @@ export async function submitSec014(input: unknown): Promise<ActionResult> {
     if (patrolError) return { ok: false, error: patrolError.message };
   }
 
+  // Explicit indexing-readiness call, made only after the optional
+  // patrol child rows above have already been written -- see the
+  // sec016 comment above for why this replaced automatic enqueueing.
+  await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec014", p_source_id: report.id });
   await clearDraft("sec014");
   await notifyReportSubmission({
     reportType: "sec014",
@@ -373,6 +384,9 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
     .eq("reg_no", v.aircraft_registration)
     .is("cleared_at", null);
 
+  // Explicit indexing-readiness call, made only after the item child
+  // rows above have already been written.
+  await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec029", p_source_id: report.id });
   await clearDraft("sec029");
   await notifyReportSubmission({
     reportType: "sec029",
@@ -433,6 +447,9 @@ export async function submitSec018(input: unknown): Promise<ActionResult> {
     if (patrolError) return { ok: false, error: patrolError.message };
   }
 
+  // Explicit indexing-readiness call, made only after the optional
+  // patrol child rows above have already been written.
+  await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec018", p_source_id: report.id });
   await clearDraft("sec018");
   await notifyReportSubmission({
     reportType: "sec018",
@@ -488,6 +505,9 @@ export async function submitSec033(input: unknown): Promise<ActionResult> {
   const { error: holdCheckError } = await supabase.from("report_sec033_hold_checks").insert(rows);
   if (holdCheckError) return { ok: false, error: holdCheckError.message };
 
+  // Explicit indexing-readiness call, made only after the hold-check
+  // child rows above have already been written.
+  await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec033", p_source_id: report.id });
   await clearDraft("sec033");
   await notifyReportSubmission({
     reportType: "sec033",
@@ -550,6 +570,9 @@ export async function submitSec013(input: unknown): Promise<ActionResult> {
   const { error: dutyError } = await supabase.from("report_sec013_profiling_duties").insert(rows);
   if (dutyError) return { ok: false, error: dutyError.message };
 
+  // Explicit indexing-readiness call, made only after the profiling-duty
+  // child rows above have already been written.
+  await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "report_sec013", p_source_id: report.id });
   await clearDraft("sec013");
   await notifyReportSubmission({
     reportType: "sec013",
@@ -612,6 +635,9 @@ export async function submitOffload(input: unknown): Promise<ActionResult> {
   const { error: itemsError } = await supabase.from("offload_items").insert(rows);
   if (itemsError) return { ok: false, error: itemsError.message };
 
+  // Explicit indexing-readiness call, made only after the offload item
+  // child rows above have already been written.
+  await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "offload_records", p_source_id: report.id });
   await clearDraft("offload");
   await notifyReportSubmission({
     reportType: "offload",

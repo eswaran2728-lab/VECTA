@@ -19,24 +19,23 @@ type SearchRow = {
   staff_name: string | null;
   station: string | null;
   team: string | null;
-  remark_excerpt: string | null;
   secondary_identifier: string | null;
 };
 
-/** Atomic secure fetch: search_reports_secure() (Phase 6, round 4)
+/** Atomic secure fetch: search_reports_secure() (Phase 6, round 5)
  * authorizes via has_report_access() AND returns only CARD-appropriate
- * display fields (staff_name, station, team, an 80-char remark excerpt,
- * a per-type secondary identifier such as "Flight AK123 · Reg 9M-ABC")
- * in the SAME database call, via report_source_summary() -- never the
- * complete report body. There is no follow-up query against any report
- * source table anywhere in this file, and no full-content field is ever
- * requested or exposed through this unaudited search path (complete
- * content is available only through the audited get_report_secure()
- * detail read, PDF, export, or version-content RPCs). Content-based
- * filtering (staff name) happens in JS over the already-authorized,
- * already-fetched rows only -- it can never widen which rows were read.
- * Returns empty until a report is indexed into the repository --
- * expected fail-closed behavior until the Phase 5/6 rollout runs. */
+ * display fields (staff_name, station, team, a per-type STRUCTURED
+ * secondary identifier such as "Flight AK123 · Reg 9M-ABC" -- never
+ * free text) in the SAME database call, via report_source_summary() --
+ * never the complete report body, and never any remark/declaration
+ * excerpt (removed entirely, even truncated -- free text stays behind
+ * the audited detail read regardless of length). There is no follow-up
+ * query against any report source table anywhere in this file. Content-
+ * based filtering (staff name) happens in JS over the already-
+ * authorized, already-fetched rows only -- it can never widen which
+ * rows were read. Returns empty until a report is indexed into the
+ * repository -- expected fail-closed behavior until the Phase 5/6
+ * rollout runs. */
 async function authorizedRows(
   supabase: Awaited<ReturnType<typeof createClient>>,
   sourceTable: "report_sec013" | "report_sec014" | "report_sec016" | "report_sec018" | "report_sec029" | "report_sec033" | "offload_records",
@@ -58,7 +57,6 @@ async function authorizedRows(
     staff_name: r.staff_name,
     station: r.station,
     team: r.team,
-    remark_excerpt: r.remark_excerpt,
     secondary_identifier: r.secondary_identifier,
   }));
 }
@@ -84,7 +82,9 @@ export async function searchDailyReportsByStaff(
       station: row.station ?? "",
       team: row.team ?? "",
       submittedAt: row.submitted_at,
-      detail: row.remark_excerpt ? row.remark_excerpt : "No remarks",
+      // Remark content is no longer surfaced in search results at all
+      // (review round 5) -- open the report for its full, audited detail.
+      detail: "Daily patrol report",
     }))
     .sort((a, b) => ((a.submittedAt ?? "") < (b.submittedAt ?? "") ? 1 : -1));
 }

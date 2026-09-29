@@ -842,12 +842,20 @@ test("PART R (corrected, round 4): list_reports_secure()/search_reports_secure()
   }
 });
 
-test("PART R: report_source_summary() itself never returns a full remark/declaration/corrective_action field -- only an 80-char-truncated excerpt, and never any child-table row at all", () => {
+test("PART R (corrected, round 5): report_source_summary() never returns remark in any form -- not the full field, not a truncated excerpt -- and never declaration/corrective_action or any child-table row at all", () => {
   const block = fnBlock("report_source_summary")![0];
-  assert.match(block, /left\(coalesce\(t\.remark, ''\), 80\)/);
+  assert.doesNotMatch(block, /\bt\.remark\b/);
   assert.doesNotMatch(block, /corrective_action/);
   assert.doesNotMatch(block, /declaration/);
   assert.doesNotMatch(block, /_patrols|_items|_hold_checks|_profiling_duties/);
+});
+
+test("PART R: report_source_summary()'s return columns are exactly the documented allowlist -- staff_name, station, team, secondary_identifier, reg_no, bay_no, sta_std, submitter_profile_id -- nothing else", () => {
+  const block = fnBlock("report_source_summary")![0];
+  const returnsMatch = block.match(/returns table \(([\s\S]*?)\)\s*\nlanguage/);
+  assert.ok(returnsMatch);
+  const columns = returnsMatch![1].split(",").map((c) => c.trim().split(/\s+/)[0]).filter(Boolean);
+  assert.deepEqual(columns.sort(), ["bay_no", "reg_no", "secondary_identifier", "staff_name", "station", "sta_std", "submitter_profile_id", "team"].sort());
 });
 
 test("PART R: report_source_summary() is service_role-ONLY (never authenticated) -- same reasoning as report_source_content(): it performs no authorization check of its own", () => {
@@ -1023,10 +1031,15 @@ test("PRIVILEGE MATRIX: after Part O, the 7 report tables' RLS grants ordinary a
 // aggregate independence, child-table coverage, version-1 immutability
 // =======================================================================
 
-test("PRIVILEGE MATRIX (round 4): SELECT is revoked at the table level from `authenticated` on all 7 report tables, then re-granted on ONLY the 3 RETURNING columns (id, submitted_at, report_no) report creation actually needs -- RLS's row-level 'own select' policy is no longer the only barrier; column-level privilege closes full-row content access even on the caller's own row", () => {
-  const block = code.match(/do \$\$\s*\ndeclare\s*\n\s*v_table text;[\s\S]*?end;\s*\n\$\$;/)![0];
+test("PRIVILEGE MATRIX (corrected, round 5): SELECT is revoked at the table level from `authenticated` on all 7 report tables, then re-granted on exactly 4 columns (id, submitted_at, report_no, profile_id) -- profile_id added this round because deleteUserAccount()'s count-only check filters on it, and Postgres requires column-level SELECT for any column referenced in a WHERE/eq filter, not only the explicit select() list", () => {
+  const blocks = [...code.matchAll(/do \$\$\s*\ndeclare\s*\n\s*v_table text;[\s\S]*?end;\s*\n\$\$;/g)];
+  const block = blocks[blocks.length - 1][0];
   assert.match(block, /revoke select on public\.%I from authenticated/);
-  assert.match(block, /grant select \(id, submitted_at, report_no\) on public\.%I to authenticated/);
+  assert.match(block, /grant select \(id, submitted_at, report_no, profile_id\) on public\.%I to authenticated/);
+});
+
+test("PRIVILEGE MATRIX (round 5): the 6 child tables (patrols/items/hold_checks/profiling_duties/offload_items) have SELECT revoked from `authenticated` entirely -- no column-level re-grant, since no application code ever reads a child row back after INSERT (confirmed by source search: every child .insert(rows) call destructures only { error })", () => {
+  assert.match(code, /revoke select on public\.report_sec014_patrols, public\.report_sec018_patrols, public\.report_sec029_items, public\.report_sec033_hold_checks, public\.report_sec013_profiling_duties, public\.offload_items from authenticated;/);
 });
 
 test("CHILD-TABLE COVERAGE (round 4): all 5 child tables (patrols/items/hold_checks/profiling_duties) have their broad 'via parent select' policy dropped and replaced with an own-row-only policy -- correcting round 3's incorrect assumption that narrowing the parent's policy alone was sufficient", () => {
@@ -1065,4 +1078,54 @@ test("VERSION-1 IMMUTABILITY: get_report_version_content_secure() returns the ST
 test("INDEX_REPORT ROLLBACK: the documented rollback now includes reverting index_report() to its exact Phase 5 form, positioned before the has_report_access()/get_report_secure() reverts (matching the dependency direction: index_report() calls report_source_content(), a Phase 6 function)", () => {
   const rollbackBlock = migrationSql.match(/DOCUMENTED ROLLBACK[\s\S]*$/)![0];
   assert.match(rollbackBlock, /Revert index_report\(\) to its exact Phase 5 form/);
+});
+
+// =======================================================================
+// CORRECTION ROUND 5: child-table SELECT closure, remark removal,
+// aggregate-role independence, explicit indexing readiness
+// =======================================================================
+
+test("CHILD-TABLE COVERAGE (round 5): offload_items -- previously missing entirely from report_source_content() and from every child-table policy/grant closure -- is now covered: embedded into the parent jsonb, its own-row-only SELECT policy, and its table-level SELECT revoke", () => {
+  const contentBlock = fnBlock("report_source_content")![0];
+  assert.match(contentBlock, /from public\.offload_items c where c\.report_id = p_source_id/);
+  assert.match(code, /drop policy if exists "offload_items via parent select" on public\.offload_items;/);
+  assert.match(code, /create policy "offload_items own select" on public\.offload_items for select/);
+});
+
+test("INDEXING READINESS (round 5): the automatic AFTER INSERT enqueue triggers are dropped from all 7 report tables -- indexing is no longer triggered by the parent row's own INSERT alone", () => {
+  for (const table of ["report_sec013", "report_sec014", "report_sec016", "report_sec018", "report_sec029", "report_sec033", "offload_records"]) {
+    assert.match(code, new RegExp(`drop trigger if exists trg_enqueue_indexing on public\\.${table};`));
+  }
+});
+
+test("INDEXING READINESS: mark_report_ready_for_indexing() only inserts into report_index_queue (idempotent, ON CONFLICT DO NOTHING) -- it performs no classification, no content read, and grants no read access of its own; it is purely a completion signal", () => {
+  const block = fnBlock("mark_report_ready_for_indexing")![0];
+  assert.match(block, /insert into public\.report_index_queue \(source_table, source_id\)/);
+  assert.match(block, /on conflict \(source_table, source_id\) do nothing;/);
+  assert.doesNotMatch(block, /report_source_content|report_source_summary|has_report_access/);
+});
+
+test("INDEXING READINESS: mark_report_ready_for_indexing() only allows the report's own submitter (or service_role) to mark it ready -- an arbitrary caller cannot enqueue someone else's report", () => {
+  const block = fnBlock("mark_report_ready_for_indexing")![0];
+  assert.match(block, /if v_owner <> auth\.uid\(\) and auth\.role\(\) <> 'service_role' then/);
+});
+
+test("INDEXING READINESS: all 7 submit actions in lib/avsec/reports/actions.ts call mark_report_ready_for_indexing() with the correct source_table, after any child-row insert for that type has already completed", () => {
+  const actionsSrc = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
+    "utf8",
+  );
+  for (const table of ["report_sec013", "report_sec014", "report_sec016", "report_sec018", "report_sec029", "report_sec033", "offload_records"]) {
+    assert.match(actionsSrc, new RegExp(`mark_report_ready_for_indexing", \\{ p_source_table: "${table}"`), `submit action for ${table} must call mark_report_ready_for_indexing()`);
+  }
+});
+
+test("AGGREGATE SAFETY (round 5): get_report_dashboard_aggregate_secure() only ever groups by ONE of 5 closed-vocabulary dimensions per call (source_table/flag_state/status/severity/operating_entity_code) -- none is staff identity, free text, or an individual report identifier, and no combination of dimensions is possible since exactly one p_group_by is chosen per call, so a count can reveal at most 'N reports share this one coarse attribute,' never which report or who submitted it", () => {
+  const block = fnBlock("get_report_dashboard_aggregate_secure")![0];
+  assert.match(block, /if p_group_by not in \('source_table', 'flag_state', 'status', 'severity', 'operating_entity_code'\) then/);
+  assert.doesNotMatch(block, /staff_name|profile_id|report_no|remark/);
+  // Exactly one CASE expression drives group_value -- confirms no
+  // multi-dimension grouping is possible in a single call.
+  const caseMatches = block.match(/case p_group_by/g) ?? [];
+  assert.equal(caseMatches.length, 1);
 });
