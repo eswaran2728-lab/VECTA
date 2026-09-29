@@ -2501,6 +2501,250 @@ revoke execute on function public.get_child_row_count_secure(text, uuid) from pu
 grant execute on function public.get_child_row_count_secure(text, uuid) to authenticated, service_role;
 
 -- =======================================================================
+-- PART S5 (round 9): resume_report_submission_secure() -- the ONE
+-- atomic, ownership-checked recovery RPC. Replaces the round-7/8
+-- application-level pattern of calling get_child_row_count_secure() and
+-- mark_report_ready_for_indexing() as two SEPARATE RPC calls / SEPARATE
+-- transactions.
+-- =======================================================================
+-- CORRECTION (review round 9): "the reported sequence -- read child
+-- count, then insert if zero -- does not prove duplicate prevention
+-- because concurrent retries may both observe zero." Confirmed exactly
+-- right on inspection: get_child_row_count_secure() is `stable` (a
+-- plain read, no `for update`) and is invoked as its OWN separate
+-- Postgres statement/transaction from resumeReportSubmission()'s
+-- subsequent child-row INSERT. Two concurrent calls to
+-- resumeReportSubmission() for the SAME stranded report could both
+-- execute get_child_row_count_secure() before either had inserted
+-- anything, both observe count = 0, and both then proceed to insert --
+-- nothing forced the second caller to wait for or re-check the first
+-- caller's result. The ONLY lock in the round-7/8 design
+-- (enforce_child_write_before_finalization()'s `for update` on the
+-- parent) is acquired PER CHILD ROW INSERT, not around the earlier,
+-- separate count query -- exactly the gap the review identified: "A
+-- lock acquired only during each individual child insert does not
+-- protect an earlier, separate count query." In practice this was
+-- usually masked by each child table's own unique constraint
+-- (report_id, entry_no) or (report_id, item_code) rejecting the second
+-- caller's colliding rows -- but "usually masked by a side-effect of an
+-- unrelated constraint" is not the same as "proven safe by design," and
+-- the review is right not to accept it as one.
+--
+-- FIXED by collapsing the count check, the conditional child insert,
+-- and finalization into ONE function -- one Postgres statement, hence
+-- one transaction, hence one atomic unit as far as any caller (the
+-- application, or a concurrent second call to this same function) can
+-- observe:
+--   1. Lock the parent row FIRST, before reading anything else --
+--      `select profile_id into v_owner from <table> where id = p_source_id
+--      for update`, the SAME lock enforce_child_write_before_finalization()
+--      and mark_report_ready_for_indexing() already take on the same row
+--      (Parts S2/S3), so ALL THREE code paths (a normal submission's
+--      finalization call, a child write, and now a resume) serialize
+--      against each other through that one row lock -- whichever
+--      transaction reaches it first completes (commits or rolls back)
+--      before any other proceeds.
+--   2. If the report is already finalized (report_index_queue already
+--      has an entry), return immediately -- a no-op, not an error, and
+--      never touches child rows again. This is what "do not overwrite
+--      finalized content" means operationally: a second concurrent
+--      caller, once it acquires the lock after the first has already
+--      finalized, sees that immediately and stops -- it can never reach
+--      the insert step at all.
+--   3. Count actual child rows -- UNDER THE LOCK, so this read is now
+--      protected: no concurrent child insert (from this function, from
+--      a plain resubmission, or from anything else) can occur between
+--      this count and the insert below, because every one of those
+--      paths needs the SAME lock this transaction is already holding.
+--   4. Only if that locked count is exactly zero, AND the caller
+--      supplied child rows, insert them -- as ONE single INSERT
+--      statement built from the caller's jsonb payload (via
+--      `jsonb_to_recordset(...) with ordinality`, preserving array
+--      order for entry_no assignment) -- confirmed, not merely assumed,
+--      all-or-nothing: a single Postgres INSERT statement is atomic by
+--      definition, so this either inserts every row or none, the same
+--      guarantee every original submitXXX() action's child insert
+--      already relied on (see Part S4's original analysis, still true).
+--   5. Finalize by calling mark_report_ready_for_indexing() -- reusing
+--      that function's OWN independent per-type minimum/maximum/exact-
+--      checklist enforcement (Parts S2/S1B, rounds 7-8) verbatim, not
+--      duplicated here -- so every existing completion rule applies to
+--      a resumed submission exactly as it applies to a fresh one, with
+--      a single source of truth for what "complete" means per type.
+--      mark_report_ready_for_indexing() re-locks the same row (a
+--      transaction may re-acquire a row lock it already holds without
+--      self-deadlocking) and is itself idempotent (ON CONFLICT DO
+--      NOTHING), so calling it here changes nothing about its own
+--      contract.
+--
+-- Result for two genuinely concurrent resume calls on the same stranded
+-- report: the first to acquire the lock inserts (if needed) and
+-- finalizes, then commits, releasing the lock. The second, once
+-- unblocked, finds the report either already has child rows (skips
+-- insert) or is already finalized (no-ops) -- either way it returns the
+-- SAME successful outcome (ok, same report id) as the first, never a
+-- duplicate parent, never a duplicate/conflicting child set, and never
+-- an attempt to modify content that finalization already froze.
+--
+-- Payload/parent-type consistency: p_source_table is looked up against
+-- exactly one hardcoded table per call (the same closed CASE pattern
+-- used everywhere else in this migration), so a caller cannot address
+-- one report type's row through another type's table name, and each
+-- child table's own foreign key (`references report_sec013 (id) on
+-- delete cascade`, etc.) makes it structurally impossible for a row
+-- inserted here to attach to any report other than the one actually
+-- locked and counted in this same transaction.
+create or replace function public.resume_report_submission_secure(p_source_table text, p_source_id uuid, p_child_rows jsonb default '[]'::jsonb)
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_owner uuid;
+  v_actual_children integer;
+begin
+  if auth.uid() is null then
+    raise exception 'Must be signed in.';
+  end if;
+  if p_source_table not in (
+    'report_sec013', 'report_sec014', 'report_sec016', 'report_sec018',
+    'report_sec029', 'report_sec033', 'offload_records'
+  ) then
+    raise exception 'Unsupported source_table: %', p_source_table;
+  end if;
+
+  -- Lock the parent FIRST -- before reading anything else -- so this
+  -- transaction's view of "is it finalized" and "how many children
+  -- exist" cannot change underneath it until this transaction commits
+  -- or rolls back. Every other path that touches this report's
+  -- finalization state or child rows (mark_report_ready_for_indexing(),
+  -- enforce_child_write_before_finalization(), and a concurrent call to
+  -- THIS function) takes the same lock on the same row.
+  if p_source_table = 'report_sec013' then
+    select profile_id into v_owner from public.report_sec013 where id = p_source_id for update;
+  elsif p_source_table = 'report_sec014' then
+    select profile_id into v_owner from public.report_sec014 where id = p_source_id for update;
+  elsif p_source_table = 'report_sec016' then
+    select profile_id into v_owner from public.report_sec016 where id = p_source_id for update;
+  elsif p_source_table = 'report_sec018' then
+    select profile_id into v_owner from public.report_sec018 where id = p_source_id for update;
+  elsif p_source_table = 'report_sec029' then
+    select profile_id into v_owner from public.report_sec029 where id = p_source_id for update;
+  elsif p_source_table = 'report_sec033' then
+    select profile_id into v_owner from public.report_sec033 where id = p_source_id for update;
+  elsif p_source_table = 'offload_records' then
+    select profile_id into v_owner from public.offload_records where id = p_source_id for update;
+  end if;
+
+  if v_owner is null then
+    raise exception 'Report not found.';
+  end if;
+  if v_owner <> auth.uid() and auth.role() <> 'service_role' then
+    raise exception 'Only the submitting profile may resume its own report.';
+  end if;
+
+  -- Already finalized: no-op, under the same lock -- never touch child
+  -- content once it may have already been indexed into an immutable
+  -- snapshot. A concurrent second caller lands here, not in the insert
+  -- branch below, once it is unblocked after the first caller commits.
+  if exists (
+    select 1 from public.report_index_queue where source_table = p_source_table and source_id = p_source_id
+  ) then
+    return;
+  end if;
+
+  -- Count actual children UNDER THE LOCK -- this is now safe from the
+  -- TOCTOU gap the review identified, because no concurrent transaction
+  -- can insert/update/delete a child row for this report without first
+  -- acquiring the same lock this transaction already holds.
+  if p_source_table = 'report_sec013' then
+    select count(*) into v_actual_children from public.report_sec013_profiling_duties where report_id = p_source_id;
+  elsif p_source_table = 'report_sec014' then
+    select count(*) into v_actual_children from public.report_sec014_patrols where report_id = p_source_id;
+  elsif p_source_table = 'report_sec016' then
+    v_actual_children := 0;
+  elsif p_source_table = 'report_sec018' then
+    select count(*) into v_actual_children from public.report_sec018_patrols where report_id = p_source_id;
+  elsif p_source_table = 'report_sec029' then
+    select count(*) into v_actual_children from public.report_sec029_items where report_id = p_source_id;
+  elsif p_source_table = 'report_sec033' then
+    select count(*) into v_actual_children from public.report_sec033_hold_checks where report_id = p_source_id;
+  elsif p_source_table = 'offload_records' then
+    select count(*) into v_actual_children from public.offload_items where report_id = p_source_id;
+  end if;
+
+  -- Only insert when the LOCKED count is confirmed zero (case (a)) and
+  -- the caller actually supplied rows to insert. A concurrent second
+  -- caller that reaches this point after the first has already
+  -- inserted sees v_actual_children > 0 here and skips straight to
+  -- finalization -- it never attempts a second, conflicting insert.
+  if v_actual_children = 0 and jsonb_array_length(p_child_rows) > 0 then
+    if p_source_table = 'report_sec013' then
+      insert into public.report_sec013_profiling_duties (report_id, entry_no, duty_area, time_from, time_to, location, sector_flight, description, incident_remark)
+      select p_source_id, x.ord, x.duty_area, x.time_from, x.time_to, x.location, x.sector_flight, x.description, x.incident_remark
+      from jsonb_to_recordset(p_child_rows) with ordinality
+        as x(duty_area text, time_from text, time_to text, location text, sector_flight text, description text, incident_remark text, ord int);
+    elsif p_source_table = 'report_sec014' then
+      insert into public.report_sec014_patrols (report_id, entry_no, location, time_from, time_to, description)
+      select p_source_id, x.ord, x.location, x.time_from, x.time_to, x.description
+      from jsonb_to_recordset(p_child_rows) with ordinality
+        as x(location text, time_from text, time_to text, description text, ord int);
+    elsif p_source_table = 'report_sec018' then
+      insert into public.report_sec018_patrols (report_id, entry_no, time_from, time_to, parking_bay, aircraft_type, reg_no, description)
+      select p_source_id, x.ord, x.time_from, x.time_to, x.parking_bay, x.aircraft_type, x.reg_no, x.description
+      from jsonb_to_recordset(p_child_rows) with ordinality
+        as x(time_from text, time_to text, parking_bay text, aircraft_type text, reg_no text, description text, ord int);
+    elsif p_source_table = 'report_sec029' then
+      insert into public.report_sec029_items (report_id, item_code, checked, remark_type, remark_text)
+      select p_source_id, x.item_code, x.checked, x.remark_type, x.remark_text
+      from jsonb_to_recordset(p_child_rows)
+        as x(item_code text, checked text, remark_type text, remark_text text);
+    elsif p_source_table = 'report_sec033' then
+      insert into public.report_sec033_hold_checks (report_id, entry_no, parking_bay_no, aircraft_registration_no, remarks)
+      select p_source_id, x.ord, x.parking_bay_no, x.aircraft_registration_no, x.remarks
+      from jsonb_to_recordset(p_child_rows) with ordinality
+        as x(parking_bay_no text, aircraft_registration_no text, remarks text, ord int);
+    elsif p_source_table = 'offload_records' then
+      insert into public.offload_items (report_id, entry_no, baggage_tag_no, reason, weight_kg)
+      select p_source_id, x.ord, x.baggage_tag_no, x.reason, x.weight_kg
+      from jsonb_to_recordset(p_child_rows) with ordinality
+        as x(baggage_tag_no text, reason text, weight_kg numeric, ord int);
+    end if;
+
+    -- Re-count after the insert -- the value passed to
+    -- mark_report_ready_for_indexing() below must reflect what was
+    -- ACTUALLY committed by the statement above, not merely
+    -- jsonb_array_length(p_child_rows) (which is only what the caller
+    -- claimed to send).
+    if p_source_table = 'report_sec013' then
+      select count(*) into v_actual_children from public.report_sec013_profiling_duties where report_id = p_source_id;
+    elsif p_source_table = 'report_sec014' then
+      select count(*) into v_actual_children from public.report_sec014_patrols where report_id = p_source_id;
+    elsif p_source_table = 'report_sec018' then
+      select count(*) into v_actual_children from public.report_sec018_patrols where report_id = p_source_id;
+    elsif p_source_table = 'report_sec029' then
+      select count(*) into v_actual_children from public.report_sec029_items where report_id = p_source_id;
+    elsif p_source_table = 'report_sec033' then
+      select count(*) into v_actual_children from public.report_sec033_hold_checks where report_id = p_source_id;
+    elsif p_source_table = 'offload_records' then
+      select count(*) into v_actual_children from public.offload_items where report_id = p_source_id;
+    end if;
+  end if;
+
+  -- Finalize using mark_report_ready_for_indexing()'s OWN, independent,
+  -- already-tested completion rules (per-type minimum, report_sec018's
+  -- maximum, report_sec029's exact-checklist match) -- not duplicated
+  -- here. Still inside the SAME transaction, so the parent row is never
+  -- unlocked between the count/insert above and this finalization call.
+  perform public.mark_report_ready_for_indexing(p_source_table, p_source_id, v_actual_children);
+end;
+$function$;
+
+revoke execute on function public.resume_report_submission_secure(text, uuid, jsonb) from public, anon;
+grant execute on function public.resume_report_submission_secure(text, uuid, jsonb) to authenticated, service_role;
+
+-- =======================================================================
 -- PART T: search_movements_by_registration_secure() -- dedicated,
 -- atomic, bounded registration search
 -- =======================================================================

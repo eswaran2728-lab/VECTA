@@ -888,17 +888,17 @@ $$;
 perform pg_temp.clear_simulation();
 
 -- =======================================================================
--- SCENARIO 22 (round 8): child-insert failure followed by a successful
--- application-level recovery -- SQL-level simulation of
--- resumeReportSubmission()'s case (a) path (count confirmed 0, then
--- child rows inserted for the first time against the SAME parent id)
+-- SCENARIO 22 (round 8, updated round 9): child-insert failure followed
+-- by a successful application-level recovery via the SINGLE atomic
+-- resume_report_submission_secure() RPC (case (a): locked count
+-- confirmed 0, then child rows inserted for the first time against the
+-- SAME parent id, all inside one function call/transaction)
 -- =======================================================================
 perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
   v_report_id uuid;
-  v_child_count integer;
 begin
   insert into public.report_sec033 (profile_id, status, station, team, staff_name, staff_id, report_date, report_time)
   values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', current_date, '09:00')
@@ -906,28 +906,31 @@ begin
 
   -- Simulate the original submit action's failed child insert: two rows
   -- with the same entry_no violate report_sec033_hold_checks' own
-  -- unique(report_id, entry_no) constraint.
+  -- unique(report_id, entry_no) constraint. This single, multi-row
+  -- INSERT statement is atomic (Postgres guarantees all rows or none
+  -- for one statement) -- confirmed, not merely assumed: the exception
+  -- below proves zero rows landed, not a partial set.
   begin
     insert into public.report_sec033_hold_checks (report_id, entry_no, parking_bay_no, aircraft_registration_no)
     values (v_report_id, 1, 'C1', '9M-XXA'), (v_report_id, 1, 'C2', '9M-XXB');
     raise exception 'SCENARIO 22 FAILED: the duplicate-entry_no insert should itself have failed';
   exception when unique_violation then
-    raise notice 'PASS: SCENARIO 22a: the simulated child-insert failure actually fails (unique_violation), leaving the report stranded in case (a)';
+    raise notice 'PASS: SCENARIO 22a: the simulated child-insert failure actually fails (unique_violation), leaving the report stranded in case (a) with exactly zero child rows';
   end;
 
-  -- resumeReportSubmission()'s first step: check the actual count.
-  select public.get_child_row_count_secure('report_sec033', v_report_id) into v_child_count;
-  perform pg_temp.assert(v_child_count = 0, 'SCENARIO 22b: get_child_row_count_secure() confirms zero child rows -- this is case (a), safe to (re-)insert');
-
-  -- resumeReportSubmission()'s case-(a) recovery: insert the (corrected)
-  -- child rows for the first time, against the SAME existing parent id.
-  insert into public.report_sec033_hold_checks (report_id, entry_no, parking_bay_no, aircraft_registration_no)
-  values (v_report_id, 1, 'C1', '9M-XXA');
-
-  perform public.mark_report_ready_for_indexing('report_sec033', v_report_id, 1);
+  -- resumeReportSubmission()'s actual (round 9) call: ONE atomic RPC,
+  -- carrying the corrected child-row payload as jsonb.
+  perform public.resume_report_submission_secure(
+    'report_sec033', v_report_id,
+    '[{"parking_bay_no": "C1", "aircraft_registration_no": "9M-XXA", "remarks": null}]'::jsonb
+  );
   perform pg_temp.assert(
     exists (select 1 from public.report_index_queue where source_table = 'report_sec033' and source_id = v_report_id),
-    'SCENARIO 22c: after the recovery insert, finalization succeeds -- the report is no longer stranded'
+    'SCENARIO 22b: after the single atomic resume call, finalization succeeds -- the report is no longer stranded'
+  );
+  perform pg_temp.assert(
+    (select count(*) from public.report_sec033_hold_checks where report_id = v_report_id) = 1,
+    'SCENARIO 22c: exactly one child row exists -- the corrected data from the resume payload, not the failed duplicate attempt'
   );
   perform pg_temp.assert(
     (select count(*) from public.report_sec033 where profile_id = auth.uid() and staff_id = 'T-A1' and report_time = '09:00') = 1,
@@ -939,10 +942,10 @@ $$;
 perform pg_temp.clear_simulation();
 
 -- =======================================================================
--- SCENARIO 23 (round 8): finalization failure followed by a successful
--- recovery -- SQL-level simulation of resumeReportSubmission()'s case
--- (b) path (count already > 0, children are never re-inserted, only
--- finalization is retried)
+-- SCENARIO 23 (round 8, updated round 9): finalization failure followed
+-- by a successful recovery via the SAME atomic RPC (case (b): the
+-- locked count is already > 0, so the RPC's own conditional-insert
+-- branch is skipped entirely and only finalization proceeds)
 -- =======================================================================
 perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
@@ -950,7 +953,6 @@ do $$
 declare
   v_report_id uuid;
   v_child_count integer;
-  v_child_count_before integer;
 begin
   insert into public.offload_records (profile_id, status, station, team, staff_name, staff_id, flight_no, destination, aircraft_registration, flight_date, total_bags)
   values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', 'AK200', 'SIN', '9M-XYZ', current_date, 1)
@@ -963,31 +965,37 @@ begin
   insert into public.offload_items (report_id, entry_no, baggage_tag_no)
   values (v_report_id, 1, 'BAG-001');
 
-  select count(*) into v_child_count_before from public.offload_items where report_id = v_report_id;
-  perform pg_temp.assert(v_child_count_before = 1, 'SCENARIO 23a: exactly one child row exists before recovery');
+  select count(*) into v_child_count from public.offload_items where report_id = v_report_id;
+  perform pg_temp.assert(v_child_count = 1, 'SCENARIO 23a: exactly one child row exists before recovery');
 
-  select public.get_child_row_count_secure('offload_records', v_report_id) into v_child_count;
-  perform pg_temp.assert(v_child_count = 1, 'SCENARIO 23b: get_child_row_count_secure() confirms 1 (case (b) -- children already complete, only finalization is missing)');
-
-  -- resumeReportSubmission()'s case-(b) path: skip insert entirely,
-  -- finalize using the server-measured count.
-  perform public.mark_report_ready_for_indexing('offload_records', v_report_id, v_child_count);
+  -- resumeReportSubmission()'s actual (round 9) call -- the child-rows
+  -- payload it carries is IRRELEVANT here because the RPC's own locked
+  -- count is already 1, so its insert branch is never entered
+  -- regardless of what the payload contains.
+  perform public.resume_report_submission_secure(
+    'offload_records', v_report_id,
+    '[{"baggage_tag_no": "IGNORED-IF-ALREADY-PRESENT", "reason": null, "weight_kg": null}]'::jsonb
+  );
   perform pg_temp.assert(
     exists (select 1 from public.report_index_queue where source_table = 'offload_records' and source_id = v_report_id),
-    'SCENARIO 23c: the resumed finalization succeeds without ever re-inserting a child row'
+    'SCENARIO 23b: the resumed finalization succeeds without ever re-inserting a child row'
   );
 
   select count(*) into v_child_count from public.offload_items where report_id = v_report_id;
-  perform pg_temp.assert(v_child_count = 1, 'SCENARIO 23d: still exactly one child row after recovery -- case (b) never duplicates children');
+  perform pg_temp.assert(v_child_count = 1, 'SCENARIO 23c: still exactly one child row after recovery -- case (b) never duplicates children, even when the resume payload carries different content');
+  perform pg_temp.assert(
+    (select baggage_tag_no from public.offload_items where report_id = v_report_id) = 'BAG-001',
+    'SCENARIO 23d: the ORIGINAL child row content is preserved -- the resume payload''s different tag number was correctly ignored, not used to overwrite'
+  );
 end;
 $$;
 
 perform pg_temp.clear_simulation();
 
 -- =======================================================================
--- SCENARIO 24 (round 8): repeated retries never create duplicates --
--- calling the resume path 3 times in a row on an already-finalized
--- report stays at exactly 1 parent, 1 child set, 1 queue entry
+-- SCENARIO 24 (round 8, updated round 9): repeated retries never create
+-- duplicates -- calling the atomic resume RPC 3 times in a row stays at
+-- exactly 1 parent, 1 child set, 1 queue entry
 -- =======================================================================
 perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
@@ -996,37 +1004,35 @@ declare
   v_report_id uuid;
   v_child_count integer;
   v_queue_count integer;
-  v_parent_count integer;
   v_i integer;
 begin
   insert into public.report_sec013 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, acknowledgement)
   values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', false)
   returning id into v_report_id;
 
-  insert into public.report_sec013_profiling_duties (report_id, entry_no, duty_area, time_from, time_to, location, sector_flight, description)
-  values (v_report_id, 1, 'Departure Gate', '09:00', '09:30', 'Departure Gate Sector 5/6/7 (P-Q)', 'AK300', 'repeated-retry fixture');
-
   for v_i in 1..3 loop
-    select public.get_child_row_count_secure('report_sec013', v_report_id) into v_child_count;
-    perform public.mark_report_ready_for_indexing('report_sec013', v_report_id, v_child_count);
+    perform public.resume_report_submission_secure(
+      'report_sec013', v_report_id,
+      '[{"duty_area": "Departure Gate", "time_from": "09:00", "time_to": "09:30", "location": "Departure Gate Sector 5/6/7 (P-Q)", "sector_flight": "AK300", "description": "repeated-retry fixture", "incident_remark": null}]'::jsonb
+    );
   end loop;
 
   select count(*) into v_queue_count from public.report_index_queue where source_table = 'report_sec013' and source_id = v_report_id;
-  select count(*) into v_parent_count from public.report_sec013 where profile_id = auth.uid() and staff_id = 'T-A1' and date_time_out is not null;
   perform pg_temp.assert(v_queue_count = 1, 'SCENARIO 24a: 3 repeated resume attempts leave exactly 1 report_index_queue row');
   select count(*) into v_child_count from public.report_sec013_profiling_duties where report_id = v_report_id;
-  perform pg_temp.assert(v_child_count = 1, 'SCENARIO 24b: 3 repeated resume attempts leave exactly 1 child row -- no duplicate children from repeated get_child_row_count_secure() + mark_report_ready_for_indexing() cycles');
+  perform pg_temp.assert(v_child_count = 1, 'SCENARIO 24b: 3 repeated resume attempts leave exactly 1 child row -- the first call inserts, the second and third are no-ops (already finalized)');
 end;
 $$;
 
 perform pg_temp.clear_simulation();
 
 -- =======================================================================
--- SCENARIO 25 (round 8): an unauthorized retry attempt is denied --
--- Bravo (different profile, no relationship to Alpha's report) cannot
--- use either get_child_row_count_secure() or
--- mark_report_ready_for_indexing() against Alpha's report to "help" or
--- interfere with its recovery
+-- SCENARIO 25 (round 8, updated round 9): an unauthorized retry attempt
+-- is denied -- Bravo (different profile, no relationship to Alpha's
+-- report) cannot use either get_child_row_count_secure() or the atomic
+-- resume_report_submission_secure() RPC against Alpha's report to
+-- "help" or interfere with its recovery, and cannot use the payload
+-- argument to smuggle in content for a report Bravo does not own
 -- =======================================================================
 perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a2'::uuid); -- Bravo
 
@@ -1049,15 +1055,23 @@ begin
   end;
 
   begin
-    perform public.mark_report_ready_for_indexing('report_sec014', v_report_id, 1);
-    raise exception 'SCENARIO 25 FAILED: Bravo should not be able to (re-)finalize a report Bravo does not own';
+    perform public.resume_report_submission_secure(
+      'report_sec014', v_report_id,
+      '[{"location": "Bravo-injected row", "time_from": null, "time_to": null, "description": "should never be inserted"}]'::jsonb
+    );
+    raise exception 'SCENARIO 25 FAILED: Bravo should not be able to resume (or inject content into) a report Bravo does not own';
   exception when others then
-    if sqlerrm like '%Only the submitting profile may mark a report ready for indexing%' then
-      raise notice 'PASS: SCENARIO 25b: mark_report_ready_for_indexing() denies Bravo the same way -- an unauthorized retry is denied at every step of the resume path, not merely the first';
+    if sqlerrm like '%Only the submitting profile may resume its own report%' then
+      raise notice 'PASS: SCENARIO 25b: resume_report_submission_secure() denies Bravo the same way, BEFORE the lock is used to read or write anything -- the ownership check happens immediately after the lock is acquired, before any count/insert logic runs';
     else
       raise exception 'SCENARIO 25 FAILED: rejected for the wrong reason: %', sqlerrm;
     end if;
   end;
+
+  perform pg_temp.assert(
+    not exists (select 1 from public.report_sec014_patrols where description = 'should never be inserted'),
+    'SCENARIO 25c: Bravo''s payload was never inserted -- ownership is checked before the payload is ever touched'
+  );
 end;
 $$;
 
@@ -1065,12 +1079,113 @@ perform pg_temp.clear_simulation();
 
 rollback; -- discard every synthetic fixture and result; this harness never commits.
 
+-- =======================================================================
+-- SCENARIO 26 (round 9): REAL two-session concurrency test for
+-- resume_report_submission_secure() -- two genuinely concurrent resume
+-- attempts against the SAME stranded report, asserting exactly one
+-- complete child set and exactly one immutable version-1 snapshot.
+-- =======================================================================
+-- PREPARED BUT NOT EXECUTED, same as the rest of this harness (no local/
+-- disposable Postgres available in this development environment) -- but
+-- unlike scenarios 1-11 and 13-25, this one is written to require TWO
+-- REAL, SEPARATE psql connections run in parallel, because a single
+-- linear script (even one using pg_temp helper functions) cannot create
+-- genuine cross-transaction concurrency -- there is no way for one
+-- session to pause mid-transaction while another session's statement
+-- runs, inside one script. This is a permanent structural limitation of
+-- a single-connection harness, not something scenarios 1-25's technique
+-- could be extended to cover; it is stated here explicitly rather than
+-- left implicit.
+--
+-- Unlike the rest of this file, the fixture below MUST be committed (not
+-- wrapped in begin/rollback) so both separate sessions can see it.
+--
+-- ---- SETUP (run once, either session) ----
+-- begin;
+-- insert into public.profiles (id, name, staff_no, role, station, team, ops_group, status)
+-- values ('00000000-0000-0000-0000-0000000000a1', 'Test ASO Alpha', 'T-A1', 'ASO', 'KUL', 'Alpha', 'operation_avsec', 'approved')
+-- on conflict (id) do nothing;
+-- insert into public.report_sec033 (id, profile_id, status, station, team, staff_name, staff_id, report_date, report_time)
+-- values ('00000000-0000-0000-0000-00000000c026', '00000000-0000-0000-0000-0000000000a1', 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', current_date, '09:00')
+-- on conflict (id) do nothing;
+-- commit;
+-- -- Leave report_sec033_hold_checks EMPTY for this report -- this is
+-- -- case (a), the exact state a genuine child-insert failure leaves
+-- -- behind.
+--
+-- ---- SESSION A ----
+-- set role authenticated;
+-- select set_config('request.jwt.claims', json_build_object('sub', '00000000-0000-0000-0000-0000000000a1', 'role', 'authenticated')::text, false);
+-- begin;
+-- select public.resume_report_submission_secure(
+--   'report_sec033', '00000000-0000-0000-0000-00000000c026',
+--   '[{"parking_bay_no": "C1", "aircraft_registration_no": "9M-CCA", "remarks": "session A"}]'::jsonb
+-- );
+-- -- PAUSE HERE, mid-transaction, BEFORE commit -- this holds the `for
+-- -- update` row lock resume_report_submission_secure() takes on
+-- -- report_sec033 first. Do not commit yet.
+--
+-- ---- SESSION B (start this only while Session A is paused above) ----
+-- set role authenticated;
+-- select set_config('request.jwt.claims', json_build_object('sub', '00000000-0000-0000-0000-0000000000a1', 'role', 'authenticated')::text, false);
+-- begin;
+-- select public.resume_report_submission_secure(
+--   'report_sec033', '00000000-0000-0000-0000-00000000c026',
+--   '[{"parking_bay_no": "C2", "aircraft_registration_no": "9M-CCB", "remarks": "session B"}]'::jsonb
+-- );
+-- -- This BLOCKS -- Session B's statement waits on Session A's row lock.
+-- -- This blocking itself is the primary assertion: it proves the two
+-- -- concurrent calls are serialized through the SAME lock, not racing
+-- -- independently against separate reads. If this does NOT block, the
+-- -- fix in PART S5 of the Phase 6 migration has regressed.
+--
+-- ---- Back in Session A ----
+-- commit;
+-- -- Session B's blocked call now unblocks, runs to completion (as a
+-- -- no-op -- it will see the locked count is already > 0, from Session
+-- -- A's insert, and skip straight to finalization), and returns.
+--
+-- ---- Back in Session B ----
+-- commit;
+--
+-- ---- VERIFICATION (either session, after both have committed) ----
+-- select count(*) as child_row_count, array_agg(aircraft_registration_no) as which_rows
+-- from public.report_sec033_hold_checks where report_id = '00000000-0000-0000-0000-00000000c026';
+-- -- EXPECTED: child_row_count = 1, which_rows = {9M-CCA} -- Session A's
+-- -- row (it held the lock first and inserted first), NEVER both rows,
+-- -- and NEVER Session B's row alone or in addition.
+--
+-- select count(*) as queue_row_count
+-- from public.report_index_queue where source_table = 'report_sec033' and source_id = '00000000-0000-0000-0000-00000000c026';
+-- -- EXPECTED: queue_row_count = 1 -- exactly one finalization, not two.
+--
+-- select count(*) as version_1_count, (array_agg(v.amended_content -> 'hold_checks'))[1] as captured_snapshot
+-- from public.report_versions v
+-- join public.central_reports_index c on c.id = v.repository_report_id
+-- where c.source_table = 'report_sec033' and c.source_id = '00000000-0000-0000-0000-00000000c026' and v.version_number = 1;
+-- -- EXPECTED: version_1_count = 1 once process_report_index_queue() (the
+-- -- Phase 5 indexing job) has run against the single queue row above --
+-- -- exactly ONE immutable version-1 snapshot, capturing exactly the one
+-- -- child row Session A inserted (aircraft_registration_no '9M-CCA'),
+-- -- never a snapshot missing content and never two competing snapshots.
+--
+-- ---- CLEANUP ----
+-- delete from public.report_versions where repository_report_id in (
+--   select id from public.central_reports_index where source_table = 'report_sec033' and source_id = '00000000-0000-0000-0000-00000000c026'
+-- );
+-- delete from public.central_reports_index where source_table = 'report_sec033' and source_id = '00000000-0000-0000-0000-00000000c026';
+-- delete from public.report_index_queue where source_table = 'report_sec033' and source_id = '00000000-0000-0000-0000-00000000c026';
+-- delete from public.report_sec033_hold_checks where report_id = '00000000-0000-0000-0000-00000000c026';
+-- delete from public.report_sec033 where id = '00000000-0000-0000-0000-00000000c026';
+
 -- If every NOTICE above printed PASS and this script reached this
 -- comment without a raised exception, every listed scenario passed
 -- against this disposable database.
 --
--- Scenarios 1-11, 13-25 are ordinary, executable-in-sequence assertions.
--- Scenario 12 is the sole exception: genuine cross-transaction
+-- Scenarios 1-11, 13-25 are ordinary, executable-in-sequence assertions
+-- within the single begin/rollback block above. Scenario 26 is a
+-- SEPARATE, standalone two-session test (see above) and is never run as
+-- part of that block. Scenario 12 is the other exception: genuine cross-transaction
 -- concurrency cannot be exercised within one linear script/connection,
 -- so it is documented (with exact manual two-session steps) rather than
 -- executed -- keep this distinction explicit in any report describing

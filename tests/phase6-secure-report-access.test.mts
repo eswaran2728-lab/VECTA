@@ -1240,11 +1240,13 @@ test("PARTIAL FAILURE HANDLING: all 7 submit actions check and propagate mark_re
     path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
     "utf8",
   );
-  // 7 submit actions + resumeReportSubmission() (round 7-8), which
-  // legitimately reuses the identical call-and-check pattern to retry
-  // finalization for an already-submitted report.
+  // Exactly the 7 submit actions call mark_report_ready_for_indexing()
+  // directly. resumeReportSubmission() (round 9) no longer calls it
+  // directly either -- it calls the atomic resume_report_submission_secure()
+  // RPC instead, which internally calls mark_report_ready_for_indexing()
+  // from WITHIN the same locked transaction (see the migration's PART S5).
   const matches = actionsSrc.match(/const \{ error: readyError \} = await supabase\.rpc\("mark_report_ready_for_indexing"/g) ?? [];
-  assert.equal(matches.length, 8, `expected all 7 submit actions plus resumeReportSubmission() to check the finalization RPC's error, found ${matches.length}`);
+  assert.equal(matches.length, 7, `expected exactly the 7 submit actions to check the finalization RPC's error directly, found ${matches.length}`);
   const guardMatches = actionsSrc.match(/if \(readyError\) \{\s*\n\s*return \{ ok: false, error: `Report saved, but could not be finalized/g) ?? [];
   assert.equal(guardMatches.length, 7, `expected all 7 submit actions to return ok: false on a finalization error, found ${guardMatches.length}`);
 });
@@ -1418,7 +1420,97 @@ test("RESUME/RETRY (round 7): get_child_row_count_secure() is ownership-checked 
   assert.match(block, /returns integer/);
 });
 
-test("RESUME/RETRY (round 8): resumeReportSubmission() checks the server-measured child count first, and only inserts child rows when that count is confirmed zero (case (a)) -- it never blindly re-inserts, which would create duplicate children when case (b) (children already exist, only finalization failed) applies", () => {
+test("RESUME CONCURRENCY (round 9): resume_report_submission_secure() locks the parent row FIRST, before checking finalization state or counting children -- closing the TOCTOU gap between a separate count-check call and a later insert", () => {
+  const block = fnBlock("resume_report_submission_secure")![0];
+  const lockIdx = block.search(/select profile_id into v_owner from public\.report_sec013 where id = p_source_id for update;/);
+  const finalizedCheckIdx = block.indexOf("if exists (\n    select 1 from public.report_index_queue");
+  const countIdx = block.indexOf("select count(*) into v_actual_children from public.report_sec013_profiling_duties");
+  assert.ok(lockIdx > -1, "must lock the parent row with `for update`");
+  assert.ok(finalizedCheckIdx > lockIdx, "the already-finalized check must happen AFTER the lock is acquired");
+  assert.ok(countIdx > finalizedCheckIdx, "the child count must be read AFTER both the lock and the finalized check");
+  assert.match(block, /returns void/);
+});
+
+test("RESUME CONCURRENCY: an already-finalized report is a pure no-op under the lock -- resume_report_submission_secure() returns immediately without ever reaching the count or insert logic, so a concurrent second caller can never overwrite already-finalized content", () => {
+  const block = fnBlock("resume_report_submission_secure")![0];
+  const finalizedBlock = block.match(/if exists \(\s*\n\s*select 1 from public\.report_index_queue where source_table = p_source_table and source_id = p_source_id\s*\n\s*\) then\s*\n\s*return;\s*\n\s*end if;/);
+  assert.ok(finalizedBlock, "an already-finalized report must return immediately (a no-op), before any count or insert logic runs");
+});
+
+test("RESUME CONCURRENCY: child rows are only ever inserted when the count taken UNDER THE LOCK is confirmed zero -- a concurrent second caller that acquires the lock after the first has already inserted sees a non-zero locked count and skips insertion entirely", () => {
+  const block = fnBlock("resume_report_submission_secure")![0];
+  assert.match(block, /if v_actual_children = 0 and jsonb_array_length\(p_child_rows\) > 0 then/);
+  // Every child insert branch is a single INSERT statement per type --
+  // confirmed atomic (all rows or none) as a structural property of the
+  // statement itself, not merely asserted in a comment.
+  for (const table of [
+    "report_sec013_profiling_duties", "report_sec014_patrols", "report_sec018_patrols",
+    "report_sec029_items", "report_sec033_hold_checks", "offload_items",
+  ]) {
+    const insertMatches = block.match(new RegExp(`insert into public\\.${table} \\(`, "g")) ?? [];
+    assert.equal(insertMatches.length, 1, `expected exactly one INSERT statement for ${table} inside the conditional-insert branch`);
+  }
+});
+
+test("RESUME CONCURRENCY: resume_report_submission_secure() re-counts children AFTER its own insert and passes that re-counted value (not the caller's claimed array length) to mark_report_ready_for_indexing() -- and calls it as the LAST step, still inside the same locked transaction, reusing its independent completion rules rather than duplicating them", () => {
+  const block = fnBlock("resume_report_submission_secure")![0];
+  const insertBranchIdx = block.indexOf("if v_actual_children = 0 and jsonb_array_length(p_child_rows) > 0 then");
+  // The re-count after the insert is the SECOND occurrence of this exact
+  // count query inside the function body (the first is the initial,
+  // pre-insert, locked count).
+  const firstCountIdx = block.indexOf("select count(*) into v_actual_children from public.report_sec013_profiling_duties");
+  const recountIdx = block.indexOf("select count(*) into v_actual_children from public.report_sec013_profiling_duties", firstCountIdx + 1);
+  const finalizeIdx = block.indexOf("perform public.mark_report_ready_for_indexing(p_source_table, p_source_id, v_actual_children);");
+  assert.ok(insertBranchIdx > -1 && recountIdx > insertBranchIdx, "the re-count must happen after the conditional insert");
+  assert.ok(finalizeIdx > recountIdx, "finalization must happen after the re-count, using the re-counted value");
+});
+
+test("RESUME CONCURRENCY: resume_report_submission_secure() is granted to authenticated/service_role only, matching every other Phase 6 RPC's grant pattern", () => {
+  assert.match(code, /revoke execute on function public\.resume_report_submission_secure\(text, uuid, jsonb\) from public, anon;/);
+  assert.match(code, /grant execute on function public\.resume_report_submission_secure\(text, uuid, jsonb\) to authenticated, service_role;/);
+});
+
+interface ResumeState {
+  finalized: boolean;
+  childCount: number;
+}
+
+/** Mirrors resume_report_submission_secure()'s decision logic exactly,
+ * to reason about two concurrent calls against a SHARED state object --
+ * simulating the parent-row lock by only ever allowing one call to run
+ * to completion before the next reads state, i.e. full serialization,
+ * which is exactly what `for update` guarantees against real concurrent
+ * transactions (Postgres blocks the second until the first commits). */
+function resumeV2(state: ResumeState, claimedChildRows: number): { finalized: boolean; inserted: boolean } {
+  if (state.finalized) return { finalized: true, inserted: false };
+  let inserted = false;
+  if (state.childCount === 0 && claimedChildRows > 0) {
+    state.childCount = claimedChildRows;
+    inserted = true;
+  }
+  state.finalized = true;
+  return { finalized: true, inserted };
+}
+
+test("RESUME CONCURRENCY DECISION MIRROR: two serialized (lock-respecting) resume calls against the same stranded report both succeed, but only the FIRST actually inserts child rows -- the second is a pure no-op that still reports success", () => {
+  const state: ResumeState = { finalized: false, childCount: 0 };
+  const first = resumeV2(state, 5);
+  const second = resumeV2(state, 5);
+  assert.equal(first.inserted, true, "the first (lock-holding) caller inserts the child rows");
+  assert.equal(second.inserted, false, "the second caller, unblocked only after the first commits, sees childCount > 0 and does not insert again");
+  assert.equal(first.finalized, true);
+  assert.equal(second.finalized, true, "both calls report the same successful (finalized) outcome");
+  assert.equal(state.childCount, 5, "exactly one set of child rows exists after both calls -- never duplicated, never doubled");
+});
+
+test("RESUME CONCURRENCY DECISION MIRROR: a resume call against an already-finalized report is a pure no-op regardless of what child-row payload it carries -- finalized content is never touched again", () => {
+  const state: ResumeState = { finalized: true, childCount: 7 };
+  const result = resumeV2(state, 99);
+  assert.equal(result.inserted, false);
+  assert.equal(state.childCount, 7, "the already-finalized report's child count is untouched by a later resume call, even one carrying a different claimed row count");
+});
+
+test("RESUME/RETRY (round 9): resumeReportSubmission() delegates the count-check, conditional insert, and finalization to ONE atomic RPC call (resume_report_submission_secure()) -- it no longer makes two separate round trips (get_child_row_count_secure() then mark_report_ready_for_indexing()), closing the round-7/8 TOCTOU gap between those two calls", () => {
   const actionsSrc = fs.readFileSync(
     path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
     "utf8",
@@ -1426,29 +1518,27 @@ test("RESUME/RETRY (round 8): resumeReportSubmission() checks the server-measure
   const fnStart = actionsSrc.indexOf("export async function resumeReportSubmission");
   assert.ok(fnStart > -1, "resumeReportSubmission() must exist");
   const fnEnd = actionsSrc.indexOf("\n// ---------- SEC 016 ----------", fnStart);
-  const fnBody = actionsSrc.slice(fnStart, fnEnd > -1 ? fnEnd : fnStart + 12000);
-  assert.match(fnBody, /\.rpc\("get_child_row_count_secure"/);
-  assert.match(fnBody, /if \(!existingChildCount\) \{/, "child rows are only (re)inserted when the server-measured count is confirmed zero");
-  assert.match(fnBody, /\.rpc\("mark_report_ready_for_indexing", \{\s*\n\s*p_source_table: sourceTable,\s*\n\s*p_source_id: reportId,\s*\n\s*p_expected_child_count: expectedChildCount,/);
+  const fnBody = actionsSrc.slice(fnStart, fnEnd > -1 ? fnEnd : fnStart + 4000);
+  assert.match(fnBody, /\.rpc\("resume_report_submission_secure", \{\s*\n\s*p_source_table: sourceTable,\s*\n\s*p_source_id: reportId,\s*\n\s*p_child_rows: childRows/);
+  assert.doesNotMatch(fnBody, /\.rpc\("get_child_row_count_secure"/, "resumeReportSubmission() must not make a separate, earlier count-check RPC call -- that is exactly the TOCTOU gap round 9 closes");
+  assert.doesNotMatch(fnBody, /\.rpc\("mark_report_ready_for_indexing"/, "resumeReportSubmission() must not call mark_report_ready_for_indexing() directly -- the atomic RPC calls it internally, under the same lock");
+  assert.doesNotMatch(fnBody, /\.from\("report_sec\d+/, "resumeReportSubmission() must not insert child rows directly -- only the atomic RPC, under its own lock, may do that");
+  assert.doesNotMatch(fnBody, /\.from\("offload_items"\)/, "resumeReportSubmission() must not insert offload child rows directly");
 });
 
-test("RESUME/RETRY (round 8): resumeReportSubmission() never inserts a new PARENT row for any of the 7 report types -- reportId (the existing parent) is always reused, closing the round-7 gap where case (a) (child-insert failure) recovery was left unimplemented", () => {
+test("RESUME/RETRY (round 9): buildChildRowsForResume() re-validates against the SAME per-type zod schema a fresh submission uses for every type with a child table -- a retry can never carry weaker child content than a fresh submission would require", () => {
   const actionsSrc = fs.readFileSync(
     path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
     "utf8",
   );
-  const fnStart = actionsSrc.indexOf("export async function resumeReportSubmission");
-  const fnEnd = actionsSrc.indexOf("\n// ---------- SEC 016 ----------", fnStart);
-  const fnBody = actionsSrc.slice(fnStart, fnEnd > -1 ? fnEnd : fnStart + 12000);
-  for (const table of ["report_sec013", "report_sec014", "report_sec018", "report_sec029", "report_sec033", "offload_records"]) {
-    assert.doesNotMatch(fnBody, new RegExp(`\\.from\\("${table}"\\)\\.insert`), `resumeReportSubmission() must never insert a new parent row into ${table}`);
-  }
-  // Every case-(a) child re-validation re-parses the SAME per-type zod
-  // schema a fresh submission uses -- a retry can never carry weaker
-  // child content than a fresh submission would require.
+  const fnStart = actionsSrc.indexOf("function buildChildRowsForResume");
+  assert.ok(fnStart > -1, "buildChildRowsForResume() must exist");
+  const fnEnd = actionsSrc.indexOf("\nexport async function resumeReportSubmission", fnStart);
+  const fnBody = actionsSrc.slice(fnStart, fnEnd > -1 ? fnEnd : fnStart + 4000);
   for (const schema of ["sec013Schema", "sec014Schema", "sec018Schema", "sec029Schema", "sec033Schema", "offloadSchema"]) {
-    assert.match(fnBody, new RegExp(`${schema}\\.safeParse\\(input\\)`), `resumeReportSubmission() must re-validate against ${schema}`);
+    assert.match(fnBody, new RegExp(`${schema}\\.safeParse\\(input\\)`), `buildChildRowsForResume() must re-validate against ${schema}`);
   }
+  assert.doesNotMatch(fnBody, /\.insert\(/, "buildChildRowsForResume() must only build a payload, never insert directly -- insertion happens exclusively inside the atomic RPC");
 });
 
 test("RESUME/RETRY: every child-row-insert failure return now includes the parent id (id: report.id), so an orphaned (case-(a)) report is always identifiable even though this round does not yet resume it", () => {

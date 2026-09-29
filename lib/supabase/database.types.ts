@@ -5158,6 +5158,10 @@ export type Database = {
         Args: { p_source_table: string; p_source_id: string }
         Returns: number
       }
+      resume_report_submission_secure: {
+        Args: { p_source_table: string; p_source_id: string; p_child_rows?: Json }
+        Returns: undefined
+      }
       search_reports_by_number_secure: {
         Args: { p_prefix: string; p_limit?: number | null }
         Returns: {
