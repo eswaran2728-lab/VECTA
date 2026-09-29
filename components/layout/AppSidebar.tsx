@@ -29,6 +29,7 @@ import {
   User,
 } from "lucide-react";
 import type { OpsGroup } from "@/lib/icms/database.types";
+import { phase7DashboardNavEntry } from "@/lib/dashboard/navigation";
 
 interface NavItem {
   href: string;
@@ -52,6 +53,7 @@ export function AppSidebar({
   station,
   team,
   unifiedRole,
+  hasPhase7Assignment = false,
   signOutAction,
 }: {
   userId?: string | null;
@@ -71,6 +73,11 @@ export function AppSidebar({
    * call sites keep working, but any caller that has it should pass it.
    */
   unifiedRole?: string | null;
+  /** Phase 7: whether this profile holds at least one active Phase 3 role
+   *  assignment (from lib/dashboard/context.ts's getActiveRoleAssignments(),
+   *  fetched once in the layout). Purely a display decision -- see
+   *  lib/dashboard/navigation.ts's own doc comment. */
+  hasPhase7Assignment?: boolean;
   signOutAction?: () => Promise<void>;
 }) {
   const pathname = usePathname();
@@ -116,20 +123,17 @@ export function AppSidebar({
       },
     ];
 
-    // Phase 7: entry point for the Phase 3 role-scoped dashboards. Shown
-    // to every AVSEC account, org-wide or not, because Phase 3 role
-    // assignments aren't reflected in any prop passed to this component --
-    // this component has no way to know in advance whether a given account
-    // holds one. A profile with no active Phase 3 assignment is safely
-    // redirected back to the existing dashboard/home by the route itself,
-    // so this link is never a dead end for legacy-only accounts. Hidden
-    // navigation is not authorization either way: the route enforces its
-    // own scope server-side regardless of who can see this link.
-    operationsItems.push({
-      href: "/avsec/my-dashboard",
-      label: "My Dashboard (Phase 7)",
-      icon: Sparkles,
-    });
+    // Phase 7: entry point for the Phase 3 role-scoped dashboards, via the
+    // shared lib/dashboard/navigation.ts model (LEGACY UI COMPATIBILITY:
+    // when hasPhase7Assignment is false, no entry is shown and this account
+    // keeps using only the pre-Phase-7 navigation below, unchanged -- that
+    // is a display choice, not the authorization boundary. A profile whose
+    // assignment was revoked/expired between page loads is still safely
+    // redirected back to its existing dashboard/home by the route itself).
+    const phase7Entry = phase7DashboardNavEntry(hasPhase7Assignment);
+    if (phase7Entry) {
+      operationsItems.push({ href: phase7Entry.href, label: phase7Entry.label, icon: Sparkles });
+    }
 
     if (!isOrgWide) {
       operationsItems.push({

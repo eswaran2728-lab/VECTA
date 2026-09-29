@@ -23,6 +23,7 @@ import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import type { OpsGroup } from "@/lib/icms/database.types";
+import { getActiveRoleAssignments } from "@/lib/dashboard/context";
 
 const ORG_WIDE_UNIFIED_ROLES = ["admin", "management", "enforcement"];
 
@@ -96,6 +97,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       ].filter((item) => item.show);
 
   const orgWide = ORG_WIDE_UNIFIED_ROLES.includes(profile.unified_role ?? "");
+  // Phase 7: purely a nav-display decision (see lib/dashboard/navigation.ts) --
+  // an empty result here (the common case for ICMS-only accounts, which
+  // live in a separate `users` table Phase 3 assignments aren't granted
+  // against) just means no "My Dashboard" entry is shown, never a broken
+  // link or an authorization change.
+  const hasPhase7Assignment = (await getActiveRoleAssignments()).length > 0;
 
   return (
     <div className="min-h-screen bg-background text-foreground antialiased">
@@ -106,6 +113,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         roleLabel={ROLE_LABELS[profile.role] ?? null}
         opsGroup={(profile.ops_group ?? null) as OpsGroup | null}
         unifiedRole={profile.unified_role}
+        hasPhase7Assignment={hasPhase7Assignment}
         signOutAction={signOut}
       />
 
@@ -135,6 +143,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           opsGroup={(profile.ops_group ?? null) as OpsGroup | null}
           orgWide={orgWide}
           role={profile.role}
+          hasPhase7Assignment={hasPhase7Assignment}
         />
       </div>
     </div>

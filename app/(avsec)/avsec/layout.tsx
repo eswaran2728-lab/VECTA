@@ -11,6 +11,7 @@ import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { NotificationsBell } from "@/components/layout/NotificationsBell";
+import { getActiveRoleAssignments } from "@/lib/dashboard/context";
 
 export const metadata: Metadata = {
   title: APP_NAME,
@@ -32,6 +33,11 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
       profile.name &&
       (isOrgWide || (profile.station && profile.team))
   );
+  // Phase 7: purely a nav-display decision (see lib/dashboard/navigation.ts)
+  // -- skipped entirely when chrome isn't shown anyway (profile-setup/
+  // pending-approval), and an empty result just means no "My Dashboard"
+  // entry, never a broken link or an authorization change.
+  const hasPhase7Assignment = showChrome ? (await getActiveRoleAssignments()).length > 0 : false;
 
   return (
     <div className="min-h-screen bg-background text-foreground antialiased">
@@ -48,6 +54,7 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
             station={profile.station}
             team={profile.team}
             unifiedRole={profile.unified_role}
+            hasPhase7Assignment={hasPhase7Assignment}
             signOutAction={authSignOut}
           />
         ) : null}
@@ -66,7 +73,7 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
         </div>
         <InstallPrompt />
         {showChrome && profile ? (
-          <TeamBottomNav opsGroup={profile.ops_group} orgWide={isOrgWide} />
+          <TeamBottomNav opsGroup={profile.ops_group} orgWide={isOrgWide} hasPhase7Assignment={hasPhase7Assignment} />
         ) : null}
       </OfflineSyncProvider>
     </div>

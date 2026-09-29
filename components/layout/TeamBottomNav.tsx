@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { OpsGroup } from "@/lib/icms/database.types";
+import { phase7DashboardNavEntry } from "@/lib/dashboard/navigation";
 
 interface NavTab {
   href: string;
@@ -62,10 +63,16 @@ export function TeamBottomNav({
   opsGroup,
   orgWide,
   role,
+  hasPhase7Assignment = false,
 }: {
   opsGroup: OpsGroup | null;
   orgWide: boolean;
   role?: string | null;
+  /** Phase 7: whether this profile holds at least one active Phase 3 role
+   *  assignment. Purely a display decision -- see
+   *  lib/dashboard/navigation.ts's own doc comment. Drivers/vendors never
+   *  get this tab (they have no AVSEC dashboard context to select). */
+  hasPhase7Assignment?: boolean;
 }) {
   const pathname = usePathname();
 
@@ -74,33 +81,36 @@ export function TeamBottomNav({
     role === "vendor" ||
     (pathname.startsWith("/icms") && !opsGroup && !orgWide);
 
+  const phase7Entry = !isDriver ? phase7DashboardNavEntry(hasPhase7Assignment) : null;
+  const phase7Tab: NavTab[] = phase7Entry ? [{ href: phase7Entry.href, label: phase7Entry.label }] : [];
+
   let tabs: NavTab[];
   if (role === "vendor") {
     tabs = [NEW_DELIVERY, MY_DELIVERIES, DRIVER_HOME];
   } else if (isDriver) {
     tabs = [NEW_TRANSACTION, MY_DISPATCHES, DRIVER_HOME];
   } else if (orgWide) {
-    tabs = [DASHBOARD, REPORT_SEARCH, REPORTS, PROFILE];
+    tabs = [DASHBOARD, REPORT_SEARCH, REPORTS, ...phase7Tab, PROFILE];
   } else if (role === "so" && (opsGroup === "operation_avsec" || opsGroup === "hub_avsec")) {
     // SO - Operation: Bay Board access, NO Scan/CaterLink clearance
-    tabs = [DASHBOARD, BAY_BOARD, PROFILE];
+    tabs = [DASHBOARD, BAY_BOARD, ...phase7Tab, PROFILE];
   } else if (role === "so" && opsGroup === "ifc_avsec") {
     // SO - IFC: Scan / Transaction access at Post 2, Transaction History
-    tabs = [DASHBOARD, SCAN, TRANSACTION_HISTORY, PROFILE];
+    tabs = [DASHBOARD, SCAN, TRANSACTION_HISTORY, ...phase7Tab, PROFILE];
   } else if (role === "dse" && (opsGroup === "operation_avsec" || opsGroup === "hub_avsec")) {
     // DSE - Operation: Bay Board access, NO Scan
-    tabs = [DASHBOARD, BAY_BOARD, PROFILE];
+    tabs = [DASHBOARD, BAY_BOARD, ...phase7Tab, PROFILE];
   } else if (role === "dse" && opsGroup === "ifc_avsec") {
     // DSE - IFC: Team KPIs, Transaction History, NO Bay Board
-    tabs = [DASHBOARD, TRANSACTION_HISTORY, PROFILE];
+    tabs = [DASHBOARD, TRANSACTION_HISTORY, ...phase7Tab, PROFILE];
   } else if (opsGroup === "ifc_avsec") {
     // ASO - IFC: Scan at Post 2, Transaction History, NO Bay Board
-    tabs = [DASHBOARD, SCAN, TRANSACTION_HISTORY, PROFILE];
+    tabs = [DASHBOARD, SCAN, TRANSACTION_HISTORY, ...phase7Tab, PROFILE];
   } else if (opsGroup === "operation_avsec" || opsGroup === "hub_avsec") {
     // ASO - Operation: Scan at Post 6 / RedQ, Bay Board
-    tabs = [DASHBOARD, SCAN, BAY_BOARD, PROFILE];
+    tabs = [DASHBOARD, SCAN, BAY_BOARD, ...phase7Tab, PROFILE];
   } else {
-    tabs = [DASHBOARD, SCAN, PROFILE];
+    tabs = [DASHBOARD, SCAN, ...phase7Tab, PROFILE];
   }
 
   const isActive = (tab: NavTab) => {

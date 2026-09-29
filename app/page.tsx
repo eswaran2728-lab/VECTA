@@ -14,6 +14,7 @@ import { AppSidebar } from "@/components/layout/AppSidebar";
 import { NotificationsBell } from "@/components/layout/NotificationsBell";
 import { TransactionStageBar } from "@/components/layout/TransactionStageBar";
 import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries";
+import { getActiveRoleAssignments } from "@/lib/dashboard/context";
 import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
 import type { Direction, OpsGroup, TransactionRoute, TransactionStatus } from "@/lib/icms/database.types";
 import { formatTimeMY } from "@/lib/avsec/datetime";
@@ -168,11 +169,14 @@ export default async function LandingPage({
     ops_group: profile.ops_group ?? null,
   };
 
-  const [snapshot, activity, announcements] = await Promise.all([
+  const [snapshot, activity, announcements, activeAssignments] = await Promise.all([
     getDashboardSnapshot(scopeGroup),
     getActivityFeed(scopeGroup),
     getActiveAnnouncementsForUser(currentUserProfile),
+    getActiveRoleAssignments(),
   ]);
+  // Phase 7: purely a nav-display decision (see lib/dashboard/navigation.ts).
+  const hasPhase7Assignment = activeAssignments.length > 0;
 
   const overallStatus: OpsStatus =
     snapshot.alerts > 0 ? "critical" : snapshot.activeTransactions > 0 ? "operational" : "standby";
@@ -209,6 +213,7 @@ export default async function LandingPage({
         station={avsecProfile?.station ?? null}
         team={avsecProfile?.team ?? null}
         unifiedRole={role}
+        hasPhase7Assignment={hasPhase7Assignment}
         signOutAction={signOut}
       />
 
@@ -476,7 +481,7 @@ export default async function LandingPage({
         </div>
       </div>
 
-      <TeamBottomNav opsGroup={userOpsGroup} orgWide={orgWide} role={role} />
+      <TeamBottomNav opsGroup={userOpsGroup} orgWide={orgWide} role={role} hasPhase7Assignment={hasPhase7Assignment} />
     </main>
   );
 }
