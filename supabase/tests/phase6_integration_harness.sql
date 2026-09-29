@@ -1,15 +1,25 @@
 -- PHASE 6 DATABASE INTEGRATION HARNESS -- NOT A MIGRATION.
 --
--- PREPARED BUT NOT EXECUTED (review round 5, section 6). No local/
--- disposable Postgres, Docker, or Supabase CLI was available in the
--- environment this was authored in (confirmed: `psql`, `docker`, and
--- `supabase` are all absent from PATH). This harness is runnable
--- against any disposable Postgres instance that already has the full
--- avsec schema and Phases 2-6 applied, but has NOT been run. Treat
--- database integration as an explicit pre-merge / pre-deployment gate:
--- do not merge or deploy any of Phase 2-6 until this (or an equivalent
--- harness) has actually been executed successfully against a real,
--- disposable database and every assertion below has passed.
+-- EXECUTED (round 10, database-integration validation) against a real,
+-- disposable, synthetic-data Postgres instance -- see the round-10
+-- validation report for the exact runtime (PGlite, a real embedded
+-- Postgres engine, not a reimplementation), the full migration-apply
+-- chain, and every finding. Scenarios 1-11, 13-25, 27-29 (the
+-- begin/rollback block below) all PASSED. Scenario 26 (the real
+-- two-session concurrency test, below the final rollback) remains a
+-- separate, still-unexecuted manual procedure -- explained in its own
+-- comment block; scenario 12 is documented but not independently
+-- executable for the same structural reason (see that comment block).
+--
+-- CORRECTION (round 10): every top-level `perform pg_temp.X(...)` /
+-- `perform public.X(...)` call in this file (outside a `do $$ ... $$`
+-- block) has been changed to `select ...` -- `perform` is plpgsql-only
+-- syntax and is a syntax error as a bare top-level SQL statement in
+-- both psql and any other client. This file, as originally written
+-- across rounds 5-9, could never actually have run to completion even
+-- via its own documented `psql -f` usage -- this was only caught by
+-- actually executing it for the first time in round 10. `perform`
+-- inside a `do $$ ... $$` block (correct, unchanged) is unaffected.
 --
 -- PREREQUISITES (must already be true of the target database before
 -- running this file):
@@ -67,7 +77,13 @@ create or replace function pg_temp.clear_simulation()
 returns void language plpgsql as $$
 begin
   perform set_config('request.jwt.claims', '', true);
-  perform set_config('role', '', true);
+  -- CORRECTION (round 10): `set_config('role', '', true)` tries to SET
+  -- ROLE to the empty string, which Postgres rejects outright ('role ""
+  -- does not exist') -- role is not an ordinary GUC that accepts an
+  -- empty-string reset the way request.jwt.claims does. RESET ROLE is
+  -- the actual command for this, issued via EXECUTE since RESET is a
+  -- utility statement, not an expression set_config() can produce.
+  execute 'reset role';
 end;
 $$;
 
@@ -81,6 +97,118 @@ begin
 end;
 $$;
 
+-- CORRECTION (round 10): report_index_queue has SELECT revoked from
+-- authenticated entirely (Phase 5's own security design -- confirmed:
+-- `revoke all on public.report_index_queue from public, anon,
+-- authenticated;`). Every scenario below that checks whether a report
+-- was enqueued runs as the ACTING synthetic user (authenticated), not
+-- service_role -- a direct `select ... from report_index_queue` from
+-- that context is correctly denied, exactly as production would deny
+-- it. This SECURITY DEFINER helper (owned by whichever role created it,
+-- before any user simulation begins) lets a test assertion check queue
+-- membership without needing production code to expose it -- the same
+-- boundary a real test suite would need, not a weakening of the actual
+-- access control the migration enforces.
+create or replace function pg_temp.is_queued(p_source_table text, p_source_id uuid)
+returns boolean language sql security definer as $$
+  select exists (select 1 from public.report_index_queue where source_table = p_source_table and source_id = p_source_id);
+$$;
+
+create or replace function pg_temp.queue_count(p_source_table text, p_source_id uuid)
+returns integer language sql security definer as $$
+  select count(*)::integer from public.report_index_queue where source_table = p_source_table and source_id = p_source_id;
+$$;
+
+-- CORRECTION (round 10): same class of finding as pg_temp.is_queued()
+-- above -- central_reports_index also has direct SELECT revoked from
+-- authenticated (Phase 5's own design; access is only ever through
+-- get_report_secure()/list_reports_secure()/etc.). Several scenarios
+-- below look up a report's repository row id directly, as the acting
+-- synthetic user, purely as TEST SETUP (to know which id to pass into
+-- get_report_secure()/list_reports_secure() next) -- this helper does
+-- that lookup with the same SECURITY DEFINER bypass as is_queued(), not
+-- a change to production access control.
+create or replace function pg_temp.repository_id_for(p_source_table text, p_staff_id text)
+returns uuid language sql security definer as $$
+  select c.id from public.central_reports_index c
+  where c.source_table = p_source_table
+    and c.source_id in (select id from public.report_sec014 where staff_id = p_staff_id);
+$$;
+
+-- Same as above, but for report_sec033 (used by scenario 27, which
+-- deliberately exercises a different report type than sec014).
+create or replace function pg_temp.sec033_id_by_staff_and_time(p_staff_id text, p_report_time time)
+returns uuid language sql security definer as $$
+  select id from public.report_sec033 where staff_id = p_staff_id and report_time = p_report_time order by created_at desc limit 1;
+$$;
+
+create or replace function pg_temp.repository_id_for_sec033(p_staff_id text, p_report_time time)
+returns uuid language sql security definer as $$
+  select c.id from public.central_reports_index c
+  where c.source_table = 'report_sec033'
+    and c.source_id = pg_temp.sec033_id_by_staff_and_time(p_staff_id, p_report_time);
+$$;
+
+-- Same class of finding as the two helpers above: report_access_audit
+-- also has direct SELECT revoked from authenticated (only the secure
+-- RPCs write to it; nothing reads it directly except via a future
+-- audit-review feature, out of scope here).
+create or replace function pg_temp.was_audited(p_repository_report_id uuid, p_actor_id uuid, p_action text)
+returns boolean language sql security definer as $$
+  select exists (
+    select 1 from public.report_access_audit
+    where repository_report_id = p_repository_report_id and actor_id = p_actor_id and action = p_action
+  );
+$$;
+
+-- Same class of finding again: report_sec014.staff_id is not one of the
+-- narrowly-granted columns (id, submitted_at, report_no, profile_id --
+-- round 5's column-level closure), so looking a report up BY staff_id
+-- (as anyone other than its own submitter, e.g. a supervisor acting on
+-- an acknowledgement) needs this same SECURITY DEFINER bypass -- a
+-- genuine test-setup need, not a change to the real column grant.
+create or replace function pg_temp.report_id_by_staff(p_staff_id text, p_remark text default null)
+returns uuid language sql security definer as $$
+  select id from public.report_sec014
+  where staff_id = p_staff_id and (p_remark is null or remark = p_remark)
+  order by created_at desc limit 1;
+$$;
+
+-- Same class of finding, for report_sec014_patrols: direct SELECT was
+-- revoked entirely (round 5), so verifying a specific child row's
+-- current report_id (reassignment tests) or a description's existence
+-- (payload-never-inserted tests) needs the same SECURITY DEFINER
+-- bypass -- test verification, not a change to the real access control.
+create or replace function pg_temp.patrol_report_id(p_child_id uuid)
+returns uuid language sql security definer as $$
+  select report_id from public.report_sec014_patrols where id = p_child_id;
+$$;
+
+create or replace function pg_temp.patrol_exists_with_description(p_description text)
+returns boolean language sql security definer as $$
+  select exists (select 1 from public.report_sec014_patrols where description = p_description);
+$$;
+
+create or replace function pg_temp.offload_first_tag(p_report_id uuid)
+returns text language sql security definer as $$
+  select baggage_tag_no from public.offload_items where report_id = p_report_id limit 1;
+$$;
+
+-- Same class of finding: report_sec014.remark and report_sec033.staff_id/
+-- report_time are not in the narrowly-granted parent-table columns
+-- (id, submitted_at, report_no, profile_id -- round 5), so counting
+-- "how many parent rows exist for this fixture" (duplicate-parent
+-- checks) needs the same SECURITY DEFINER bypass.
+create or replace function pg_temp.sec014_count_by_remark(p_profile_id uuid, p_remark text)
+returns integer language sql security definer as $$
+  select count(*)::integer from public.report_sec014 where profile_id = p_profile_id and remark = p_remark;
+$$;
+
+create or replace function pg_temp.sec033_count_by_staff_and_time(p_profile_id uuid, p_staff_id text, p_report_time time)
+returns integer language sql security definer as $$
+  select count(*)::integer from public.report_sec033 where profile_id = p_profile_id and staff_id = p_staff_id and report_time = p_report_time;
+$$;
+
 -- =======================================================================
 -- Synthetic fixtures
 -- =======================================================================
@@ -91,26 +219,89 @@ $$;
 -- target schema's exact profiles/aocs/operating_entities/hubs shape if
 -- they differ from what this harness assumes.
 
-perform pg_temp.simulate_service_role();
+select pg_temp.simulate_service_role();
 
-insert into public.profiles (id, name, staff_no, role, station, team, ops_group, status)
+-- CORRECTION (round 10): profiles.id references auth.users(id), and
+-- profiles.email is NOT NULL -- neither was satisfied by this fixture
+-- as originally written (rounds 5-9), which only ever exercised this
+-- file as static source text, never against a real database with these
+-- constraints actually enforced.
+insert into auth.users (id, email)
 values
-  ('00000000-0000-0000-0000-0000000000a1', 'Test ASO Alpha', 'T-A1', 'ASO', 'KUL', 'Alpha', 'operation_avsec', 'approved'),
-  ('00000000-0000-0000-0000-0000000000a2', 'Test ASO Bravo', 'T-A2', 'ASO', 'PEN', 'Bravo', 'operation_avsec', 'approved'),
-  ('00000000-0000-0000-0000-0000000000a3', 'Test Main Enforcement', 'T-A3', 'ENFORCEMENT', 'KUL', 'Alpha', null, 'approved'),
-  ('00000000-0000-0000-0000-0000000000a4', 'Test AirAsia Mgmt', 'T-A4', 'MANAGEMENT', 'KUL', 'Alpha', null, 'approved')
+  ('00000000-0000-0000-0000-0000000000a1', 'test.aso.alpha@example.test'),
+  ('00000000-0000-0000-0000-0000000000a2', 'test.aso.bravo@example.test'),
+  ('00000000-0000-0000-0000-0000000000a3', 'test.main.enforcement@example.test'),
+  ('00000000-0000-0000-0000-0000000000a4', 'test.airasia.mgmt@example.test'),
+  ('00000000-0000-0000-0000-0000000000a5', 'test.so.alpha@example.test')
 on conflict (id) do nothing;
 
--- Malaysia AOC + MAA operating entity + KUL hub (adjust to existing
--- Phase 2 seed data if this environment already has one).
-insert into public.aocs (id, code, name) values ('00000000-0000-0000-0000-0000000000b1', 'MY', 'Malaysia') on conflict (id) do nothing;
-insert into public.operating_entities (id, aoc_id, code, name, flight_prefix) values ('00000000-0000-0000-0000-0000000000b2', '00000000-0000-0000-0000-0000000000b1', 'MAA', 'AirAsia Malaysia', 'AK') on conflict (id) do nothing;
-insert into public.hubs (id, aoc_id, operating_entity_id, code, name) values ('00000000-0000-0000-0000-0000000000b3', '00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000b2', 'KUL', 'Kuala Lumpur') on conflict (id) do nothing;
+-- CORRECTION (round 10): handle_new_user() (avsec/0001_init_schema.sql)
+-- fires `after insert on auth.users` and creates a MINIMAL profiles row
+-- (id, email only -- every other column gets its bare column default,
+-- notably status DEFAULT 'pending') the instant the auth.users insert
+-- above runs. This insert's own `on conflict (id) do nothing` (round 5)
+-- then found that row already present and silently did NOTHING --
+-- every explicit value here (role, station, team, ops_group, status)
+-- was discarded without error, leaving every fixture profile at
+-- status='pending' instead of 'approved'. Only surfaced by actually
+-- running this against a real database with that trigger firing --
+-- never visible in static inspection. Fixed with `do update` so this
+-- insert's explicit values win over the trigger's bare-default row.
+insert into public.profiles (id, email, name, staff_no, role, station, team, ops_group, status)
+values
+  ('00000000-0000-0000-0000-0000000000a1', 'test.aso.alpha@example.test', 'Test ASO Alpha', 'T-A1', 'ASO', 'KUL - MAA', 'Alpha', 'operation_avsec', 'approved'),
+  ('00000000-0000-0000-0000-0000000000a2', 'test.aso.bravo@example.test', 'Test ASO Bravo', 'T-A2', 'ASO', 'PEN', 'Bravo', 'operation_avsec', 'approved'),
+  ('00000000-0000-0000-0000-0000000000a3', 'test.main.enforcement@example.test', 'Test Main Enforcement', 'T-A3', 'ENFORCEMENT', 'KUL - MAA', 'Alpha', null, 'approved'),
+  ('00000000-0000-0000-0000-0000000000a4', 'test.airasia.mgmt@example.test', 'Test AirAsia Mgmt', 'T-A4', 'MANAGEMENT', 'KUL - MAA', 'Alpha', null, 'approved'),
+  -- CORRECTION (round 10): can_acknowledge_report() (avsec/0012 as
+  -- amended by 20260917000001_daily_report_role_correction.sql)
+  -- requires the acker to hold role SO or DSE (for a sec014 report
+  -- submitted by an ASO) AND to share the SAME station/team/ops_group
+  -- as the submitter -- Test Main Enforcement (role=ENFORCEMENT) was
+  -- never actually eligible to acknowledge Alpha's report, only
+  -- caught by actually executing Scenario 8 against a real database.
+  -- This profile is added specifically to be a valid acknowledger.
+  ('00000000-0000-0000-0000-0000000000a5', 'test.so.alpha@example.test', 'Test SO Alpha', 'T-A5', 'SO', 'KUL - MAA', 'Alpha', 'operation_avsec', 'approved')
+on conflict (id) do update set
+  name = excluded.name, staff_no = excluded.staff_no, role = excluded.role,
+  station = excluded.station, team = excluded.team, ops_group = excluded.ops_group,
+  status = excluded.status;
 
--- Phase 3 role assignment: Test Main Enforcement holds main_enforcement, Malaysia-wide.
-insert into public.user_role_assignments (id, profile_id, role_definition_id, aoc_id, granted_by)
-select '00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000a3', rd.id, '00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a4'
-from public.role_definitions rd where rd.code = 'main_enforcement'
+-- CORRECTION (round 10): Phase 2's own migration
+-- (20260928000001_phase2_org_foundation.sql) already seeds a real
+-- 'MY' aocs row, 'MAA'/'AAX' operating_entities rows, and a 'kul' hubs
+-- row (lowercase code -- confirmed from that migration's own seed
+-- data). This fixture, as originally written (round 5), inserted its
+-- OWN aocs/operating_entities/hubs rows with fixed synthetic ids and a
+-- DIFFERENT casing ('KUL - MAA' vs the real 'kul'), which the unique(code) /
+-- unique(aoc_id, code) constraints reject as duplicates against Phase
+-- 2's real seed -- only caught by actually running this against a
+-- database with Phase 2 applied, never by static inspection. It ALSO
+-- referenced a `hubs.operating_entity_id` column that does not exist on
+-- that table (hubs has no such column -- confirmed from Phase 2's own
+-- CREATE TABLE). Fixed by reusing Phase 2's real seeded rows instead of
+-- inserting conflicting synthetic ones.
+do $$
+declare
+  v_aoc_id uuid;
+begin
+  select id into v_aoc_id from public.aocs where code = 'MY';
+  if v_aoc_id is null then
+    raise exception 'Phase 2''s seeded Malaysia AOC (code=MY) was not found -- is 20260928000001_phase2_org_foundation.sql actually applied?';
+  end if;
+end $$;
+
+-- Phase 3 role assignment: Test Main Enforcement holds main_enforcement,
+-- Malaysia-wide, scoped to the Enforcement department -- CORRECTION
+-- (round 10): main_enforcement requires department_id (Phase 3's own
+-- enforce_role_assignment_scope() trigger), scoped to the 'enforcement'
+-- department specifically -- not merely "requires an aoc_id," which is
+-- all this fixture originally provided (round 5), never actually
+-- checked against the real trigger until this round.
+insert into public.user_role_assignments (id, profile_id, role_definition_id, aoc_id, department_id, granted_by)
+select '00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000a3', rd.id, a.id, d.id, '00000000-0000-0000-0000-0000000000a4'
+from public.role_definitions rd, public.aocs a, public.departments d
+where rd.code = 'main_enforcement' and a.code = 'MY' and d.aoc_id = a.id and d.code = 'enforcement'
 on conflict (id) do nothing;
 
 -- Phase 3 role assignment: Test AirAsia Mgmt holds airasia_management.
@@ -119,13 +310,13 @@ select '00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-00000000
 from public.role_definitions rd where rd.code = 'airasia_management'
 on conflict (id) do nothing;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 1: report creation (INSERT ... RETURNING) still works under
 -- the narrowed column grant
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
@@ -133,13 +324,13 @@ declare
   v_report_no text;
 begin
   insert into public.report_sec014 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
-  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'synthetic patrol remark', false)
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'synthetic patrol remark', false)
   returning id, report_no into v_report_id, v_report_no;
 
   perform pg_temp.assert(v_report_id is not null, 'SCENARIO 1: INSERT ... RETURNING id succeeds for the caller''s own report_sec014 row under the narrowed (id, submitted_at, report_no, profile_id) grant');
 
   insert into public.report_sec014_patrols (report_id, entry_no, location, description)
-  values (v_report_id, 1, 'Gate A1', 'synthetic patrol entry');
+  values (v_report_id, 1, 'Apron', 'synthetic patrol entry');
   perform pg_temp.assert(true, 'SCENARIO 1: child row (report_sec014_patrols) INSERT succeeds -- child creation is unaffected by the SELECT closure');
 
   perform pg_temp.assert(
@@ -148,21 +339,26 @@ begin
   );
 
   -- Explicit completion signal, as lib/avsec/reports/actions.ts now does.
-  perform public.mark_report_ready_for_indexing('report_sec014', v_report_id);
+  -- CORRECTION (round 10): this call omitted p_expected_child_count
+  -- entirely (defaulting to 0), even though a patrol child row was just
+  -- inserted above -- the consistency check correctly rejected it as
+  -- incomplete. Only caught by actually executing this against a real
+  -- database; the omission was invisible in static inspection.
+  perform public.mark_report_ready_for_indexing('report_sec014', v_report_id, 1);
   perform pg_temp.assert(
-    exists (select 1 from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id),
+    pg_temp.is_queued('report_sec014', v_report_id),
     'SCENARIO 1: mark_report_ready_for_indexing() enqueues the report exactly once, only after the child row above was already written'
   );
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 2: direct parent-table content SELECT is denied (even own row,
 -- full-row); the narrow RETURNING columns remain selectable
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 begin
@@ -182,12 +378,12 @@ begin
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 3: direct child-table SELECT is denied entirely
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 begin
@@ -200,7 +396,7 @@ begin
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 4: cross-profile denial -- Bravo cannot read Alpha's report
@@ -211,29 +407,35 @@ perform pg_temp.clear_simulation();
 -- between Scenario 1 and this block if testing end-to-end, or call
 -- public.index_report(...) directly with synthetic classification for a
 -- faster, indexing-queue-independent check.)
-perform pg_temp.simulate_service_role();
+select pg_temp.simulate_service_role();
 do $$
 declare
   v_report_id uuid;
+  v_aoc_id uuid;
+  v_entity_id uuid;
+  v_hub_id uuid;
 begin
-  select id into v_report_id from public.report_sec014 where staff_id = 'T-A1' order by created_at desc limit 1;
+  v_report_id := pg_temp.report_id_by_staff('T-A1', 'synthetic patrol remark'); -- the SAME specific report indexed in Scenario 4
+  select id into v_aoc_id from public.aocs where code = 'MY';
+  select id into v_entity_id from public.operating_entities where aoc_id = v_aoc_id and code = 'MAA';
+  select id into v_hub_id from public.hubs where aoc_id = v_aoc_id and code = 'kul';
   perform public.index_report(
     'report_sec014', v_report_id, (select report_no from public.report_sec014 where id = v_report_id),
-    '00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000b2', null, null,
-    '00000000-0000-0000-0000-0000000000b3', null, null, null, current_date,
+    v_aoc_id, v_entity_id, null, null,
+    v_hub_id, null, null, null, current_date,
     '00000000-0000-0000-0000-0000000000a1'
   );
 end;
 $$;
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a2'::uuid); -- Bravo, different station, no relationship to Alpha's report
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a2'::uuid); -- Bravo, different station, no relationship to Alpha's report
 
 do $$
 declare
   v_repository_id uuid;
 begin
-  select id into v_repository_id from public.central_reports_index where source_table = 'report_sec014' and source_id in (select id from public.report_sec014 where staff_id = 'T-A1');
+  v_repository_id := pg_temp.repository_id_for('report_sec014', 'T-A1');
 
   begin
     perform * from public.get_report_secure(v_repository_id);
@@ -249,55 +451,55 @@ begin
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 5: Main Enforcement (Malaysia-wide) CAN read Alpha's report
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a3'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a3'::uuid);
 
 do $$
 declare
   v_repository_id uuid;
   v_content jsonb;
 begin
-  select id into v_repository_id from public.central_reports_index where source_table = 'report_sec014' and source_id in (select id from public.report_sec014 where staff_id = 'T-A1');
+  v_repository_id := pg_temp.repository_id_for('report_sec014', 'T-A1');
   select content into v_content from public.get_report_secure(v_repository_id) limit 1;
   perform pg_temp.assert(v_content is not null, 'SCENARIO 5: Main Enforcement (Malaysia-wide role) IS authorized to read Alpha''s report via get_report_secure(), and receives full content including the child patrol array');
   perform pg_temp.assert((v_content -> 'patrols') is not null and jsonb_array_length(v_content -> 'patrols') = 1, 'SCENARIO 5: the immutable/detail content includes the child patrol row written in Scenario 1');
   perform pg_temp.assert(
-    exists (select 1 from public.report_access_audit where repository_report_id = v_repository_id and actor_id = auth.uid() and action = 'detail_view'),
+    pg_temp.was_audited(v_repository_id, auth.uid(), 'detail_view'),
     'SCENARIO 5: the read was audited as detail_view for this actor'
   );
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 6: version 1 is a complete, immutable snapshot (parent + child)
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a3'::uuid); -- authorized via Main Enforcement
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a3'::uuid); -- authorized via Main Enforcement
 
 do $$
 declare
   v_repository_id uuid;
   v_snapshot jsonb;
 begin
-  select id into v_repository_id from public.central_reports_index where source_table = 'report_sec014' and source_id in (select id from public.report_sec014 where staff_id = 'T-A1');
+  v_repository_id := pg_temp.repository_id_for('report_sec014', 'T-A1');
   select amended_content into v_snapshot from public.get_report_version_content_secure(v_repository_id, 1) limit 1;
   perform pg_temp.assert(v_snapshot is not null, 'SCENARIO 6: version 1''s amended_content is populated (not null) -- a genuine snapshot, not a placeholder');
   perform pg_temp.assert((v_snapshot -> 'patrols') is not null and jsonb_array_length(v_snapshot -> 'patrols') = 1, 'SCENARIO 6: version 1''s snapshot includes the child patrol row -- complete, not partial');
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 7: aggregate-only role (AirAsia Management) receives global
 -- totals despite never having per-report detail access
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a4'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a4'::uuid);
 
 do $$
 declare
@@ -307,7 +509,7 @@ begin
   select sum(report_count) into v_total from public.get_report_dashboard_aggregate_secure('source_table');
   perform pg_temp.assert(v_total >= 1, 'SCENARIO 7: AirAsia Management receives a non-zero global aggregate total, including reports it has no per-report detail access to');
 
-  select id into v_repository_id from public.central_reports_index where source_table = 'report_sec014' and source_id in (select id from public.report_sec014 where staff_id = 'T-A1');
+  v_repository_id := pg_temp.repository_id_for('report_sec014', 'T-A1');
   begin
     perform * from public.get_report_secure(v_repository_id);
     raise exception 'SCENARIO 7 FAILED: AirAsia Management should NOT have per-report detail access, only aggregate counts';
@@ -317,18 +519,18 @@ begin
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 8: acknowledgement path is unaffected by the SELECT closure
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a3'::uuid); -- acting as a supervisor role for this synthetic check
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a5'::uuid); -- SO, same station/team/ops_group as Alpha -- a genuinely eligible acknowledger per can_acknowledge_report()
 
 do $$
 declare
   v_report_id uuid;
 begin
-  select id into v_report_id from public.report_sec014 where staff_id = 'T-A1' order by created_at desc limit 1;
+  v_report_id := pg_temp.report_id_by_staff('T-A1', 'synthetic patrol remark'); -- the SAME specific report indexed in Scenario 4
   insert into public.report_acknowledgements (report_type, report_id, acknowledged_by)
   values ('sec014', v_report_id, auth.uid())
   on conflict (report_type, report_id) do nothing;
@@ -339,19 +541,19 @@ begin
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 9: premature finalization is rejected
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
   v_report_id uuid;
 begin
   insert into public.report_sec014 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
-  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'premature-finalization fixture', false)
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'premature-finalization fixture', false)
   returning id into v_report_id;
 
   -- No patrol rows inserted yet. Claiming 0 expected when the caller
@@ -369,53 +571,53 @@ begin
   end;
 
   perform pg_temp.assert(
-    not exists (select 1 from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id),
+    not pg_temp.is_queued('report_sec014', v_report_id),
     'SCENARIO 9: the rejected finalization attempt left no queue entry behind'
   );
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 10: a valid zero-child report finalizes successfully
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
   v_report_id uuid;
 begin
   insert into public.report_sec014 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
-  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'zero-child fixture', false)
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'zero-child fixture', false)
   returning id into v_report_id;
 
   -- Zero patrol rows is a legitimate submission (patrols are optional in
   -- the application schema) -- p_expected_child_count = 0 must succeed.
   perform public.mark_report_ready_for_indexing('report_sec014', v_report_id, 0);
   perform pg_temp.assert(
-    exists (select 1 from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id),
+    pg_temp.is_queued('report_sec014', v_report_id),
     'SCENARIO 10: a report with zero (legitimately optional) child rows finalizes successfully when p_expected_child_count = 0'
   );
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 11: child INSERT/UPDATE/DELETE is denied after finalization
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
   v_report_id uuid;
 begin
-  select id into v_report_id from public.report_sec014 where staff_id = 'T-A1' and remark = 'synthetic patrol remark' limit 1; -- Scenario 1's already-finalized report
+  v_report_id := pg_temp.report_id_by_staff('T-A1', 'synthetic patrol remark'); -- Scenario 1's already-finalized report
 
   begin
     insert into public.report_sec014_patrols (report_id, entry_no, location, description)
-    values (v_report_id, 99, 'Gate B9', 'attempted post-finalization insert');
+    values (v_report_id, 99, 'Apron', 'attempted post-finalization insert');
     raise exception 'SCENARIO 11 FAILED: INSERT of a new child row after finalization should have been denied';
   exception when others then
     raise notice 'PASS: SCENARIO 11a: child INSERT is denied on an already-finalized report';
@@ -437,7 +639,7 @@ begin
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 12: concurrent finalization and child write (documented --
@@ -472,7 +674,7 @@ select 1; -- no-op placeholder so this section has a runnable statement
 -- =======================================================================
 -- SCENARIO 13: repeated finalization is idempotent, not merely tolerated
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
@@ -480,32 +682,32 @@ declare
   v_queue_count_before integer;
   v_queue_count_after integer;
 begin
-  select id into v_report_id from public.report_sec014 where staff_id = 'T-A1' and remark = 'synthetic patrol remark' limit 1;
-  select count(*) into v_queue_count_before from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id;
+  v_report_id := pg_temp.report_id_by_staff('T-A1', 'synthetic patrol remark');
+  v_queue_count_before := pg_temp.queue_count('report_sec014', v_report_id);
 
   -- Calling finalization again with the SAME (still-correct) expected
   -- count must succeed without creating a duplicate queue row.
   perform public.mark_report_ready_for_indexing('report_sec014', v_report_id, 1);
 
-  select count(*) into v_queue_count_after from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id;
+  v_queue_count_after := pg_temp.queue_count('report_sec014', v_report_id);
   perform pg_temp.assert(v_queue_count_before = 1 and v_queue_count_after = 1, 'SCENARIO 13: repeated finalization is idempotent -- no duplicate report_index_queue row is ever created');
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 14: failed child insertion does not silently succeed, and a
 -- correct retry recovers cleanly
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
   v_report_id uuid;
 begin
   insert into public.report_sec014 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
-  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'failed-then-retried fixture', false)
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'failed-then-retried fixture', false)
   returning id into v_report_id;
 
   -- Simulate a failed child insert: two rows with the SAME entry_no
@@ -515,7 +717,7 @@ begin
   -- lib/avsec/reports/actions.ts) rather than proceeding to finalize.
   begin
     insert into public.report_sec014_patrols (report_id, entry_no, location, description)
-    values (v_report_id, 1, 'Gate D1', 'first'), (v_report_id, 1, 'Gate D2', 'duplicate entry_no -- simulated failure');
+    values (v_report_id, 1, 'Apron', 'first'), (v_report_id, 1, 'Apron', 'duplicate entry_no -- simulated failure');
     raise exception 'SCENARIO 14 FAILED: the duplicate-entry_no insert should itself have failed (unique violation), simulating a genuine child-insert failure';
   exception when unique_violation then
     raise notice 'PASS: SCENARIO 14a: the simulated child-insert failure actually fails at the database level (unique_violation), matching what a real partial failure looks like';
@@ -523,8 +725,12 @@ begin
 
   -- The report must NOT be finalizable yet -- zero child rows actually
   -- landed (the failed multi-row INSERT inserted nothing, atomically).
+  -- CORRECTION (round 10): a direct count(*) on report_sec014_patrols
+  -- is exactly the direct child-table SELECT round 5 revoked entirely
+  -- -- get_child_row_count_secure() is the real, intended way to check
+  -- this, and using it here doubles as further exercise of that RPC.
   perform pg_temp.assert(
-    (select count(*) from public.report_sec014_patrols where report_id = v_report_id) = 0,
+    public.get_child_row_count_secure('report_sec014', v_report_id) = 0,
     'SCENARIO 14b: the failed insert left zero child rows -- no partial/duplicate child content from the failed attempt'
   );
 
@@ -533,20 +739,20 @@ begin
   -- does not create a duplicate PARENT (still the same v_report_id) and
   -- does not leave the report permanently stranded.
   insert into public.report_sec014_patrols (report_id, entry_no, location, description)
-  values (v_report_id, 1, 'Gate D1', 'retried, correct');
+  values (v_report_id, 1, 'Apron', 'retried, correct');
   perform public.mark_report_ready_for_indexing('report_sec014', v_report_id, 1);
   perform pg_temp.assert(
-    exists (select 1 from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id),
+    pg_temp.is_queued('report_sec014', v_report_id),
     'SCENARIO 14c: after a corrected retry (one child row, matching count), finalization succeeds -- no stranded report'
   );
   perform pg_temp.assert(
-    (select count(*) from public.report_sec014 where profile_id = auth.uid() and remark = 'failed-then-retried fixture') = 1,
+    pg_temp.sec014_count_by_remark(auth.uid(), 'failed-then-retried fixture') = 1,
     'SCENARIO 14d: exactly one parent row exists for this fixture -- the retry did not create a duplicate parent'
   );
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 15 (round 7): caller-supplied zero for a REQUIRED-child type
@@ -558,14 +764,14 @@ perform pg_temp.clear_simulation();
 -- report_sec013 requires >=1 profiling_duties row (sec013.ts:29,
 -- `.min(1, ...)`).
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
   v_report_id uuid;
 begin
   insert into public.report_sec013 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
-  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'sec013 required-zero fixture', false)
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'sec013 required-zero fixture', false)
   returning id into v_report_id;
 
   -- Zero actual child rows exist. The caller claims p_expected_child_count
@@ -584,19 +790,19 @@ begin
   end;
 
   perform pg_temp.assert(
-    not exists (select 1 from public.report_index_queue where source_table = 'report_sec013' and source_id = v_report_id),
+    not pg_temp.is_queued('report_sec013', v_report_id),
     'SCENARIO 15: the rejected finalization attempt left no queue entry behind'
   );
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 16 (round 7): child reassignment to a different parent report
 -- is forbidden outright
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
@@ -605,36 +811,77 @@ declare
   v_child_id uuid;
 begin
   insert into public.report_sec014 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
-  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'reassignment fixture parent 1', false)
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'reassignment fixture parent 1', false)
   returning id into v_report_id_1;
 
   insert into public.report_sec014 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
-  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'reassignment fixture parent 2', false)
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'reassignment fixture parent 2', false)
   returning id into v_report_id_2;
 
-  insert into public.report_sec014_patrols (report_id, entry_no, location, description)
-  values (v_report_id_1, 1, 'Gate E1', 'reassignment target row')
-  returning id into v_child_id;
+  -- CORRECTION (round 10): `INSERT ... RETURNING` on a child table
+  -- requires SELECT privilege on the returned columns in Postgres --
+  -- and SELECT is revoked entirely on every child table (round 5). The
+  -- real application code never does this (lib/avsec/reports/actions.ts's
+  -- child inserts only ever destructure `{ error }`, never `.select()`),
+  -- so this was a harness-only artifact, not a production defect --
+  -- fixed by generating the id explicitly instead of relying on
+  -- RETURNING.
+  v_child_id := gen_random_uuid();
+  insert into public.report_sec014_patrols (id, report_id, entry_no, location, description)
+  values (v_child_id, v_report_id_1, 1, 'Apron', 'reassignment target row');
 
+  -- FINDING (round 10): as originally written, this test expected
+  -- enforce_child_write_before_finalization()'s own "Reassigning..."
+  -- exception specifically. In practice, ANY UPDATE at all on this
+  -- table -- even one that never touches report_id -- is rejected
+  -- earlier than that, with "permission denied for table
+  -- report_sec014", for `authenticated`. This is Postgres's own
+  -- referential-integrity check for the report_id foreign key: it
+  -- requires broader access to the REFERENCED table (report_sec014)
+  -- than the narrow (id, submitted_at, report_no, profile_id) column
+  -- grant round 5 left in place provides, regardless of which columns
+  -- the UPDATE itself touches. This was confirmed empirically (not
+  -- merely asserted) by observing the error change to a completely
+  -- different, expected one -- "Cannot modify entries of a submitted
+  -- report" (avsec/0001's own parent-immutability trigger) -- once
+  -- report_sec014 was granted full SELECT in an isolated debug session.
+  -- Given the ONLY column-content difference a broader grant would
+  -- expose is exactly what round 5 closed, and given the application
+  -- never updates child rows at all (confirmed by source search,
+  -- rounds 7-9), widening this grant to make the trigger's own message
+  -- reachable would reopen exactly the gap round 5 closed, for a
+  -- codepath nothing ever exercises. This is reported as a finding
+  -- (the trigger's specific "Reassigning..." message is unreachable
+  -- through any role this application actually grants -- authenticated
+  -- is blocked earlier by the FK/privilege interaction above, and
+  -- service_role bypasses the trigger's own check entirely) rather than
+  -- worked around by weakening production access control for a test.
+  -- The trigger's own reassignment-forbidding code is still verified
+  -- statically (tests/phase6-secure-report-access.test.mts). What this
+  -- integration test verifies is the OUTCOME that actually matters:
+  -- reassignment is impossible for `authenticated`, for ANY reason.
   begin
     update public.report_sec014_patrols set report_id = v_report_id_2 where id = v_child_id;
     raise exception 'SCENARIO 16 FAILED: reassigning a child row''s report_id to a different parent should have been rejected outright';
   exception when others then
-    if sqlerrm like '%Reassigning a child row to a different report is not supported%' then
-      raise notice 'PASS: SCENARIO 16: enforce_child_write_before_finalization() forbids changing report_sec014_patrols.report_id on UPDATE, for EITHER parent (finalized or not)';
+    if sqlerrm like '%Reassigning a child row to a different report is not supported%' or sqlerrm like '%permission denied%' then
+      raise notice 'PASS: SCENARIO 16: an authenticated caller cannot reassign a child row''s report_id -- rejected either by enforce_child_write_before_finalization() directly, or earlier by the FK/column-privilege interaction documented above; the outcome (reassignment is impossible) holds either way';
     else
-      raise exception 'SCENARIO 16 FAILED: rejected for the wrong reason: %', sqlerrm;
+      raise exception 'SCENARIO 16 FAILED: rejected for an unexpected reason: %', sqlerrm;
     end if;
   end;
 
+  -- Re-verifying the child row's untouched report_id needs the same
+  -- SECURITY DEFINER bypass as every other post-round-5 child-table
+  -- read in this harness.
   perform pg_temp.assert(
-    (select report_id from public.report_sec014_patrols where id = v_child_id) = v_report_id_1,
+    pg_temp.patrol_report_id(v_child_id) = v_report_id_1,
     'SCENARIO 16: the child row still belongs to its original parent -- the rejected UPDATE did not partially apply'
   );
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 17 (round 7): application retry without duplicate parents --
@@ -646,7 +893,7 @@ perform pg_temp.clear_simulation();
 -- calls resumeReportFinalization() makes, in the same order:
 -- get_child_row_count_secure() then mark_report_ready_for_indexing().
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
@@ -657,7 +904,7 @@ declare
   v_queue_count_after integer;
 begin
   insert into public.report_sec014 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, remark, acknowledgement)
-  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'resume-retry fixture', false)
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', 'resume-retry fixture', false)
   returning id into v_report_id;
 
   -- Child rows are written successfully (as they always are before the
@@ -668,9 +915,9 @@ begin
   -- the "child rows complete, finalization pending" state that
   -- resumeReportFinalization() exists to recover.
   insert into public.report_sec014_patrols (report_id, entry_no, location, description)
-  values (v_report_id, 1, 'Gate F1', 'resume-retry child row');
+  values (v_report_id, 1, 'Apron', 'resume-retry child row');
 
-  select count(*) into v_parent_count_before from public.report_sec014 where profile_id = auth.uid() and remark = 'resume-retry fixture';
+  v_parent_count_before := pg_temp.sec014_count_by_remark(auth.uid(), 'resume-retry fixture');
   perform pg_temp.assert(v_parent_count_before = 1, 'SCENARIO 17: exactly one parent row exists before any resume attempt');
 
   -- Step 1 of resumeReportFinalization(): get_child_row_count_secure().
@@ -682,10 +929,10 @@ begin
   -- childCount ?? 0).
   perform public.mark_report_ready_for_indexing('report_sec014', v_report_id, v_child_count);
 
-  select count(*) into v_queue_count_after from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id;
+  v_queue_count_after := pg_temp.queue_count('report_sec014', v_report_id);
   perform pg_temp.assert(v_queue_count_after = 1, 'SCENARIO 17: the resumed finalization call succeeds and enqueues the report exactly once');
 
-  select count(*) into v_parent_count_after from public.report_sec014 where profile_id = auth.uid() and remark = 'resume-retry fixture';
+  v_parent_count_after := pg_temp.sec014_count_by_remark(auth.uid(), 'resume-retry fixture');
   perform pg_temp.assert(v_parent_count_after = 1, 'SCENARIO 17: still exactly one parent row after the resume -- retrying finalization never created a duplicate parent');
 
   -- A second resume attempt (e.g. the user double-clicking "retry")
@@ -693,18 +940,18 @@ begin
   -- is idempotent (ON CONFLICT DO NOTHING), independently confirmed in
   -- SCENARIO 13.
   perform public.mark_report_ready_for_indexing('report_sec014', v_report_id, v_child_count);
-  select count(*) into v_queue_count_after from public.report_index_queue where source_table = 'report_sec014' and source_id = v_report_id;
+  v_queue_count_after := pg_temp.queue_count('report_sec014', v_report_id);
   perform pg_temp.assert(v_queue_count_after = 1, 'SCENARIO 17: a second resume attempt on an already-finalized report remains idempotent -- still exactly one queue entry');
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 18 (round 8): incomplete SEC029 (missing checklist item(s))
 -- is rejected -- not merely "not enough rows," but "not the RIGHT rows"
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
@@ -717,7 +964,7 @@ begin
     aircraft_registration, std, parking_bay, time_commence, time_completed, pic_informed,
     declaration, acknowledgement
   ) values (
-    auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test SO', 'SO-1', 'Test ASO Alpha', 'T-A1',
+    auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test SO', 'SO-1', 'Test ASO Alpha', 'T-A1',
     'Assist Name', 'T-A9', 'A320', 'AK100', '9M-ABC', '10:00', 'C1', '09:00', '09:45', 'YES',
     'I CERTIFY THAT THE ABOVE CHECKS HAVE BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.', false
   ) returning id into v_report_id;
@@ -746,12 +993,12 @@ begin
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 19 (round 8): duplicate or invalid SEC029 item codes rejected
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
@@ -763,7 +1010,7 @@ begin
     aircraft_registration, std, parking_bay, time_commence, time_completed, pic_informed,
     declaration, acknowledgement
   ) values (
-    auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test SO', 'SO-1', 'Test ASO Alpha', 'T-A1',
+    auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test SO', 'SO-1', 'Test ASO Alpha', 'T-A1',
     'Assist Name', 'T-A9', 'A320', 'AK101', '9M-ABD', '11:00', 'C2', '10:00', '10:45', 'YES',
     'I CERTIFY THAT THE ABOVE CHECKS HAVE BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.', false
   ) returning id into v_report_id;
@@ -795,13 +1042,13 @@ begin
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 20 (round 8): a valid, complete SEC029 report (all current
 -- checklist items, no duplicates, no invalid codes) finalizes successfully
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
@@ -814,7 +1061,7 @@ begin
     aircraft_registration, std, parking_bay, time_commence, time_completed, pic_informed,
     declaration, acknowledgement
   ) values (
-    auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test SO', 'SO-1', 'Test ASO Alpha', 'T-A1',
+    auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test SO', 'SO-1', 'Test ASO Alpha', 'T-A1',
     'Assist Name', 'T-A9', 'A320', 'AK102', '9M-ABE', '12:00', 'C3', '11:00', '11:45', 'YES',
     'I CERTIFY THAT THE ABOVE CHECKS HAVE BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.', true
   ) returning id into v_report_id;
@@ -827,20 +1074,34 @@ begin
   select count(*) into v_total_items from public.sec029_checklist_items where version = public.current_sec029_checklist_version();
   perform public.mark_report_ready_for_indexing('report_sec029', v_report_id, v_total_items);
   perform pg_temp.assert(
-    exists (select 1 from public.report_index_queue where source_table = 'report_sec029' and source_id = v_report_id),
+    pg_temp.is_queued('report_sec029', v_report_id),
     'SCENARIO 20: a complete SEC029 report (exactly the current checklist''s item set) finalizes successfully'
   );
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
--- SCENARIO 21 (round 8): SEC018's existing maximum of 6 patrol entries is
--- now enforced at the database boundary -- 7 rejected, 6 accepted, 0
--- (legitimately optional) still accepted
+-- SCENARIO 21 (round 8, corrected round 10): SEC018's maximum of 6
+-- patrol entries -- 7 rejected, 6 accepted, 0 (legitimately optional)
+-- still accepted
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+-- FINDING (round 10): report_sec018_patrols.entry_no already carries a
+-- structural `check (entry_no between 1 and 6)` constraint
+-- (avsec/0001_init_schema.sql) -- confirmed by actually attempting a 7th
+-- insert, which fails at the CHECK constraint itself, before ever
+-- reaching mark_report_ready_for_indexing()'s round-8 v_required_maximum
+-- guard. That guard is therefore genuinely UNREACHABLE in practice: a
+-- 7th valid row can never exist for this table to begin with (the
+-- domain of entry_no is 1-6, and (report_id, entry_no) is already
+-- unique, so 6 is a hard structural ceiling on row count regardless of
+-- the application-level guard). This is not a regression -- the maximum
+-- is still enforced, just at a different, earlier layer than round 8
+-- believed -- but the round-8 guard's own claim ("has too much child
+-- content") can never actually fire for this specific table. Scenario
+-- 21a below is corrected to test the ACTUAL enforcement point.
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
@@ -849,27 +1110,24 @@ declare
   i integer;
 begin
   insert into public.report_sec018 (profile_id, status, station, team, staff_name, date_time, acknowledgement)
-  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', now(), false)
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', now(), false)
   returning id into v_report_id_over;
 
-  for i in 1..7 loop
+  for i in 1..6 loop
     insert into public.report_sec018_patrols (report_id, entry_no, description)
     values (v_report_id_over, i, 'patrol ' || i);
   end loop;
 
   begin
-    perform public.mark_report_ready_for_indexing('report_sec018', v_report_id_over, 7);
-    raise exception 'SCENARIO 21 FAILED: finalizing report_sec018 with 7 patrol entries should have been rejected -- the form''s own max(6) rule';
-  exception when others then
-    if sqlerrm like '%has too much child content%' then
-      raise notice 'PASS: SCENARIO 21a: report_sec018 finalization is rejected at 7 patrol entries -- the existing max(6) form rule is now also enforced at the database boundary';
-    else
-      raise exception 'SCENARIO 21 FAILED: rejected for the wrong reason: %', sqlerrm;
-    end if;
+    insert into public.report_sec018_patrols (report_id, entry_no, description)
+    values (v_report_id_over, 7, 'patrol 7');
+    raise exception 'SCENARIO 21 FAILED: a 7th report_sec018_patrols row (entry_no=7) should have been rejected outright';
+  exception when check_violation then
+    raise notice 'PASS: SCENARIO 21a: report_sec018_patrols'' own structural check(entry_no between 1 and 6) constraint rejects a 7th row outright -- the real enforcement point for this table''s maximum, independent of mark_report_ready_for_indexing()''s own (here unreachable) guard';
   end;
 
   insert into public.report_sec018 (profile_id, status, station, team, staff_name, date_time, acknowledgement)
-  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', now(), false)
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', now(), false)
   returning id into v_report_id_ok;
 
   for i in 1..6 loop
@@ -879,13 +1137,13 @@ begin
 
   perform public.mark_report_ready_for_indexing('report_sec018', v_report_id_ok, 6);
   perform pg_temp.assert(
-    exists (select 1 from public.report_index_queue where source_table = 'report_sec018' and source_id = v_report_id_ok),
+    pg_temp.is_queued('report_sec018', v_report_id_ok),
     'SCENARIO 21b: exactly 6 patrol entries (the allowed maximum) finalizes successfully'
   );
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 22 (round 8, updated round 9): child-insert failure followed
@@ -894,14 +1152,14 @@ perform pg_temp.clear_simulation();
 -- confirmed 0, then child rows inserted for the first time against the
 -- SAME parent id, all inside one function call/transaction)
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
   v_report_id uuid;
 begin
   insert into public.report_sec033 (profile_id, status, station, team, staff_name, staff_id, report_date, report_time)
-  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', current_date, '09:00')
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', 'T-A1', current_date, '09:00')
   returning id into v_report_id;
 
   -- Simulate the original submit action's failed child insert: two rows
@@ -925,21 +1183,21 @@ begin
     '[{"parking_bay_no": "C1", "aircraft_registration_no": "9M-XXA", "remarks": null}]'::jsonb
   );
   perform pg_temp.assert(
-    exists (select 1 from public.report_index_queue where source_table = 'report_sec033' and source_id = v_report_id),
+    pg_temp.is_queued('report_sec033', v_report_id),
     'SCENARIO 22b: after the single atomic resume call, finalization succeeds -- the report is no longer stranded'
   );
   perform pg_temp.assert(
-    (select count(*) from public.report_sec033_hold_checks where report_id = v_report_id) = 1,
+    public.get_child_row_count_secure('report_sec033', v_report_id) = 1,
     'SCENARIO 22c: exactly one child row exists -- the corrected data from the resume payload, not the failed duplicate attempt'
   );
   perform pg_temp.assert(
-    (select count(*) from public.report_sec033 where profile_id = auth.uid() and staff_id = 'T-A1' and report_time = '09:00') = 1,
+    pg_temp.sec033_count_by_staff_and_time(auth.uid(), 'T-A1', '09:00') = 1,
     'SCENARIO 22d: exactly one parent row exists -- the recovery never created a duplicate parent'
   );
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 23 (round 8, updated round 9): finalization failure followed
@@ -947,7 +1205,7 @@ perform pg_temp.clear_simulation();
 -- locked count is already > 0, so the RPC's own conditional-insert
 -- branch is skipped entirely and only finalization proceeds)
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
@@ -955,7 +1213,7 @@ declare
   v_child_count integer;
 begin
   insert into public.offload_records (profile_id, status, station, team, staff_name, staff_id, flight_no, destination, aircraft_registration, flight_date, total_bags)
-  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', 'AK200', 'SIN', '9M-XYZ', current_date, 1)
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', 'T-A1', 'AK200', 'SIN', '9M-XYZ', current_date, 1)
   returning id into v_report_id;
 
   -- Child rows are written successfully -- the app's own finalization
@@ -965,7 +1223,7 @@ begin
   insert into public.offload_items (report_id, entry_no, baggage_tag_no)
   values (v_report_id, 1, 'BAG-001');
 
-  select count(*) into v_child_count from public.offload_items where report_id = v_report_id;
+  v_child_count := public.get_child_row_count_secure('offload_records', v_report_id);
   perform pg_temp.assert(v_child_count = 1, 'SCENARIO 23a: exactly one child row exists before recovery');
 
   -- resumeReportSubmission()'s actual (round 9) call -- the child-rows
@@ -977,27 +1235,27 @@ begin
     '[{"baggage_tag_no": "IGNORED-IF-ALREADY-PRESENT", "reason": null, "weight_kg": null}]'::jsonb
   );
   perform pg_temp.assert(
-    exists (select 1 from public.report_index_queue where source_table = 'offload_records' and source_id = v_report_id),
+    pg_temp.is_queued('offload_records', v_report_id),
     'SCENARIO 23b: the resumed finalization succeeds without ever re-inserting a child row'
   );
 
-  select count(*) into v_child_count from public.offload_items where report_id = v_report_id;
+  v_child_count := public.get_child_row_count_secure('offload_records', v_report_id);
   perform pg_temp.assert(v_child_count = 1, 'SCENARIO 23c: still exactly one child row after recovery -- case (b) never duplicates children, even when the resume payload carries different content');
   perform pg_temp.assert(
-    (select baggage_tag_no from public.offload_items where report_id = v_report_id) = 'BAG-001',
+    pg_temp.offload_first_tag(v_report_id) = 'BAG-001',
     'SCENARIO 23d: the ORIGINAL child row content is preserved -- the resume payload''s different tag number was correctly ignored, not used to overwrite'
   );
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 24 (round 8, updated round 9): repeated retries never create
 -- duplicates -- calling the atomic resume RPC 3 times in a row stays at
 -- exactly 1 parent, 1 child set, 1 queue entry
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
 
 do $$
 declare
@@ -1007,7 +1265,7 @@ declare
   v_i integer;
 begin
   insert into public.report_sec013 (profile_id, status, station, team, staff_name, staff_id, date_time_in, date_time_out, acknowledgement)
-  values (auth.uid(), 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', false)
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', 'T-A1', now(), now() + interval '1 hour', false)
   returning id into v_report_id;
 
   for v_i in 1..3 loop
@@ -1017,14 +1275,14 @@ begin
     );
   end loop;
 
-  select count(*) into v_queue_count from public.report_index_queue where source_table = 'report_sec013' and source_id = v_report_id;
+  v_queue_count := pg_temp.queue_count('report_sec013', v_report_id);
   perform pg_temp.assert(v_queue_count = 1, 'SCENARIO 24a: 3 repeated resume attempts leave exactly 1 report_index_queue row');
-  select count(*) into v_child_count from public.report_sec013_profiling_duties where report_id = v_report_id;
+  v_child_count := public.get_child_row_count_secure('report_sec013', v_report_id);
   perform pg_temp.assert(v_child_count = 1, 'SCENARIO 24b: 3 repeated resume attempts leave exactly 1 child row -- the first call inserts, the second and third are no-ops (already finalized)');
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
 
 -- =======================================================================
 -- SCENARIO 25 (round 8, updated round 9): an unauthorized retry attempt
@@ -1034,13 +1292,13 @@ perform pg_temp.clear_simulation();
 -- "help" or interfere with its recovery, and cannot use the payload
 -- argument to smuggle in content for a report Bravo does not own
 -- =======================================================================
-perform pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a2'::uuid); -- Bravo
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a2'::uuid); -- Bravo
 
 do $$
 declare
   v_report_id uuid;
 begin
-  select id into v_report_id from public.report_sec014 where staff_id = 'T-A1' order by created_at desc limit 1;
+  v_report_id := pg_temp.report_id_by_staff('T-A1', 'synthetic patrol remark'); -- the SAME specific report indexed in Scenario 4
   perform pg_temp.assert(v_report_id is not null, 'SCENARIO 25 setup: a report owned by Alpha exists to attempt an unauthorized retry against');
 
   begin
@@ -1069,13 +1327,183 @@ begin
   end;
 
   perform pg_temp.assert(
-    not exists (select 1 from public.report_sec014_patrols where description = 'should never be inserted'),
+    not pg_temp.patrol_exists_with_description('should never be inserted'),
     'SCENARIO 25c: Bravo''s payload was never inserted -- ownership is checked before the payload is ever touched'
   );
 end;
 $$;
 
-perform pg_temp.clear_simulation();
+select pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 27 (round 10): the REAL queue-processing path --
+-- process_report_index_queue() itself, not the direct index_report()
+-- shortcut scenarios 4-6 use for speed. Alpha (a1) has no Phase 3 role
+-- assignment in this harness's fixtures (only a3/a4 do, and Phase 2's
+-- own classification trigger requires a full aoc/department/hub/
+-- station/team-scoped assignment on the submitter before a report can
+-- be classified -- exactly why scenarios 4-6 use the direct-call
+-- shortcut instead of wiring up that additional Phase 2/3 machinery).
+-- This scenario therefore exercises process_report_index_queue()'s
+-- OTHER real, documented branch: a genuinely queued, unclassified
+-- report is correctly left as 'failed' (retryable) with a specific,
+-- accurate reason, never silently dropped or wrongly marked
+-- 'completed'.
+-- =======================================================================
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+begin
+  insert into public.report_sec033 (profile_id, status, station, team, staff_name, staff_id, report_date, report_time)
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', 'T-A1', current_date, '10:00')
+  returning id into v_report_id;
+
+  insert into public.report_sec033_hold_checks (report_id, entry_no, parking_bay_no, aircraft_registration_no)
+  values (v_report_id, 1, 'C9', '9M-QUE');
+
+  perform public.mark_report_ready_for_indexing('report_sec033', v_report_id, 1);
+end;
+$$;
+
+select pg_temp.clear_simulation();
+
+-- process_report_index_queue() itself requires service_role.
+select pg_temp.simulate_service_role();
+do $$
+declare
+  v_report_id uuid;
+  v_result record;
+  v_queue_status text;
+  v_last_error text;
+begin
+  v_report_id := pg_temp.sec033_id_by_staff_and_time('T-A1', '10:00');
+  select * into v_result from public.process_report_index_queue(50);
+  perform pg_temp.assert(v_result.processed >= 1, 'SCENARIO 27a: process_report_index_queue() actually processed at least one row (the one queued above), not a no-op');
+
+  select status, last_error into v_queue_status, v_last_error
+  from public.report_index_queue where source_table = 'report_sec033' and source_id = v_report_id;
+  perform pg_temp.assert(
+    v_queue_status = 'failed' and v_last_error like '%not yet classified%',
+    format('SCENARIO 27b: the real queue processor correctly leaves an unclassified report as retryable-failed with an accurate reason, never silently drops it or marks it completed -- got status=%s, error=%s', v_queue_status, v_last_error)
+  );
+end;
+$$;
+select pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 28 (round 10): attachment and export authorization
+-- =======================================================================
+-- Reuses Alpha's report_sec014 from Scenario 1, indexed directly via
+-- index_report() in Scenario 4 -- unlike Scenario 27's report_sec033
+-- (deliberately left unclassified/unindexed to exercise the OTHER real
+-- branch of process_report_index_queue()), this report genuinely exists
+-- in central_reports_index, which export_reports_secure() reads from.
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a2'::uuid); -- Bravo
+
+do $$
+declare
+  v_report_id uuid;
+  v_attachments record;
+  v_found boolean := false;
+begin
+  v_report_id := pg_temp.report_id_by_staff('T-A1', 'synthetic patrol remark'); -- the SAME specific report indexed in Scenario 4
+
+  -- Bravo has no relationship to this report -- list_report_attachments_secure()
+  -- must return ZERO rows (generic denial, not an error, per its own
+  -- "return; -- zero rows, no error -- generic, non-enumerable" design)
+  -- rather than revealing whether the report exists at all.
+  for v_attachments in select * from public.list_report_attachments_secure('report_sec014', v_report_id) loop
+    v_found := true;
+  end loop;
+  perform pg_temp.assert(not v_found, 'SCENARIO 28a: list_report_attachments_secure() returns zero rows for an unrelated report (Bravo), not an error -- authorization failure is silent/generic, not enumerable');
+
+  -- export_reports_secure() must likewise never include this report for
+  -- Bravo (no role grants Bravo access to it).
+  perform pg_temp.assert(
+    not exists (select 1 from public.export_reports_secure(1000) where id = pg_temp.repository_id_for('report_sec014', 'T-A1')),
+    'SCENARIO 28b: export_reports_secure() does not include a report Bravo has no access to'
+  );
+end;
+$$;
+
+select pg_temp.clear_simulation();
+
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid); -- Alpha, the actual owner
+
+do $$
+declare
+  v_report_id uuid;
+begin
+  v_report_id := pg_temp.report_id_by_staff('T-A1', 'synthetic patrol remark'); -- the SAME specific report indexed in Scenario 4
+  perform pg_temp.assert(
+    exists (select 1 from public.export_reports_secure(1000) where id = pg_temp.repository_id_for('report_sec014', 'T-A1')),
+    'SCENARIO 28c: export_reports_secure() DOES include the report for its own submitter (Alpha)'
+  );
+  perform pg_temp.assert(
+    (select count(*) from public.list_report_attachments_secure('report_sec033', v_report_id)) = 0,
+    'SCENARIO 28d: list_report_attachments_secure() returns zero rows (not an error) for a report with no attachments -- the authorized-empty case is distinct from the denied case above'
+  );
+end;
+$$;
+
+select pg_temp.clear_simulation();
+
+-- =======================================================================
+-- SCENARIO 29 (round 10): resume_report_submission_secure() verified
+-- directly as an authenticated caller, bypassing TypeScript entirely --
+-- malformed payload rejected, and finalized content remains unchanged
+-- =======================================================================
+select pg_temp.simulate_user('00000000-0000-0000-0000-0000000000a1'::uuid);
+
+do $$
+declare
+  v_report_id uuid;
+begin
+  insert into public.report_sec033 (profile_id, status, station, team, staff_name, staff_id, report_date, report_time)
+  values (auth.uid(), 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', 'T-A1', current_date, '11:00')
+  returning id into v_report_id;
+
+  -- Malformed payload: missing the NOT NULL parking_bay_no/aircraft_registration_no
+  -- fields entirely -- jsonb_to_recordset() leaves them null, which the
+  -- underlying table's own NOT NULL constraints then reject. This is the
+  -- RPC being called directly, bypassing every TypeScript-side zod
+  -- validation entirely -- application validation alone cannot protect
+  -- this RPC; the database's own constraints are what actually enforce
+  -- required-field correctness here.
+  begin
+    perform public.resume_report_submission_secure('report_sec033', v_report_id, '[{}]'::jsonb);
+    raise exception 'SCENARIO 29 FAILED: an empty/malformed child payload should have been rejected by the underlying NOT NULL constraints';
+  exception when not_null_violation then
+    raise notice 'PASS: SCENARIO 29a: resume_report_submission_secure() rejects a malformed child payload (missing required fields) via the underlying table''s own NOT NULL constraints -- called directly, with no TypeScript/zod layer involved at all';
+  end;
+
+  perform pg_temp.assert(
+    public.get_child_row_count_secure('report_sec033', v_report_id) = 0,
+    'SCENARIO 29b: the malformed-payload attempt left zero child rows -- the failed INSERT did not partially apply'
+  );
+
+  -- Now finalize it properly, then attempt a resume with a DIFFERENT,
+  -- well-formed payload -- finalized content must remain unchanged.
+  perform public.resume_report_submission_secure(
+    'report_sec033', v_report_id,
+    '[{"parking_bay_no": "C1", "aircraft_registration_no": "9M-ORIG", "remarks": null}]'::jsonb
+  );
+  perform pg_temp.assert(pg_temp.is_queued('report_sec033', v_report_id), 'SCENARIO 29c: the well-formed retry finalizes successfully');
+
+  perform public.resume_report_submission_secure(
+    'report_sec033', v_report_id,
+    '[{"parking_bay_no": "C9", "aircraft_registration_no": "9M-DIFFERENT", "remarks": "should never be applied"}]'::jsonb
+  );
+  perform pg_temp.assert(
+    public.get_child_row_count_secure('report_sec033', v_report_id) = 1,
+    'SCENARIO 29d: a resume attempt against an ALREADY-finalized report is a pure no-op -- still exactly one child row, the payload was never touched'
+  );
+end;
+$$;
+
+select pg_temp.clear_simulation();
 
 rollback; -- discard every synthetic fixture and result; this harness never commits.
 
@@ -1103,10 +1531,10 @@ rollback; -- discard every synthetic fixture and result; this harness never comm
 -- ---- SETUP (run once, either session) ----
 -- begin;
 -- insert into public.profiles (id, name, staff_no, role, station, team, ops_group, status)
--- values ('00000000-0000-0000-0000-0000000000a1', 'Test ASO Alpha', 'T-A1', 'ASO', 'KUL', 'Alpha', 'operation_avsec', 'approved')
+-- values ('00000000-0000-0000-0000-0000000000a1', 'Test ASO Alpha', 'T-A1', 'ASO', 'KUL - MAA', 'Alpha', 'operation_avsec', 'approved')
 -- on conflict (id) do nothing;
 -- insert into public.report_sec033 (id, profile_id, status, station, team, staff_name, staff_id, report_date, report_time)
--- values ('00000000-0000-0000-0000-00000000c026', '00000000-0000-0000-0000-0000000000a1', 'submitted', 'KUL', 'Alpha', 'Test ASO Alpha', 'T-A1', current_date, '09:00')
+-- values ('00000000-0000-0000-0000-00000000c026', '00000000-0000-0000-0000-0000000000a1', 'submitted', 'KUL - MAA', 'Alpha', 'Test ASO Alpha', 'T-A1', current_date, '09:00')
 -- on conflict (id) do nothing;
 -- commit;
 -- -- Leave report_sec033_hold_checks EMPTY for this report -- this is
@@ -1178,30 +1606,42 @@ rollback; -- discard every synthetic fixture and result; this harness never comm
 -- delete from public.report_sec033_hold_checks where report_id = '00000000-0000-0000-0000-00000000c026';
 -- delete from public.report_sec033 where id = '00000000-0000-0000-0000-00000000c026';
 
--- If every NOTICE above printed PASS and this script reached this
--- comment without a raised exception, every listed scenario passed
--- against this disposable database.
+-- EXECUTED (round 10, database-integration validation): scenarios
+-- 1-11, 13-25, 27-29 -- every scenario in the single begin/rollback
+-- block above -- were actually run to completion, with every assertion
+-- passing, against a real, disposable, synthetic-data Postgres instance
+-- (PGlite, a genuine embedded Postgres engine, not a reimplementation;
+-- see the round-10 validation report for the full migration-apply chain
+-- and every finding/fix this uncovered). This was NOT a re-run of static
+-- source-text pattern matching -- it is actual SQL execution against a
+-- schema built by applying the real migration files in dependency
+-- order.
 --
--- Scenarios 1-11, 13-25 are ordinary, executable-in-sequence assertions
--- within the single begin/rollback block above. Scenario 26 is a
--- SEPARATE, standalone two-session test (see above) and is never run as
--- part of that block. Scenario 12 is the other exception: genuine cross-transaction
--- concurrency cannot be exercised within one linear script/connection,
--- so it is documented (with exact manual two-session steps) rather than
--- executed -- keep this distinction explicit in any report describing
--- what this harness covers. As with every prior round, this entire file
--- remains PREPARED BUT NOT EXECUTED: no local/disposable Postgres,
--- Docker, or Supabase CLI has been available in this development
--- environment at any point in Phase 6.
+-- Scenario 26 remains a SEPARATE, standalone two-session test (see
+-- above) and was NOT executed -- it genuinely needs two independent
+-- database connections racing against each other, which PGlite (a
+-- single-connection, single-process embedded engine) structurally
+-- cannot provide, and no separate multi-connection Postgres (a real
+-- server, Docker, or the Supabase CLI) was available in this
+-- environment either. Scenario 12 remains documented-but-unexecuted for
+-- the identical reason -- keep this distinction explicit in any report
+-- describing what this harness covers: scenarios 1-11/13-25/27-29
+-- EXECUTED and PASSED; scenarios 12 and 26 remain PREPARED ONLY,
+-- requiring genuine cross-connection concurrency this environment
+-- cannot provide.
 --
 -- Round 8 added scenarios 18-25: SEC029 incomplete-checklist rejection
 -- (18), SEC029 duplicate/invalid item rejection (19), SEC029 valid
 -- complete acceptance (20), SEC018 maximum-6 enforcement (21),
 -- child-insert-failure recovery (22), finalization-failure recovery
 -- (23), repeated-retry non-duplication (24), and unauthorized-retry
--- denial (25). Scenarios 22-25 are SQL-level simulations of
--- resumeReportSubmission()'s exact RPC call sequence (the same
--- get_child_row_count_secure() then mark_report_ready_for_indexing()
--- calls the TypeScript action makes) -- this harness cannot invoke the
--- TypeScript server action itself, so it exercises the identical
--- database-level calls that action performs.
+-- denial (25). Round 10 added scenarios 27-29: the real
+-- process_report_index_queue() path (27), attachment/export
+-- authorization (28), and resume_report_submission_secure() verified
+-- directly as an authenticated caller -- malformed payload rejection
+-- and finalized-content-unchanged (29). Scenarios 22-25 and 29 call the
+-- SAME atomic resume_report_submission_secure() RPC
+-- lib/avsec/reports/actions.ts's resumeReportSubmission() calls -- this
+-- harness cannot invoke the TypeScript server action itself, so it
+-- exercises the identical database-level RPC that action performs,
+-- directly, bypassing TypeScript/zod entirely.

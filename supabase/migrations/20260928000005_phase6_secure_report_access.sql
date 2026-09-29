@@ -293,7 +293,7 @@ begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
   end if;
-  if not exists (select 1 from public.profiles where id = auth.uid() and status = 'approved') then
+  if not exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.status = 'approved') then
     raise exception 'Only an approved account may list flagged reports.';
   end if;
 
@@ -364,7 +364,7 @@ begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
   end if;
-  if not exists (select 1 from public.profiles where id = auth.uid() and status = 'approved') then
+  if not exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.status = 'approved') then
     raise exception 'Only an approved account may access report attachments.';
   end if;
 
@@ -610,7 +610,13 @@ begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
   end if;
-  select status into v_caller_status from public.profiles where id = auth.uid();
+  -- CORRECTION (round 10): qualified -- this function's own RETURNS
+  -- TABLE includes a status column, which PL/pgSQL exposes as an
+  -- implicit identifier inside the body; an unqualified status
+  -- reference here is genuinely ambiguous against it and Postgres
+  -- rejects it at runtime (only caught by actually executing this
+  -- against a real Postgres instance).
+  select profiles.status into v_caller_status from public.profiles where profiles.id = auth.uid();
   if v_caller_status is distinct from 'approved' then
     raise exception 'Only an approved account may access report content.';
   end if;
@@ -664,7 +670,13 @@ begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
   end if;
-  select status into v_caller_status from public.profiles where id = auth.uid();
+  -- CORRECTION (round 10): qualified -- this function's own RETURNS
+  -- TABLE includes a status column, which PL/pgSQL exposes as an
+  -- implicit identifier inside the body; an unqualified status
+  -- reference here is genuinely ambiguous against it and Postgres
+  -- rejects it at runtime (only caught by actually executing this
+  -- against a real Postgres instance).
+  select profiles.status into v_caller_status from public.profiles where profiles.id = auth.uid();
   if v_caller_status is distinct from 'approved' then
     raise exception 'Only an approved account may access report content.';
   end if;
@@ -769,7 +781,7 @@ begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
   end if;
-  if not exists (select 1 from public.profiles where id = auth.uid() and status = 'approved') then
+  if not exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.status = 'approved') then
     raise exception 'Only an approved account may view dashboard aggregates.';
   end if;
   if p_group_by not in ('source_table', 'flag_state', 'status', 'severity', 'operating_entity_code') then
@@ -873,7 +885,7 @@ begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
   end if;
-  if not exists (select 1 from public.profiles where id = auth.uid() and status = 'approved') then
+  if not exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.status = 'approved') then
     raise exception 'Only an approved account may export reports.';
   end if;
 
@@ -943,7 +955,13 @@ begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
   end if;
-  select status into v_caller_status from public.profiles where id = auth.uid();
+  -- CORRECTION (round 10): qualified -- this function's own RETURNS
+  -- TABLE includes a status column, which PL/pgSQL exposes as an
+  -- implicit identifier inside the body; an unqualified status
+  -- reference here is genuinely ambiguous against it and Postgres
+  -- rejects it at runtime (only caught by actually executing this
+  -- against a real Postgres instance).
+  select profiles.status into v_caller_status from public.profiles where profiles.id = auth.uid();
   if v_caller_status is distinct from 'approved' then
     raise exception 'Only an approved account may generate report PDFs.';
   end if;
@@ -1373,6 +1391,21 @@ grant execute on function public.index_report(text, uuid, text, uuid, uuid, uuid
 -- has_report_access() check and the audit write. There is no longer any
 -- reason for application code to touch the source table directly for a
 -- detail read at all.
+--
+-- CORRECTION (review round 10, database-integration validation):
+-- adding `content jsonb` to the RETURNS TABLE shape is a return-type
+-- change from Phase 5's original get_report_secure(uuid, integer)
+-- (central_reports_index metadata columns only, no `content` column).
+-- `CREATE OR REPLACE FUNCTION` cannot change a function's return type --
+-- this was never caught by any prior static test (which only pattern-
+-- matches source text, never executes SQL) and was only surfaced by
+-- actually applying this migration against a real Postgres instance
+-- seeded with Phase 5 already applied: the CREATE OR REPLACE below
+-- fails outright with "cannot change return type of existing function",
+-- meaning this function has never actually been deployable as written.
+-- Fixed with an explicit DROP FUNCTION first, exactly the same pattern
+-- Postgres requires for any legitimate return-shape change.
+drop function if exists public.get_report_secure(uuid, integer);
 create or replace function public.get_report_secure(
   p_repository_report_id uuid,
   p_version_number integer default null
@@ -1409,7 +1442,13 @@ begin
     raise exception 'Must be signed in.';
   end if;
 
-  select status into v_caller_status from public.profiles where id = auth.uid();
+  -- CORRECTION (round 10): qualified -- this function's own RETURNS
+  -- TABLE includes a status column, which PL/pgSQL exposes as an
+  -- implicit identifier inside the body; an unqualified status
+  -- reference here is genuinely ambiguous against it and Postgres
+  -- rejects it at runtime (only caught by actually executing this
+  -- against a real Postgres instance).
+  select profiles.status into v_caller_status from public.profiles where profiles.id = auth.uid();
   if v_caller_status is distinct from 'approved' then
     raise exception 'Only an approved account may access report content.';
   end if;
@@ -1581,7 +1620,7 @@ begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
   end if;
-  if not exists (select 1 from public.profiles where id = auth.uid() and status = 'approved') then
+  if not exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.status = 'approved') then
     raise exception 'Only an approved account may list reports.';
   end if;
   if p_source_table is not null and p_source_table not in (
@@ -1673,7 +1712,7 @@ begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
   end if;
-  if not exists (select 1 from public.profiles where id = auth.uid() and status = 'approved') then
+  if not exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.status = 'approved') then
     raise exception 'Only an approved account may search reports.';
   end if;
 
@@ -1805,7 +1844,7 @@ begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
   end if;
-  if not exists (select 1 from public.profiles where id = auth.uid() and status = 'approved') then
+  if not exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.status = 'approved') then
     raise exception 'Only an approved account may search reports.';
   end if;
   if v_cleaned = '' then
@@ -2680,21 +2719,31 @@ begin
   -- inserted sees v_actual_children > 0 here and skips straight to
   -- finalization -- it never attempts a second, conflicting insert.
   if v_actual_children = 0 and jsonb_array_length(p_child_rows) > 0 then
+    -- CORRECTION (round 10, database-integration validation): Postgres
+    -- rejects `jsonb_to_recordset(...) with ordinality as x(coldeflist)`
+    -- outright -- "WITH ORDINALITY cannot be used with a column
+    -- definition list" -- a genuine syntax error that made this entire
+    -- function uncreatable, only caught by actually attempting to run
+    -- this migration against a real Postgres instance (every prior
+    -- static test only pattern-matches source text and cannot catch an
+    -- invalid CREATE FUNCTION body). Fixed using the `rows from (...)
+    -- with ordinality` form, which Postgres does support for a coldef-
+    -- listed set-returning function plus ordinality together.
     if p_source_table = 'report_sec013' then
       insert into public.report_sec013_profiling_duties (report_id, entry_no, duty_area, time_from, time_to, location, sector_flight, description, incident_remark)
       select p_source_id, x.ord, x.duty_area, x.time_from, x.time_to, x.location, x.sector_flight, x.description, x.incident_remark
-      from jsonb_to_recordset(p_child_rows) with ordinality
-        as x(duty_area text, time_from text, time_to text, location text, sector_flight text, description text, incident_remark text, ord int);
+      from rows from (jsonb_to_recordset(p_child_rows) as (duty_area text, time_from text, time_to text, location text, sector_flight text, description text, incident_remark text))
+        with ordinality as x(duty_area, time_from, time_to, location, sector_flight, description, incident_remark, ord);
     elsif p_source_table = 'report_sec014' then
       insert into public.report_sec014_patrols (report_id, entry_no, location, time_from, time_to, description)
       select p_source_id, x.ord, x.location, x.time_from, x.time_to, x.description
-      from jsonb_to_recordset(p_child_rows) with ordinality
-        as x(location text, time_from text, time_to text, description text, ord int);
+      from rows from (jsonb_to_recordset(p_child_rows) as (location text, time_from text, time_to text, description text))
+        with ordinality as x(location, time_from, time_to, description, ord);
     elsif p_source_table = 'report_sec018' then
       insert into public.report_sec018_patrols (report_id, entry_no, time_from, time_to, parking_bay, aircraft_type, reg_no, description)
       select p_source_id, x.ord, x.time_from, x.time_to, x.parking_bay, x.aircraft_type, x.reg_no, x.description
-      from jsonb_to_recordset(p_child_rows) with ordinality
-        as x(time_from text, time_to text, parking_bay text, aircraft_type text, reg_no text, description text, ord int);
+      from rows from (jsonb_to_recordset(p_child_rows) as (time_from text, time_to text, parking_bay text, aircraft_type text, reg_no text, description text))
+        with ordinality as x(time_from, time_to, parking_bay, aircraft_type, reg_no, description, ord);
     elsif p_source_table = 'report_sec029' then
       insert into public.report_sec029_items (report_id, item_code, checked, remark_type, remark_text)
       select p_source_id, x.item_code, x.checked, x.remark_type, x.remark_text
@@ -2703,13 +2752,13 @@ begin
     elsif p_source_table = 'report_sec033' then
       insert into public.report_sec033_hold_checks (report_id, entry_no, parking_bay_no, aircraft_registration_no, remarks)
       select p_source_id, x.ord, x.parking_bay_no, x.aircraft_registration_no, x.remarks
-      from jsonb_to_recordset(p_child_rows) with ordinality
-        as x(parking_bay_no text, aircraft_registration_no text, remarks text, ord int);
+      from rows from (jsonb_to_recordset(p_child_rows) as (parking_bay_no text, aircraft_registration_no text, remarks text))
+        with ordinality as x(parking_bay_no, aircraft_registration_no, remarks, ord);
     elsif p_source_table = 'offload_records' then
       insert into public.offload_items (report_id, entry_no, baggage_tag_no, reason, weight_kg)
       select p_source_id, x.ord, x.baggage_tag_no, x.reason, x.weight_kg
-      from jsonb_to_recordset(p_child_rows) with ordinality
-        as x(baggage_tag_no text, reason text, weight_kg numeric, ord int);
+      from rows from (jsonb_to_recordset(p_child_rows) as (baggage_tag_no text, reason text, weight_kg numeric))
+        with ordinality as x(baggage_tag_no, reason, weight_kg, ord);
     end if;
 
     -- Re-count after the insert -- the value passed to
@@ -2781,7 +2830,7 @@ begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
   end if;
-  if not exists (select 1 from public.profiles where id = auth.uid() and status = 'approved') then
+  if not exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.status = 'approved') then
     raise exception 'Only an approved account may search aircraft movements.';
   end if;
   if v_reg = '' then
@@ -2846,7 +2895,7 @@ begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
   end if;
-  if not exists (select 1 from public.profiles where id = auth.uid() and status = 'approved') then
+  if not exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.status = 'approved') then
     raise exception 'Only an approved account may list report attachments.';
   end if;
 
@@ -2873,6 +2922,14 @@ grant execute on function public.list_report_attachments_secure(text, uuid) to a
 -- PART V: export_reports_secure() v2 -- atomic, complete authorized
 -- export dataset, no follow-up source-table query
 -- =======================================================================
+-- CORRECTION (review round 10, database-integration validation): v2
+-- adds a `content jsonb` column to Part M's return shape -- the same
+-- return-type-change defect as get_report_secure() v3 (Part Q), found
+-- and fixed the same way: only actual SQL execution against a real
+-- Postgres instance surfaces this (every prior static test only pattern-
+-- matches source text, so a `CREATE OR REPLACE FUNCTION` that Postgres
+-- would flatly reject was never actually caught before this round).
+drop function if exists public.export_reports_secure(integer, text, uuid, text, uuid, uuid, uuid, uuid, text, text, text, date, date);
 create or replace function public.export_reports_secure(
   p_max_rows integer default 1000,
   p_flight_number text default null,
@@ -2911,11 +2968,29 @@ begin
   if auth.uid() is null then
     raise exception 'Must be signed in.';
   end if;
-  if not exists (select 1 from public.profiles where id = auth.uid() and status = 'approved') then
+  if not exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.status = 'approved') then
     raise exception 'Only an approved account may export reports.';
   end if;
 
-  create temporary table if not exists tmp_export_result_v2 on commit drop as
+  -- CORRECTION (round 10, database-integration validation): the
+  -- previous implementation materialized results into
+  -- `create temporary table if not exists tmp_export_result_v2 ...`.
+  -- `IF NOT EXISTS` means a SECOND call to this function within the
+  -- SAME database session -- by the same caller, or (more seriously) a
+  -- DIFFERENT caller sharing that session, e.g. under connection/
+  -- transaction pooling that reuses a backend across requests -- would
+  -- find the temp table already populated from the FIRST call and skip
+  -- repopulating it entirely, silently returning that FIRST call's
+  -- (potentially a different caller's) authorized result set. This was
+  -- only caught by actually calling this function twice, as two
+  -- different callers, within one continuous session -- exactly what a
+  -- pooled-connection production environment can do, and exactly what
+  -- no prior static test could ever catch. Fixed by using RETURN QUERY
+  -- directly (execution continues after it in PL/pgSQL, so the
+  -- subsequent GET DIAGNOSTICS and audit INSERT still run in the same
+  -- invocation) instead of a temp table -- there was never a real need
+  -- for one.
+  return query
   select
     cri.id, cri.source_table, public.sanitize_csv_value(cri.report_type) as report_type,
     public.sanitize_csv_value(cri.operating_entity_code) as operating_entity_code,
@@ -2939,12 +3014,10 @@ begin
   order by cri.indexed_at desc, cri.id
   limit v_max_rows;
 
-  select count(*) into v_row_count from tmp_export_result_v2;
+  get diagnostics v_row_count = row_count;
 
   insert into public.report_access_audit (actor_id, action, reason)
   values (auth.uid(), 'export_generated', format('rows=%s max_rows=%s', v_row_count, v_max_rows));
-
-  return query select * from tmp_export_result_v2;
 end;
 $function$;
 
