@@ -8,9 +8,17 @@
 -- trigger under test -- every one of those runs as the real,
 -- unmodified migration SQL against these platform primitives.
 
-create role anon;
-create role authenticated;
-create role service_role bypassrls;
+do $$ begin
+  if not exists (select from pg_roles where rolname = 'anon') then
+    create role anon;
+  end if;
+  if not exists (select from pg_roles where rolname = 'authenticated') then
+    create role authenticated;
+  end if;
+  if not exists (select from pg_roles where rolname = 'service_role') then
+    create role service_role bypassrls;
+  end if;
+end $$;
 -- "postgres" already exists as PGlite's default superuser role.
 -- Real Supabase grants service_role broad table/sequence privileges
 -- across the public schema by default (it also carries BYPASSRLS,
@@ -166,4 +174,8 @@ grant usage on schema cron, net to postgres, service_role;
 -- into realtime change broadcast -- a platform feature with no runtime
 -- effect in this disposable database (nothing subscribes to it here).
 -- A real, empty publication lets those statements execute unmodified.
-create publication supabase_realtime;
+do $$ begin
+  if not exists (select from pg_publication where pubname = 'supabase_realtime') then
+    create publication supabase_realtime;
+  end if;
+end $$;

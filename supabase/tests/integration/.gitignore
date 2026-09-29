@@ -3,3 +3,5 @@ pgdata/
 pgdata_harness_run/
 pgdata_export_isolation_run/
 progress.json
+progress_native.json
+pg17/

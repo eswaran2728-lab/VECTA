@@ -7,9 +7,13 @@
 // Run from this directory, AFTER `node migrate.mjs` has built ./pgdata:
 //   node run_harness.mjs
 import { PGlite } from '@electric-sql/pglite';
+import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { assertDisposableLocalTarget } from './safeguards.mjs';
+
+const { Client } = pg;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HARNESS_PATH = path.resolve(__dirname, '../phase6_integration_harness.sql');
@@ -22,16 +26,62 @@ function copyDir(src, dest) {
 }
 
 async function main() {
-  if (!fs.existsSync(GOLDEN_DATA_DIR)) {
-    console.error('ERROR: ./pgdata does not exist -- run `node migrate.mjs` first.');
-    process.exit(1);
-  }
-  // Work on a throwaway copy so this can be re-run repeatedly without
-  // re-running migrate.mjs, and so a failed run's partial state never
-  // contaminates the golden post-migration snapshot.
-  copyDir(GOLDEN_DATA_DIR, RUN_DATA_DIR);
+  const isNative = process.argv.includes('--native') || process.env.PG_NATIVE === '1';
+  const pgConfig = {
+    host: process.env.PGHOST || '127.0.0.1',
+    port: parseInt(process.env.PGPORT || '55433', 10),
+    user: process.env.PGUSER || 'postgres',
+    password: process.env.PGPASSWORD || undefined,
+  };
+  const goldenDb = process.env.PGDATABASE || 'vecta_phase6_test';
+  const runDb = 'vecta_phase6_harness_run';
 
-  const db = new PGlite(RUN_DATA_DIR);
+  let db;
+  let cleanupNative = async () => {};
+
+  if (isNative) {
+    assertDisposableLocalTarget(pgConfig, goldenDb, runDb);
+    console.log(`=== Running Harness against Native PostgreSQL (${pgConfig.host}:${pgConfig.port}) ===`);
+    const admin = new Client({ ...pgConfig, database: 'postgres' });
+    await admin.connect();
+    await admin.query(`
+      select pg_terminate_backend(pid) from pg_stat_activity
+      where datname = '${runDb}' and pid <> pg_backend_pid();
+    `);
+    await admin.query(`drop database if exists ${runDb};`);
+    await admin.query(`create database ${runDb} template ${goldenDb};`);
+
+    const client = new Client({ ...pgConfig, database: runDb });
+    await client.connect();
+
+    db = {
+      exec: (sql) => client.query(sql),
+      query: (sql, params) => client.query(sql, params),
+      close: async () => {
+        await client.end();
+        await admin.query(`
+          select pg_terminate_backend(pid) from pg_stat_activity
+          where datname = '${runDb}' and pid <> pg_backend_pid();
+        `);
+        await admin.query(`drop database if exists ${runDb};`);
+        await admin.end();
+      },
+    };
+  } else {
+    console.log('=== Running Harness against PGlite embedded engine ===');
+    if (!fs.existsSync(GOLDEN_DATA_DIR)) {
+      console.error('ERROR: ./pgdata does not exist -- run `node migrate.mjs` first.');
+      process.exit(1);
+    }
+    copyDir(GOLDEN_DATA_DIR, RUN_DATA_DIR);
+    const pgliteDb = new PGlite(RUN_DATA_DIR);
+    db = {
+      exec: (sql) => pgliteDb.exec(sql),
+      query: (sql, params) => pgliteDb.query(sql, params),
+      close: () => pgliteDb.close(),
+    };
+  }
+
   await db.exec('set check_function_bodies = off;');
 
   const harness = fs.readFileSync(HARNESS_PATH, 'utf8');

@@ -88,12 +88,18 @@ completed block and a fully-passed block are the same fact).
 
 - **Scenarios 12 and 26** (the harness file's two genuine cross-
   transaction/cross-connection concurrency tests) are **not** part of
-  the executable `begin;...rollback;` block this runner exercises, and
-  are **not** run by `run_harness.mjs`. PGlite is a single-connection,
-  single-process embedded engine and cannot provide two genuinely
-  racing transactions. See the harness file's own comments for the
-  exact manual two-connection procedure, runnable against any real,
-  disposable, multi-connection Postgres instance.
+  the single-connection PGlite executable `begin;...rollback;` block.
+  However, with native PostgreSQL (e.g. the local portable PG17 binary in `./pg17`),
+  both Scenarios 12 and 26 are executed automatically via separate concurrent connections
+  with kernel-level lock inspection by running:
+  ```bash
+  npm run verify-concurrency:native
+  ```
+  or the full native test suite:
+  ```bash
+  npm run test:native
+  ```
 - This validates against **synthetic fixture data only**, never
   production data, production credentials, or a shared staging
   environment.
+

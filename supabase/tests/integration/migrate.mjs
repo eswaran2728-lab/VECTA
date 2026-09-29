@@ -21,9 +21,13 @@
 // See README.md for full setup/run instructions and the manifest
 // legend.
 import { PGlite } from '@electric-sql/pglite';
+import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { assertDisposableLocalTarget } from './safeguards.mjs';
+
+const { Client } = pg;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.resolve(__dirname, '../../migrations');
@@ -244,8 +248,55 @@ function applyStatementSkips(sql, fileLabel, log) {
 }
 
 async function main() {
-  const fresh = !fs.existsSync(DATA_DIR);
-  const db = new PGlite(DATA_DIR);
+  const isNative = process.argv.includes('--native') || process.env.PG_NATIVE === '1';
+  const pgConfig = {
+    host: process.env.PGHOST || '127.0.0.1',
+    port: parseInt(process.env.PGPORT || '55433', 10),
+    user: process.env.PGUSER || 'postgres',
+    password: process.env.PGPASSWORD || undefined,
+  };
+  const targetDbName = process.env.PGDATABASE || 'vecta_phase6_test';
+
+  let db;
+  let progressFile;
+  let fresh;
+
+  if (isNative) {
+    assertDisposableLocalTarget(pgConfig, targetDbName);
+    console.log(`=== Target: Native PostgreSQL (${pgConfig.host}:${pgConfig.port}, database: ${targetDbName}) ===`);
+    const adminClient = new Client({ ...pgConfig, database: 'postgres' });
+    await adminClient.connect();
+    await adminClient.query(`
+      select pg_terminate_backend(pid) from pg_stat_activity
+      where datname = '${targetDbName}' and pid <> pg_backend_pid();
+    `);
+    await adminClient.query(`drop database if exists ${targetDbName};`);
+    await adminClient.query(`create database ${targetDbName};`);
+    await adminClient.end();
+
+    const client = new Client({ ...pgConfig, database: targetDbName });
+    await client.connect();
+
+    db = {
+      exec: (sql) => client.query(sql),
+      query: (sql, params) => client.query(sql, params),
+      close: () => client.end(),
+    };
+    progressFile = path.join(__dirname, 'progress_native.json');
+    if (fs.existsSync(progressFile)) fs.unlinkSync(progressFile);
+    fresh = true;
+  } else {
+    console.log('=== Target: PGlite embedded engine ===');
+    fresh = !fs.existsSync(DATA_DIR);
+    const pgliteDb = new PGlite(DATA_DIR);
+    db = {
+      exec: (sql) => pgliteDb.exec(sql),
+      query: (sql, params) => pgliteDb.query(sql, params),
+      close: () => pgliteDb.close(),
+    };
+    progressFile = path.join(__dirname, 'progress.json');
+  }
+
   const manifest = [];
   const adaptationLog = [];
 
@@ -266,10 +317,9 @@ async function main() {
     await db.exec(fs.readFileSync(path.join(__dirname, '00_platform_stubs.sql'), 'utf8'));
     console.log('OK\n');
   } else {
-    console.log('=== Reusing existing pgdata/ (already bootstrapped) ===\n');
+    console.log('=== Reusing existing database (already bootstrapped) ===\n');
   }
 
-  const progressFile = path.join(__dirname, 'progress.json');
   const done = fs.existsSync(progressFile) ? JSON.parse(fs.readFileSync(progressFile, 'utf8')) : [];
   const doneSet = new Set(done.map((d) => d.file));
 
