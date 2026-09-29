@@ -5274,6 +5274,45 @@ export type Database = {
         Args: { p_duty_date?: string | null }
         Returns: { hub_code: string; checked_in_count: number; total_staff: number }[]
       }
+      resolve_caller_entity_scope: {
+        Args: Record<PropertyKey, never>
+        Returns: string | null
+      }
+      get_entity_dashboard_aggregate_secure: {
+        Args: { p_duty_date?: string | null }
+        Returns: {
+          entity_code: string | null
+          checked_in_count: number
+          pending_count: number
+          absent_count: number
+          total_staff: number
+          is_bay_board_scoped: boolean
+          overdue_bay_board_count: number
+          generated_at: string
+        }[]
+      }
+      get_entity_admin_summary_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          entity_code: string | null
+          active_staff_count: number
+          malaysia_wide_pending_registration_count: number
+          generated_at: string
+        }[]
+      }
+      get_super_admin_technical_status_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          queue_pending: number
+          queue_processing: number
+          queue_completed: number
+          queue_failed: number
+          queue_permanently_failed: number
+          pending_registration_count: number
+          pending_profile_approval_count: number
+          generated_at: string
+        }[]
+      }
       sanitize_csv_value: { Args: { p_value: string | null }; Returns: string | null }
       export_reports_secure: {
         Args: {
