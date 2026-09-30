@@ -85,9 +85,22 @@ export async function scanTransaction(raw: string): Promise<ScanResult> {
   // Signed QR pass (issued by createTransaction/createVendorTransaction's
   // generateQrToken — this is the actual CaterLink-facing contract: a QR
   // encodes this token verbatim, never a bare id/number). Checked before the
-  // legacy id/number lookup below, which stays only for manually typed
-  // references on VECTA's own transaction detail pages.
+  // legacy id/number lookup further below, which stays only for manually
+  // typed references on VECTA's own transaction detail pages.
   const userStation = (profile as { station?: string | null }).station ?? null;
+
+  // Phase 9: Station capability verification
+  // CaterLink scanning is allowed only for stations with can_scan capability enabled
+  // (e.g. KUL, PEN, JHB allowed; AOR, IPH, LGK, KCH, BKI and unconfigured stations denied).
+  if (userStation) {
+    const { data: canScanStation } = await supabase.rpc("can_user_scan_caterlink", {
+      p_station_code: userStation,
+    });
+    if (canScanStation === false) {
+      return { error: `CaterLink scanning is disabled for station ${userStation}.` };
+    }
+  }
+
   // On-duty gate (2026-09-23): "Approved ASO/SO/DSE users from both AVSEC
   // groups may complete non-Hub checkpoints only while checked in." Scoped
   // to isAvsecScanGroup (operation_avsec/ifc_avsec) — the exact grant this

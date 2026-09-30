@@ -1,4 +1,4 @@
-﻿export type Role =
+export type Role =
   | "warehouse_pic"
   | "post2_avsec"
   | "post6_avsec"
@@ -783,6 +783,72 @@ export type Database = {
       archive_all_pending: {
         Args: { p_reason?: string | null };
         Returns: number;
+      };
+      archive_caterlink_transaction_secure: {
+        Args: { p_transaction_id: string; p_reason?: string | null };
+        Returns: { archive_id: string; transaction_number: string }[];
+      };
+      can_user_scan_caterlink: {
+        Args: { p_station_code: string; p_aoc_id?: string | null; p_profile_id?: string | null };
+        Returns: boolean;
+      };
+      check_station_caterlink_capability: {
+        Args: { p_aoc_id: string | null; p_station_code: string; p_capability: string };
+        Returns: boolean;
+      };
+      confirm_caterlink_destination_receipt_secure: {
+        Args: { p_transaction_id: string; p_station_code: string; p_signature_url: string; p_remarks?: string | null };
+        Returns: { transaction_id: string; status: string }[];
+      };
+      create_caterlink_transaction_secure: {
+        Args: {
+          p_aoc_id: string;
+          p_origin_station: string;
+          p_direction: string;
+          p_route: string;
+          p_vehicle_number: string;
+          p_driver_name: string;
+          p_driver_id: string;
+          p_seal_number: string;
+          p_hub_destination?: string | null;
+          p_flight_number?: string | null;
+          p_aircraft_reg?: string | null;
+          p_trolley_count?: number;
+          p_cargo_types?: string[];
+        };
+        Returns: { transaction_id: string; transaction_number: string }[];
+      };
+      raise_caterlink_incident_secure: {
+        Args: { p_transaction_id: string; p_incident_type: string; p_description: string; p_severity?: string; p_photo_url?: string | null };
+        Returns: { incident_id: string; transaction_status: string }[];
+      };
+      resolve_caterlink_incident_secure: {
+        Args: { p_incident_id: string; p_resolution_notes: string; p_resume_status?: string };
+        Returns: { incident_id: string; new_status: string }[];
+      };
+      reopen_caterlink_incident_secure: {
+        Args: { p_incident_id: string; p_reopen_reason: string };
+        Returns: { incident_id: string; status: string }[];
+      };
+      authorize_caterlink_pdf_secure: {
+        Args: { p_transaction_id: string };
+        Returns: { authorized: boolean; transaction_number: string; pdf_storage_path: string }[];
+      };
+      export_caterlink_data_secure: {
+        Args: { p_target_aoc_id?: string | null };
+        Returns: {
+          transaction_id: string;
+          transaction_number: string;
+          aoc_code: string;
+          origin_station: string;
+          destination: string;
+          route: string;
+          status: string;
+          driver_name: string;
+          vehicle_number: string;
+          created_at: string;
+          completed_at: string | null;
+        }[];
       };
     };
     Enums: Record<string, never>;

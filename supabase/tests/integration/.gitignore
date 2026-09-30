@@ -6,6 +6,7 @@ pgdata_phase7_aggregates_run/
 pgdata_phase7_entity_run/
 pgdata_phase8_run/
 pgdata_multi_aoc_run/
+pgdata_phase9_caterlink_run/
 progress.json
 progress_native.json
 pg17/

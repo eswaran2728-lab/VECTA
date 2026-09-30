@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { OpsGroup } from "@/lib/icms/database.types";
-import { phase7DashboardNavEntry } from "@/lib/dashboard/navigation";
+import { phase7DashboardNavEntry, scannerNavAllowedForRole } from "@/lib/dashboard/navigation";
 
 interface NavTab {
   href: string;
@@ -111,6 +111,12 @@ export function TeamBottomNav({
     tabs = [DASHBOARD, SCAN, BAY_BOARD, ...phase7Tab, PROFILE];
   } else {
     tabs = [DASHBOARD, SCAN, ...phase7Tab, PROFILE];
+  }
+
+  // Phase 9 / Profiling exclusion: roles without scanner navigation (e.g. profiling_so, profiling_aso)
+  // must never see the SCAN tab in bottom navigation.
+  if (!scannerNavAllowedForRole(role ?? null)) {
+    tabs = tabs.filter((t) => t.href !== SCAN.href);
   }
 
   const isActive = (tab: NavTab) => {

@@ -131,7 +131,7 @@ export interface ResetWeekState {
  * slate. Call only after the export PDF has already been downloaded.
  */
 export async function resetWeek(): Promise<ResetWeekState> {
-  await requireRole(["supervisor"]);
+  await requireRole(["supervisor", "management"]);
   const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("archive_all_pending", {});
@@ -142,4 +142,23 @@ export async function resetWeek(): Promise<ResetWeekState> {
   revalidatePath("/icms/incidents");
   revalidatePath("/icms/admin/archive");
   return { error: null, archivedCount: (data as number) ?? 0 };
+}
+
+/**
+ * Phase 9: Secure single-transaction archive using the audited RPC.
+ */
+export async function archiveSingleTransaction(
+  transactionId: string,
+  reason?: string
+): Promise<{ error: string | null; success: boolean }> {
+  await requireRole(["supervisor", "management"]);
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("archive_caterlink_transaction_secure", {
+    p_transaction_id: transactionId,
+    p_reason: reason ?? null,
+  });
+  if (error) return { error: error.message, success: false };
+  revalidatePath("/icms/transactions");
+  revalidatePath("/icms/admin/archive");
+  return { error: null, success: true };
 }

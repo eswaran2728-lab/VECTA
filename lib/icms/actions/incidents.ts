@@ -72,3 +72,31 @@ export async function resolveIncident(
   revalidatePath("/icms/incidents");
   return { error: null, success: `Incident moved to ${nextStatus}.` };
 }
+
+/**
+ * Reopens a resolved or closed incident through the authorized audited RPC.
+ */
+export async function reopenIncident(
+  _prev: ResolveState,
+  formData: FormData
+): Promise<ResolveState> {
+  await requireRole(["supervisor", "enforcement", "management"]);
+
+  const incidentId = String(formData.get("incident_id") ?? "");
+  const reason = String(formData.get("reopen_reason") ?? "").trim();
+
+  if (!incidentId || !reason) {
+    return { error: "Incident ID and reopen reason are required.", success: null };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("reopen_caterlink_incident_secure", {
+    p_incident_id: incidentId,
+    p_reopen_reason: reason,
+  });
+
+  if (error) return { error: error.message, success: null };
+
+  revalidatePath("/icms/incidents");
+  return { error: null, success: "Incident successfully reopened." };
+}

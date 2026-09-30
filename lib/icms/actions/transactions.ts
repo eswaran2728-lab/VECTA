@@ -859,7 +859,7 @@ export async function completePartHub(
   const [txRes, officerRes] = await Promise.all([
     supabaseForCheck
       .from("transactions")
-      .select("direction, status, route, hub_destination")
+      .select("direction, status, route, hub_destination, created_by, station")
       .eq("id", transactionId)
       .single(),
     supabaseForCheck
@@ -891,6 +891,33 @@ export async function completePartHub(
     return {
       error: `HUB_STATION_MISMATCH: Your account is stationed at ${officerStation}, but this delivery is destined for ${tx.hub_destination}. Only Hub AVSEC at the destination station may confirm delivery. / Destinasi hab tidak sepadan dengan stesen anda.`,
     };
+  }
+
+  // Phase 9: Sender cannot confirm destination receipt for their own cross-station movement
+  if (
+    txRow.created_by &&
+    txRow.created_by === profile.id &&
+    txRow.station &&
+    officerStation &&
+    txRow.station !== officerStation
+  ) {
+    return {
+      error: "Sender cannot confirm destination receipt for their own cross-station movement.",
+    };
+  }
+
+  // Phase 9: Station capability verification for destination receipt confirmation
+  if (officerStation) {
+    const { data: canConfirmReceipt } = await supabaseForCheck.rpc("check_station_caterlink_capability", {
+      p_aoc_id: null,
+      p_station_code: officerStation,
+      p_capability: "confirm_hub_receipt",
+    });
+    if (canConfirmReceipt === false) {
+      return {
+        error: `Station ${officerStation} is not authorized to confirm CaterLink destination receipts.`,
+      };
+    }
   }
 
   let sig: { path: string; sha256: string };

@@ -29,7 +29,7 @@ import {
   User,
 } from "lucide-react";
 import type { OpsGroup } from "@/lib/icms/database.types";
-import { phase7DashboardNavEntry } from "@/lib/dashboard/navigation";
+import { phase7DashboardNavEntry, scannerNavAllowedForRole, caterlinkNavAllowedForRole } from "@/lib/dashboard/navigation";
 
 interface NavItem {
   href: string;
@@ -143,7 +143,7 @@ export function AppSidebar({
       });
     }
 
-    if (!isOrgWide && (opsGroup === "operation_avsec" || opsGroup === "ifc_avsec" || opsGroup === "hub_avsec")) {
+    if (!isOrgWide && scannerNavAllowedForRole(role) && (opsGroup === "operation_avsec" || opsGroup === "ifc_avsec" || opsGroup === "hub_avsec")) {
       operationsItems.push({
         href: "/avsec/scan",
         label: "Checkpoint Scanner",
@@ -171,6 +171,21 @@ export function AppSidebar({
       title: "OPERATIONS",
       items: operationsItems,
     });
+
+    if (caterlinkNavAllowedForRole(role)) {
+      groups.push({
+        title: "CATERLINK MANAGEMENT",
+        items: [
+          { href: "/icms/dashboard", label: "Operations Overview", icon: LayoutDashboard },
+          { href: "/icms/transactions", label: "Live Transactions", icon: Truck },
+          { href: "/icms/incidents", label: "Incident Handling", icon: Shield },
+          { href: "/icms/admin/whitelists", label: "Whitelist Directory", icon: Users },
+          { href: "/icms/admin/archive", label: "Transaction Archive", icon: FileText },
+          { href: "/icms/admin/audit", label: "Audit Log", icon: Activity },
+          { href: "/icms/reports", label: "Operational Reports", icon: CalendarCheck },
+        ],
+      });
+    }
 
     // ATTENDANCE, LEAVE & ROSTER
     const attendanceItems: NavItem[] = [];

@@ -20,7 +20,7 @@ export async function addCompany(
   _prev: WhitelistActionState,
   fd: FormData
 ): Promise<WhitelistActionState> {
-  await requireRole(["supervisor"]);
+  await requireRole(["supervisor", "management"]);
   const name = s(fd, "name");
   const code = s(fd, "code").toUpperCase();
   if (!name || !code) return { error: "Name and code are required.", success: null };
@@ -38,7 +38,7 @@ export async function addVehicle(
   _prev: WhitelistActionState,
   fd: FormData
 ): Promise<WhitelistActionState> {
-  await requireRole(["supervisor"]);
+  await requireRole(["supervisor", "management"]);
   const vehicleNumber = s(fd, "vehicle_number").toUpperCase();
   if (!vehicleNumber) return { error: "Vehicle number is required.", success: null };
 
@@ -67,7 +67,7 @@ export async function addDriver(
   _prev: WhitelistActionState,
   fd: FormData
 ): Promise<WhitelistActionState> {
-  await requireRole(["supervisor"]);
+  await requireRole(["supervisor", "management"]);
   const name = s(fd, "name");
   const staffId = s(fd, "staff_id").toUpperCase();
   if (!name || !staffId) return { error: "Name and staff ID are required.", success: null };
@@ -98,7 +98,7 @@ export async function addDriver(
 
 /** Soft-activate/deactivate a whitelist row (no hard deletes anywhere). */
 export async function toggleWhitelistRow(fd: FormData): Promise<void> {
-  await requireRole(["supervisor"]);
+  await requireRole(["supervisor", "management"]);
   const table = s(fd, "table");
   const id = s(fd, "id");
   const active = s(fd, "active") === "true";
@@ -125,7 +125,7 @@ export async function deleteWhitelistRow(
   _prev: WhitelistActionState,
   fd: FormData
 ): Promise<WhitelistActionState> {
-  await requireRole(["supervisor"]);
+  await requireRole(["supervisor", "management"]);
   const table = s(fd, "table");
   const id = s(fd, "id");
   const label = s(fd, "label") || "record";
@@ -153,7 +153,7 @@ export async function deleteWhitelistRow(
 
 /** Update a vehicle's or driver's pass expiry date. */
 export async function updatePassExpiry(fd: FormData): Promise<void> {
-  await requireRole(["supervisor"]);
+  await requireRole(["supervisor", "management"]);
   const table = s(fd, "table");
   const id = s(fd, "id");
   const date = s(fd, "pass_expiry_date");
