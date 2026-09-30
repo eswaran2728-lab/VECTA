@@ -1090,6 +1090,120 @@ $function$;
 revoke execute on function public.list_investigation_cases_secure() from public, anon;
 grant execute on function public.list_investigation_cases_secure() to authenticated, service_role;
 
+-- Single-case detail fetch (Phase 8 Round 2, Slice 4 -- the case
+-- workspace UI needs a per-case read, not only the full list above).
+-- Raises -- never silently returns null -- for an unauthorized caller or
+-- a nonexistent case, matching this migration's existing fail-closed
+-- convention.
+create or replace function public.get_investigation_case_secure(p_case_id uuid)
+returns setof public.investigation_cases
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if not public.is_investigation_authorized() then
+    raise exception 'Only Investigation or Main Enforcement may view a case.';
+  end if;
+  if not exists (select 1 from public.investigation_cases where id = p_case_id) then
+    raise exception 'Case not found.';
+  end if;
+  return query select * from public.investigation_cases where id = p_case_id;
+end;
+$function$;
+
+revoke execute on function public.get_investigation_case_secure(uuid) from public, anon;
+grant execute on function public.get_investigation_case_secure(uuid) to authenticated, service_role;
+
+create or replace function public.list_investigation_case_notes_secure(p_case_id uuid)
+returns setof public.investigation_case_notes
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if not public.is_investigation_authorized() then
+    raise exception 'Only Investigation or Main Enforcement may view case notes.';
+  end if;
+  return query select * from public.investigation_case_notes where case_id = p_case_id order by created_at asc;
+end;
+$function$;
+
+revoke execute on function public.list_investigation_case_notes_secure(uuid) from public, anon;
+grant execute on function public.list_investigation_case_notes_secure(uuid) to authenticated, service_role;
+
+-- Linked-report summaries for a case, via central_reports_index only
+-- (never a direct report-table read) -- report existence/access was
+-- already re-verified via has_report_access() at LINK time
+-- (link_report_to_case_secure); this only reads the already-linked,
+-- already-authorized set for an is_investigation_authorized() caller.
+create or replace function public.list_investigation_case_reports_secure(p_case_id uuid)
+returns table (
+  repository_report_id uuid,
+  source_table text,
+  report_type text,
+  flight_number text,
+  report_date date,
+  status text,
+  linked_by uuid,
+  linked_at timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if not public.is_investigation_authorized() then
+    raise exception 'Only Investigation or Main Enforcement may view linked case reports.';
+  end if;
+
+  return query
+  select cri.id, cri.source_table, cri.report_type, cri.flight_number, cri.report_date, cri.status, icr.linked_by, icr.linked_at
+  from public.investigation_case_reports icr
+  join public.central_reports_index cri on cri.id = icr.repository_report_id
+  where icr.case_id = p_case_id
+  order by icr.linked_at desc;
+end;
+$function$;
+
+revoke execute on function public.list_investigation_case_reports_secure(uuid) from public, anon;
+grant execute on function public.list_investigation_case_reports_secure(uuid) to authenticated, service_role;
+
+-- Active Investigation staff directory, for the case-assignment picker.
+-- Any is_investigation_authorized() caller may see it (the same set
+-- assign_investigation_case_secure() itself validates an assignee
+-- against) -- not a broader disclosure than assignment already implies.
+create or replace function public.list_investigation_staff_secure()
+returns table (profile_id uuid, name text, role_code text)
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if not public.is_investigation_authorized() then
+    raise exception 'Only Investigation or Main Enforcement may view the Investigation staff directory.';
+  end if;
+
+  return query
+  select distinct p.id, p.name, rd.code
+  from public.user_role_assignments ura
+  join public.role_definitions rd on rd.id = ura.role_definition_id
+  join public.profiles p on p.id = ura.profile_id
+  where rd.code in ('investigation_sso', 'investigation_so', 'investigation_aso')
+    and ura.revoked_at is null
+    and ura.starts_at <= now()
+    and (ura.ends_at is null or ura.ends_at > now())
+  order by p.name;
+end;
+$function$;
+
+revoke execute on function public.list_investigation_staff_secure() from public, anon;
+grant execute on function public.list_investigation_staff_secure() to authenticated, service_role;
+
 -- =======================================================================
 -- PART G: SAT COMBINED-PDF WORKFLOW
 -- =======================================================================

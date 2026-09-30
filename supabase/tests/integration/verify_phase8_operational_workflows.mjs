@@ -535,6 +535,37 @@ async function main() {
     const afterReopen = await db.query('select status, reopened_count from public.investigation_cases where id = $1;', [caseId]);
     assert(afterReopen.rows[0].status === 'reopened' && Number(afterReopen.rows[0].reopened_count) === 1, 'Reopen sets status and increments reopened_count');
 
+    // Slice 4 (Round 2): the case-detail/notes/linked-reports/staff-
+    // directory RPCs the Investigation workspace UI actually calls.
+    await simulateUser(STAFF_ENFORCEMENT_INV_SSO);
+    const caseDetail = await db.query('select * from public.get_investigation_case_secure($1);', [caseId]);
+    const caseNotes = await db.query('select * from public.list_investigation_case_notes_secure($1);', [caseId]);
+    const caseReports = await db.query('select * from public.list_investigation_case_reports_secure($1);', [caseId]);
+    const invStaff = await db.query('select * from public.list_investigation_staff_secure();');
+    await clearSim();
+    assert(caseDetail.rows[0].id === caseId, 'get_investigation_case_secure returns the requested case for an authorized caller');
+    assert(caseNotes.rows.some((n) => n.note === 'initial note'), 'list_investigation_case_notes_secure returns the case\'s notes');
+    assert(
+      caseReports.rows.some((r) => r.repository_report_id === repositoryId && r.source_table === 'report_sec014'),
+      'list_investigation_case_reports_secure returns the linked report via central_reports_index, not a direct source-table read',
+    );
+    assert(invStaff.rows.some((s) => s.profile_id === STAFF_ENFORCEMENT_INV_SSO), 'list_investigation_staff_secure includes the active Investigation SSO');
+
+    // A caller with no Investigation/Main Enforcement role gets the same
+    // fail-closed denial for the detail RPC as for the list RPC -- never
+    // a silent null that would let a case's existence leak through.
+    await simulateUser(DSE_ALPHA);
+    await db.exec('savepoint sp_detail_denied;');
+    let detailDenied = false;
+    try {
+      await db.query('select * from public.get_investigation_case_secure($1);', [caseId]);
+    } catch (e) {
+      detailDenied = /Only Investigation or Main Enforcement/.test(e.message);
+      await db.exec('rollback to savepoint sp_detail_denied;');
+    }
+    await clearSim();
+    assert(detailDenied, 'A DSE cannot fetch investigation case detail (get_investigation_case_secure is authorization-gated too)');
+
     // Main Enforcement can monitor (list) even though it never touched the case.
     await simulateUser(MAIN_ENF);
     const meList = await db.query('select count(*)::int as c from public.list_investigation_cases_secure();');

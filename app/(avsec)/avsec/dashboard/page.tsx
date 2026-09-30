@@ -46,6 +46,12 @@ export default async function DashboardPage({
     supabaseForRoleCheck.rpc("has_active_role", { p_role_code: "profiling_aso" }),
   ]);
   const isProfiling = isProfilingSo || isProfilingAso;
+  const [{ data: isInvSso }, { data: isInvSo }, { data: isInvAso }] = await Promise.all([
+    supabaseForRoleCheck.rpc("has_active_role", { p_role_code: "investigation_sso" }),
+    supabaseForRoleCheck.rpc("has_active_role", { p_role_code: "investigation_so" }),
+    supabaseForRoleCheck.rpc("has_active_role", { p_role_code: "investigation_aso" }),
+  ]);
+  const isInvestigation = isInvSso || isInvSo || isInvAso;
 
   const [{ counts, submissions }, bayBoard, announcements, feedbackStats, actionItems] = await Promise.all([
     getTodayCounts(filters),
@@ -176,6 +182,12 @@ export default async function DashboardPage({
         {isProfiling && (
           <Link href="/avsec/profiling/workspace" className="btn-secondary w-full text-center">
             Profiling Workspace →
+          </Link>
+        )}
+
+        {(isInvestigation || isMainEnforcement) && (
+          <Link href="/avsec/investigation/cases" className="btn-secondary w-full text-center">
+            Investigation Cases →
           </Link>
         )}
 

@@ -5448,6 +5448,48 @@ export type Database = {
           late_remark: string | null
         }[]
       }
+      get_investigation_case_secure: {
+        Args: { p_case_id: string }
+        Returns: {
+          id: string
+          case_no: string
+          aoc_id: string
+          title: string
+          classification: string | null
+          description: string | null
+          priority: string
+          status: string
+          opened_by: string
+          assigned_to: string | null
+          resolution: string | null
+          resolved_by: string | null
+          resolved_at: string | null
+          reopened_count: number
+          created_at: string
+          updated_at: string
+        }[]
+      }
+      list_investigation_case_notes_secure: {
+        Args: { p_case_id: string }
+        Returns: { id: string; case_id: string; author_id: string; note: string; created_at: string }[]
+      }
+      list_investigation_case_reports_secure: {
+        Args: { p_case_id: string }
+        Returns: {
+          repository_report_id: string
+          source_table: string
+          report_type: string
+          flight_number: string | null
+          report_date: string | null
+          status: string
+          linked_by: string
+          linked_at: string
+        }[]
+      }
+      list_investigation_staff_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: { profile_id: string; name: string; role_code: string }[]
+      }
       list_pending_sec013_acknowledgements_secure: {
         Args: Record<PropertyKey, never>
         Returns: {
