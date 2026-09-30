@@ -10,7 +10,7 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/**/*.test.mts"
+    "test": "node --experimental-strip-types --experimental-test-module-mocks --experimental-loader ./tests/loader.mts --test tests/**/*.test.mts"
   },
   "dependencies": {
     "@capacitor/core": "^7.6.9",

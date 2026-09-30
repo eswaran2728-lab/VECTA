@@ -60,27 +60,38 @@ export async function reviewOvertimeRequest(input: {
     // operation_manager only for Operation-dept submitters) at the
     // database layer. This app-layer gate only decides whether to attempt
     // the write at all; it is never the actual authorization boundary.
-    let hasPhase8OtRole = false;
+    // hub_se is endorsement-only (same tier as DSE); operation_manager
+    // and main_enforcement are final-approval-capable (same tier as
+    // Management). These are tracked SEPARATELY -- a single combined
+    // flag previously let a Hub SE's "approve" attempt pass this
+    // app-layer gate (only the database's RLS/trigger backstopped it),
+    // caught by an application-level test exercising this exact path.
+    let hasPhase8EndorseRole = false;
+    let hasPhase8ApproveRole = false;
     if (!isDse && !isMgmt) {
-      for (const roleCode of ["hub_se", "operation_manager", "main_enforcement"]) {
+      const { data: isHubSe } = await supabase.rpc("has_active_role", { p_role_code: "hub_se" });
+      if (isHubSe === true) hasPhase8EndorseRole = true;
+      for (const roleCode of ["operation_manager", "main_enforcement"]) {
         const { data } = await supabase.rpc("has_active_role", { p_role_code: roleCode });
         if (data === true) {
-          hasPhase8OtRole = true;
+          hasPhase8ApproveRole = true;
           break;
         }
       }
     }
+    const hasPhase8OtRole = hasPhase8EndorseRole || hasPhase8ApproveRole;
 
     if (!isDse && !isMgmt && !hasPhase8OtRole) {
       return { success: false, error: "Only DSE, Hub SE, Operation Manager or Main Enforcement can review overtime requests." };
     }
 
-    // Final approval requires Management rank OR an active Phase 8 scoped
-    // approval role -- DSE's/Hub SE's role in this workflow is endorsement
-    // (see endorseOvertimeRequest), not final approval. Enforced here in
+    // Final approval requires Management rank OR an active Phase 8
+    // APPROVAL-capable role (operation_manager/main_enforcement) --
+    // DSE's/Hub SE's role in this workflow is endorsement (see
+    // endorseOvertimeRequest), never final approval. Enforced here in
     // addition to the UI not offering the control, since a server action
     // is its own reachable endpoint independent of what the page shows.
-    if (action === "approve" && !isMgmt && !hasPhase8OtRole) {
+    if (action === "approve" && !isMgmt && !hasPhase8ApproveRole) {
       return { success: false, error: "Only Management, Operation Manager or Main Enforcement can give final approval. DSE/Hub SE endorses first." };
     }
     const { data: request, error: fetchErr } = await supabase
