@@ -5313,6 +5313,116 @@ export type Database = {
           generated_at: string
         }[]
       }
+      review_leave_request_secure: {
+        Args: { p_notice_id: string; p_action: string; p_review_notes?: string | null }
+        Returns: { row_id: string; result_status: string }[]
+      }
+      upsert_roster_cell_secure: {
+        Args: {
+          p_station: string
+          p_team: string
+          p_roster_date: string
+          p_shift_code: string
+          p_start_time?: string | null
+          p_end_time?: string | null
+          p_notes?: string | null
+        }
+        Returns: { row_id: string }[]
+      }
+      initiate_duty_draw_secure: {
+        Args: { p_station: string; p_draw_date: string }
+        Returns: { row_id: string }[]
+      }
+      record_duty_draw_assignment_secure: {
+        Args: { p_draw_id: string; p_profile_id: string; p_zone_id: string | null }
+        Returns: undefined
+      }
+      finalize_duty_draw_secure: {
+        Args: { p_draw_id: string }
+        Returns: undefined
+      }
+      get_duty_draw_secure: {
+        Args: { p_station: string; p_draw_date: string }
+        Returns: { draw_id: string; status: string; profile_id: string | null; zone_id: string | null; assigned_at: string | null }[]
+      }
+      open_investigation_case_secure: {
+        Args: { p_title: string; p_classification?: string | null; p_description?: string | null; p_priority?: string | null }
+        Returns: { row_id: string; case_no: string }[]
+      }
+      link_report_to_case_secure: {
+        Args: { p_case_id: string; p_repository_report_id: string }
+        Returns: undefined
+      }
+      add_investigation_case_note_secure: {
+        Args: { p_case_id: string; p_note: string }
+        Returns: undefined
+      }
+      assign_investigation_case_secure: {
+        Args: { p_case_id: string; p_assignee_id: string }
+        Returns: undefined
+      }
+      resolve_investigation_case_secure: {
+        Args: { p_case_id: string; p_resolution: string }
+        Returns: undefined
+      }
+      reopen_investigation_case_secure: {
+        Args: { p_case_id: string; p_reason: string }
+        Returns: undefined
+      }
+      list_investigation_cases_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          case_no: string
+          aoc_id: string
+          title: string
+          classification: string | null
+          description: string | null
+          priority: string
+          status: string
+          opened_by: string
+          assigned_to: string | null
+          resolution: string | null
+          resolved_by: string | null
+          resolved_at: string | null
+          reopened_count: number
+          created_at: string
+          updated_at: string
+        }[]
+      }
+      upload_sat_combined_report_secure: {
+        Args: { p_station: string; p_team: string; p_operational_date: string; p_shift_coverage: string; p_storage_path: string }
+        Returns: { row_id: string }[]
+      }
+      replace_sat_combined_report_secure: {
+        Args: { p_old_report_id: string; p_shift_coverage: string; p_storage_path: string; p_reason: string }
+        Returns: { row_id: string }[]
+      }
+      list_sat_combined_reports_secure: {
+        Args: { p_station?: string | null; p_team?: string | null }
+        Returns: {
+          id: string
+          aoc_id: string
+          station_id: string
+          team_id: string
+          operational_date: string
+          shift_coverage: string
+          storage_path: string
+          uploaded_by: string
+          uploaded_at: string
+          status: string
+          version: number
+          supersedes: string | null
+        }[]
+      }
+      can_view_sat_combined_report: {
+        Args: { p_report_id: string }
+        Returns: boolean
+      }
+      acknowledge_sec013_report_secure: {
+        Args: { p_report_id: string }
+        Returns: undefined
+      }
       sanitize_csv_value: { Args: { p_value: string | null }; Returns: string | null }
       export_reports_secure: {
         Args: {
