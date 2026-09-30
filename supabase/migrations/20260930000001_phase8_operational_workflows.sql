@@ -782,6 +782,82 @@ $function$;
 revoke execute on function public.get_duty_draw_secure(text, date) from public, anon;
 grant execute on function public.get_duty_draw_secure(text, date) to authenticated, service_role;
 
+-- Draw HISTORY for a station (Phase 8 Round 2, Slice 5): draw headers
+-- only, never per-assignment detail (use get_duty_draw_secure for that,
+-- one date at a time). Same visibility rule as get_duty_draw_secure --
+-- Operation Manager sees every draw including drafts; anyone else sees
+-- only finalized draws for their own station.
+create or replace function public.list_duty_draw_history_secure(p_station text)
+returns table (
+  draw_id uuid, draw_date date, status text, initiated_by uuid, finalized_by uuid, finalized_at timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_station_id uuid;
+  v_own_station text;
+  v_is_operation_manager boolean;
+begin
+  if auth.uid() is null then
+    raise exception 'Must be signed in.';
+  end if;
+
+  v_is_operation_manager := public.has_active_role('operation_manager');
+  if not v_is_operation_manager then
+    select station into v_own_station from public.profiles where id = auth.uid();
+    if v_own_station is distinct from p_station then
+      raise exception 'You may only view the duty-zone draw history for your own station.';
+    end if;
+  end if;
+
+  select id into v_station_id from public.org_stations where code = p_station;
+  if v_station_id is null then
+    return;
+  end if;
+
+  return query
+  select d.id, d.draw_date, d.status, d.initiated_by, d.finalized_by, d.finalized_at
+  from public.duty_draws d
+  where d.station_id = v_station_id
+    and (v_is_operation_manager or d.status = 'finalized')
+  order by d.draw_date desc;
+end;
+$function$;
+
+revoke execute on function public.list_duty_draw_history_secure(text) from public, anon;
+grant execute on function public.list_duty_draw_history_secure(text) to authenticated, service_role;
+
+-- Operation Manager-only staff directory for a station, driving the
+-- duty-draw assignment picker. Legacy profiles.station-based (the same
+-- field team_rosters/absence_notices already key off), not a broader
+-- disclosure than Operation Manager's existing Malaysia-Operation-wide
+-- read authority already implies.
+create or replace function public.list_station_staff_for_draw_secure(p_station text)
+returns table (profile_id uuid, name text, staff_no text)
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if not public.has_active_role('operation_manager') then
+    raise exception 'Only Operation Manager may view the station staff directory.';
+  end if;
+
+  return query
+  select p.id, p.name, p.staff_no
+  from public.profiles p
+  where p.station = p_station and p.status = 'approved'
+  order by p.name;
+end;
+$function$;
+
+revoke execute on function public.list_station_staff_for_draw_secure(text) from public, anon;
+grant execute on function public.list_station_staff_for_draw_secure(text) to authenticated, service_role;
+
 -- =======================================================================
 -- PART F: INVESTIGATION CASE WORKFLOW
 -- =======================================================================

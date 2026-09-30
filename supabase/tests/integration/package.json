@@ -19,8 +19,9 @@
     "verify-phase7-entity-and-admin-aggregates:native": "node verify_phase7_entity_and_admin_aggregates.mjs --native",
     "verify-phase8-operational-workflows:native": "node verify_phase8_operational_workflows.mjs --native",
     "verify-phase8-leave-concurrency:native": "node verify_phase8_leave_concurrency_native.mjs",
+    "verify-phase8-duty-draw-concurrency:native": "node verify_phase8_duty_draw_concurrency_native.mjs",
     "verify-concurrency:native": "node verify_concurrency_native.mjs",
-    "test:native": "npm run migrate:native && npm run harness:native && npm run verify-export-isolation:native && npm run verify-phase7-dashboard-aggregates:native && npm run verify-phase7-entity-and-admin-aggregates:native && npm run verify-phase8-operational-workflows:native && npm run verify-phase8-leave-concurrency:native && npm run verify-concurrency:native"
+    "test:native": "npm run migrate:native && npm run harness:native && npm run verify-export-isolation:native && npm run verify-phase7-dashboard-aggregates:native && npm run verify-phase7-entity-and-admin-aggregates:native && npm run verify-phase8-operational-workflows:native && npm run verify-phase8-leave-concurrency:native && npm run verify-phase8-duty-draw-concurrency:native && npm run verify-concurrency:native"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.8",

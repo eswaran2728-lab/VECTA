@@ -5448,6 +5448,21 @@ export type Database = {
           late_remark: string | null
         }[]
       }
+      list_duty_draw_history_secure: {
+        Args: { p_station: string }
+        Returns: {
+          draw_id: string
+          draw_date: string
+          status: string
+          initiated_by: string
+          finalized_by: string | null
+          finalized_at: string | null
+        }[]
+      }
+      list_station_staff_for_draw_secure: {
+        Args: { p_station: string }
+        Returns: { profile_id: string; name: string; staff_no: string | null }[]
+      }
       get_investigation_case_secure: {
         Args: { p_case_id: string }
         Returns: {
