@@ -18,6 +18,7 @@ import { AnnouncementBanner } from "@/components/avsec/announcements/Announcemen
 import { searchDailyReportsByStaff, searchAircraftReportsByStaff } from "@/lib/avsec/search/queries";
 import { getNeedsYourActionItems } from "@/lib/dashboard/needs-your-action";
 import { NeedsYourActionPanel } from "@/components/dashboard/NeedsYourActionPanel";
+import { createClient } from "@/lib/supabase/server";
 
 export default async function DashboardPage({
   searchParams: searchParamsPromise,
@@ -37,6 +38,8 @@ export default async function DashboardPage({
   };
 
   const isManagement = profile.role === "MANAGEMENT" || profile.role === "ADMIN";
+  const supabaseForRoleCheck = await createClient();
+  const { data: isMainEnforcement } = await supabaseForRoleCheck.rpc("has_active_role", { p_role_code: "main_enforcement" });
 
   const [{ counts, submissions }, bayBoard, announcements, feedbackStats, actionItems] = await Promise.all([
     getTodayCounts(filters),
@@ -149,6 +152,12 @@ export default async function DashboardPage({
         {(profile.role === "ENFORCEMENT" || profile.role === "MANAGEMENT") && (
           <Link href="/avsec/enforcement/search" className="btn-secondary w-full text-center">
             Enforcement Search →
+          </Link>
+        )}
+
+        {isMainEnforcement && (
+          <Link href="/avsec/enforcement/workforce" className="btn-secondary w-full text-center">
+            Main Enforcement Workspace →
           </Link>
         )}
 

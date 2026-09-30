@@ -318,6 +318,97 @@ async function main() {
   }
 
   // =====================================================================
+  // 1b. MAIN ENFORCEMENT WORKFORCE AUTHORITY (Phase 8 Round 2, Slice 1)
+  // =====================================================================
+  {
+    // Enforcement-department (Investigation) submitter's leave request.
+    await simulateServiceRole();
+    const enfLeave = await db.query(
+      `insert into public.absence_notices (user_id, staff_name, role, station, team, duty_date, shift_start_time, gap_minutes, status, remarks, leave_type, start_date, end_date, approval_status)
+       values ($1, 'x', 'INVESTIGATION_SSO', null, null, '2027-02-01', now(), 999, 'green', 'x', 'annual', '2027-02-01', '2027-02-02', 'pending') returning id;`,
+      [STAFF_ENFORCEMENT_INV_SSO],
+    );
+    const enfLeaveId = enfLeave.rows[0].id;
+    await clearSim();
+
+    // Operation Manager must NOT be able to decide an Enforcement submitter's leave.
+    await simulateUser(OPS_MGR);
+    await db.exec('savepoint sp_opsmgr_wrong_dept_leave;');
+    let opsMgrDeniedEnfLeave = false;
+    try {
+      await db.query('select * from public.review_leave_request_secure($1, $2, $3);', [enfLeaveId, 'approve', null]);
+    } catch (e) {
+      opsMgrDeniedEnfLeave = /No active Phase 3 role assignment/.test(e.message);
+      await db.exec('rollback to savepoint sp_opsmgr_wrong_dept_leave;');
+    }
+    await clearSim();
+    assert(opsMgrDeniedEnfLeave, 'Operation Manager cannot decide an Enforcement-department leave request');
+
+    // Main Enforcement can approve it.
+    await simulateUser(MAIN_ENF);
+    const enfLeaveResult = await db.query('select * from public.review_leave_request_secure($1, $2, $3);', [enfLeaveId, 'approve', null]);
+    await clearSim();
+    assert(enfLeaveResult.rows[0].result_status === 'approved', 'Main Enforcement can approve an Enforcement-department leave request');
+
+    const enfAuditRow = await db.query(
+      "select count(*)::int as c from public.phase8_audit_log where entity_type='absence_notice' and entity_id=$1 and action='leave_approved' and detail->>'reviewer_route' = 'main_enforcement';",
+      [enfLeaveId],
+    );
+    assert(enfAuditRow.rows[0].c === 1, 'Enforcement leave approval is audited with reviewer_route=main_enforcement');
+
+    // An Operation-department submitter's leave must NOT be decidable by Main Enforcement.
+    await simulateServiceRole();
+    const opLeave2 = await db.query(
+      `insert into public.absence_notices (user_id, staff_name, role, station, team, duty_date, shift_start_time, gap_minutes, status, remarks, leave_type, start_date, end_date, approval_status)
+       values ($1, 'x', 'ASO', 'PEN', 'Alpha', '2027-02-01', now(), 999, 'green', 'x', 'annual', '2027-02-01', '2027-02-02', 'pending') returning id;`,
+      [STAFF_OPERATION],
+    );
+    const opLeave2Id = opLeave2.rows[0].id;
+    await clearSim();
+
+    await simulateUser(MAIN_ENF);
+    await db.exec('savepoint sp_main_enf_wrong_dept_leave;');
+    let mainEnfDeniedOpLeave = false;
+    try {
+      await db.query('select * from public.review_leave_request_secure($1, $2, $3);', [opLeave2Id, 'approve', null]);
+    } catch (e) {
+      mainEnfDeniedOpLeave = /No active Phase 3 role assignment/.test(e.message);
+      await db.exec('rollback to savepoint sp_main_enf_wrong_dept_leave;');
+    }
+    await clearSim();
+    assert(mainEnfDeniedOpLeave, 'Main Enforcement cannot decide an Operation-department leave request');
+
+    // Workforce/attendance/pending-action visibility.
+    await simulateUser(MAIN_ENF);
+    const workforceRows = await db.query('select * from public.list_enforcement_workforce_secure();');
+    await clearSim();
+    assert(
+      workforceRows.rows.some((r) => r.profile_id === STAFF_ENFORCEMENT_INV_SSO),
+      'Main Enforcement can list the Enforcement-department workforce, including Investigation staff',
+    );
+
+    await simulateUser(DSE_ALPHA);
+    await db.exec('savepoint sp_dse_workforce_denied;');
+    let dseWorkforceDenied = false;
+    try {
+      await db.query('select * from public.list_enforcement_workforce_secure();');
+    } catch (e) {
+      dseWorkforceDenied = /Only Main Enforcement/.test(e.message);
+      await db.exec('rollback to savepoint sp_dse_workforce_denied;');
+    }
+    await clearSim();
+    assert(dseWorkforceDenied, 'DSE cannot list the Enforcement-department workforce (main_enforcement-only RPC)');
+
+    await simulateUser(MAIN_ENF);
+    const pendingActions = await db.query('select * from public.list_enforcement_pending_actions_secure();');
+    await clearSim();
+    assert(
+      pendingActions.rows.some((r) => r.kind === 'leave' && r.record_id === enfLeaveId) === false,
+      'A decided (approved) leave request no longer appears in pending Enforcement actions',
+    );
+  }
+
+  // =====================================================================
   // 3. ROSTER OWNERSHIP
   // =====================================================================
   {

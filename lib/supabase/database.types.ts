@@ -5423,6 +5423,41 @@ export type Database = {
         Args: { p_report_id: string }
         Returns: undefined
       }
+      list_enforcement_workforce_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          profile_id: string
+          name: string
+          staff_no: string | null
+          role_code: string
+          unit_code: string | null
+          hub_id: string | null
+          station_id: string | null
+          team_id: string | null
+          status: string
+        }[]
+      }
+      list_enforcement_attendance_exceptions_secure: {
+        Args: { p_since?: string | null }
+        Returns: {
+          profile_id: string
+          staff_name: string
+          duty_date: string
+          shift_code: string
+          status: string
+          late_remark: string | null
+        }[]
+      }
+      list_enforcement_pending_actions_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          kind: string
+          record_id: string
+          staff_name: string
+          detail: string
+          submitted_at: string
+        }[]
+      }
       sanitize_csv_value: { Args: { p_value: string | null }; Returns: string | null }
       export_reports_secure: {
         Args: {

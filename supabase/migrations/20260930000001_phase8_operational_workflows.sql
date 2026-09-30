@@ -246,6 +246,8 @@ declare
   v_is_dse boolean := false;
   v_is_hub_se boolean := false;
   v_is_operation_manager boolean := false;
+  v_is_main_enforcement boolean := false;
+  v_submitter_dept text;
   v_overlap_count integer;
   v_new_status text;
 begin
@@ -274,6 +276,45 @@ begin
     v_team_id := public.resolve_legacy_team(v_station_id, v_notice.team);
   end if;
   select id into v_aoc_id from public.aocs where code = 'MY';
+  v_submitter_dept := public.submitter_department_code(v_notice.user_id);
+
+  -- Enforcement dept (Investigation / SAT / Profiling) has no DSE/Hub SE
+  -- equivalent -- Main Enforcement is the sole and final leave authority
+  -- for its own department's staff, per Phase 8 Round 2 Slice 1. This
+  -- branch is evaluated BEFORE the Operation-side scope resolution below
+  -- and is mutually exclusive with it: an Enforcement submitter's request
+  -- can never be decided by an Operation Manager/Hub SE/DSE, and an
+  -- Operation submitter's request can never be decided by Main
+  -- Enforcement (department separation, checked explicitly).
+  if v_submitter_dept = 'enforcement' then
+    v_is_main_enforcement := public.has_active_role('main_enforcement');
+    if not v_is_main_enforcement then
+      raise exception 'No active Phase 3 role assignment grants authority to review this Enforcement leave request. Only Main Enforcement may decide Enforcement-department leave.';
+    end if;
+
+    if p_action = 'reject' then
+      v_new_status := 'rejected';
+    else
+      perform pg_advisory_xact_lock(hashtext(coalesce(v_notice.station, '') || '|' || coalesce(v_notice.team, '') || '|' || v_notice.leave_type || '|enforcement'));
+      v_new_status := 'approved';
+    end if;
+
+    update public.absence_notices
+    set approval_status = v_new_status,
+        reviewed_by = auth.uid(),
+        reviewed_at = now(),
+        review_notes = nullif(trim(coalesce(p_review_notes, '')), '')
+    where absence_notices.id = p_notice_id;
+
+    perform public.phase8_write_audit(
+      'leave_' || v_new_status, 'absence_notice', p_notice_id,
+      jsonb_build_object('leave_type', v_notice.leave_type, 'station', v_notice.station, 'team', v_notice.team, 'reviewer_route', 'main_enforcement', 'department', 'enforcement')
+    );
+    perform public.phase8_notify(v_notice.user_id, 'leave_status_changed', jsonb_build_object('notice_id', p_notice_id, 'status', v_new_status));
+
+    return query select p_notice_id, v_new_status;
+    return;
+  end if;
 
   v_is_operation_manager := public.has_active_role('operation_manager');
   if v_hub_id is not null then
@@ -1320,3 +1361,144 @@ $function$;
 
 revoke execute on function public.acknowledge_sec013_report_secure(uuid) from public, anon;
 grant execute on function public.acknowledge_sec013_report_secure(uuid) to authenticated, service_role;
+
+-- =======================================================================
+-- PART I: MAIN ENFORCEMENT WORKFORCE AUTHORITY (Phase 8 Round 2, Slice 1)
+-- =======================================================================
+-- Main Enforcement is the sole and final Malaysia-wide workforce
+-- authority for Investigation, SAT and Profiling (Enforcement dept).
+-- Every function below is main_enforcement-only, resolved via the same
+-- has_active_role() every other Phase 8 RPC uses -- never a legacy rank
+-- check -- and is strictly read-only for staffing/roster VISIBILITY
+-- (the actual roster-editing surface for SAT/Profiling teams is Slice 2/3
+-- work; Investigation is Malaysia-wide and has no station/team roster
+-- concept at all per the Phase 3 scope-shape rules). This deliberately
+-- does NOT grant any Operation-department visibility -- department
+-- separation is enforced by filtering strictly to department code
+-- 'enforcement', never by trusting a client-supplied department claim.
+
+create or replace function public.list_enforcement_workforce_secure()
+returns table (
+  profile_id uuid,
+  name text,
+  staff_no text,
+  role_code text,
+  unit_code text,
+  hub_id uuid,
+  station_id uuid,
+  team_id uuid,
+  status text
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if not public.has_active_role('main_enforcement') then
+    raise exception 'Only Main Enforcement may view the Enforcement workforce roster.';
+  end if;
+
+  return query
+  select p.id, p.name, p.staff_no, rd.code, u.code, ura.hub_id, ura.station_id, ura.team_id, p.status::text
+  from public.user_role_assignments ura
+  join public.role_definitions rd on rd.id = ura.role_definition_id
+  join public.departments d on d.id = ura.department_id
+  join public.profiles p on p.id = ura.profile_id
+  left join public.units u on u.id = ura.unit_id
+  where d.code = 'enforcement'
+    and ura.revoked_at is null
+    and ura.starts_at <= now()
+    and (ura.ends_at is null or ura.ends_at > now())
+  order by u.code, p.name;
+end;
+$function$;
+
+revoke execute on function public.list_enforcement_workforce_secure() from public, anon;
+grant execute on function public.list_enforcement_workforce_secure() to authenticated, service_role;
+
+-- Attendance/check-in exceptions (late, absent, no-show) for any staff
+-- member currently holding an active Enforcement-department role
+-- assignment -- resolved via the same department filter as above, never
+-- by matching on legacy free-text role/station values.
+create or replace function public.list_enforcement_attendance_exceptions_secure(p_since date default (current_date - 7))
+returns table (
+  profile_id uuid,
+  staff_name text,
+  duty_date date,
+  shift_code text,
+  status text,
+  late_remark text
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if not public.has_active_role('main_enforcement') then
+    raise exception 'Only Main Enforcement may view Enforcement attendance exceptions.';
+  end if;
+
+  return query
+  select dr.profile_id, p.name, dr.duty_date, dr.shift_code, dr.status, dr.late_remark
+  from public.duty_records dr
+  join public.profiles p on p.id = dr.profile_id
+  where dr.duty_date >= p_since
+    and dr.status in ('absent', 'late', 'early_out')
+    and exists (
+      select 1 from public.user_role_assignments ura
+      join public.departments d on d.id = ura.department_id
+      where ura.profile_id = dr.profile_id
+        and d.code = 'enforcement'
+        and ura.revoked_at is null
+        and ura.starts_at <= now()
+        and (ura.ends_at is null or ura.ends_at > now())
+    )
+  order by dr.duty_date desc, p.name;
+end;
+$function$;
+
+revoke execute on function public.list_enforcement_attendance_exceptions_secure(date) from public, anon;
+grant execute on function public.list_enforcement_attendance_exceptions_secure(date) to authenticated, service_role;
+
+-- Pending decisions awaiting Main Enforcement action: leave requests and
+-- OT requests submitted by Enforcement-department staff. Used to drive
+-- the Main Enforcement dashboard's pending-action indicators. Read-only,
+-- department-filtered the same way as the two functions above.
+create or replace function public.list_enforcement_pending_actions_secure()
+returns table (
+  kind text,
+  record_id uuid,
+  staff_name text,
+  detail text,
+  submitted_at timestamptz
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if not public.has_active_role('main_enforcement') then
+    raise exception 'Only Main Enforcement may view Enforcement pending actions.';
+  end if;
+
+  return query
+  select 'leave'::text, an.id, an.staff_name,
+    an.leave_type || ' (' || an.start_date::text || ' to ' || an.end_date::text || ')',
+    an.submitted_at
+  from public.absence_notices an
+  where an.approval_status = 'pending'
+    and public.submitter_department_code(an.user_id) = 'enforcement'
+  union all
+  select 'overtime'::text, ot.id, p.name,
+    coalesce(ot.status, 'pending'),
+    ot.created_at
+  from public.overtime_requests ot
+  join public.profiles p on p.id = ot.profile_id
+  where ot.status in ('pending', 'endorsed')
+    and public.submitter_department_code(ot.profile_id) = 'enforcement'
+  order by submitted_at desc;
+end;
+$function$;
+
+revoke execute on function public.list_enforcement_pending_actions_secure() from public, anon;
+grant execute on function public.list_enforcement_pending_actions_secure() to authenticated, service_role;

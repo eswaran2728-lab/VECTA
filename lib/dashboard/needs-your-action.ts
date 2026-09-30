@@ -183,6 +183,29 @@ async function getAvsecActionItems(profile: Profile): Promise<ActionItem[]> {
     }
   }
 
+  // Main Enforcement: pending Enforcement-department leave/OT decisions,
+  // resolved via the authorized, department-filtered RPC rather than a
+  // legacy-rank-scoped query (Main Enforcement is a Phase 3 role, never
+  // guaranteed to carry a legacy org-wide profile.role value).
+  {
+    const { data: isMainEnforcement } = await supabase.rpc("has_active_role", { p_role_code: "main_enforcement" });
+    if (isMainEnforcement === true) {
+      const { data: pendingEnforcement } = await supabase.rpc("list_enforcement_pending_actions_secure");
+      for (const r of pendingEnforcement ?? []) {
+        const hoursPending = hoursAgo(r.submitted_at);
+        items.push({
+          id: `enforcement-${r.kind}-${r.record_id}`,
+          source: "avsec",
+          category: r.kind === "leave" ? "Enforcement Leave Pending" : "Enforcement OT Pending",
+          title: r.staff_name,
+          detail: `${r.detail} · pending ${hoursPending.toFixed(0)}h`,
+          href: "/avsec/enforcement/workforce",
+          overdue: hoursPending >= OT_LEAVE_OVERDUE_HOURS,
+        });
+      }
+    }
+  }
+
   return items;
 }
 

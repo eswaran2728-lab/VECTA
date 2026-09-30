@@ -188,3 +188,28 @@ export async function listSatCombinedReportsSecure(station?: string, team?: stri
 export async function acknowledgeSec013ReportSecure(reportId: string) {
   return callVoidRpc("acknowledge_sec013_report_secure", { p_report_id: reportId });
 }
+
+// --- Main Enforcement workforce authority (Phase 8 Round 2, Slice 1) ---
+
+export async function listEnforcementWorkforceSecure() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("list_enforcement_workforce_secure");
+  if (error) return { ok: false, error: error.message, data: null } satisfies Phase8ActionResult;
+  return { ok: true, error: null, data: data ?? [] } satisfies Phase8ActionResult<NonNullable<typeof data>>;
+}
+
+export async function listEnforcementAttendanceExceptionsSecure(sinceDate?: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("list_enforcement_attendance_exceptions_secure", {
+    p_since: sinceDate ?? null,
+  });
+  if (error) return { ok: false, error: error.message, data: null } satisfies Phase8ActionResult;
+  return { ok: true, error: null, data: data ?? [] } satisfies Phase8ActionResult<NonNullable<typeof data>>;
+}
+
+export async function listEnforcementPendingActionsSecure() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("list_enforcement_pending_actions_secure");
+  if (error) return { ok: false, error: error.message, data: null } satisfies Phase8ActionResult;
+  return { ok: true, error: null, data: data ?? [] } satisfies Phase8ActionResult<NonNullable<typeof data>>;
+}
