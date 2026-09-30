@@ -376,6 +376,70 @@ $function$;
 revoke execute on function public.review_leave_request_secure(uuid, text, text) from public, anon;
 grant execute on function public.review_leave_request_secure(uuid, text, text) to authenticated, service_role;
 
+-- Pending Operation-department leave requests visible to the CALLER's
+-- own active scope (Phase 8 Round 2, Slice 6) -- mirrors review_leave_
+-- request_secure()'s own scope resolution exactly (DSE: own KUL team
+-- only; Hub SE: own hub; Operation Manager: Malaysia Operation-wide),
+-- so a request never appears in this list unless the SAME caller could
+-- also decide it via review_leave_request_secure(). Enforcement-
+-- department leave is deliberately excluded here -- see
+-- list_enforcement_pending_actions_secure() for that queue.
+create or replace function public.list_pending_leave_for_reviewer_secure()
+returns setof public.absence_notices
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_aoc_id uuid;
+  v_is_operation_manager boolean;
+  v_is_hub_se boolean;
+  v_hub_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Must be signed in.';
+  end if;
+  select id into v_aoc_id from public.aocs where code = 'MY';
+
+  v_is_operation_manager := public.has_active_role('operation_manager');
+  if v_is_operation_manager then
+    return query select * from public.absence_notices where approval_status in ('pending', 'pending_cancellation') order by submitted_at asc;
+    return;
+  end if;
+
+  -- Hub SE: every station within their own hub.
+  select ura.hub_id into v_hub_id
+  from public.user_role_assignments ura
+  join public.role_definitions rd on rd.id = ura.role_definition_id
+  where ura.profile_id = auth.uid() and rd.code = 'hub_se'
+    and ura.revoked_at is null and ura.starts_at <= now() and (ura.ends_at is null or ura.ends_at > now())
+  limit 1;
+
+  if v_hub_id is not null then
+    v_is_hub_se := true;
+    return query
+    select an.*
+    from public.absence_notices an
+    where an.approval_status in ('pending', 'pending_cancellation')
+      and exists (
+        select 1 from public.resolve_legacy_station(an.station) rs where rs.hub_id = v_hub_id
+      )
+    order by an.submitted_at asc;
+    return;
+  end if;
+
+  -- DSE (legacy compatibility path already handled by the existing
+  -- station/team-scoped UI query -- this RPC only covers Phase 3
+  -- hub_se/operation_manager; a caller with neither gets an empty set,
+  -- never an error, so this can be called speculatively by any page).
+  return;
+end;
+$function$;
+
+revoke execute on function public.list_pending_leave_for_reviewer_secure() from public, anon;
+grant execute on function public.list_pending_leave_for_reviewer_secure() to authenticated, service_role;
+
 -- =======================================================================
 -- PART C: OVERTIME APPROVAL ROUTING
 -- =======================================================================

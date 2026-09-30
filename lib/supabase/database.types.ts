@@ -5423,6 +5423,36 @@ export type Database = {
         Args: { p_report_id: string }
         Returns: undefined
       }
+      list_pending_leave_for_reviewer_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          user_id: string
+          staff_name: string
+          staff_id: string | null
+          role: string
+          station: string | null
+          team: string | null
+          ops_group: string | null
+          shift_code: string | null
+          duty_date: string
+          leave_type: string
+          start_date: string
+          end_date: string
+          shift_start_time: string
+          submitted_at: string
+          gap_minutes: number | null
+          status: string | null
+          approval_status: string
+          reviewed_by: string | null
+          reviewed_at: string | null
+          review_notes: string | null
+          cancellation_reason: string | null
+          cancel_requested_at: string | null
+          remarks: string
+          created_at: string
+        }[]
+      }
       list_enforcement_workforce_secure: {
         Args: Record<PropertyKey, never>
         Returns: {

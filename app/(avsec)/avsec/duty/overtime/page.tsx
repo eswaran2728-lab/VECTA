@@ -26,6 +26,14 @@ export default async function OvertimeListPage({
   const profile = await requireProfile();
   const isDse = profile.role === "DSE";
   const orgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
+  const supabaseForRoleCheck = await createClient();
+  const [{ data: isHubSe }, { data: isOperationManager }, { data: isMainEnforcement }] = await Promise.all([
+    supabaseForRoleCheck.rpc("has_active_role", { p_role_code: "hub_se" }),
+    supabaseForRoleCheck.rpc("has_active_role", { p_role_code: "operation_manager" }),
+    supabaseForRoleCheck.rpc("has_active_role", { p_role_code: "main_enforcement" }),
+  ]);
+  const canEndorseRole = isDse || !!isHubSe;
+  const canApproveRole = orgWide || !!isOperationManager || !!isMainEnforcement;
   const rows = await getVisibleOvertimeRequests();
 
   const active = FILTERS.includes(searchParams.status as (typeof FILTERS)[number])
@@ -53,7 +61,11 @@ export default async function OvertimeListPage({
             <p className="font-mono text-xs text-muted-foreground mt-0.5">
               {isDse
                 ? `DSE Approval Queue · ${profile.station ?? "All Stations"}`
-                : orgWide
+                : isHubSe
+                ? "Hub SE Endorsement Queue"
+                : isOperationManager
+                ? "Operation Manager Final Approval Queue"
+                : orgWide || isMainEnforcement
                 ? "Management Overtime Review"
                 : "Auto-Calculated Overtime Records"}
             </p>
@@ -114,10 +126,10 @@ export default async function OvertimeListPage({
             // pending request (own station, via RLS/action scoping); only
             // Management gives final approval, and only once endorsed.
             // Either can reject, DSE only while still pending.
-            const canEndorse = isDse && !mine && r.status === "pending";
-            const canApprove = orgWide && !mine && r.status === "endorsed";
+            const canEndorse = canEndorseRole && !mine && r.status === "pending";
+            const canApprove = canApproveRole && !mine && r.status === "endorsed";
             const canReject =
-              !mine && ((isDse && r.status === "pending") || (orgWide && ["pending", "endorsed"].includes(r.status)));
+              !mine && ((canEndorseRole && r.status === "pending") || (canApproveRole && ["pending", "endorsed"].includes(r.status)));
 
             return (
               <div key={r.id} className="vecta-panel space-y-2 !p-4">

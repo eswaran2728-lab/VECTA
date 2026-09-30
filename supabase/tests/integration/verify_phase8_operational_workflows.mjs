@@ -278,6 +278,41 @@ async function main() {
   }
 
   // =====================================================================
+  // 1c. PENDING-LEAVE REVIEWER LIST (Phase 8 Round 2, Slice 6)
+  // =====================================================================
+  {
+    await simulateServiceRole();
+    const penPending = await db.query(
+      `insert into public.absence_notices (user_id, staff_name, role, station, team, duty_date, shift_start_time, gap_minutes, status, remarks, leave_type, start_date, end_date, approval_status)
+       values ($1, 'x', 'ASO', 'PEN', 'Alpha', '2027-01-20', now(), 999, 'green', 'x', 'annual', '2027-01-20', '2027-01-20', 'pending') returning id;`,
+      [STAFF_OPERATION],
+    );
+    const penPendingId = penPending.rows[0].id;
+    await clearSim();
+
+    // Hub SE Northern (PEN's hub) sees it.
+    await simulateUser(HUB_SE_NORTHERN);
+    const hubSeList = await db.query('select * from public.list_pending_leave_for_reviewer_secure();');
+    await clearSim();
+    assert(hubSeList.rows.some((r) => r.id === penPendingId), 'Hub SE sees a pending leave request for a station within their own hub');
+
+    // Operation Manager sees it too (Malaysia-wide Operation scope).
+    await simulateUser(OPS_MGR);
+    const opsMgrList = await db.query('select * from public.list_pending_leave_for_reviewer_secure();');
+    await clearSim();
+    assert(opsMgrList.rows.some((r) => r.id === penPendingId), 'Operation Manager sees the same pending request (Malaysia-wide Operation scope)');
+
+    // A DSE (KUL hub, different hub entirely) calling the SAME RPC gets
+    // an empty set, never an error -- this RPC is Phase-3 hub_se/
+    // operation_manager-specific; DSE's own review queue is served by
+    // the existing station/team-scoped UI query instead.
+    await simulateUser(DSE_ALPHA);
+    const dseList = await db.query('select * from public.list_pending_leave_for_reviewer_secure();');
+    await clearSim();
+    assert(dseList.rows.length === 0, 'A DSE caller gets an empty set from list_pending_leave_for_reviewer_secure (not an error) -- this RPC is Hub SE/Operation Manager-specific');
+  }
+
+  // =====================================================================
   // 2. OT ROUTING
   // =====================================================================
   {

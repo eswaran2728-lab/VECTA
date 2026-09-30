@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { requireProfile } from "@/lib/avsec/auth";
+import { createClient } from "@/lib/supabase/server";
 import { formatAbsenceGap, LEAVE_TYPE_LABELS, LEAVE_TYPE_ICONS } from "@/lib/avsec/duty/absence-logic";
-import { getAbsenceNotices } from "@/lib/avsec/duty/absence-queries";
+import { getAbsenceNotices, type AbsenceNoticeRow } from "@/lib/avsec/duty/absence-queries";
 import { ROLE_LABELS, ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { LeaveReviewControls, RequestLeaveCancellationControl } from "@/components/avsec/duty/LeaveReviewControls";
 import { HighlightTarget } from "@/components/dashboard/HighlightTarget";
@@ -16,20 +17,36 @@ export default async function StaffLeavePortalPage({
   const isManagement = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
   const isDSE = profile.role === "DSE";
 
+  const supabaseForRoleCheck = await createClient();
+  const [{ data: isHubSe }, { data: isOperationManager }] = await Promise.all([
+    supabaseForRoleCheck.rpc("has_active_role", { p_role_code: "hub_se" }),
+    supabaseForRoleCheck.rpc("has_active_role", { p_role_code: "operation_manager" }),
+  ]);
+  const isPhase8Reviewer = !!isHubSe || !!isOperationManager;
+
   // Fetch staff's own records
   const personalRecords = await getAbsenceNotices({
     userId: profile.id,
     limit: 50,
   });
 
-  // If DSE, also fetch station/team records
-  const teamRecords = isDSE
-    ? await getAbsenceNotices({
-        station: profile.station ?? undefined,
-        team: profile.team ?? undefined,
-        limit: 100,
-      })
-    : [];
+  // Legacy DSE: station/team-scoped query (unchanged). Phase 3 Hub SE /
+  // Operation Manager: list_pending_leave_for_reviewer_secure() resolves
+  // the correct scope itself (own hub / Malaysia Operation-wide) --
+  // mirrors review_leave_request_secure()'s own scope resolution exactly,
+  // so a request is never shown here that the same caller couldn't also
+  // decide.
+  let teamRecords: AbsenceNoticeRow[] = [];
+  if (isDSE) {
+    teamRecords = await getAbsenceNotices({
+      station: profile.station ?? undefined,
+      team: profile.team ?? undefined,
+      limit: 100,
+    });
+  } else if (isPhase8Reviewer) {
+    const { data } = await supabaseForRoleCheck.rpc("list_pending_leave_for_reviewer_secure");
+    teamRecords = (data ?? []) as unknown as AbsenceNoticeRow[];
+  }
 
   const pendingCount = teamRecords.filter(
     (r) => r.approval_status === "pending" || r.approval_status === "pending_cancellation"
@@ -82,13 +99,18 @@ export default async function StaffLeavePortalPage({
           </p>
         </div>
 
-        {/* DSE Pending Approvals Feed */}
-        {isDSE && (
+        {/* DSE / Hub SE / Operation Manager Pending Approvals Feed */}
+        {(isDSE || isPhase8Reviewer) && (
           <section className="space-y-3 pt-2">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="font-display font-semibold text-base text-foreground flex items-center gap-2">
-                  <span>📥</span> DSE Review Queue ({profile.station || "All"} · Team {profile.team || "All"})
+                  <span>📥</span>{" "}
+                  {isDSE
+                    ? `DSE Review Queue (${profile.station || "All"} · Team ${profile.team || "All"})`
+                    : isOperationManager
+                      ? "Operation Manager Review Queue (Malaysia Operation)"
+                      : "Hub SE Review Queue (own hub)"}
                 </h2>
                 <p className="font-mono text-xs text-muted-foreground">
                   Pending leave applications and cancellation requests submitted by duty staff in your station/team.
