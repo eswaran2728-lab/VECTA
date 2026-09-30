@@ -14,6 +14,7 @@ import {
   isSameDayLeave,
 } from "./absence-logic";
 import { ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
+import { reviewLeaveRequestSecure } from "@/lib/phase8/workforce";
 
 export interface LeaveSubmitInput {
   leaveType?: LeaveType;
@@ -278,6 +279,36 @@ export async function reviewLeaveApplication(input: {
   }
 
   const supabase = createAdminClient();
+
+  // Phase 8: any account holding an active Phase 3 scoped role assignment
+  // (operation_manager / hub_se / dse / main_enforcement / ...) MUST go
+  // through the concurrency-safe review_leave_request_secure() RPC for
+  // approve/reject -- never the legacy race-prone path below. The legacy
+  // path is retained ONLY as temporary compatibility for accounts that
+  // have not yet been migrated to a Phase 3 role assignment (see Phase 8
+  // Round 2, Part 12 -- production currently has zero active assignments).
+  if (input.action === "approve" || input.action === "reject") {
+    const nowIso = new Date().toISOString();
+    const { count: activeAssignmentCount } = await supabase
+      .from("user_role_assignments")
+      .select("id", { count: "exact", head: true })
+      .eq("profile_id", profile.id)
+      .is("revoked_at", null)
+      .lte("starts_at", nowIso)
+      .or(`ends_at.is.null,ends_at.gt.${nowIso}`);
+
+    if ((activeAssignmentCount ?? 0) > 0) {
+      const secureResult = await reviewLeaveRequestSecure(input.noticeId, input.action, input.reviewNotes);
+      if (!secureResult.ok) {
+        return { error: secureResult.error ?? "Failed to update review status.", success: false };
+      }
+      revalidatePath("/avsec/duty");
+      revalidatePath("/avsec/duty/absences");
+      revalidatePath("/avsec/admin/absences");
+      revalidatePath("/avsec/admin/roster");
+      return { error: null, success: true };
+    }
+  }
 
   // Fetch application to verify station scope for DSE and check concurrency cap
   const { data: notice, error: fetchErr } = await supabase
