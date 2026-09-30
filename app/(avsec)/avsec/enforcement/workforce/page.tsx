@@ -5,6 +5,8 @@ import {
   listEnforcementPendingActionsSecure,
 } from "@/lib/phase8/workforce";
 import { EnforcementLeaveDecisionControls } from "@/components/avsec/enforcement/EnforcementLeaveDecisionControls";
+import { ExportWorkforceButton } from "@/components/avsec/phase8/ExportWorkforceButton";
+import { exportEnforcementWorkforce } from "@/lib/phase8/exports";
 import { formatDateMY, formatDateTimeMY } from "@/lib/avsec/datetime";
 
 export default async function MainEnforcementWorkforcePage() {
@@ -99,6 +101,7 @@ export default async function MainEnforcementWorkforcePage() {
           <h2 className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
             Enforcement Workforce ({workforce.length})
           </h2>
+          <ExportWorkforceButton label="Enforcement Workforce" action={exportEnforcementWorkforce} />
           {workforce.length === 0 && (
             <div className="card p-6 text-center border-dashed text-xs text-muted-foreground">
               No active Enforcement-department role assignments found.

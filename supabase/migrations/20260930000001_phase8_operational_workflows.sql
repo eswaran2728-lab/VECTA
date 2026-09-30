@@ -134,6 +134,13 @@ create table if not exists public.phase8_audit_log (
   action text not null,
   entity_type text not null,
   entity_id uuid,
+  -- Snapshot of every active Phase 3 role assignment the actor held AT
+  -- THE MOMENT of this transition -- captured automatically inside
+  -- phase8_write_audit() below, not by each individual call site, so
+  -- "which role/scope authorized this" can never be omitted by a caller
+  -- that forgets to pass it. A revoked-after-the-fact assignment does
+  -- not retroactively change what this row says was true at the time.
+  actor_role_snapshot jsonb not null default '[]'::jsonb,
   detail jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
@@ -158,9 +165,28 @@ language plpgsql
 security definer
 set search_path to 'public'
 as $function$
+declare
+  v_role_snapshot jsonb;
 begin
-  insert into public.phase8_audit_log (actor_id, action, entity_type, entity_id, detail)
-  values (auth.uid(), p_action, p_entity_type, p_entity_id, coalesce(p_detail, '{}'::jsonb));
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'role_code', rd.code,
+    'aoc_id', ura.aoc_id,
+    'department_id', ura.department_id,
+    'unit_id', ura.unit_id,
+    'hub_id', ura.hub_id,
+    'station_id', ura.station_id,
+    'team_id', ura.team_id
+  )), '[]'::jsonb)
+  into v_role_snapshot
+  from public.user_role_assignments ura
+  join public.role_definitions rd on rd.id = ura.role_definition_id
+  where ura.profile_id = auth.uid()
+    and ura.revoked_at is null
+    and ura.starts_at <= now()
+    and (ura.ends_at is null or ura.ends_at > now());
+
+  insert into public.phase8_audit_log (actor_id, action, entity_type, entity_id, actor_role_snapshot, detail)
+  values (auth.uid(), p_action, p_entity_type, p_entity_id, v_role_snapshot, coalesce(p_detail, '{}'::jsonb));
 end;
 $function$;
 
@@ -777,7 +803,8 @@ begin
 
   update public.duty_draws set status = 'finalized', finalized_by = auth.uid(), finalized_at = now() where id = p_draw_id;
 
-  perform public.phase8_write_audit('duty_draw_finalize', 'duty_draw', p_draw_id, '{}'::jsonb);
+  perform public.phase8_write_audit('duty_draw_finalize', 'duty_draw', p_draw_id,
+    jsonb_build_object('previous_status', v_status, 'new_status', 'finalized'));
 end;
 $function$;
 
@@ -909,6 +936,100 @@ $function$;
 
 revoke execute on function public.list_station_staff_for_draw_secure(text) from public, anon;
 grant execute on function public.list_station_staff_for_draw_secure(text) to authenticated, service_role;
+
+-- =======================================================================
+-- PART J: AUDITED WORKFORCE EXPORTS (Phase 8 Round 2, Slice 8)
+-- =======================================================================
+-- Capped, authorized, audited exports -- never credentials/tokens, never
+-- personal data outside the workforce directory fields already exposed
+-- by list_enforcement_workforce_secure()/the roster pickers. Each call
+-- writes its own audit row (action 'export_generated') BEFORE returning
+-- data, inside the same transaction, so an export can never be taken
+-- without a corresponding audit row (fail-open on the read would leave
+-- an untracked export; this fails closed instead -- if the audit insert
+-- fails, the whole export fails with it).
+create or replace function public.export_operation_workforce_secure()
+returns table (
+  profile_id uuid, name text, staff_no text, role_code text, hub_id uuid, station_id uuid, team_id uuid, status text
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_row_count integer;
+begin
+  if not public.has_active_role('operation_manager') then
+    raise exception 'Only Operation Manager may export the Operation workforce directory.';
+  end if;
+
+  select count(*) into v_row_count
+  from public.user_role_assignments ura
+  join public.role_definitions rd on rd.id = ura.role_definition_id
+  join public.departments d on d.id = ura.department_id
+  where d.code = 'operation'
+    and ura.revoked_at is null and ura.starts_at <= now() and (ura.ends_at is null or ura.ends_at > now());
+
+  perform public.phase8_write_audit('export_generated', 'workforce_export', null,
+    jsonb_build_object('department', 'operation', 'row_count', least(v_row_count, 1000)));
+
+  return query
+  select p.id, p.name, p.staff_no, rd.code, ura.hub_id, ura.station_id, ura.team_id, p.status::text
+  from public.user_role_assignments ura
+  join public.role_definitions rd on rd.id = ura.role_definition_id
+  join public.departments d on d.id = ura.department_id
+  join public.profiles p on p.id = ura.profile_id
+  where d.code = 'operation'
+    and ura.revoked_at is null and ura.starts_at <= now() and (ura.ends_at is null or ura.ends_at > now())
+  order by p.name
+  limit 1000;
+end;
+$function$;
+
+revoke execute on function public.export_operation_workforce_secure() from public, anon;
+grant execute on function public.export_operation_workforce_secure() to authenticated, service_role;
+
+create or replace function public.export_enforcement_workforce_secure()
+returns table (
+  profile_id uuid, name text, staff_no text, role_code text, unit_code text, hub_id uuid, station_id uuid, team_id uuid, status text
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_row_count integer;
+begin
+  if not public.has_active_role('main_enforcement') then
+    raise exception 'Only Main Enforcement may export the Enforcement workforce directory.';
+  end if;
+
+  select count(*) into v_row_count
+  from public.user_role_assignments ura
+  join public.role_definitions rd on rd.id = ura.role_definition_id
+  join public.departments d on d.id = ura.department_id
+  where d.code = 'enforcement'
+    and ura.revoked_at is null and ura.starts_at <= now() and (ura.ends_at is null or ura.ends_at > now());
+
+  perform public.phase8_write_audit('export_generated', 'workforce_export', null,
+    jsonb_build_object('department', 'enforcement', 'row_count', least(v_row_count, 1000)));
+
+  return query
+  select p.id, p.name, p.staff_no, rd.code, u.code, ura.hub_id, ura.station_id, ura.team_id, p.status::text
+  from public.user_role_assignments ura
+  join public.role_definitions rd on rd.id = ura.role_definition_id
+  join public.departments d on d.id = ura.department_id
+  join public.profiles p on p.id = ura.profile_id
+  left join public.units u on u.id = ura.unit_id
+  where d.code = 'enforcement'
+    and ura.revoked_at is null and ura.starts_at <= now() and (ura.ends_at is null or ura.ends_at > now())
+  order by u.code, p.name
+  limit 1000;
+end;
+$function$;
+
+revoke execute on function public.export_enforcement_workforce_secure() from public, anon;
+grant execute on function public.export_enforcement_workforce_secure() to authenticated, service_role;
 
 -- =======================================================================
 -- PART F: INVESTIGATION CASE WORKFLOW
@@ -1074,6 +1195,8 @@ language plpgsql
 security definer
 set search_path to 'public'
 as $function$
+declare
+  v_note_id uuid;
 begin
   if not public.is_investigation_authorized() then
     raise exception 'Only Investigation or Main Enforcement may add case notes.';
@@ -1085,9 +1208,11 @@ begin
     raise exception 'Case not found.';
   end if;
 
-  insert into public.investigation_case_notes (case_id, author_id, note) values (p_case_id, auth.uid(), trim(p_note));
+  insert into public.investigation_case_notes (case_id, author_id, note) values (p_case_id, auth.uid(), trim(p_note))
+  returning id into v_note_id;
 
-  perform public.phase8_write_audit('investigation_case_note', 'investigation_case', p_case_id, '{}'::jsonb);
+  perform public.phase8_write_audit('investigation_case_note', 'investigation_case', p_case_id,
+    jsonb_build_object('note_id', v_note_id));
 end;
 $function$;
 
@@ -1161,7 +1286,8 @@ begin
   set status = 'resolved', resolution = trim(p_resolution), resolved_by = auth.uid(), resolved_at = now(), updated_at = now()
   where id = p_case_id;
 
-  perform public.phase8_write_audit('investigation_case_resolve', 'investigation_case', p_case_id, '{}'::jsonb);
+  perform public.phase8_write_audit('investigation_case_resolve', 'investigation_case', p_case_id,
+    jsonb_build_object('previous_status', v_status, 'new_status', 'resolved'));
 end;
 $function$;
 

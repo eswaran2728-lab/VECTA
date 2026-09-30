@@ -5489,6 +5489,33 @@ export type Database = {
           finalized_at: string | null
         }[]
       }
+      export_operation_workforce_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          profile_id: string
+          name: string
+          staff_no: string | null
+          role_code: string
+          hub_id: string | null
+          station_id: string | null
+          team_id: string | null
+          status: string
+        }[]
+      }
+      export_enforcement_workforce_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          profile_id: string
+          name: string
+          staff_no: string | null
+          role_code: string
+          unit_code: string | null
+          hub_id: string | null
+          station_id: string | null
+          team_id: string | null
+          status: string
+        }[]
+      }
       list_station_staff_for_draw_secure: {
         Args: { p_station: string }
         Returns: { profile_id: string; name: string; staff_no: string | null }[]

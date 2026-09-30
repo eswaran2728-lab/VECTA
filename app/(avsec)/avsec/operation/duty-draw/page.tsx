@@ -2,6 +2,8 @@ import { requireProfile } from "@/lib/avsec/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getDutyDraw, listDutyDrawHistory, listStationStaffForDraw, listDutyZonesForStation } from "@/lib/phase8/duty-draw";
 import { DutyDrawManager } from "@/components/avsec/operation/DutyDrawManager";
+import { ExportWorkforceButton } from "@/components/avsec/phase8/ExportWorkforceButton";
+import { exportOperationWorkforce } from "@/lib/phase8/exports";
 import { todayISODateMY } from "@/lib/avsec/datetime";
 
 export default async function DutyDrawPage({
@@ -48,6 +50,8 @@ export default async function DutyDrawPage({
               : "Read-only: only a finalized (published) result is visible to station staff."}
           </p>
         </div>
+
+        {isOperationManager && <ExportWorkforceButton label="Operation Workforce" action={exportOperationWorkforce} />}
 
         <DutyDrawManager
           station={station}

@@ -777,6 +777,75 @@ async function main() {
     assert(doubleAckDenied, 'Double-acknowledgement of the same report is rejected');
   }
 
+  // =====================================================================
+  // 8. AUDIT SNAPSHOT AND WORKFORCE EXPORTS (Phase 8 Round 2, Slice 8)
+  // =====================================================================
+  {
+    // Every phase8_write_audit() call now captures the actor's active
+    // Phase 3 role assignment(s) automatically -- verify a real row (the
+    // OPS_MGR escalated-approval from section 1) actually carries it.
+    const auditWithSnapshot = await db.query(
+      "select actor_role_snapshot from public.phase8_audit_log where actor_id = $1 and action = 'leave_approved' limit 1;",
+      [OPS_MGR],
+    );
+    assert(auditWithSnapshot.rows.length > 0, 'An audit row exists for the Operation Manager actor');
+    const snapshot = auditWithSnapshot.rows[0].actor_role_snapshot;
+    assert(Array.isArray(snapshot) && snapshot.length > 0, 'The audit row carries a non-empty actor_role_snapshot');
+    assert(snapshot.some((r) => r.role_code === 'operation_manager'), 'The captured snapshot correctly identifies operation_manager as the active role at the time of the transition');
+
+    // Operation Manager export: capped, authorized, self-audited.
+    await simulateUser(OPS_MGR);
+    const opExport = await db.query('select * from public.export_operation_workforce_secure();');
+    await clearSim();
+    assert(opExport.rows.some((r) => r.profile_id === DSE_ALPHA), 'Operation Manager export includes an Operation-department staff member (DSE Alpha)');
+    assert(opExport.rows.every((r) => r.profile_id !== STAFF_ENFORCEMENT_INV_SSO), 'Operation Manager export never includes Enforcement-department staff');
+
+    const opExportAudit = await db.query(
+      "select count(*)::int as c from public.phase8_audit_log where action = 'export_generated' and detail->>'department' = 'operation' and actor_id = $1;",
+      [OPS_MGR],
+    );
+    assert(opExportAudit.rows[0].c >= 1, 'The Operation workforce export is audited');
+
+    // Operation Manager cannot export the Enforcement workforce, and
+    // vice versa -- department separation applies to exports too.
+    await simulateUser(OPS_MGR);
+    await db.exec('savepoint sp_opsmgr_enf_export;');
+    let opsMgrEnfExportDenied = false;
+    try {
+      await db.query('select * from public.export_enforcement_workforce_secure();');
+    } catch (e) {
+      opsMgrEnfExportDenied = /Only Main Enforcement/.test(e.message);
+      await db.exec('rollback to savepoint sp_opsmgr_enf_export;');
+    }
+    await clearSim();
+    assert(opsMgrEnfExportDenied, 'Operation Manager cannot export the Enforcement workforce directory');
+
+    // Main Enforcement export: capped, authorized, self-audited.
+    await simulateUser(MAIN_ENF);
+    const enfExport = await db.query('select * from public.export_enforcement_workforce_secure();');
+    await clearSim();
+    assert(enfExport.rows.some((r) => r.profile_id === STAFF_ENFORCEMENT_INV_SSO), 'Main Enforcement export includes an Enforcement-department staff member (Investigation SSO)');
+    assert(enfExport.rows.every((r) => r.profile_id !== DSE_ALPHA), 'Main Enforcement export never includes Operation-department staff');
+
+    const enfExportAudit = await db.query(
+      "select count(*)::int as c from public.phase8_audit_log where action = 'export_generated' and detail->>'department' = 'enforcement' and actor_id = $1;",
+      [MAIN_ENF],
+    );
+    assert(enfExportAudit.rows[0].c >= 1, 'The Enforcement workforce export is audited');
+
+    await simulateUser(DSE_ALPHA);
+    await db.exec('savepoint sp_dse_op_export;');
+    let dseExportDenied = false;
+    try {
+      await db.query('select * from public.export_operation_workforce_secure();');
+    } catch (e) {
+      dseExportDenied = /Only Operation Manager/.test(e.message);
+      await db.exec('rollback to savepoint sp_dse_op_export;');
+    }
+    await clearSim();
+    assert(dseExportDenied, 'A DSE (not Operation Manager) cannot export the Operation workforce directory');
+  }
+
   console.log('\nAll Phase 8 operational-workflow checks passed.');
   await db.exec('rollback;');
   await db.close();
