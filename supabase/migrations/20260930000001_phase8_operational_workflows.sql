@@ -167,51 +167,24 @@ $function$;
 revoke execute on function public.phase8_write_audit(text, text, uuid, jsonb) from public, anon, authenticated;
 grant execute on function public.phase8_write_audit(text, text, uuid, jsonb) to service_role;
 
--- Generic in-app notifications. Retry-safe by construction: it's a plain
--- append-only insert inside the same transaction as the state change it
--- reports, so if the transaction commits, the notification exists -- there
--- is no separate delivery step to fail or need retrying. Not
--- client-forgeable: no authenticated INSERT grant exists (see below); only
--- the Phase 8 RPCs write rows, always with recipient/kind/payload they
--- determine server-side, never from client-supplied "who to notify" input.
-create table if not exists public.phase8_notifications (
-  id uuid primary key default gen_random_uuid(),
-  recipient_id uuid not null references public.profiles(id),
-  kind text not null,
-  payload jsonb not null default '{}'::jsonb,
-  read_at timestamptz,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists phase8_notifications_recipient_idx on public.phase8_notifications (recipient_id, read_at);
-
-alter table public.phase8_notifications enable row level security;
-revoke all on public.phase8_notifications from public, anon;
-
--- A recipient may read and mark-read only their own notifications.
-create policy "phase8_notifications_own_select" on public.phase8_notifications for select
-  using (recipient_id = auth.uid());
-create policy "phase8_notifications_own_mark_read" on public.phase8_notifications for update
-  using (recipient_id = auth.uid())
-  with check (recipient_id = auth.uid());
-
-grant select, update on public.phase8_notifications to authenticated;
-grant all on public.phase8_notifications to service_role;
-
-create or replace function public.phase8_notify(p_recipient_id uuid, p_kind text, p_payload jsonb default '{}'::jsonb)
-returns void
-language plpgsql
-security definer
-set search_path to 'public'
-as $function$
-begin
-  insert into public.phase8_notifications (recipient_id, kind, payload)
-  values (p_recipient_id, p_kind, coalesce(p_payload, '{}'::jsonb));
-end;
-$function$;
-
-revoke execute on function public.phase8_notify(uuid, text, jsonb) from public, anon, authenticated;
-grant execute on function public.phase8_notify(uuid, text, jsonb) to service_role;
+-- Notifications: Round 2, Slice 7 replaces the first Phase 8 pass's own
+-- separate phase8_notifications table with the ALREADY-ESTABLISHED
+-- Phase 4 public.user_notifications system (public.notify(), dedup_key-
+-- unique retry-safety, recipient-only select/mark-read RLS, no client
+-- INSERT grant). Since this migration has never been applied anywhere,
+-- correcting it here is a plain edit, not a production migration -- there
+-- is no phase8_notifications table or data to migrate away from. A
+-- second, disconnected notification inbox was never justified: Phase 8
+-- events are ordinary durable in-app notifications with no requirement
+-- Phase 4's system doesn't already meet.
+alter table public.user_notifications drop constraint if exists user_notifications_event_type_check;
+alter table public.user_notifications add constraint user_notifications_event_type_check
+  check (event_type in (
+    'request_submitted', 'request_approved', 'request_rejected',
+    'transfer_initiated', 'transfer_accepted', 'transfer_rejected',
+    'membership_ended', 'assignment_ended', 'deactivation',
+    'leave_status_changed', 'ot_status_changed', 'investigation_case_assigned'
+  ));
 
 -- =======================================================================
 -- PART B: LEAVE-REQUEST ROUTING (concurrency-safe)
@@ -310,7 +283,12 @@ begin
       'leave_' || v_new_status, 'absence_notice', p_notice_id,
       jsonb_build_object('leave_type', v_notice.leave_type, 'station', v_notice.station, 'team', v_notice.team, 'reviewer_route', 'main_enforcement', 'department', 'enforcement')
     );
-    perform public.phase8_notify(v_notice.user_id, 'leave_status_changed', jsonb_build_object('notice_id', p_notice_id, 'status', v_new_status));
+    perform public.notify(
+      v_notice.user_id, 'leave_status_changed',
+      'phase8_leave_' || p_notice_id || '_' || v_new_status,
+      null, null, null,
+      jsonb_build_object('notice_id', p_notice_id, 'status', v_new_status)
+    );
 
     return query select p_notice_id, v_new_status;
     return;
@@ -367,7 +345,12 @@ begin
     jsonb_build_object('leave_type', v_notice.leave_type, 'station', v_notice.station, 'team', v_notice.team, 'reviewer_route',
       case when v_is_operation_manager then 'operation_manager' when v_is_hub_se then 'hub_se' else 'dse' end)
   );
-  perform public.phase8_notify(v_notice.user_id, 'leave_status_changed', jsonb_build_object('notice_id', p_notice_id, 'status', v_new_status));
+  perform public.notify(
+    v_notice.user_id, 'leave_status_changed',
+    'phase8_leave_' || p_notice_id || '_' || v_new_status,
+    null, null, null,
+    jsonb_build_object('notice_id', p_notice_id, 'status', v_new_status)
+  );
 
   return query select p_notice_id, v_new_status;
 end;
@@ -560,7 +543,12 @@ begin
     jsonb_build_object('from_status', old.status, 'submitter_department', v_submitter_dept)
   );
   if new.status in ('approved', 'rejected') then
-    perform public.phase8_notify(old.profile_id, 'ot_status_changed', jsonb_build_object('request_id', new.id, 'status', new.status));
+    perform public.notify(
+      old.profile_id, 'ot_status_changed',
+      'phase8_ot_' || new.id || '_' || new.status,
+      null, null, null,
+      jsonb_build_object('request_id', new.id, 'status', new.status)
+    );
   end if;
 
   return new;
@@ -1112,6 +1100,8 @@ language plpgsql
 security definer
 set search_path to 'public'
 as $function$
+declare
+  v_now timestamptz := now();
 begin
   if not public.is_investigation_authorized() then
     raise exception 'Only Investigation or Main Enforcement may assign a case.';
@@ -1125,14 +1115,19 @@ begin
     raise exception 'Assignee does not hold an active Investigation role assignment.';
   end if;
 
-  update public.investigation_cases set assigned_to = p_assignee_id, updated_at = now() where id = p_case_id;
+  update public.investigation_cases set assigned_to = p_assignee_id, updated_at = v_now where id = p_case_id;
   if not found then
     raise exception 'Case not found.';
   end if;
 
   perform public.phase8_write_audit('investigation_case_assign', 'investigation_case', p_case_id,
     jsonb_build_object('assignee_id', p_assignee_id));
-  perform public.phase8_notify(p_assignee_id, 'investigation_case_assigned', jsonb_build_object('case_id', p_case_id));
+  perform public.notify(
+    p_assignee_id, 'investigation_case_assigned',
+    'phase8_invcase_assign_' || p_case_id || '_' || p_assignee_id || '_' || extract(epoch from v_now)::text,
+    null, null, null,
+    jsonb_build_object('case_id', p_case_id)
+  );
 end;
 $function$;
 

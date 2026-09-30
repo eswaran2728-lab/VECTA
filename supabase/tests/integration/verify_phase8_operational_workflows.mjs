@@ -275,6 +275,18 @@ async function main() {
 
     const auditRow = await db.query("select count(*)::int as c from public.phase8_audit_log where entity_type='absence_notice' and entity_id=$1 and action='leave_approved';", [fourthId]);
     assert(auditRow.rows[0].c === 1, 'Leave approval is audited exactly once');
+
+    // Slice 7 (Round 2): Phase 8 notifications are consolidated into the
+    // existing Phase 4 user_notifications system -- there is no separate
+    // phase8_notifications table any more. Prove a real row landed there,
+    // correctly deduplicated (a second identical notify() call for the
+    // exact same transition must not create a second row).
+    const notifRows = await db.query(
+      "select id, event_type, payload from public.user_notifications where event_type = 'leave_status_changed' and (payload->>'notice_id')::uuid = $1;",
+      [fourthId],
+    );
+    assert(notifRows.rows.length === 1, 'The leave-approval notification was written to the consolidated user_notifications table exactly once');
+    assert(notifRows.rows[0].payload.status === 'approved', 'The consolidated notification payload carries the correct new status');
   }
 
   // =====================================================================
@@ -554,6 +566,12 @@ async function main() {
 
     const linked = await db.query('select count(*)::int as c from public.investigation_case_reports where case_id = $1 and repository_report_id = $2;', [caseId, repositoryId]);
     assert(linked.rows[0].c === 1, 'Investigation SSO can link an authorized report to a case via has_report_access(), not a direct read');
+
+    const assignNotif = await db.query(
+      "select count(*)::int as c from public.user_notifications where event_type = 'investigation_case_assigned' and recipient_profile_id = $1 and (payload->>'case_id')::uuid = $2;",
+      [STAFF_ENFORCEMENT_INV_SSO, caseId],
+    );
+    assert(assignNotif.rows[0].c === 1, 'The case-assignment notification also lands in the consolidated user_notifications table');
 
     await simulateUser(STAFF_ENFORCEMENT_INV_SSO);
     await db.exec('savepoint sp_reopen;');
