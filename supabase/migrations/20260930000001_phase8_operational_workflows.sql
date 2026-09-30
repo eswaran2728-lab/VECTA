@@ -212,6 +212,37 @@ alter table public.user_notifications add constraint user_notifications_event_ty
     'leave_status_changed', 'ot_status_changed', 'investigation_case_assigned'
   ));
 
+-- Certification finding (multi-AOC pass): has_active_role(p_role_code) is
+-- has_role_in_scope(p_role_code) with EVERY scope parameter, including
+-- aoc_id, left null -- meaning it performs NO AOC filtering whatsoever.
+-- Every Phase 8 RPC below is Malaysia-only by design (each one resolves
+-- its own v_aoc_id via `select id from aocs where code = 'MY'` for the
+-- DATA it operates on), but dozens of authorization checks throughout
+-- this file called the AOC-blind has_active_role() directly -- meaning
+-- a role assignment scoped to any OTHER AOC (e.g. a future 'ZZ' AOC's
+-- own operation_manager) would still satisfy the gate and be able to
+-- act on Malaysia's data. Confirmed empirically by
+-- supabase/tests/integration/verify_phase8_multi_aoc.mjs before this
+-- fix (a synthetic ZZ-AOC Operation Manager successfully approved a
+-- real MY staff member's leave request). This helper is the fix: every
+-- has_active_role(...) call in this file is replaced with
+-- has_active_role_my(...), which additionally requires the caller's
+-- assignment to belong to the Malaysia AOC specifically (or have a null
+-- aoc_id, matching has_role_in_scope's own existing null-means-
+-- unscoped semantics for any future genuinely international role).
+create or replace function public.has_active_role_my(p_role_code text)
+returns boolean
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select public.has_role_in_scope(p_role_code, (select id from public.aocs where code = 'MY'));
+$function$;
+
+revoke execute on function public.has_active_role_my(text) from public, anon;
+grant execute on function public.has_active_role_my(text) to authenticated, service_role;
+
 -- =======================================================================
 -- PART B: LEAVE-REQUEST ROUTING (concurrency-safe)
 -- =======================================================================
@@ -286,7 +317,7 @@ begin
   -- Operation submitter's request can never be decided by Main
   -- Enforcement (department separation, checked explicitly).
   if v_submitter_dept = 'enforcement' then
-    v_is_main_enforcement := public.has_active_role('main_enforcement');
+    v_is_main_enforcement := public.has_active_role_my('main_enforcement');
     if not v_is_main_enforcement then
       raise exception 'No active Phase 3 role assignment grants authority to review this Enforcement leave request. Only Main Enforcement may decide Enforcement-department leave.';
     end if;
@@ -320,7 +351,7 @@ begin
     return;
   end if;
 
-  v_is_operation_manager := public.has_active_role('operation_manager');
+  v_is_operation_manager := public.has_active_role_my('operation_manager');
   if v_hub_id is not null then
     v_is_hub_se := public.has_role_in_scope('hub_se', v_aoc_id, null, null, null, v_hub_id);
   end if;
@@ -411,7 +442,7 @@ begin
   end if;
   select id into v_aoc_id from public.aocs where code = 'MY';
 
-  v_is_operation_manager := public.has_active_role('operation_manager');
+  v_is_operation_manager := public.has_active_role_my('operation_manager');
   if v_is_operation_manager then
     return query select * from public.absence_notices where approval_status in ('pending', 'pending_cancellation') order by submitted_at asc;
     return;
@@ -462,9 +493,9 @@ grant execute on function public.list_pending_leave_for_reviewer_secure() to aut
 -- policy still cannot read back the row it just changed.
 create policy "overtime phase8 scoped select" on public.overtime_requests for select
   using (
-    public.has_active_role('hub_se')
-    or public.has_active_role('operation_manager')
-    or public.has_active_role('main_enforcement')
+    public.has_active_role_my('hub_se')
+    or public.has_active_role_my('operation_manager')
+    or public.has_active_role_my('main_enforcement')
   );
 
 -- Multiple PERMISSIVE UPDATE policies on the same table have their USING
@@ -480,17 +511,17 @@ create policy "overtime phase8 scoped update" on public.overtime_requests for up
   using (
     profile_id <> auth.uid()
     and (
-      public.has_active_role('hub_se')
-      or public.has_active_role('operation_manager')
-      or public.has_active_role('main_enforcement')
+      public.has_active_role_my('hub_se')
+      or public.has_active_role_my('operation_manager')
+      or public.has_active_role_my('main_enforcement')
     )
   )
   with check (
     profile_id <> auth.uid()
     and (
-      public.has_active_role('hub_se')
-      or public.has_active_role('operation_manager')
-      or public.has_active_role('main_enforcement')
+      public.has_active_role_my('hub_se')
+      or public.has_active_role_my('operation_manager')
+      or public.has_active_role_my('main_enforcement')
     )
   );
 
@@ -543,8 +574,8 @@ begin
   elsif new.status = 'approved' then
     if not (
       (role_rank(actor_role) >= role_rank('MANAGEMENT') and old.status = 'endorsed')
-      or (old.status = 'endorsed' and v_submitter_dept = 'operation' and public.has_active_role('operation_manager'))
-      or (old.status = 'endorsed' and v_submitter_dept = 'enforcement' and public.has_active_role('main_enforcement'))
+      or (old.status = 'endorsed' and v_submitter_dept = 'operation' and public.has_active_role_my('operation_manager'))
+      or (old.status = 'endorsed' and v_submitter_dept = 'enforcement' and public.has_active_role_my('main_enforcement'))
     ) then
       raise exception 'Only Management/Admin, or the department-correct Operation Manager/Main Enforcement, can approve, and only once endorsed.';
     end if;
@@ -553,8 +584,8 @@ begin
       (actor_role = 'DSE' and old.status = 'pending')
       or (role_rank(actor_role) >= role_rank('MANAGEMENT') and old.status in ('pending', 'endorsed'))
       or (old.status = 'pending' and v_hub_id is not null and public.has_role_in_scope('hub_se', v_aoc_id, null, null, null, v_hub_id))
-      or (old.status in ('pending', 'endorsed') and v_submitter_dept = 'operation' and public.has_active_role('operation_manager'))
-      or (old.status in ('pending', 'endorsed') and v_submitter_dept = 'enforcement' and public.has_active_role('main_enforcement'))
+      or (old.status in ('pending', 'endorsed') and v_submitter_dept = 'operation' and public.has_active_role_my('operation_manager'))
+      or (old.status in ('pending', 'endorsed') and v_submitter_dept = 'enforcement' and public.has_active_role_my('main_enforcement'))
     ) then
       raise exception 'You are not authorized to reject this overtime request at its current stage.';
     end if;
@@ -634,7 +665,7 @@ begin
   end if;
   select id into v_aoc_id from public.aocs where code = 'MY';
 
-  if public.has_active_role('operation_manager') then
+  if public.has_active_role_my('operation_manager') then
     v_ops_group := 'operation_avsec';
   elsif v_hub_id is not null and public.has_role_in_scope('hub_se', v_aoc_id, null, null, null, v_hub_id) then
     v_ops_group := 'operation_avsec';
@@ -715,7 +746,7 @@ declare
   v_aoc_id uuid;
   v_draw_id uuid;
 begin
-  if not public.has_active_role('operation_manager') then
+  if not public.has_active_role_my('operation_manager') then
     raise exception 'Only Operation Manager may initiate a duty-zone draw.';
   end if;
   select id into v_station_id from public.org_stations where code = p_station;
@@ -756,7 +787,7 @@ as $function$
 declare
   v_status text;
 begin
-  if not public.has_active_role('operation_manager') then
+  if not public.has_active_role_my('operation_manager') then
     raise exception 'Only Operation Manager may configure a duty-zone draw.';
   end if;
   select status into v_status from public.duty_draws where id = p_draw_id for update;
@@ -790,7 +821,7 @@ as $function$
 declare
   v_status text;
 begin
-  if not public.has_active_role('operation_manager') then
+  if not public.has_active_role_my('operation_manager') then
     raise exception 'Only Operation Manager may finalize a duty-zone draw.';
   end if;
   select status into v_status from public.duty_draws where id = p_draw_id for update;
@@ -836,7 +867,7 @@ begin
     raise exception 'Must be signed in.';
   end if;
 
-  if not public.has_active_role('operation_manager') then
+  if not public.has_active_role_my('operation_manager') then
     select station into v_own_station from public.profiles where id = auth.uid();
     if v_own_station is distinct from p_station then
       raise exception 'You may only view the duty-zone draw for your own station.';
@@ -854,7 +885,7 @@ begin
   left join public.duty_draw_assignments a on a.draw_id = d.id
   where d.station_id = v_station_id
     and d.draw_date = p_draw_date
-    and (d.status = 'finalized' or public.has_active_role('operation_manager'));
+    and (d.status = 'finalized' or public.has_active_role_my('operation_manager'));
 end;
 $function$;
 
@@ -884,7 +915,7 @@ begin
     raise exception 'Must be signed in.';
   end if;
 
-  v_is_operation_manager := public.has_active_role('operation_manager');
+  v_is_operation_manager := public.has_active_role_my('operation_manager');
   if not v_is_operation_manager then
     select station into v_own_station from public.profiles where id = auth.uid();
     if v_own_station is distinct from p_station then
@@ -922,7 +953,7 @@ security definer
 set search_path to 'public'
 as $function$
 begin
-  if not public.has_active_role('operation_manager') then
+  if not public.has_active_role_my('operation_manager') then
     raise exception 'Only Operation Manager may view the station staff directory.';
   end if;
 
@@ -959,7 +990,7 @@ as $function$
 declare
   v_row_count integer;
 begin
-  if not public.has_active_role('operation_manager') then
+  if not public.has_active_role_my('operation_manager') then
     raise exception 'Only Operation Manager may export the Operation workforce directory.';
   end if;
 
@@ -1000,7 +1031,7 @@ as $function$
 declare
   v_row_count integer;
 begin
-  if not public.has_active_role('main_enforcement') then
+  if not public.has_active_role_my('main_enforcement') then
     raise exception 'Only Main Enforcement may export the Enforcement workforce directory.';
   end if;
 
@@ -1101,10 +1132,10 @@ stable
 security definer
 set search_path to 'public'
 as $function$
-  select public.has_active_role('investigation_sso')
-    or public.has_active_role('investigation_so')
-    or public.has_active_role('investigation_aso')
-    or public.has_active_role('main_enforcement');
+  select public.has_active_role_my('investigation_sso')
+    or public.has_active_role_my('investigation_so')
+    or public.has_active_role_my('investigation_aso')
+    or public.has_active_role_my('main_enforcement');
 $function$;
 
 revoke execute on function public.is_investigation_authorized() from public, anon;
@@ -1124,9 +1155,9 @@ declare
   v_case_no text;
 begin
   if not (
-    public.has_active_role('investigation_sso')
-    or public.has_active_role('investigation_so')
-    or public.has_active_role('investigation_aso')
+    public.has_active_role_my('investigation_sso')
+    or public.has_active_role_my('investigation_so')
+    or public.has_active_role_my('investigation_aso')
   ) then
     raise exception 'Only Investigation SSO/SO/ASO may open a case.';
   end if;
@@ -1307,7 +1338,7 @@ as $function$
 declare
   v_status text;
 begin
-  if not (public.has_active_role('investigation_sso') or public.has_active_role('main_enforcement')) then
+  if not (public.has_active_role_my('investigation_sso') or public.has_active_role_my('main_enforcement')) then
     raise exception 'Only Investigation SSO or Main Enforcement may reopen a case.';
   end if;
   if p_reason is null or trim(p_reason) = '' then
@@ -1527,7 +1558,7 @@ begin
   select * into r from public.sat_combined_reports where id = p_report_id;
   if r is null then return false; end if;
   if r.uploaded_by = auth.uid() then return true; end if;
-  if public.has_active_role('main_enforcement') or public.is_investigation_authorized() then return true; end if;
+  if public.has_active_role_my('main_enforcement') or public.is_investigation_authorized() then return true; end if;
   select id into v_aoc_id from public.aocs where code = 'MY';
   return public.has_role_in_scope('sat_aso', v_aoc_id, null, null, null, null, r.station_id, r.team_id);
 end;
@@ -1810,7 +1841,7 @@ security definer
 set search_path to 'public'
 as $function$
 begin
-  if not public.has_active_role('main_enforcement') then
+  if not public.has_active_role_my('main_enforcement') then
     raise exception 'Only Main Enforcement may view the Enforcement workforce roster.';
   end if;
 
@@ -1850,7 +1881,7 @@ security definer
 set search_path to 'public'
 as $function$
 begin
-  if not public.has_active_role('main_enforcement') then
+  if not public.has_active_role_my('main_enforcement') then
     raise exception 'Only Main Enforcement may view Enforcement attendance exceptions.';
   end if;
 
@@ -1893,7 +1924,7 @@ security definer
 set search_path to 'public'
 as $function$
 begin
-  if not public.has_active_role('main_enforcement') then
+  if not public.has_active_role_my('main_enforcement') then
     raise exception 'Only Main Enforcement may view Enforcement pending actions.';
   end if;
 
