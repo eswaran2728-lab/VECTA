@@ -189,6 +189,13 @@ export async function acknowledgeSec013ReportSecure(reportId: string) {
   return callVoidRpc("acknowledge_sec013_report_secure", { p_report_id: reportId });
 }
 
+export async function listPendingSec013AcknowledgementsSecure() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("list_pending_sec013_acknowledgements_secure");
+  if (error) return { ok: false, error: error.message, data: null } satisfies Phase8ActionResult;
+  return { ok: true, error: null, data: data ?? [] } satisfies Phase8ActionResult<NonNullable<typeof data>>;
+}
+
 // --- Main Enforcement workforce authority (Phase 8 Round 2, Slice 1) ---
 
 export async function listEnforcementWorkforceSecure() {

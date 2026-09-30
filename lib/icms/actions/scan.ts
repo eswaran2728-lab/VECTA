@@ -52,6 +52,19 @@ export async function scanTransaction(raw: string): Promise<ScanResult> {
   const profile = avsecProfile ?? icmsProfile;
   if (!profile) return { error: "No VECTA profile — contact an admin." };
 
+  // Phase 8: Staff Profiling (profiling_so/profiling_aso) is explicitly
+  // excluded from CaterLink scanning by design -- checked against the
+  // caller's actual active Phase 3 role assignment, never against the
+  // legacy unified_role/ops_group columns above, which are independent
+  // of Phase 3 and could otherwise happen to satisfy the org-wide/ops-
+  // group check for a Profiling account that was never meant to scan.
+  for (const roleCode of ["profiling_so", "profiling_aso"]) {
+    const { data: isProfiling } = await supabase.rpc("has_active_role", { p_role_code: roleCode });
+    if (isProfiling === true) {
+      return { error: "Staff Profiling accounts are not authorized to scan CaterLink transactions." };
+    }
+  }
+
   const orgWide = ORG_WIDE_UNIFIED_ROLES.includes(profile.unified_role ?? "");
   const userOpsGroup = profile.ops_group as OpsGroup | null;
 

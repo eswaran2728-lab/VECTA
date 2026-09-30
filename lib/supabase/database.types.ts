@@ -5448,6 +5448,16 @@ export type Database = {
           late_remark: string | null
         }[]
       }
+      list_pending_sec013_acknowledgements_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          report_id: string
+          staff_name: string
+          station: string
+          team: string
+          submitted_at: string
+        }[]
+      }
       list_enforcement_pending_actions_secure: {
         Args: Record<PropertyKey, never>
         Returns: {

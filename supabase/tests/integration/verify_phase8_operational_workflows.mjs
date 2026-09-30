@@ -646,6 +646,22 @@ async function main() {
     const sec013Id = sec013.rows[0].id;
     await clearSim();
 
+    await simulateUser(PROFILING_SO);
+    const pendingAck = await db.query('select * from public.list_pending_sec013_acknowledgements_secure();');
+    await clearSim();
+    assert(
+      pendingAck.rows.some((r) => r.report_id === sec013Id),
+      'Profiling SO sees the pending SEC013 report for their own team in the acknowledgement list',
+    );
+
+    await simulateUser(PROFILING_SO_OTHER_TEAM);
+    const pendingAckOtherTeam = await db.query('select * from public.list_pending_sec013_acknowledgements_secure();');
+    await clearSim();
+    assert(
+      pendingAckOtherTeam.rows.every((r) => r.report_id !== sec013Id),
+      'A Profiling SO on a different team does not see this report in their own pending-acknowledgement list',
+    );
+
     await simulateUser(PROFILING_SO_OTHER_TEAM);
     await db.exec('savepoint sp_wrong_team_ack;');
     let wrongTeamDenied = false;

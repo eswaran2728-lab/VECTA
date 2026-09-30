@@ -1362,6 +1362,47 @@ $function$;
 revoke execute on function public.acknowledge_sec013_report_secure(uuid) from public, anon;
 grant execute on function public.acknowledge_sec013_report_secure(uuid) to authenticated, service_role;
 
+-- List SEC013 reports for the caller's OWN Profiling SO team awaiting
+-- acknowledgement, driving the Profiling SO workspace's action list --
+-- never a broader listing than acknowledge_sec013_report_secure() would
+-- itself allow the same caller to act on.
+create or replace function public.list_pending_sec013_acknowledgements_secure()
+returns table (
+  report_id uuid,
+  staff_name text,
+  station text,
+  team text,
+  submitted_at timestamptz
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_aoc_id uuid;
+begin
+  select id into v_aoc_id from public.aocs where code = 'MY';
+
+  return query
+  select r.id, r.staff_name, r.station, r.team, r.submitted_at
+  from public.report_sec013 r
+  where r.status = 'submitted'
+    and not exists (select 1 from public.report_acknowledgements ra where ra.report_type = 'sec013' and ra.report_id = r.id)
+    and exists (
+      select 1
+      from public.resolve_legacy_station(r.station) rs
+      cross join lateral (select public.resolve_legacy_team(rs.station_id, r.team) as team_id) rt
+      where rs.station_id is not null
+        and rt.team_id is not null
+        and public.has_role_in_scope('profiling_so', v_aoc_id, null, null, null, rs.hub_id, rs.station_id, rt.team_id)
+    )
+  order by r.submitted_at asc;
+end;
+$function$;
+
+revoke execute on function public.list_pending_sec013_acknowledgements_secure() from public, anon;
+grant execute on function public.list_pending_sec013_acknowledgements_secure() to authenticated, service_role;
+
 -- =======================================================================
 -- PART I: MAIN ENFORCEMENT WORKFORCE AUTHORITY (Phase 8 Round 2, Slice 1)
 -- =======================================================================
