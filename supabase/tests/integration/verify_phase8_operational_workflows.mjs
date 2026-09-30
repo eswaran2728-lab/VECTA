@@ -850,7 +850,7 @@ async function main() {
   // 9. ASSIGNMENT LIFECYCLE: revoked / expired / future / pending
   //    assignments must never count as "active" (Phase 8 certification
   //    direct-bypass requirement). Each uses a dedicated fresh profile
-  //    and a direct call to has_active_role_my() -- the exact function
+  //    and a direct call to has_active_role_for_aoc() -- the exact function
   //    every Phase 8 RPC's authorization now goes through -- so this is
   //    the real authorization path, not a re-derived copy of it.
   // =====================================================================
@@ -878,9 +878,9 @@ async function main() {
       [revokedProfile, opsMgrRoleId, aocId, operationDeptId, GRANTER],
     );
     await simulateUser(revokedProfile);
-    const revokedCheck = await db.query("select public.has_active_role_my('operation_manager') as active;");
+    const revokedCheck = await db.query("select public.has_active_role_for_aoc('operation_manager', $1) as active;", [aocId]);
     await clearSim();
-    assert(revokedCheck.rows[0].active === false, 'A REVOKED assignment does not count as active (has_active_role_my returns false)');
+    assert(revokedCheck.rows[0].active === false, 'A REVOKED assignment does not count as active (has_active_role_for_aoc returns false)');
 
     // EXPIRED: ends_at is in the past.
     await simulateServiceRole();
@@ -891,7 +891,7 @@ async function main() {
       [expiredProfile, opsMgrRoleId, aocId, operationDeptId, GRANTER],
     );
     await simulateUser(expiredProfile);
-    const expiredCheck = await db.query("select public.has_active_role_my('operation_manager') as active;");
+    const expiredCheck = await db.query("select public.has_active_role_for_aoc('operation_manager', $1) as active;", [aocId]);
     await clearSim();
     assert(expiredCheck.rows[0].active === false, 'An EXPIRED assignment (ends_at in the past) does not count as active');
 
@@ -904,7 +904,7 @@ async function main() {
       [futureProfile, opsMgrRoleId, aocId, operationDeptId, GRANTER],
     );
     await simulateUser(futureProfile);
-    const futureCheck = await db.query("select public.has_active_role_my('operation_manager') as active;");
+    const futureCheck = await db.query("select public.has_active_role_for_aoc('operation_manager', $1) as active;", [aocId]);
     await clearSim();
     assert(futureCheck.rows[0].active === false, 'A FUTURE/PENDING assignment (starts_at not yet reached) does not count as active');
 
@@ -920,13 +920,13 @@ async function main() {
       [activeProfile, opsMgrRoleId, aocId, operationDeptId, GRANTER],
     );
     await simulateUser(activeProfile);
-    const activeCheck = await db.query("select public.has_active_role_my('operation_manager') as active;");
+    const activeCheck = await db.query("select public.has_active_role_for_aoc('operation_manager', $1) as active;", [aocId]);
     await clearSim();
     assert(activeCheck.rows[0].active === true, 'A genuinely currently-active assignment (past starts_at, no ends_at, not revoked) DOES count as active -- confirms the three denials above are real, not a fixture artifact');
 
     // End-to-end: a REVOKED Operation Manager cannot actually approve a
     // real leave request via review_leave_request_secure() either --
-    // not just the has_active_role_my() probe in isolation.
+    // not just the has_active_role_for_aoc() probe in isolation.
     await simulateServiceRole();
     const lifecycleLeaveId = (
       await db.query(
@@ -947,7 +947,7 @@ async function main() {
       await db.exec('rollback to savepoint sp_revoked_leave_bypass;');
     }
     await clearSim();
-    assert(!revokedBypassed, 'A REVOKED Operation Manager cannot approve a real leave request end-to-end (not just denied at the has_active_role_my probe)');
+    assert(!revokedBypassed, 'A REVOKED Operation Manager cannot approve a real leave request end-to-end (not just denied at the has_active_role_for_aoc probe)');
   }
 
   console.log('\nAll Phase 8 operational-workflow checks passed.');
