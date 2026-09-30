@@ -40,6 +40,7 @@ export default async function DashboardPage({
   const isManagement = profile.role === "MANAGEMENT" || profile.role === "ADMIN";
   const supabaseForRoleCheck = await createClient();
   const { data: isMainEnforcement } = await supabaseForRoleCheck.rpc("has_active_role", { p_role_code: "main_enforcement" });
+  const { data: isSatAso } = await supabaseForRoleCheck.rpc("has_active_role", { p_role_code: "sat_aso" });
 
   const [{ counts, submissions }, bayBoard, announcements, feedbackStats, actionItems] = await Promise.all([
     getTodayCounts(filters),
@@ -158,6 +159,12 @@ export default async function DashboardPage({
         {isMainEnforcement && (
           <Link href="/avsec/enforcement/workforce" className="btn-secondary w-full text-center">
             Main Enforcement Workspace →
+          </Link>
+        )}
+
+        {(isSatAso || isMainEnforcement) && (
+          <Link href="/avsec/sat/reports" className="btn-secondary w-full text-center">
+            SAT Combined Reports →
           </Link>
         )}
 

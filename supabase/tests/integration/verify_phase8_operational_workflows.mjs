@@ -153,12 +153,13 @@ async function main() {
   const STAFF_OPERATION = nextId(); // submits Operation OT
   const STAFF_ENFORCEMENT_INV_SSO = nextId(); // investigation_sso
   const SAT_ASO = nextId();
+  const SAT_ASO_BRAVO = nextId(); // sat_aso on a DIFFERENT KUL team, for cross-team denial
   const PROFILING_SO = nextId();
   const PROFILING_SO_OTHER_TEAM = nextId();
   const PROFILING_ASO = nextId();
   const LEAVE_STAFF = [nextId(), nextId(), nextId(), nextId()]; // 4 distinct staff submitting overlapping annual leave
 
-  const allIds = [GRANTER, DSE_ALPHA, DSE_BRAVO_TEAM_STAFF, HUB_SE_NORTHERN, OPS_MGR, MAIN_ENF, STAFF_OPERATION, STAFF_ENFORCEMENT_INV_SSO, SAT_ASO, PROFILING_SO, PROFILING_SO_OTHER_TEAM, PROFILING_ASO, ...LEAVE_STAFF];
+  const allIds = [GRANTER, DSE_ALPHA, DSE_BRAVO_TEAM_STAFF, HUB_SE_NORTHERN, OPS_MGR, MAIN_ENF, STAFF_OPERATION, STAFF_ENFORCEMENT_INV_SSO, SAT_ASO, SAT_ASO_BRAVO, PROFILING_SO, PROFILING_SO_OTHER_TEAM, PROFILING_ASO, ...LEAVE_STAFF];
   const userRows = allIds.map((id, i) => `('${id}', 'p8-${i}@example.test')`).join(',\n      ');
   await db.exec(`insert into auth.users (id, email) values\n      ${userRows}\n    on conflict (id) do nothing;`);
   const profileRows = allIds.map((id, i) => `('${id}', 'p8-${i}@example.test', 'P8 Staff ${i}', 'T-P8-${i}', 'ASO', 'PEN', 'Alpha', 'operation_avsec', 'approved')`).join(',\n      ');
@@ -182,6 +183,7 @@ async function main() {
   const dseAlphaTeamId = (await db.query(`insert into public.org_teams (station_id, name) values ($1, 'DseAlpha') on conflict (station_id, name) do update set name = excluded.name returning id;`, [kulStationId])).rows[0].id;
   const dseBravoTeamId = (await db.query(`insert into public.org_teams (station_id, name) values ($1, 'DseBravo') on conflict (station_id, name) do update set name = excluded.name returning id;`, [kulStationId])).rows[0].id;
   const satAlphaTeamId = (await db.query(`insert into public.org_teams (station_id, name) values ($1, 'Alpha') on conflict (station_id, name) do update set name = excluded.name returning id;`, [kulStationId])).rows[0].id;
+  const satBravoTeamId = (await db.query(`insert into public.org_teams (station_id, name) values ($1, 'Bravo') on conflict (station_id, name) do update set name = excluded.name returning id;`, [kulStationId])).rows[0].id;
   const penBravoTeamId = (await db.query(`insert into public.org_teams (station_id, name) values ($1, 'Bravo') on conflict (station_id, name) do update set name = excluded.name returning id;`, [penStationId])).rows[0].id;
   const penAlphaTeamId = (await db.query(`insert into public.org_teams (station_id, name) values ($1, 'Alpha') on conflict (station_id, name) do update set name = excluded.name returning id;`, [penStationId])).rows[0].id;
   const profilingTeamId = (await db.query(`insert into public.org_teams (station_id, name) values ($1, 'Profiling') on conflict (station_id, name) do update set name = excluded.name returning id;`, [penStationId])).rows[0].id;
@@ -223,6 +225,7 @@ async function main() {
   await grantAssignment(MAIN_ENF, 'main_enforcement', { aoc_id: aocId, department_id: enforcementDeptId }, false);
   await grantAssignment(STAFF_ENFORCEMENT_INV_SSO, 'investigation_sso', { aoc_id: aocId, department_id: enforcementDeptId, unit_id: investigationUnitId }, true);
   await grantAssignment(SAT_ASO, 'sat_aso', { aoc_id: aocId, department_id: enforcementDeptId, unit_id: satUnitId, hub_id: kulHubId, station_id: kulStationId, team_id: satAlphaTeamId }, true);
+  await grantAssignment(SAT_ASO_BRAVO, 'sat_aso', { aoc_id: aocId, department_id: enforcementDeptId, unit_id: satUnitId, hub_id: kulHubId, station_id: kulStationId, team_id: satBravoTeamId }, true);
   await grantAssignment(PROFILING_SO, 'profiling_so', { aoc_id: aocId, department_id: enforcementDeptId, unit_id: profilingUnitId, hub_id: penHubId, station_id: penStationId, team_id: profilingTeamId }, true);
   await grantAssignment(PROFILING_SO_OTHER_TEAM, 'profiling_so', { aoc_id: aocId, department_id: enforcementDeptId, unit_id: profilingUnitId, hub_id: penHubId, station_id: penStationId, team_id: profilingOtherTeamId }, true);
   await grantAssignment(PROFILING_ASO, 'profiling_aso', { aoc_id: aocId, department_id: enforcementDeptId, unit_id: profilingUnitId, hub_id: penHubId, station_id: penStationId, team_id: profilingTeamId }, true);
@@ -598,6 +601,25 @@ async function main() {
     }
     await clearSim();
     assert(satDenied, 'A non-SAT-ASO cannot upload a SAT combined report');
+
+    // A SAT ASO on a DIFFERENT KUL team cannot upload for Alpha's team/date.
+    await simulateUser(SAT_ASO_BRAVO);
+    await db.exec('savepoint sp_sat_cross_team_upload;');
+    let crossTeamUploadDenied = false;
+    try {
+      await db.query("select * from public.upload_sat_combined_report_secure('KUL - MAA', 'Alpha', '2027-01-12', '3-shift', 'sat/cross-team.pdf');");
+    } catch (e) {
+      crossTeamUploadDenied = /Only an active SAT ASO/.test(e.message);
+      await db.exec('rollback to savepoint sp_sat_cross_team_upload;');
+    }
+    await clearSim();
+    assert(crossTeamUploadDenied, 'A SAT ASO on a different KUL team cannot upload Alpha team\'s combined report');
+
+    // A SAT ASO on a DIFFERENT team also cannot VIEW Alpha's report.
+    await simulateUser(SAT_ASO_BRAVO);
+    const crossTeamView = await db.query('select public.can_view_sat_combined_report($1) as can_view;', [newSatReportId]);
+    await clearSim();
+    assert(crossTeamView.rows[0].can_view === false, 'A SAT ASO on a different KUL team cannot view Alpha team\'s combined report');
 
     // Main Enforcement and Investigation can view; a DSE cannot.
     await simulateUser(MAIN_ENF);
