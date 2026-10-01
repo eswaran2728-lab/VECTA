@@ -5,13 +5,18 @@ import {
   addCompany,
   addDriver,
   addVehicle,
-  deleteWhitelistRow,
+  rejectWhitelistEntry,
+  deactivateWhitelistEntry,
+  revokeWhitelistEntry,
+  approveWhitelistEntry,
+  activateWhitelistEntry,
   type WhitelistActionState,
+  type VendorOption,
 } from "@/lib/icms/actions/whitelists";
 import { Button } from "@/components/icms/ui/button";
 import { Input } from "@/components/icms/ui/input";
 import { Select } from "@/components/icms/ui/select";
-import type { CateringCompany, TruckType } from "@/lib/icms/database.types";
+import type { TruckType } from "@/lib/icms/database.types";
 
 const initialState: WhitelistActionState = { error: null, success: null };
 const TRUCK_TYPES: TruckType[] = ["Hi-Lift", "Bonded Truck"];
@@ -29,7 +34,7 @@ export function AddCompanyForm() {
       <Input name="name" placeholder="Company name" required className="w-56" />
       <Input name="code" placeholder="Code (e.g. BRH)" required className="w-36" />
       <Button type="submit" size="sm" disabled={pending}>
-        {pending ? "Adding…" : "Add company"}
+        {pending ? "Submitting…" : "Request vendor"}
       </Button>
       <Feedback state={state} />
     </form>
@@ -40,7 +45,7 @@ function CompanySelect({
   companies,
   defaultCompanyId,
 }: {
-  companies: CateringCompany[];
+  companies: VendorOption[];
   defaultCompanyId: string;
 }) {
   return (
@@ -48,7 +53,7 @@ function CompanySelect({
       <option value="">No company</option>
       {companies.map((c) => (
         <option key={c.id} value={c.id}>
-          {c.name}
+          {c.display_name}
         </option>
       ))}
     </Select>
@@ -62,13 +67,12 @@ function formatIc(raw: string): string {
   return parts.join("-");
 }
 
-export function AddVehicleForm({ companies }: { companies: CateringCompany[] }) {
+export function AddVehicleForm({ companies }: { companies: VendorOption[] }) {
   const [state, action, pending] = useActionState(addVehicle, initialState);
-  const defaultCompanyId = companies.find((c) => c.code === "IFC")?.id ?? "";
   return (
     <form action={action} className="flex flex-wrap items-end gap-2">
       <Input name="vehicle_number" placeholder="Vehicle number" required className="w-40 font-mono" />
-      <CompanySelect companies={companies} defaultCompanyId={defaultCompanyId} />
+      <CompanySelect companies={companies} defaultCompanyId="" />
       <Input name="pass_expiry_date" type="date" className="w-40" />
       <Select name="truck_type" defaultValue="" required className="w-36" title="Truck type">
         <option value="" disabled>
@@ -86,16 +90,15 @@ export function AddVehicleForm({ companies }: { companies: CateringCompany[] }) 
         className="w-36 font-mono"
       />
       <Button type="submit" size="sm" disabled={pending}>
-        {pending ? "Adding…" : "Add vehicle"}
+        {pending ? "Submitting…" : "Request vehicle"}
       </Button>
       <Feedback state={state} />
     </form>
   );
 }
 
-export function AddDriverForm({ companies }: { companies: CateringCompany[] }) {
+export function AddDriverForm({ companies }: { companies: VendorOption[] }) {
   const [state, action, pending] = useActionState(addDriver, initialState);
-  const defaultCompanyId = companies.find((c) => c.code === "IFC")?.id ?? "";
   const [swapToStaffIc, setSwapToStaffIc] = useState(false);
   const [staffIc, setStaffIc] = useState("");
 
@@ -103,7 +106,7 @@ export function AddDriverForm({ companies }: { companies: CateringCompany[] }) {
     <form action={action} className="flex flex-wrap items-end gap-2">
       <Input name="name" placeholder="Driver name" required className="w-48" />
       <Input name="staff_id" placeholder="Staff ID" required className="w-32 font-mono" />
-      <CompanySelect companies={companies} defaultCompanyId={defaultCompanyId} />
+      <CompanySelect companies={companies} defaultCompanyId="" />
       <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <input
           type="checkbox"
@@ -135,40 +138,76 @@ export function AddDriverForm({ companies }: { companies: CateringCompany[] }) {
         <Input id="driver_pass_expiry_date" name="pass_expiry_date" type="date" className="w-40" />
       </div>
       <Button type="submit" size="sm" disabled={pending}>
-        {pending ? "Adding…" : "Add driver"}
+        {pending ? "Submitting…" : "Request driver"}
       </Button>
       <Feedback state={state} />
     </form>
   );
 }
 
-export function DeleteRowButton({
-  table,
-  id,
-  label,
-}: {
-  table: "vehicles" | "drivers";
-  id: string;
-  label: string;
-}) {
-  const [state, action, pending] = useActionState(deleteWhitelistRow, initialState);
+/** Approve a pending entry (no reason required). */
+export function ApproveButton({ table, id }: { table: string; id: string }) {
   return (
-    <form
-      action={action}
-      onSubmit={(e) => {
-        if (!window.confirm(`Permanently delete ${label}? This cannot be undone.`)) {
-          e.preventDefault();
-        }
-      }}
-      className="inline"
-    >
+    <form action={approveWhitelistEntry} className="inline">
       <input type="hidden" name="table" value={table} />
       <input type="hidden" name="id" value={id} />
-      <input type="hidden" name="label" value={label} />
-      <button type="submit" className="text-xs text-red-600 underline" disabled={pending}>
-        {pending ? "Deleting…" : "Delete"}
+      <button type="submit" className="text-xs text-emerald-700 underline">
+        Approve
       </button>
-      {state.error ? <p className="text-xs text-red-600">{state.error}</p> : null}
+    </form>
+  );
+}
+
+/** Reactivate a previously-deactivated entry (no reason required). */
+export function ActivateButton({ table, id }: { table: string; id: string }) {
+  return (
+    <form action={activateWhitelistEntry} className="inline">
+      <input type="hidden" name="table" value={table} />
+      <input type="hidden" name="id" value={id} />
+      <button type="submit" className="text-xs text-primary underline">
+        Reactivate
+      </button>
+    </form>
+  );
+}
+
+/** Reject a pending entry, or deactivate an active one -- both require a typed reason. */
+export function ReasonActionButton({
+  table,
+  id,
+  mode,
+  label,
+}: {
+  table: string;
+  id: string;
+  mode: "reject" | "deactivate" | "revoke";
+  label: string;
+}) {
+  const action =
+    mode === "reject" ? rejectWhitelistEntry : mode === "deactivate" ? deactivateWhitelistEntry : revokeWhitelistEntry;
+  const [state, formAction, pending] = useActionState(action, initialState);
+  const [open, setOpen] = useState(false);
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="text-xs text-red-600 underline">
+        {label}
+      </button>
+    );
+  }
+
+  return (
+    <form action={formAction} className="flex items-center gap-1">
+      <input type="hidden" name="table" value={table} />
+      <input type="hidden" name="id" value={id} />
+      <Input name="reason" placeholder="Reason (required)" required className="h-7 w-40 text-xs" />
+      <button type="submit" className="text-xs text-red-600 underline" disabled={pending}>
+        {pending ? "Saving…" : "Confirm"}
+      </button>
+      <button type="button" onClick={() => setOpen(false)} className="text-xs text-muted-foreground underline">
+        Cancel
+      </button>
+      {state.error ? <span className="text-xs text-red-600">{state.error}</span> : null}
     </form>
   );
 }

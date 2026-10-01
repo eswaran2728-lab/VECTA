@@ -631,13 +631,26 @@ test("CONTRACT: Super Admin does not automatically gain operational-report autho
 });
 
 test("CONTRACT: CaterLink Management has no checkpoint/scan authority -- no repository reference ties caterlink_management to any checkpoint scan/completion policy or table", () => {
-  // Structural proof: the ONLY place 'caterlink_management' appears in the
-  // entire repo is this migration's role catalog and its own tests. No
-  // CaterLink checkpoint/scan/Part-B/C/D/Hub/REDQ policy or server action
-  // references it at all, which is what makes "no scan authority" true by
-  // construction rather than by an app-layer check that could be missed.
+  // Structural proof: 'caterlink_management' appears in exactly one
+  // non-migration, non-test application file -- lib/icms/actions/
+  // whitelists.ts, the Phase 9 whitelist ADMINISTRATION surface (list/
+  // create/approve/reject/activate/deactivate/revoke whitelist entries).
+  // That file carries zero checkpoint/scan/Part-B/C/D/Hub/REDQ logic of
+  // its own (verified below, not just asserted) -- whitelist membership
+  // and checkpoint execution are deliberately different authorities, and
+  // this test's real job is making sure they never merge. Every OTHER
+  // file under these search dirs must still carry zero reference, so a
+  // future leak into scan.ts/transactions.ts's actual checkpoint code
+  // would still fail this test.
   const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
   const searchDirs = ["supabase/migrations/icms", "lib/icms"];
+  const allowedFile = path.join(repoRoot, "lib/icms/actions/whitelists.ts");
+  const checkpointTermsForbiddenInAllowedFile = [
+    /check_station_caterlink_capability\s*\(\s*[^,]+,\s*[^,]+,\s*'scan'/,
+    /part_a|part_b|part_c|part_d|part_hub|part_redq/i,
+    /confirm_caterlink_destination_receipt_secure|create_caterlink_transaction_secure/,
+    /checkWhitelistAtCheckpoint|checkpointOrderError/,
+  ];
   for (const dir of searchDirs) {
     const full = path.join(repoRoot, dir);
     if (!fs.existsSync(full)) continue;
@@ -648,6 +661,16 @@ test("CONTRACT: CaterLink Management has no checkpoint/scan authority -- no repo
     for (const file of walk(full)) {
       if (!/\.(sql|ts|tsx)$/.test(file)) continue;
       const contents = fs.readFileSync(file, "utf8");
+      if (file === allowedFile) {
+        for (const pattern of checkpointTermsForbiddenInAllowedFile) {
+          assert.doesNotMatch(
+            contents,
+            pattern,
+            `${file} references caterlink_management AND a checkpoint/scan construct (${pattern}) -- whitelist administration must never gain checkpoint execution authority`,
+          );
+        }
+        continue;
+      }
       assert.doesNotMatch(
         contents,
         /caterlink_management/,

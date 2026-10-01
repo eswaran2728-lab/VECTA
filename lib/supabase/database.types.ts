@@ -4936,6 +4936,62 @@ export type Database = {
     }
     Functions: {
       archive_all_pending: { Args: { p_reason?: string }; Returns: number }
+      my_aoc_id: { Args: Record<string, never>; Returns: string }
+      has_active_role_for_aoc: { Args: { p_role_code: string; p_aoc_id: string }; Returns: boolean }
+      list_caterlink_whitelist_secure: {
+        Args: { p_aoc_id?: string | null; p_entry_type?: string | null; p_status?: string | null; p_search?: string | null }
+        Returns: {
+          entry_type: string; id: string; aoc_id: string; operating_entity_id: string | null
+          display_name: string; identifier: string; company_name: string | null; status: string
+          pass_expiry_date: string | null; effective_from: string
+          created_by: string | null; approved_by: string | null; approved_at: string | null
+          revoked_by: string | null; revoked_at: string | null; reason: string | null
+          created_at: string; updated_at: string
+        }[]
+      }
+      create_caterlink_whitelist_entry_secure: {
+        Args: {
+          p_entry_type: string
+          p_aoc_id: string
+          p_operating_entity_id?: string | null
+          p_name?: string | null
+          p_code?: string | null
+          p_identifier?: string | null
+          p_catering_company_id?: string | null
+          p_airport_pass_number?: string | null
+          p_pass_expiry_date?: string | null
+          p_truck_type?: string | null
+          p_truck_registration_number?: string | null
+          p_swap_to_staff_ic?: boolean
+          p_staff_ic_number?: string | null
+          p_effective_from?: string | null
+        }
+        Returns: { id: string; status: string }[]
+      }
+      approve_caterlink_whitelist_entry_secure: {
+        Args: { p_entry_type: string; p_id: string }
+        Returns: { id: string; status: string }[]
+      }
+      reject_caterlink_whitelist_entry_secure: {
+        Args: { p_entry_type: string; p_id: string; p_reason: string }
+        Returns: { id: string; status: string }[]
+      }
+      deactivate_caterlink_whitelist_entry_secure: {
+        Args: { p_entry_type: string; p_id: string; p_reason: string }
+        Returns: { id: string; status: string }[]
+      }
+      activate_caterlink_whitelist_entry_secure: {
+        Args: { p_entry_type: string; p_id: string }
+        Returns: { id: string; status: string }[]
+      }
+      revoke_caterlink_whitelist_entry_secure: {
+        Args: { p_entry_type: string; p_id: string; p_reason: string }
+        Returns: { id: string; status: string }[]
+      }
+      update_caterlink_whitelist_pass_expiry_secure: {
+        Args: { p_entry_type: string; p_id: string; p_pass_expiry_date: string | null }
+        Returns: { id: string; pass_expiry_date: string | null }[]
+      }
       archive_caterlink_transaction_secure: {
         Args: { p_transaction_id: string; p_reason?: string | null }
         Returns: { archive_id: string; transaction_number: string }[]

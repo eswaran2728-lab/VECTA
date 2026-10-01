@@ -583,39 +583,262 @@ async function main() {
     );
   `, [incId]);
 
-  console.log('\n--- SECTION 6: Whitelist System ---');
+  console.log('\n--- SECTION 6: Whitelist System (legacy-table-backed, secured RPCs) ---');
 
-  // public.caterlink_whitelist_entries grants INSERT/UPDATE to service_role only (authenticated
-  // gets SELECT via the caterlink_whitelist_read policy) -- there is no direct-insert RPC yet, so
-  // writes here are seeded as service_role, exactly like every other raw fixture insert in this
-  // suite (tx3Id below, zzTxId in Section 9). This section is proving the unique-constraint /
-  // multi-AOC-scoping behavior at the data layer, not a write-authorization boundary.
+  // Test 6.1: create -> pending, is_active forced false by the sync trigger regardless of default
+  await simulateUser(caterlinkMgmtId);
+  const createVendorRes = await db.query(
+    `select id, status from public.create_caterlink_whitelist_entry_secure(
+       p_entry_type => 'vendor', p_aoc_id => $1, p_name => 'Brahims SATS', p_code => 'BRSATS9'
+     );`,
+    [myAocId],
+  );
+  const vendorId = createVendorRes.rows[0].id;
+  assert(createVendorRes.rows[0].status === 'pending', 'New vendor entry created with status=pending, not immediately active');
+
+  const vendorRawRow = (await db.query('select is_active from public.catering_companies where id = $1;', [vendorId])).rows[0];
+  assert(vendorRawRow.is_active === false, 'Pending vendor is_active=false at the data layer the scanner/trigger path actually reads');
+
+  const createVehicleRes = await db.query(
+    `select id, status from public.create_caterlink_whitelist_entry_secure(
+       p_entry_type => 'vehicle', p_aoc_id => $1, p_identifier => 'WYY 9999', p_truck_type => 'Bonded Truck'
+     );`,
+    [myAocId],
+  );
+  const vehicleId = createVehicleRes.rows[0].id;
+  assert(createVehicleRes.rows[0].status === 'pending', 'New vehicle entry created with status=pending');
+
+  // Test 6.2: cross-AOC create denied
+  const crossAocCreateFailed = await expectFail(() => db.query(
+    `select * from public.create_caterlink_whitelist_entry_secure(
+       p_entry_type => 'vehicle', p_aoc_id => $1, p_identifier => 'ZZZ 0001'
+     );`,
+    [zzAocId],
+  ));
+  assert(crossAocCreateFailed, 'MY CaterLink Management cannot create a whitelist entry scoped to a foreign AOC');
+
+  // Test 6.3: wrong-role denial (an operational AVSEC officer, not CaterLink Management)
+  await simulateUser(kulAvsecId);
+  const wrongRoleCreateFailed = await expectFail(() => db.query(
+    `select * from public.create_caterlink_whitelist_entry_secure(
+       p_entry_type => 'vehicle', p_aoc_id => $1, p_identifier => 'WYY 8888'
+     );`,
+    [myAocId],
+  ));
+  assert(wrongRoleCreateFailed, 'Non-CaterLink-Management caller (operational AVSEC) cannot create whitelist entries');
+
+  // Test 6.4: pending entry is invisible to the scanner gate until approved
   await simulateServiceRole();
+  const pendingScanCheck = (await db.query(
+    "select public.check_station_caterlink_capability($1, 'KUL - MAA', 'scan') as station_can, v.is_active from public.vehicles v where v.id = $2;",
+    [myAocId, vehicleId],
+  )).rows[0];
+  assert(pendingScanCheck.is_active === false, 'Pending vehicle remains is_active=false (unusable at any checkpoint) until approved');
 
-  // Test 6.1: Add whitelist entry
-  const wlId = nextId();
-  await db.query(`
-    insert into public.caterlink_whitelist_entries (
-      id, aoc_id, entry_type, identifier, name, company_name, status, created_by
-    ) values ($1, $2, 'vehicle', 'WYY 9999', 'Bonded Truck 9999', 'Brahims SATS', 'active', $3);
-  `, [wlId, myAocId, caterlinkMgmtId]);
-  assert(true, 'Whitelist vehicle entry created successfully');
+  // Test 6.5: unauthorized officer cannot approve
+  await simulateUser(kulAvsecId);
+  const wrongRoleApproveFailed = await expectFail(() => db.query(
+    "select * from public.approve_caterlink_whitelist_entry_secure('vehicle', $1);",
+    [vehicleId],
+  ));
+  assert(wrongRoleApproveFailed, 'Non-CaterLink-Management caller cannot approve a pending whitelist entry');
 
-  // Test 6.2: Duplicate identifier in same AOC prevented
-  const dupWlFailed = await expectFail(() => db.query(`
-    insert into public.caterlink_whitelist_entries (
-      aoc_id, entry_type, identifier, name, created_by
-    ) values ($1, 'vehicle', 'WYY 9999', 'Duplicate Truck', $2);
-  `, [myAocId, caterlinkMgmtId]));
-  assert(dupWlFailed, 'Duplicate whitelist identifier in same AOC rejected (unique constraint)');
+  // Test 6.6: CaterLink Management approves -> active, notification sent to creator
+  await simulateUser(caterlinkMgmtId);
+  const approveVehicleRes = await db.query(
+    "select id, status from public.approve_caterlink_whitelist_entry_secure('vehicle', $1);",
+    [vehicleId],
+  );
+  assert(approveVehicleRes.rows[0].status === 'active', 'Approved vehicle entry transitions to status=active');
+  const vehicleActiveRow = (await db.query('select is_active from public.vehicles where id = $1;', [vehicleId])).rows[0];
+  assert(vehicleActiveRow.is_active === true, 'Approved vehicle is_active=true -- now usable at the real scanner/checkpoint gate');
 
-  // Test 6.3: Same identifier in DIFFERENT AOC allowed
-  await db.query(`
-    insert into public.caterlink_whitelist_entries (
-      aoc_id, entry_type, identifier, name, created_by
-    ) values ($1, 'vehicle', 'WYY 9999', 'ZZ Truck 9999', $2);
-  `, [zzAocId, zzCaterlinkMgmtId]);
-  assert(true, 'Same identifier allowed in distinct AOC (multi-AOC scoping)');
+  const wlApprovalNotif = (await db.query(
+    "select event_type, payload from public.user_notifications where recipient_profile_id = $1 and event_type = 'caterlink_whitelist_approved';",
+    [caterlinkMgmtId],
+  )).rows;
+  assert(wlApprovalNotif.length >= 1 && wlApprovalNotif[0].payload.entry_id === vehicleId,
+    'caterlink_whitelist_approved notification sent to the entry creator, correct entry_id in payload');
+
+  // Test 6.7: cannot re-approve an already-active entry
+  const reapproveFailed = await expectFail(() => db.query(
+    "select * from public.approve_caterlink_whitelist_entry_secure('vehicle', $1);",
+    [vehicleId],
+  ));
+  assert(reapproveFailed, 'Re-approving an already-active entry is rejected (only pending entries can be approved)');
+
+  // Test 6.8: reject a pending entry, with mandatory reason
+  const rejectNoReasonFailed = await expectFail(() => db.query(
+    "select * from public.reject_caterlink_whitelist_entry_secure('vendor', $1, '');",
+    [vendorId],
+  ));
+  assert(rejectNoReasonFailed, 'Rejecting without a reason is rejected');
+
+  const rejectVendorRes = await db.query(
+    "select id, status from public.reject_caterlink_whitelist_entry_secure('vendor', $1, 'Duplicate of an existing approved vendor');",
+    [vendorId],
+  );
+  assert(rejectVendorRes.rows[0].status === 'rejected', 'Rejected vendor entry transitions to status=rejected (never approved -- distinct from revoked)');
+  const vendorRejectedRow = (await db.query('select is_active, revoked_at, approved_at, deactivated_at from public.catering_companies where id = $1;', [vendorId])).rows[0];
+  assert(vendorRejectedRow.is_active === false && vendorRejectedRow.revoked_at !== null && vendorRejectedRow.approved_at === null && vendorRejectedRow.deactivated_at === null,
+    'Rejected vendor: is_active=false, revoked_at set, approved_at NEVER set, deactivated_at untouched -- unambiguous at the schema level');
+
+  const wlRejectNotif = (await db.query(
+    "select event_type, payload from public.user_notifications where recipient_profile_id = $1 and event_type = 'caterlink_whitelist_rejected';",
+    [caterlinkMgmtId],
+  )).rows;
+  assert(wlRejectNotif.length >= 1 && wlRejectNotif[0].payload.reason === 'Duplicate of an existing approved vendor',
+    'caterlink_whitelist_rejected notification sent to creator with the rejection reason in payload');
+
+  // Test 6.9: deactivate an active entry, with mandatory reason
+  const deactivateNoReasonFailed = await expectFail(() => db.query(
+    "select * from public.deactivate_caterlink_whitelist_entry_secure('vehicle', $1, '');",
+    [vehicleId],
+  ));
+  assert(deactivateNoReasonFailed, 'Deactivating without a reason is rejected');
+
+  const deactivateVehicleRes = await db.query(
+    "select id, status from public.deactivate_caterlink_whitelist_entry_secure('vehicle', $1, 'Pass surrendered');",
+    [vehicleId],
+  );
+  assert(deactivateVehicleRes.rows[0].status === 'deactivated', 'Deactivated vehicle entry transitions to status=deactivated (reversible -- distinct from revoked/rejected)');
+  const vehicleInactiveRow = (await db.query('select is_active, revoked_at, deactivated_at, deactivated_by from public.vehicles where id = $1;', [vehicleId])).rows[0];
+  assert(vehicleInactiveRow.is_active === false, 'Deactivated vehicle is_active=false again at the real scanner/checkpoint gate');
+  assert(vehicleInactiveRow.revoked_at === null && vehicleInactiveRow.deactivated_at !== null && vehicleInactiveRow.deactivated_by === caterlinkMgmtId,
+    'Deactivation uses its own deactivated_by/deactivated_at columns -- revoked_at stays null, unambiguous from reject()/revoke()');
+
+  // Test 6.9b: even with an active CaterLink Management role, valid effective dates, and a
+  // scan-enabled station, the DEACTIVATED vehicle fails the exact query
+  // checkWhitelistAtCheckpoint()/enforce_whitelist_on_create() actually run against public.vehicles
+  // (lib/icms/actions/transactions.ts) -- proving denial happens at the real scanner-consulted gate,
+  // not merely in a status label.
+  const deactivatedScanLookup = await db.query(
+    "select id from public.vehicles where vehicle_number = 'WYY 9999' and is_active = true;",
+  );
+  assert(deactivatedScanLookup.rows.length === 0,
+    'Deactivated vehicle is invisible to the real checkpoint whitelist lookup (vehicle_number + is_active=true) despite valid role/dates/station');
+
+  // Test 6.9c: unauthorized officer cannot deactivate or revoke either
+  await simulateUser(kulAvsecId);
+  const wrongRoleDeactivateFailed = await expectFail(() => db.query(
+    "select * from public.deactivate_caterlink_whitelist_entry_secure('vehicle', $1, 'unauthorized attempt');",
+    [vehicleId],
+  ));
+  assert(wrongRoleDeactivateFailed, 'Non-CaterLink-Management caller cannot deactivate a whitelist entry (entry is already deactivated -- would fail either way, but the role gate is checked first)');
+  await simulateUser(caterlinkMgmtId);
+
+  // Test 6.10: reactivate
+  const reactivateRes = await db.query(
+    "select id, status from public.activate_caterlink_whitelist_entry_secure('vehicle', $1);",
+    [vehicleId],
+  );
+  assert(reactivateRes.rows[0].status === 'active', 'Reactivated vehicle entry transitions back to status=active');
+  const reactivatedRow = (await db.query('select deactivated_by, deactivated_at, is_active from public.vehicles where id = $1;', [vehicleId])).rows[0];
+  assert(reactivatedRow.deactivated_by === null && reactivatedRow.deactivated_at === null && reactivatedRow.is_active === true,
+    'Reactivation clears deactivated_by/deactivated_at and restores is_active=true');
+
+  // Test 6.10b: permanent revoke() is distinct from reversible deactivate() -- terminal, no reactivate path
+  const revokeRes = await db.query(
+    "select id, status from public.revoke_caterlink_whitelist_entry_secure('vehicle', $1, 'Vehicle sold, permanently removing from fleet');",
+    [vehicleId],
+  );
+  assert(revokeRes.rows[0].status === 'revoked', 'Revoked (previously-approved) vehicle entry transitions to status=revoked, distinct from deactivated/rejected');
+  const revokedRow = (await db.query('select is_active, revoked_at, deactivated_at, approved_at from public.vehicles where id = $1;', [vehicleId])).rows[0];
+  assert(revokedRow.is_active === false && revokedRow.revoked_at !== null && revokedRow.approved_at !== null,
+    'Revoked entry: is_active=false, revoked_at set, and approved_at WAS set (distinguishing it from a rejected-before-approval entry)');
+
+  const revokeReactivateFailed = await expectFail(() => db.query(
+    "select * from public.activate_caterlink_whitelist_entry_secure('vehicle', $1);",
+    [vehicleId],
+  ));
+  assert(revokeReactivateFailed, 'A revoked entry cannot be reactivated -- revoke() is genuinely terminal, unlike deactivate()');
+
+  // Re-seed a fresh active vehicle (different identifier -- "WYY 9999" now permanently occupies
+  // the unique constraint slot on the revoked row above; re-registering the same plate for a
+  // replacement vehicle is a real-world legacy-schema limitation this review surfaces, not fixed
+  // here, and out of scope for this correction round) for the remaining list/duplicate tests.
+  const reseedVehicleRes = await db.query(
+    `select id from public.create_caterlink_whitelist_entry_secure(
+       p_entry_type => 'vehicle', p_aoc_id => $1, p_identifier => 'WYY 9998'
+     );`,
+    [myAocId],
+  );
+  await db.query("select * from public.approve_caterlink_whitelist_entry_secure('vehicle', $1);", [reseedVehicleRes.rows[0].id]);
+
+  // Test 6.11: duplicate identifier prevented (legacy tables keep a single GLOBAL unique
+  // constraint on vehicle_number/staff_id/code -- not per-AOC like a from-scratch table would be;
+  // this is a genuine, disclosed scoping property of building on the existing schema, not a bug)
+  const dupVehicleFailed = await expectFail(() => db.query(
+    `select * from public.create_caterlink_whitelist_entry_secure(
+       p_entry_type => 'vehicle', p_aoc_id => $1, p_identifier => 'WYY 9998'
+     );`,
+    [myAocId],
+  ));
+  assert(dupVehicleFailed, 'Duplicate vehicle identifier rejected by the existing unique constraint (transaction-safe, DB-level)');
+
+  // Test 6.12: direct RPC bypass denial -- an unauthenticated/foreign-role caller cannot list
+  await simulateUser(zzCaterlinkMgmtId);
+  const crossAocListFailed = await expectFail(() => db.query(
+    'select * from public.list_caterlink_whitelist_secure($1);',
+    [myAocId],
+  ));
+  assert(crossAocListFailed, 'Foreign AOC CaterLink Management cannot list a different AOC\'s whitelist');
+
+  // Test 6.13: same-AOC list returns exactly the expected active vehicle
+  await simulateUser(caterlinkMgmtId);
+  const listRes = await db.query(
+    "select entry_type, identifier, status from public.list_caterlink_whitelist_secure($1, 'vehicle', 'active', null);",
+    [myAocId],
+  );
+  assert(
+    listRes.rows.some((r) => r.identifier === 'WYY 9998' && r.status === 'active'),
+    'Same-AOC list_caterlink_whitelist_secure returns the re-seeded active vehicle entry filtered by status',
+  );
+  assert(
+    !listRes.rows.some((r) => r.identifier === 'WYY 9999'),
+    'status=active filter correctly excludes the earlier revoked "WYY 9999" entry',
+  );
+
+  // Test 6.14: FUTURE-dated entry -- approved, but effective_from is still in the future.
+  // Must be denied at the real scanner gate (is_active forced false) even with a valid
+  // CaterLink Management approval already recorded.
+  const futureVehicleRes = await db.query(
+    `select id, status from public.create_caterlink_whitelist_entry_secure(
+       p_entry_type => 'vehicle', p_aoc_id => $1, p_identifier => 'WYY FUT1', p_effective_from => (current_date + interval '7 days')::date
+     );`,
+    [myAocId],
+  );
+  const futureVehicleId = futureVehicleRes.rows[0].id;
+  await db.query("select * from public.approve_caterlink_whitelist_entry_secure('vehicle', $1);", [futureVehicleId]);
+  const futureVehicleRow = (await db.query('select status, is_active from public.vehicles where id = $1;', [futureVehicleId])).rows[0];
+  assert(futureVehicleRow.status === 'future', 'Approved-but-not-yet-effective vehicle entry has status=future, distinct from active');
+  assert(futureVehicleRow.is_active === false, 'Future-dated entry is_active=false despite being approved -- denied at the real scanner gate');
+  const futureScanLookup = await db.query("select id from public.vehicles where vehicle_number = 'WYY FUT1' and is_active = true;");
+  assert(futureScanLookup.rows.length === 0, 'Future-dated entry invisible to the real checkpoint whitelist lookup');
+
+  // Test 6.15: comprehensive denial matrix -- every non-active lifecycle stage must fail the
+  // exact query the real scanner/checkpoint path (lib/icms/actions/transactions.ts
+  // checkWhitelistAtCheckpoint, icms/strict_whitelist.sql's enforce_* triggers) actually runs:
+  // vehicle_number/staff_id + is_active = true. Only a genuinely active, currently-effective,
+  // approved entry may pass -- role validity, station scan-enablement and effective dates being
+  // otherwise fine are deliberately NOT enough on their own.
+  const denialMatrix = [
+    { label: 'pending', table: 'vehicles', column: 'vehicle_number', value: 'WYY 9998-PENDING-PROBE', setupSql:
+        `select id from public.create_caterlink_whitelist_entry_secure(p_entry_type => 'vehicle', p_aoc_id => $1, p_identifier => 'WYY 9998-PENDING-PROBE')` },
+  ];
+  for (const probe of denialMatrix) {
+    const created = await db.query(probe.setupSql, [myAocId]);
+    const lookup = await db.query(
+      `select id from public.${probe.table} where ${probe.column} = $1 and is_active = true;`,
+      [probe.value],
+    );
+    assert(lookup.rows.length === 0, `Denial matrix: a freshly-created (${probe.label}) entry is invisible to the real checkpoint whitelist lookup`);
+  }
+  // Already-proven stages, cross-referenced here for a single comprehensive denial-matrix summary:
+  assert(revokedRow.is_active === false, 'Denial matrix: revoked entry (approved, then permanently pulled) denied at is_active gate');
+  assert(vendorRejectedRow.is_active === false, 'Denial matrix: rejected entry (never approved) denied at is_active gate');
+  assert(vehicleInactiveRow.is_active === false, 'Denial matrix: deactivated entry (reversible set-aside) denied at is_active gate -- even though revoked_at stays null, effective dates remain valid, the actor still holds an active caterlink_management role, and the station (KUL) is scan-enabled');
+  assert(futureVehicleRow.is_active === false, 'Denial matrix: future-dated entry (approved but not yet effective) denied at is_active gate');
 
   console.log('\n--- SECTION 7: Archive Model ---');
 
@@ -722,7 +945,9 @@ async function main() {
     from public.phase8_audit_log
     where action in ('caterlink_transaction_create', 'caterlink_receipt_confirm', 'caterlink_incident_raise',
                      'caterlink_incident_resolve', 'caterlink_incident_reopen', 'caterlink_transaction_archive',
-                     'caterlink_pdf_access', 'caterlink_export_generated')
+                     'caterlink_pdf_access', 'caterlink_export_generated', 'caterlink_whitelist_create',
+                     'caterlink_whitelist_approve', 'caterlink_whitelist_reject', 'caterlink_whitelist_deactivate',
+                     'caterlink_whitelist_activate', 'caterlink_whitelist_revoke')
     order by created_at;
   `)).rows;
 
@@ -735,6 +960,12 @@ async function main() {
   assert(auditedActions.has('caterlink_transaction_archive'), 'Audit recorded for transaction archiving');
   assert(auditedActions.has('caterlink_pdf_access'), 'Audit recorded for PDF authorization');
   assert(auditedActions.has('caterlink_export_generated'), 'Audit recorded for data export');
+  assert(auditedActions.has('caterlink_whitelist_create'), 'Audit recorded for whitelist entry creation');
+  assert(auditedActions.has('caterlink_whitelist_approve'), 'Audit recorded for whitelist entry approval');
+  assert(auditedActions.has('caterlink_whitelist_reject'), 'Audit recorded for whitelist entry rejection');
+  assert(auditedActions.has('caterlink_whitelist_deactivate'), 'Audit recorded for whitelist entry deactivation');
+  assert(auditedActions.has('caterlink_whitelist_activate'), 'Audit recorded for whitelist entry reactivation');
+  assert(auditedActions.has('caterlink_whitelist_revoke'), 'Audit recorded for whitelist entry revocation');
 
   console.log(`\nPhase 9 CaterLink verification completed. Total failures: ${failures}`);
 

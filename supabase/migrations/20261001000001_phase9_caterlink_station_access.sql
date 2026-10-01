@@ -23,7 +23,7 @@ alter table public.user_notifications add constraint user_notifications_event_ty
     'transfer_initiated', 'transfer_accepted', 'transfer_rejected',
     'membership_ended', 'assignment_ended', 'deactivation',
     'leave_status_changed', 'ot_status_changed', 'investigation_case_assigned',
-    'caterlink_movement_received'
+    'caterlink_movement_received', 'caterlink_whitelist_approved', 'caterlink_whitelist_rejected'
   ));
 
 -- =======================================================================
@@ -339,58 +339,690 @@ create table if not exists public.part_redq (
 );
 
 -- =======================================================================
--- PART C: Whitelist System (AOC & Entity Scoped)
+-- PART C: Whitelist System -- built on the EXISTING legacy ICMS tables
+-- (public.catering_companies / public.vehicles / public.drivers), not a
+-- new table.
+--
+-- CORRECTED (post-review): an earlier draft of this migration created a
+-- brand-new public.caterlink_whitelist_entries table, entirely separate
+-- from the legacy catering_companies/vehicles/drivers tables that
+-- enforce_whitelist_on_create() and enforce_secondary_whitelist() (see
+-- icms/20260810000001_strict_whitelist.sql) actually consult on every
+-- real Part A creation and every Part B/C checkpoint. That would have
+-- created two independently writable whitelist stores -- the new table
+-- would sit unused while the real hard-block scanner path kept reading
+-- only the legacy tables, and CaterLink Management would have no way to
+-- see or change what the scanner actually enforces.
+--
+-- This corrected version instead extends the three legacy tables with
+-- the AOC/entity scoping and audit fields CaterLink Management needs,
+-- keeps `is_active` as the single authoritative gate the scanner/trigger
+-- path already reads (untouched), and adds a derived `status` column
+-- that always reflects is_active/revoked_at/approval state rather than
+-- being independently writable -- eliminating any risk of the two
+-- diverging. Existing KUL rows are backfilled to the 'MY' AOC below;
+-- nothing about the existing hard-block enforcement changes.
 -- =======================================================================
-create table if not exists public.caterlink_whitelist_entries (
+
+-- This test/CI harness's migrate.mjs deliberately never applies anything
+-- under supabase/migrations/icms/ (see migrate.mjs's own EXCLUDED list),
+-- so the disposable PGlite/native test databases never get
+-- catering_companies/vehicles/drivers from icms/20260301000003_phase4_
+-- whitelists.sql the way production does. `create table if not exists`
+-- below is therefore a genuine bootstrap ONLY on a database that never
+-- ran the icms/ chain (test/dev); against real production it is a no-op,
+-- exactly like this file's own `create table if not exists
+-- public.transactions` earlier. The shape mirrors that migration and its
+-- later icms/ follow-ups (20260810000004_whitelist_extended_fields.sql)
+-- exactly, including drivers.staff_id (renamed from driver_id there) and
+-- vehicles.truck_type/truck_registration_number, so scan.ts and
+-- transactions.ts's existing raw table reads work unchanged against
+-- either bootstrap path.
+create table if not exists public.catering_companies (
   id uuid primary key default gen_random_uuid(),
-  aoc_id uuid not null references public.aocs(id),
-  operating_entity_id uuid references public.operating_entities(id),
-  entry_type text not null check (entry_type in ('vendor', 'driver', 'vehicle', 'warehouse_user')),
-  identifier text not null,             -- vehicle registration, driver staff/IC, vendor code
-  name text not null,                   -- driver name, company name, model
-  company_name text,
-  airport_pass_number text,
-  pass_expiry_date date,
-  status text not null default 'active' check (status in ('active', 'inactive', 'revoked')),
-  effective_from date not null default current_date,
-  effective_until date,
-  created_by uuid not null references public.profiles(id),
-  approved_by uuid references public.profiles(id),
-  approved_at timestamptz,
-  deactivated_by uuid references public.profiles(id),
-  deactivated_at timestamptz,
-  reason text,
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (aoc_id, entry_type, identifier)
+  name text not null,
+  code text not null unique,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
 );
 
-create index if not exists idx_caterlink_whitelist_lookup
-  on public.caterlink_whitelist_entries (aoc_id, entry_type, status, identifier);
+create table if not exists public.vehicles (
+  id uuid primary key default gen_random_uuid(),
+  vehicle_number text not null unique,
+  catering_company_id uuid references public.catering_companies (id),
+  airport_pass_number text,
+  pass_expiry_date date,
+  truck_type text check (truck_type in ('Hi-Lift', 'Bonded Truck')),
+  truck_registration_number text,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
 
-alter table public.caterlink_whitelist_entries enable row level security;
-revoke all on public.caterlink_whitelist_entries from public, anon, authenticated;
-grant all on public.caterlink_whitelist_entries to service_role;
-grant select on public.caterlink_whitelist_entries to authenticated;
+create table if not exists public.drivers (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  staff_id text not null unique,
+  catering_company_id uuid references public.catering_companies (id),
+  airport_pass_number text,
+  pass_expiry_date date,
+  swap_to_staff_ic boolean not null default false,
+  staff_ic_number text,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
 
-create policy "caterlink_whitelist_read"
-  on public.caterlink_whitelist_entries for select
-  to authenticated
-  using (
-    -- Visible to CaterLink Management, entity Admins, and scanning personnel within same AOC
-    public.has_active_role_for_aoc('caterlink_management', aoc_id)
-    or public.has_active_role_for_aoc('operation_manager', aoc_id)
-    or public.has_active_role_for_aoc('main_enforcement', aoc_id)
-    or (
-      operating_entity_id is not null
-      and (
-        (public.has_role_in_scope('maa_admin', aoc_id, operating_entity_id))
-        or (public.has_role_in_scope('aax_admin', aoc_id, operating_entity_id))
-      )
-    )
-    or public.has_any_active_assignment_in_aoc(caterlink_whitelist_entries.aoc_id)
-  );
+-- Bootstrap-only RLS/grants (only ever runs when this migration itself
+-- just created the tables above -- a no-op check against production,
+-- where icms/20260301000003_phase4_whitelists.sql already set up its own
+-- RLS/policies/triggers that this migration must never touch).
+do $$
+begin
+  if not exists (
+    select 1 from pg_trigger where tgname = 'trg_catering_companies_no_delete'
+  ) then
+    alter table public.catering_companies enable row level security;
+    alter table public.vehicles enable row level security;
+    alter table public.drivers enable row level security;
+    grant select on public.catering_companies, public.vehicles, public.drivers to authenticated;
+    grant all on public.catering_companies, public.vehicles, public.drivers to service_role;
+
+    create policy "catering_companies_bootstrap_read" on public.catering_companies for select to authenticated using (true);
+    create policy "vehicles_bootstrap_read" on public.vehicles for select to authenticated using (true);
+    create policy "drivers_bootstrap_read" on public.drivers for select to authenticated using (true);
+  end if;
+end $$;
+
+alter table public.catering_companies
+  add column if not exists aoc_id uuid references public.aocs(id),
+  add column if not exists operating_entity_id uuid references public.operating_entities(id),
+  add column if not exists status text,
+  add column if not exists pass_expiry_date date,
+  add column if not exists effective_from date not null default current_date,
+  add column if not exists created_by uuid references public.profiles(id),
+  add column if not exists approved_by uuid references public.profiles(id),
+  add column if not exists approved_at timestamptz,
+  add column if not exists revoked_by uuid references public.profiles(id),
+  add column if not exists revoked_at timestamptz,
+  add column if not exists deactivated_by uuid references public.profiles(id),
+  add column if not exists deactivated_at timestamptz,
+  add column if not exists reason text,
+  add column if not exists updated_at timestamptz not null default now();
+
+alter table public.vehicles
+  add column if not exists aoc_id uuid references public.aocs(id),
+  add column if not exists operating_entity_id uuid references public.operating_entities(id),
+  add column if not exists status text,
+  add column if not exists effective_from date not null default current_date,
+  add column if not exists created_by uuid references public.profiles(id),
+  add column if not exists approved_by uuid references public.profiles(id),
+  add column if not exists approved_at timestamptz,
+  add column if not exists revoked_by uuid references public.profiles(id),
+  add column if not exists revoked_at timestamptz,
+  add column if not exists deactivated_by uuid references public.profiles(id),
+  add column if not exists deactivated_at timestamptz,
+  add column if not exists reason text,
+  add column if not exists updated_at timestamptz not null default now();
+
+alter table public.drivers
+  add column if not exists aoc_id uuid references public.aocs(id),
+  add column if not exists operating_entity_id uuid references public.operating_entities(id),
+  add column if not exists status text,
+  add column if not exists effective_from date not null default current_date,
+  add column if not exists created_by uuid references public.profiles(id),
+  add column if not exists approved_by uuid references public.profiles(id),
+  add column if not exists approved_at timestamptz,
+  add column if not exists revoked_by uuid references public.profiles(id),
+  add column if not exists revoked_at timestamptz,
+  add column if not exists deactivated_by uuid references public.profiles(id),
+  add column if not exists deactivated_at timestamptz,
+  add column if not exists reason text,
+  add column if not exists updated_at timestamptz not null default now();
+
+-- Backfill every pre-existing row (and any row a legacy insert path adds
+-- without an aoc_id) to the 'MY' AOC -- current production behavior is
+-- entirely Malaysia-scoped, so this is a lossless default, not a guess
+-- about which specific AOC an existing row belongs to.
+do $$
+declare
+  v_my_aoc_id uuid;
+begin
+  select id into v_my_aoc_id from public.aocs where code = 'MY';
+  if v_my_aoc_id is not null then
+    update public.catering_companies set aoc_id = v_my_aoc_id where aoc_id is null;
+    update public.vehicles set aoc_id = v_my_aoc_id where aoc_id is null;
+    update public.drivers set aoc_id = v_my_aoc_id where aoc_id is null;
+  end if;
+end $$;
+
+-- status is DERIVED, never written directly by any RPC or client -- always
+-- recomputed from is_active/revoked_at/deactivated_at/approved_at so it can
+-- never disagree with the column the scanner/trigger path actually reads
+-- (is_active). Six distinct, unambiguous lifecycle stages, each with its
+-- own timestamp/actor pair so no two stages share a meaning:
+--
+--   pending     created_by set, approved_at null            -- awaiting CaterLink Management review
+--   active      approved_at set, is_active=true              -- approved and currently usable
+--   rejected    revoked_at set, approved_at NEVER was set     -- denied before ever going live (terminal)
+--   revoked     revoked_at set, approved_at WAS set           -- pulled for cause after being live (terminal)
+--   deactivated deactivated_at set, revoked_at still null     -- temporarily set aside (reversible via activate)
+--   future      approved_at set, but effective_from is still in the future -- NOT yet usable; is_active is
+--               force-held false here (unlike 'expired' below) because an entry that has never yet become
+--               effective is not the same pre-existing-production escape hatch as a lapsed pass -- nothing
+--               today relies on "approved early, usable early", so there is no compatibility reason to allow it.
+--   expired     is_active=true but pass_expiry_date has passed -- still is_active (the legacy EXPIRED_PASS
+--               escape hatch in icms/20260810000001_strict_whitelist.sql is deliberate, untouched, pre-
+--               existing production behavior -- Part B/C record the movement anyway and auto-escalate an
+--               EXPIRED_PASS incident rather than hard-blocking at the gate); 'expired' here is purely an
+--               informational status for the admin list/RPCs, never an additional is_active-style hard gate.
+--
+-- CORRECTED (post-review): the first version of this trigger reused
+-- revoked_by/revoked_at for BOTH reject() and deactivate(), which made a
+-- rejected-before-ever-approved entry and a deactivated-after-being-active
+-- entry indistinguishable in the schema (both just "revoked_at is not
+-- null"), and worse, deactivate() was changed to leave revoked_at null
+-- specifically so it stayed reversible -- silently making "deactivated"
+-- and "revoked" collapse to the SAME status value the trigger computed
+-- from is_active alone. deactivated_by/deactivated_at (added above) give
+-- deactivation its own unambiguous column pair, and this version checks
+-- approved_at to split revoked_at's two real meanings (rejected vs.
+-- revoked) apart instead of merging them.
+create or replace function public.sync_caterlink_whitelist_status()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if new.revoked_at is not null then
+    new.status := case when new.approved_at is null then 'rejected' else 'revoked' end;
+  elsif new.deactivated_at is not null then
+    new.status := 'deactivated';
+    new.is_active := false;
+  elsif new.created_by is not null and new.approved_at is null then
+    new.status := 'pending';
+    new.is_active := false;
+  elsif new.effective_from is not null and new.effective_from > current_date then
+    new.status := 'future';
+    new.is_active := false;
+  elsif new.is_active and new.pass_expiry_date is not null and new.pass_expiry_date < current_date then
+    new.status := 'expired';
+  elsif new.is_active then
+    new.status := 'active';
+  else
+    new.status := 'inactive';
+  end if;
+  new.updated_at := now();
+  return new;
+end;
+$function$;
+revoke execute on function public.sync_caterlink_whitelist_status() from public, anon, authenticated;
+
+drop trigger if exists trg_catering_companies_sync_status on public.catering_companies;
+create trigger trg_catering_companies_sync_status
+  before insert or update on public.catering_companies
+  for each row execute function public.sync_caterlink_whitelist_status();
+
+drop trigger if exists trg_vehicles_sync_status on public.vehicles;
+create trigger trg_vehicles_sync_status
+  before insert or update on public.vehicles
+  for each row execute function public.sync_caterlink_whitelist_status();
+
+drop trigger if exists trg_drivers_sync_status on public.drivers;
+create trigger trg_drivers_sync_status
+  before insert or update on public.drivers
+  for each row execute function public.sync_caterlink_whitelist_status();
+
+-- One-time backfill so every pre-existing row gets a correct initial
+-- status (the trigger above only fires on future writes).
+update public.catering_companies set updated_at = updated_at;
+update public.vehicles set updated_at = updated_at;
+update public.drivers set updated_at = updated_at;
+
+alter table public.catering_companies drop constraint if exists catering_companies_status_check;
+alter table public.catering_companies add constraint catering_companies_status_check
+  check (status in ('pending', 'active', 'inactive', 'rejected', 'deactivated', 'revoked', 'expired', 'future'));
+alter table public.vehicles drop constraint if exists vehicles_status_check;
+alter table public.vehicles add constraint vehicles_status_check
+  check (status in ('pending', 'active', 'inactive', 'rejected', 'deactivated', 'revoked', 'expired', 'future'));
+alter table public.drivers drop constraint if exists drivers_status_check;
+alter table public.drivers add constraint drivers_status_check
+  check (status in ('pending', 'active', 'inactive', 'rejected', 'deactivated', 'revoked', 'expired', 'future'));
+
+create index if not exists idx_catering_companies_aoc_status on public.catering_companies (aoc_id, status);
+create index if not exists idx_vehicles_aoc_status on public.vehicles (aoc_id, status);
+create index if not exists idx_drivers_aoc_status on public.drivers (aoc_id, status);
+
+-- NOTE (deliberately NOT bootstrapped here, unlike the RLS/grants block
+-- above): icms/20260810000001_strict_whitelist.sql's real
+-- enforce_whitelist_on_create() trigger fires unconditionally on EVERY
+-- insert into public.transactions, including create_caterlink_
+-- transaction_secure()'s (Part G below), which never populates
+-- vehicle_id/driver_id_ref -- it stores vehicle_number/driver_name/
+-- driver_id as plain text params, not FK lookups against vehicles/
+-- drivers. If that trigger is actually active in a target environment,
+-- every CaterLink transaction creation would be rejected by it. This is
+-- a genuine, pre-existing risk this review surfaced, not something
+-- introduced by this migration -- flagged prominently in the final
+-- report rather than guessed at here. Replicating that trigger into this
+-- harness's bootstrap path would either mask the risk (if skipped) or
+-- make every already-verified Section 3 transaction-creation test in
+-- verify_phase9_caterlink.mjs fail for a behavior this migration cannot
+-- safely change without product guidance on whether CaterLink movements
+-- are meant to consult the vehicle/driver whitelist at all.
+
+-- -----------------------------------------------------------------------
+-- Whitelist management RPCs -- the single authorized write/read path for
+-- CaterLink Management. Every one requires an active caterlink_management
+-- assignment in the target AOC (auth.uid(), Phase 3 model), never the
+-- legacy ICMS single-role system. list/create/approve/reject/activate/
+-- deactivate all funnel through the three legacy tables above so there is
+-- exactly one place the scanner and the admin surface both read from.
+-- -----------------------------------------------------------------------
+
+create or replace function public.list_caterlink_whitelist_secure(
+  p_aoc_id uuid default null,
+  p_entry_type text default null,
+  p_status text default null,
+  p_search text default null
+)
+returns table (
+  entry_type text, id uuid, aoc_id uuid, operating_entity_id uuid,
+  display_name text, identifier text, company_name text, status text,
+  pass_expiry_date date, effective_from date,
+  created_by uuid, approved_by uuid, approved_at timestamptz,
+  deactivated_by uuid, deactivated_at timestamptz,
+  revoked_by uuid, revoked_at timestamptz, reason text,
+  created_at timestamptz, updated_at timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_aoc_id uuid := coalesce(p_aoc_id, public.my_aoc_id());
+begin
+  if not public.has_active_role_for_aoc('caterlink_management', v_aoc_id) then
+    raise exception 'Only CaterLink Management may list the whitelist.';
+  end if;
+
+  return query
+  select 'vendor'::text, c.id, c.aoc_id, c.operating_entity_id, c.name, c.code, null::text, c.status,
+         c.pass_expiry_date, c.effective_from, c.created_by, c.approved_by, c.approved_at,
+         c.deactivated_by, c.deactivated_at, c.revoked_by, c.revoked_at, c.reason, c.created_at, c.updated_at
+  from public.catering_companies c
+  where c.aoc_id = v_aoc_id
+    and (p_entry_type is null or p_entry_type = 'vendor')
+    and (p_status is null or c.status = p_status)
+    and (p_search is null or c.name ilike '%' || p_search || '%' or c.code ilike '%' || p_search || '%')
+  union all
+  select 'vehicle'::text, v.id, v.aoc_id, v.operating_entity_id, v.vehicle_number, v.vehicle_number,
+         cc.name, v.status, v.pass_expiry_date, v.effective_from, v.created_by, v.approved_by, v.approved_at,
+         v.deactivated_by, v.deactivated_at, v.revoked_by, v.revoked_at, v.reason, v.created_at, v.updated_at
+  from public.vehicles v
+  left join public.catering_companies cc on cc.id = v.catering_company_id
+  where v.aoc_id = v_aoc_id
+    and (p_entry_type is null or p_entry_type = 'vehicle')
+    and (p_status is null or v.status = p_status)
+    and (p_search is null or v.vehicle_number ilike '%' || p_search || '%')
+  union all
+  select 'driver'::text, d.id, d.aoc_id, d.operating_entity_id, d.name, d.staff_id,
+         cc.name, d.status, d.pass_expiry_date, d.effective_from, d.created_by, d.approved_by, d.approved_at,
+         d.deactivated_by, d.deactivated_at, d.revoked_by, d.revoked_at, d.reason, d.created_at, d.updated_at
+  from public.drivers d
+  left join public.catering_companies cc on cc.id = d.catering_company_id
+  where d.aoc_id = v_aoc_id
+    and (p_entry_type is null or p_entry_type = 'driver')
+    and (p_status is null or d.status = p_status)
+    and (p_search is null or d.name ilike '%' || p_search || '%' or d.staff_id ilike '%' || p_search || '%')
+  order by 20 desc;
+end;
+$function$;
+revoke execute on function public.list_caterlink_whitelist_secure(uuid, text, text, text) from public, anon;
+grant execute on function public.list_caterlink_whitelist_secure(uuid, text, text, text) to authenticated, service_role;
+
+create or replace function public.create_caterlink_whitelist_entry_secure(
+  p_entry_type text,
+  p_aoc_id uuid,
+  p_operating_entity_id uuid default null,
+  p_name text default null,
+  p_code text default null,
+  p_identifier text default null,
+  p_catering_company_id uuid default null,
+  p_airport_pass_number text default null,
+  p_pass_expiry_date date default null,
+  p_truck_type text default null,
+  p_truck_registration_number text default null,
+  p_swap_to_staff_ic boolean default false,
+  p_staff_ic_number text default null,
+  p_effective_from date default null
+)
+returns table (id uuid, status text)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_caller uuid := auth.uid();
+  v_id uuid;
+  v_status text;
+begin
+  if v_caller is null then raise exception 'Must be signed in.'; end if;
+  if not public.has_active_role_for_aoc('caterlink_management', p_aoc_id) then
+    raise exception 'Only CaterLink Management may add whitelist entries.';
+  end if;
+
+  if p_entry_type = 'vendor' then
+    if p_name is null or p_code is null then raise exception 'Vendor entries require name and code.'; end if;
+    insert into public.catering_companies as cc (name, code, aoc_id, operating_entity_id, created_by, effective_from)
+    values (p_name, upper(p_code), p_aoc_id, p_operating_entity_id, v_caller, coalesce(p_effective_from, current_date))
+    returning cc.id, cc.status into v_id, v_status;
+  elsif p_entry_type = 'vehicle' then
+    if p_identifier is null then raise exception 'Vehicle entries require an identifier (vehicle number).'; end if;
+    insert into public.vehicles as v (
+      vehicle_number, catering_company_id, airport_pass_number, pass_expiry_date,
+      truck_type, truck_registration_number, aoc_id, operating_entity_id, created_by, effective_from
+    ) values (
+      upper(p_identifier), p_catering_company_id, p_airport_pass_number, p_pass_expiry_date,
+      p_truck_type, p_truck_registration_number, p_aoc_id, p_operating_entity_id, v_caller, coalesce(p_effective_from, current_date)
+    ) returning v.id, v.status into v_id, v_status;
+  elsif p_entry_type = 'driver' then
+    if p_name is null or p_identifier is null then raise exception 'Driver entries require name and identifier (staff ID).'; end if;
+    insert into public.drivers as d (
+      name, staff_id, catering_company_id, airport_pass_number, pass_expiry_date,
+      swap_to_staff_ic, staff_ic_number, aoc_id, operating_entity_id, created_by, effective_from
+    ) values (
+      p_name, upper(p_identifier), p_catering_company_id, p_airport_pass_number, p_pass_expiry_date,
+      coalesce(p_swap_to_staff_ic, false), p_staff_ic_number, p_aoc_id, p_operating_entity_id, v_caller, coalesce(p_effective_from, current_date)
+    ) returning d.id, d.status into v_id, v_status;
+  else
+    raise exception 'Unknown whitelist entry_type: %', p_entry_type;
+  end if;
+
+  perform public.phase8_write_audit('caterlink_whitelist_create', 'caterlink_whitelist_' || p_entry_type, v_id,
+    jsonb_build_object('aoc_id', p_aoc_id, 'entry_type', p_entry_type));
+
+  return query select v_id, v_status;
+end;
+$function$;
+revoke execute on function public.create_caterlink_whitelist_entry_secure(text, uuid, uuid, text, text, text, uuid, text, date, text, text, boolean, text, date) from public, anon;
+grant execute on function public.create_caterlink_whitelist_entry_secure(text, uuid, uuid, text, text, text, uuid, text, date, text, text, boolean, text, date) to authenticated, service_role;
+
+-- Shared by approve/reject/activate/deactivate: resolves the row's aoc_id
+-- and current status, and enforces the caterlink_management gate for that
+-- specific AOC -- never the caller's own default AOC, so a cross-AOC id
+-- can never be acted on even if the caller happens to also manage another AOC.
+create or replace function public.resolve_caterlink_whitelist_row(p_entry_type text, p_id uuid, out aoc_id uuid, out status text, out created_by uuid)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if p_entry_type = 'vendor' then
+    select c.aoc_id, c.status, c.created_by into aoc_id, status, created_by from public.catering_companies c where c.id = p_id for update;
+  elsif p_entry_type = 'vehicle' then
+    select v.aoc_id, v.status, v.created_by into aoc_id, status, created_by from public.vehicles v where v.id = p_id for update;
+  elsif p_entry_type = 'driver' then
+    select d.aoc_id, d.status, d.created_by into aoc_id, status, created_by from public.drivers d where d.id = p_id for update;
+  else
+    raise exception 'Unknown whitelist entry_type: %', p_entry_type;
+  end if;
+  if aoc_id is null then
+    raise exception 'Whitelist entry not found.';
+  end if;
+end;
+$function$;
+revoke execute on function public.resolve_caterlink_whitelist_row(text, uuid) from public, anon, authenticated;
+grant execute on function public.resolve_caterlink_whitelist_row(text, uuid) to service_role;
+
+create or replace function public.approve_caterlink_whitelist_entry_secure(p_entry_type text, p_id uuid)
+returns table (id uuid, status text)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_caller uuid := auth.uid();
+  v_row record;
+  v_status text;
+begin
+  if v_caller is null then raise exception 'Must be signed in.'; end if;
+  select * into v_row from public.resolve_caterlink_whitelist_row(p_entry_type, p_id);
+  if not public.has_active_role_for_aoc('caterlink_management', v_row.aoc_id) then
+    raise exception 'Only CaterLink Management may approve whitelist entries.';
+  end if;
+  if v_row.status <> 'pending' then
+    raise exception 'Only a pending entry can be approved (current status: %).', v_row.status;
+  end if;
+
+  if p_entry_type = 'vendor' then
+    update public.catering_companies as cc set approved_by = v_caller, approved_at = now(), is_active = true where cc.id = p_id returning cc.status into v_status;
+  elsif p_entry_type = 'vehicle' then
+    update public.vehicles as v set approved_by = v_caller, approved_at = now(), is_active = true where v.id = p_id returning v.status into v_status;
+  else
+    update public.drivers as d set approved_by = v_caller, approved_at = now(), is_active = true where d.id = p_id returning d.status into v_status;
+  end if;
+
+  perform public.phase8_write_audit('caterlink_whitelist_approve', 'caterlink_whitelist_' || p_entry_type, p_id,
+    jsonb_build_object('aoc_id', v_row.aoc_id));
+  if v_row.created_by is not null then
+    perform public.notify(v_row.created_by, 'caterlink_whitelist_approved', 'caterlink_wl_approve_' || p_id::text,
+      null, null, null, jsonb_build_object('entry_type', p_entry_type, 'entry_id', p_id));
+  end if;
+
+  return query select p_id, v_status;
+end;
+$function$;
+revoke execute on function public.approve_caterlink_whitelist_entry_secure(text, uuid) from public, anon;
+grant execute on function public.approve_caterlink_whitelist_entry_secure(text, uuid) to authenticated, service_role;
+
+create or replace function public.reject_caterlink_whitelist_entry_secure(p_entry_type text, p_id uuid, p_reason text)
+returns table (id uuid, status text)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_caller uuid := auth.uid();
+  v_row record;
+  v_status text;
+begin
+  if v_caller is null then raise exception 'Must be signed in.'; end if;
+  if p_reason is null or length(trim(p_reason)) = 0 then
+    raise exception 'A reason is required to reject a whitelist entry.';
+  end if;
+  select * into v_row from public.resolve_caterlink_whitelist_row(p_entry_type, p_id);
+  if not public.has_active_role_for_aoc('caterlink_management', v_row.aoc_id) then
+    raise exception 'Only CaterLink Management may reject whitelist entries.';
+  end if;
+  if v_row.status <> 'pending' then
+    raise exception 'Only a pending entry can be rejected (current status: %).', v_row.status;
+  end if;
+
+  if p_entry_type = 'vendor' then
+    update public.catering_companies as cc set revoked_by = v_caller, revoked_at = now(), reason = p_reason, is_active = false where cc.id = p_id returning cc.status into v_status;
+  elsif p_entry_type = 'vehicle' then
+    update public.vehicles as v set revoked_by = v_caller, revoked_at = now(), reason = p_reason, is_active = false where v.id = p_id returning v.status into v_status;
+  else
+    update public.drivers as d set revoked_by = v_caller, revoked_at = now(), reason = p_reason, is_active = false where d.id = p_id returning d.status into v_status;
+  end if;
+
+  perform public.phase8_write_audit('caterlink_whitelist_reject', 'caterlink_whitelist_' || p_entry_type, p_id,
+    jsonb_build_object('aoc_id', v_row.aoc_id, 'reason', p_reason));
+  if v_row.created_by is not null then
+    perform public.notify(v_row.created_by, 'caterlink_whitelist_rejected', 'caterlink_wl_reject_' || p_id::text,
+      null, null, null, jsonb_build_object('entry_type', p_entry_type, 'entry_id', p_id, 'reason', p_reason));
+  end if;
+
+  return query select p_id, v_status;
+end;
+$function$;
+revoke execute on function public.reject_caterlink_whitelist_entry_secure(text, uuid, text) from public, anon;
+grant execute on function public.reject_caterlink_whitelist_entry_secure(text, uuid, text) to authenticated, service_role;
+
+create or replace function public.deactivate_caterlink_whitelist_entry_secure(p_entry_type text, p_id uuid, p_reason text)
+returns table (id uuid, status text)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_caller uuid := auth.uid();
+  v_row record;
+  v_status text;
+begin
+  if v_caller is null then raise exception 'Must be signed in.'; end if;
+  if p_reason is null or length(trim(p_reason)) = 0 then
+    raise exception 'A reason is required to deactivate a whitelist entry.';
+  end if;
+  select * into v_row from public.resolve_caterlink_whitelist_row(p_entry_type, p_id);
+  if not public.has_active_role_for_aoc('caterlink_management', v_row.aoc_id) then
+    raise exception 'Only CaterLink Management may deactivate whitelist entries.';
+  end if;
+  if v_row.status not in ('active', 'expired', 'future') then
+    raise exception 'Only an active (or expired-but-still-listed) entry can be deactivated (current status: %).', v_row.status;
+  end if;
+
+  -- Sets deactivated_by/deactivated_at (its own dedicated column pair --
+  -- never revoked_by/revoked_at, which are reject()'s exclusive, terminal
+  -- markers) so status recomputes to 'deactivated', unambiguous from both
+  -- 'rejected' and 'revoked'. is_active=false is what actually gates the
+  -- scanner/trigger path; reversible via activate().
+  if p_entry_type = 'vendor' then
+    update public.catering_companies as cc set deactivated_by = v_caller, deactivated_at = now(), reason = p_reason, is_active = false where cc.id = p_id returning cc.status into v_status;
+  elsif p_entry_type = 'vehicle' then
+    update public.vehicles as v set deactivated_by = v_caller, deactivated_at = now(), reason = p_reason, is_active = false where v.id = p_id returning v.status into v_status;
+  else
+    update public.drivers as d set deactivated_by = v_caller, deactivated_at = now(), reason = p_reason, is_active = false where d.id = p_id returning d.status into v_status;
+  end if;
+
+  perform public.phase8_write_audit('caterlink_whitelist_deactivate', 'caterlink_whitelist_' || p_entry_type, p_id,
+    jsonb_build_object('aoc_id', v_row.aoc_id, 'reason', p_reason));
+
+  return query select p_id, v_status;
+end;
+$function$;
+revoke execute on function public.deactivate_caterlink_whitelist_entry_secure(text, uuid, text) from public, anon;
+grant execute on function public.deactivate_caterlink_whitelist_entry_secure(text, uuid, text) to authenticated, service_role;
+
+create or replace function public.activate_caterlink_whitelist_entry_secure(p_entry_type text, p_id uuid)
+returns table (id uuid, status text)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_caller uuid := auth.uid();
+  v_row record;
+  v_status text;
+begin
+  if v_caller is null then raise exception 'Must be signed in.'; end if;
+  select * into v_row from public.resolve_caterlink_whitelist_row(p_entry_type, p_id);
+  if not public.has_active_role_for_aoc('caterlink_management', v_row.aoc_id) then
+    raise exception 'Only CaterLink Management may reactivate whitelist entries.';
+  end if;
+  if v_row.status not in ('inactive', 'deactivated') then
+    raise exception 'Only a deactivated entry (never pending/rejected/revoked) can be reactivated this way (current status: %).', v_row.status;
+  end if;
+
+  if p_entry_type = 'vendor' then
+    update public.catering_companies as cc set deactivated_by = null, deactivated_at = null, reason = null, is_active = true where cc.id = p_id returning cc.status into v_status;
+  elsif p_entry_type = 'vehicle' then
+    update public.vehicles as v set deactivated_by = null, deactivated_at = null, reason = null, is_active = true where v.id = p_id returning v.status into v_status;
+  else
+    update public.drivers as d set deactivated_by = null, deactivated_at = null, reason = null, is_active = true where d.id = p_id returning d.status into v_status;
+  end if;
+
+  perform public.phase8_write_audit('caterlink_whitelist_activate', 'caterlink_whitelist_' || p_entry_type, p_id,
+    jsonb_build_object('aoc_id', v_row.aoc_id));
+
+  return query select p_id, v_status;
+end;
+$function$;
+revoke execute on function public.activate_caterlink_whitelist_entry_secure(text, uuid) from public, anon;
+grant execute on function public.activate_caterlink_whitelist_entry_secure(text, uuid) to authenticated, service_role;
+
+-- Permanent, terminal revocation of a previously-approved entry (never
+-- reversible through this schema -- distinct from deactivate(), which is
+-- a reversible "set aside"). Sets revoked_by/revoked_at (the SAME columns
+-- reject() uses), but only ever reachable from an entry that WAS approved
+-- (approved_at is not null), which is exactly what makes
+-- sync_caterlink_whitelist_status() compute 'revoked' here and 'rejected'
+-- for reject()'s pending-only case -- the two terminal outcomes stay
+-- distinguishable by approved_at, never by which RPC happened to run.
+create or replace function public.revoke_caterlink_whitelist_entry_secure(p_entry_type text, p_id uuid, p_reason text)
+returns table (id uuid, status text)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_caller uuid := auth.uid();
+  v_row record;
+  v_status text;
+begin
+  if v_caller is null then raise exception 'Must be signed in.'; end if;
+  if p_reason is null or length(trim(p_reason)) = 0 then
+    raise exception 'A reason is required to revoke a whitelist entry.';
+  end if;
+  select * into v_row from public.resolve_caterlink_whitelist_row(p_entry_type, p_id);
+  if not public.has_active_role_for_aoc('caterlink_management', v_row.aoc_id) then
+    raise exception 'Only CaterLink Management may revoke whitelist entries.';
+  end if;
+  if v_row.status not in ('active', 'deactivated', 'expired', 'future') then
+    raise exception 'Only a previously-approved entry can be revoked (current status: %). Legacy pre-migration rows (status=inactive, no recorded approval) are not eligible -- deactivate/reactivate them instead.', v_row.status;
+  end if;
+
+  if p_entry_type = 'vendor' then
+    update public.catering_companies as cc set revoked_by = v_caller, revoked_at = now(), reason = p_reason, is_active = false where cc.id = p_id returning cc.status into v_status;
+  elsif p_entry_type = 'vehicle' then
+    update public.vehicles as v set revoked_by = v_caller, revoked_at = now(), reason = p_reason, is_active = false where v.id = p_id returning v.status into v_status;
+  else
+    update public.drivers as d set revoked_by = v_caller, revoked_at = now(), reason = p_reason, is_active = false where d.id = p_id returning d.status into v_status;
+  end if;
+
+  perform public.phase8_write_audit('caterlink_whitelist_revoke', 'caterlink_whitelist_' || p_entry_type, p_id,
+    jsonb_build_object('aoc_id', v_row.aoc_id, 'reason', p_reason));
+
+  return query select p_id, v_status;
+end;
+$function$;
+revoke execute on function public.revoke_caterlink_whitelist_entry_secure(text, uuid, text) from public, anon;
+grant execute on function public.revoke_caterlink_whitelist_entry_secure(text, uuid, text) to authenticated, service_role;
+
+-- Permitted non-identity field update (pass expiry only -- never the
+-- identifying vehicle_number/staff_id/code, which would silently change
+-- what the row actually whitelists).
+create or replace function public.update_caterlink_whitelist_pass_expiry_secure(
+  p_entry_type text, p_id uuid, p_pass_expiry_date date
+)
+returns table (id uuid, pass_expiry_date date)
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_row record;
+begin
+  if auth.uid() is null then raise exception 'Must be signed in.'; end if;
+  select * into v_row from public.resolve_caterlink_whitelist_row(p_entry_type, p_id);
+  if not public.has_active_role_for_aoc('caterlink_management', v_row.aoc_id) then
+    raise exception 'Only CaterLink Management may update whitelist entries.';
+  end if;
+  if p_entry_type = 'vendor' then
+    raise exception 'Vendors do not carry a pass expiry date.';
+  elsif p_entry_type = 'vehicle' then
+    update public.vehicles set pass_expiry_date = p_pass_expiry_date where id = p_id;
+  else
+    update public.drivers set pass_expiry_date = p_pass_expiry_date where id = p_id;
+  end if;
+  perform public.phase8_write_audit('caterlink_whitelist_update_expiry', 'caterlink_whitelist_' || p_entry_type, p_id,
+    jsonb_build_object('pass_expiry_date', p_pass_expiry_date));
+  return query select p_id, p_pass_expiry_date;
+end;
+$function$;
+revoke execute on function public.update_caterlink_whitelist_pass_expiry_secure(text, uuid, date) from public, anon;
+grant execute on function public.update_caterlink_whitelist_pass_expiry_secure(text, uuid, date) to authenticated, service_role;
 
 -- =======================================================================
 -- PART D: CaterLink Incident System
