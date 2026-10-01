@@ -5574,6 +5574,8 @@ export type Database = {
           sources: Json
           tool_calls: Json
           tool_results: Json
+          provider: string | null
+          model: string | null
           created_at: string
         }[]
       }
@@ -5587,6 +5589,8 @@ export type Database = {
           p_sources?: Json
           p_tool_calls?: Json
           p_tool_results?: Json
+          p_provider?: string | null
+          p_model?: string | null
         }
         Returns: string
       }

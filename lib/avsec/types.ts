@@ -576,6 +576,11 @@ export interface WoisMessage {
   /** Phase 12: names of any allowlisted tools invoked for this turn, kept
    * minimal (names/args only, never raw record payloads) for display and audit. */
   toolCalls?: WoisToolCall[];
+  /** Which provider produced this specific message -- persisted per
+   * message (not just per conversation) since a fallback can happen
+   * mid-conversation. */
+  provider?: string | null;
+  model?: string | null;
   created_at: string;
 }
 
@@ -591,6 +596,8 @@ export interface WoisEngineResponse {
   actionHref?: string;
   actionLabel?: string;
   toolCalls?: WoisToolCall[];
+  provider?: string;
+  usedFallback?: boolean;
 }
 
 // Phase 12: WOIS AI 2.0 -- conversational, tool-grounded Malaysia AOC assistant.

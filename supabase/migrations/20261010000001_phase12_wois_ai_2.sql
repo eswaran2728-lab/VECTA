@@ -449,3 +449,150 @@ create policy wois_messages_user_select on public.wois_messages
       where c.id = wois_messages.conversation_id and c.user_id = auth.uid()
     )
   );
+
+-- =====================================================================
+-- 6. Per-message provider indicator (same Phase 12 correction cycle --
+--    this migration has not been applied to any shared/remote
+--    environment, so this is an additive amendment to it, not an edit of
+--    an already-shipped phase). The conversation-level provider/model
+--    columns above record the provider at CREATION time only; a given
+--    conversation can span a provider fallback mid-conversation (Gemini
+--    times out on turn 3, the rule engine answers turn 3), so the UI and
+--    audit trail need a per-message indicator, not just a per-conversation
+--    one.
+-- =====================================================================
+alter table public.wois_messages
+  add column if not exists provider text,
+  add column if not exists model text;
+
+-- `create or replace function` cannot widen an existing function's
+-- parameter list into the same name (Postgres treats a different argument
+-- list as a distinct overload, not a replacement) or change a `returns
+-- table` function's column list at all -- drop both prior-signature
+-- versions explicitly so this amendment actually replaces them instead of
+-- leaving a stale, still-granted overload behind.
+drop function if exists public.append_wois_message_secure(uuid, text, text, text, text, jsonb, jsonb, jsonb);
+drop function if exists public.list_wois_messages_secure(uuid);
+
+create or replace function public.append_wois_message_secure(
+  p_conversation_id uuid,
+  p_sender text,
+  p_body text,
+  p_confidence_tag text default null,
+  p_source_type text default null,
+  p_sources jsonb default '[]'::jsonb,
+  p_tool_calls jsonb default '[]'::jsonb,
+  p_tool_results jsonb default '[]'::jsonb,
+  p_provider text default null,
+  p_model text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_caller uuid := auth.uid();
+  v_owned boolean;
+  v_id uuid;
+  v_body text;
+begin
+  if v_caller is null then
+    raise exception 'Must be signed in.';
+  end if;
+
+  if p_sender not in ('user', 'assistant') then
+    raise exception 'Invalid sender.';
+  end if;
+
+  if not public.is_wois_eligible_secure() then
+    perform public.record_wois_audit_event_secure('authorization_denied', p_conversation_id, jsonb_build_object('action', 'append_message'));
+    raise exception 'Not authorized to use WOIS AI.';
+  end if;
+
+  select exists (
+    select 1 from public.wois_conversations c
+    where c.id = p_conversation_id and c.user_id = v_caller and c.deleted_at is null
+  ) into v_owned;
+
+  if not v_owned then
+    perform public.record_wois_audit_event_secure('authorization_denied', p_conversation_id, jsonb_build_object('action', 'append_message'));
+    raise exception 'Conversation not found or not owned by caller.';
+  end if;
+
+  v_body := p_body;
+  if v_body is null or length(trim(v_body)) = 0 then
+    raise exception 'Message body is required.';
+  end if;
+  if length(v_body) > 8000 then
+    v_body := left(v_body, 8000);
+  end if;
+
+  insert into public.wois_messages (
+    conversation_id, sender, body, confidence_tag, source_type, sources, tool_calls, tool_results, provider, model
+  )
+  values (
+    p_conversation_id, p_sender, v_body, p_confidence_tag, p_source_type,
+    coalesce(p_sources, '[]'::jsonb), coalesce(p_tool_calls, '[]'::jsonb), coalesce(p_tool_results, '[]'::jsonb),
+    p_provider, p_model
+  )
+  returning id into v_id;
+
+  update public.wois_conversations set updated_at = now() where id = p_conversation_id;
+
+  perform public.record_wois_audit_event_secure('message_appended', p_conversation_id, jsonb_build_object('sender', p_sender));
+
+  return v_id;
+end;
+$function$;
+
+revoke execute on function public.append_wois_message_secure(uuid, text, text, text, text, jsonb, jsonb, jsonb, text, text) from public, anon;
+grant execute on function public.append_wois_message_secure(uuid, text, text, text, text, jsonb, jsonb, jsonb, text, text) to authenticated, service_role;
+
+create or replace function public.list_wois_messages_secure(p_conversation_id uuid)
+returns table (
+  id uuid,
+  sender text,
+  body text,
+  confidence_tag text,
+  source_type text,
+  sources jsonb,
+  tool_calls jsonb,
+  tool_results jsonb,
+  provider text,
+  model text,
+  created_at timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_caller uuid := auth.uid();
+  v_owned boolean;
+begin
+  if v_caller is null then
+    raise exception 'Must be signed in.';
+  end if;
+
+  select exists (
+    select 1 from public.wois_conversations c
+    where c.id = p_conversation_id and c.user_id = v_caller
+  ) into v_owned;
+
+  if not v_owned then
+    perform public.record_wois_audit_event_secure('authorization_denied', p_conversation_id, jsonb_build_object('action', 'list_messages'));
+    raise exception 'Conversation not found or not owned by caller.';
+  end if;
+
+  return query
+  select m.id, m.sender, m.body, m.confidence_tag, m.source_type, m.sources, m.tool_calls, m.tool_results, m.provider, m.model, m.created_at
+  from public.wois_messages m
+  where m.conversation_id = p_conversation_id
+  order by m.created_at asc;
+end;
+$function$;
+
+revoke execute on function public.list_wois_messages_secure(uuid) from public, anon;
+grant execute on function public.list_wois_messages_secure(uuid) to authenticated, service_role;

@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@capacitor/core": "^7.6.9",
+    "@google/genai": "^2.25.0",
     "@hookform/resolvers": "^3.9.0",
     "@react-pdf/renderer": "^4.6.1",
     "@supabase/ssr": "^0.12.0",

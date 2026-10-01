@@ -1,31 +1,16 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getWoisProvider, woisUnavailableResponse, type WoisProviderContext } from "@/lib/wois/provider";
-import type { ConversationTurn } from "@/lib/wois/engine";
+import { getWoisProvider } from "@/lib/wois/provider";
+import { runWoisOrchestrator } from "@/lib/wois/orchestrator";
+import { getWoisAiConfig } from "@/lib/wois/config";
 import { getWoisEligibility } from "@/lib/wois/eligibility";
-import { executeWoisTool, matchWoisToolIntent } from "@/lib/wois/tools";
-import type { WoisToolCall } from "@/lib/avsec/types";
+import { executeWoisTool, isKnownWoisTool } from "@/lib/wois/tools";
+import type { ConversationTurn } from "@/lib/wois/engine";
 
-// Bounded conversation/history/output -- see Phase 12 AI-safety requirements.
+// Bounded conversation/output, independent of (and never looser than) the
+// orchestrator's own config-driven bounds.
 const MAX_INPUT_LENGTH = 2000;
-const MAX_HISTORY_MESSAGES = 20;
 const MAX_OUTPUT_LENGTH = 6000;
-const PROVIDER_TIMEOUT_MS = 8000;
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("provider_timeout")), ms);
-    promise
-      .then((v) => {
-        clearTimeout(timer);
-        resolve(v);
-      })
-      .catch((e) => {
-        clearTimeout(timer);
-        reject(e);
-      });
-  });
-}
 
 export async function POST(req: Request) {
   try {
@@ -77,6 +62,8 @@ export async function POST(req: Request) {
         ? (userContext as Record<string, unknown>)
         : {};
 
+    const config = getWoisAiConfig();
+
     // Resolve/create the conversation via secure RPCs -- never a raw insert.
     let convId = typeof conversationId === "string" ? conversationId : null;
     let history: ConversationTurn[] = [];
@@ -86,12 +73,12 @@ export async function POST(req: Request) {
         p_conversation_id: convId,
       });
       if (historyError) {
-        // Ownership/ eligibility failed inside the RPC -- fail closed rather
+        // Ownership/eligibility failed inside the RPC -- fail closed rather
         // than silently starting a new conversation under someone else's id.
         return NextResponse.json({ error: "Conversation not found or not accessible." }, { status: 403 });
       }
       history = (existingMessages ?? [])
-        .slice(-MAX_HISTORY_MESSAGES)
+        .slice(-config.maxHistoryMessages)
         .map((m) => ({ role: m.sender as "user" | "assistant", content: m.body }));
     } else {
       const title = message.length > 40 ? message.slice(0, 40) + "..." : message;
@@ -104,57 +91,37 @@ export async function POST(req: Request) {
       convId = newConvId;
     }
 
-    // Tool-intent detection -- deterministic, allowlisted, at most one tool
-    // call per turn in this phase. Every tool call re-derives the caller
-    // from this request's own authenticated Supabase client; nothing in
-    // `message` or `userContext` is ever passed into a tool argument.
-    const toolCalls: WoisToolCall[] = [];
-    const toolIntent = matchWoisToolIntent(message);
-    let toolAnsweredBody: string | null = null;
+    const provider = await getWoisProvider();
 
-    if (toolIntent) {
-      const toolResult = await executeWoisTool(toolIntent, supabase);
-      await supabase.rpc("record_wois_audit_event_secure", {
-        p_event_type: toolResult.ok ? "tool_invoked" : "tool_denied",
-        p_conversation_id: convId,
-        p_details: { tool: toolIntent },
-      });
-      toolCalls.push({ tool: toolIntent, resultSummary: toolResult.summary });
-      if (toolResult.ok) {
-        toolAnsweredBody = toolResult.summary;
-      }
-    }
-
-    let engineResponse;
-    if (toolAnsweredBody) {
-      engineResponse = {
-        body: toolAnsweredBody,
-        confidence_tag: "VERIFIED" as const,
-        source_type: "app_help" as const,
-        sources: [
-          {
-            documentTitle: "Your VECTA account",
-            sectionTitle: "Authenticated user record",
-            sourceType: "app_help" as const,
-          },
-        ],
-      };
-    } else {
-      const provider = getWoisProvider();
-      const ctx: WoisProviderContext = {
-        history,
-        userContext: safeUserContext,
-      };
-      try {
-        engineResponse = await withTimeout(provider.generate(message, ctx), PROVIDER_TIMEOUT_MS);
-      } catch {
-        await supabase.rpc("record_wois_audit_event_secure", {
-          p_event_type: "provider_failure",
+    const { response: engineResponse, toolCalls, usedFallback } = await runWoisOrchestrator(message, {
+      provider,
+      history,
+      userContext: safeUserContext,
+      maxToolCalls: config.maxToolCalls,
+      timeoutMs: config.timeoutMs,
+      signal: req.signal,
+      executeTool: async (toolName) => {
+        if (!isKnownWoisTool(toolName)) {
+          return { ok: false, summary: "That action is not available." };
+        }
+        const result = await executeWoisTool(toolName, supabase);
+        return { ok: result.ok, summary: result.summary };
+      },
+      onToolCall: (toolName, ok) => {
+        void supabase.rpc("record_wois_audit_event_secure", {
+          p_event_type: ok ? "tool_invoked" : "tool_denied",
           p_conversation_id: convId,
-          p_details: { provider: provider.name },
+          p_details: { tool: toolName },
         });
-        engineResponse = woisUnavailableResponse();
-      }
+      },
+    });
+
+    if (usedFallback && provider.name !== "rule_engine") {
+      await supabase.rpc("record_wois_audit_event_secure", {
+        p_event_type: "provider_failure",
+        p_conversation_id: convId,
+        p_details: { provider: provider.name },
+      });
     }
 
     const responseBody =
@@ -176,11 +143,19 @@ export async function POST(req: Request) {
       p_source_type: engineResponse.source_type,
       p_sources: JSON.parse(JSON.stringify(engineResponse.sources ?? [])),
       p_tool_calls: JSON.parse(JSON.stringify(toolCalls)),
+      p_provider: usedFallback ? "rule_engine" : provider.name,
+      p_model: usedFallback ? "wois-rule-engine-v1" : provider.model,
     });
 
     return NextResponse.json({
       conversationId: convId,
-      response: { ...engineResponse, body: responseBody, toolCalls },
+      response: {
+        ...engineResponse,
+        body: responseBody,
+        toolCalls,
+        provider: usedFallback ? "rule_engine" : provider.name,
+        usedFallback,
+      },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to process query";

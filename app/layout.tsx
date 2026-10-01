@@ -75,10 +75,28 @@ try {
 `;
 
 import { WoisFloatingTrigger } from "@/components/wois/WoisFloatingTrigger";
+import { getCurrentProfile } from "@/lib/avsec/auth";
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // Server-derived, minimized role context for the WOIS floating trigger --
+  // never client-supplied. `getCurrentProfile()` returns null for signed-out
+  // visitors (login/register pages), which is the correct "no context"
+  // case; this is cosmetic context only (used for UI copy and role-adapted
+  // suggestions), never an authorization input -- every WOIS API route
+  // re-derives the caller's identity and eligibility from the authenticated
+  // session itself, ignoring whatever this value says.
+  const profile = await getCurrentProfile();
+  const woisUserContext = profile
+    ? {
+        role: profile.role,
+        ops_group: profile.ops_group ?? null,
+        station: profile.station ?? null,
+        team: profile.team ?? null,
+      }
+    : undefined;
+
   return (
     <html
       lang="en"
@@ -90,7 +108,7 @@ export default function RootLayout({
       </head>
       <body>
         {children}
-        <WoisFloatingTrigger />
+        <WoisFloatingTrigger userContext={woisUserContext} />
       </body>
     </html>
   );

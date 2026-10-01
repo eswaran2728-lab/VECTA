@@ -46,6 +46,8 @@ export async function getWoisConversationMessages(
     source_type: (m.source_type as WoisMessage["source_type"]) || undefined,
     sources: (m.sources as unknown as WoisSourceCitation[]) || [],
     toolCalls: (m.tool_calls as unknown as WoisToolCall[]) || [],
+    provider: m.provider,
+    model: m.model,
     created_at: m.created_at,
   }));
 }

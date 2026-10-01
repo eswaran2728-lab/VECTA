@@ -169,13 +169,20 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
         id: "ast-" + Date.now(),
         conversation_id: data.conversationId || activeConversationId || "new",
         sender: "assistant",
-        body: data.response.body,
+        // When the real conversational provider was unavailable or timed
+        // out, the backend already fell back to deterministic guidance --
+        // say so plainly rather than presenting it as a normal AI answer.
+        body: data.response.usedFallback
+          ? `${data.response.body}\n\n(Deterministic fallback guidance -- conversational AI was unavailable for this reply.)`
+          : data.response.body,
         confidence_tag: data.response.confidence_tag,
         source_type: data.response.source_type,
         sources: data.response.sources,
         attachment: data.response.attachment,
         actionHref: data.response.actionHref,
         actionLabel: data.response.actionLabel,
+        toolCalls: data.response.toolCalls,
+        provider: data.response.provider,
         created_at: new Date().toISOString(),
       };
 
