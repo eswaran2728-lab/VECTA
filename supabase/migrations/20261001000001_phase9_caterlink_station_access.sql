@@ -111,6 +111,119 @@ create policy "caterlink_station_capabilities_read"
 -- =======================================================================
 -- PART B: CaterLink Core Tables & Multi-AOC Columns
 -- =======================================================================
+--
+-- OBJECT-COLLISION INVENTORY (post-review, round 3) -- every table/
+-- function/trigger/policy/sequence this migration creates or replaces,
+-- checked against every earlier migration (icms/ and non-icms):
+--
+--   public.transactions          -- INTENTIONAL COMPATIBLE REUSE. Same
+--                                    core columns as icms/20260101000001_
+--                                    schema.sql; this file only adds
+--                                    nullable/additive columns (do $$
+--                                    add column if not exists $$ below).
+--   public.catering_companies,
+--   public.vehicles, public.drivers
+--                                 -- INTENTIONAL COMPATIBLE REUSE, the
+--                                    entire point of the Phase 9 whitelist
+--                                    correction -- additive columns only,
+--                                    is_active untouched as the real
+--                                    scanner-consulted gate.
+--   public.seals                 -- SAFE: same core columns as icms/
+--                                    20260301000001_phase2_seals.sql;
+--                                    this file's bootstrap-only version
+--                                    adds three nullable columns
+--                                    (superseded_at/by/reason) that no
+--                                    RPC here reads or writes yet --
+--                                    harmless in production where
+--                                    CREATE TABLE IF NOT EXISTS is a
+--                                    no-op and those columns simply don't
+--                                    exist. Unique(transaction_id,
+--                                    seal_number) from the legacy table
+--                                    is preserved implicitly (production
+--                                    already has it; this bootstrap path
+--                                    does not need to recreate it for the
+--                                    harness's purposes).
+--   public.seal_verifications    -- AMBIGUOUS, FLAGGED, NOT FUNCTIONALLY
+--                                    REACHED: this file's bootstrap
+--                                    version widens the checkpoint CHECK
+--                                    constraint (adds 'REDQ','HUB') and
+--                                    points verified_by at public.
+--                                    profiles instead of the legacy
+--                                    table's public.users -- genuinely
+--                                    incompatible with the pre-existing
+--                                    production shape. No Part G RPC in
+--                                    this migration ever inserts into
+--                                    this table (grep-verified), so the
+--                                    incompatibility has zero functional
+--                                    effect today -- but it is real and
+--                                    MUST be resolved (via a proper ALTER
+--                                    on the existing constraint and a
+--                                    product decision on verified_by's
+--                                    FK target) before any future
+--                                    CaterLink feature actually writes to
+--                                    this table. Documented here, not
+--                                    silently left for staging to
+--                                    discover, as a REMAINING RISK.
+--   public.part_a, public.part_d,
+--   public.part_hub, public.part_redq (legacy names, REMOVED from this
+--   migration -- see the renamed public.caterlink_checkpoint_* tables
+--   below)
+--                                 -- INCOMPATIBLE COLLISIONS. icms/
+--                                    20260101000001_schema.sql and icms/
+--                                    20260817000002_multiroute_redq_
+--                                    restructure.sql already create
+--                                    tables of these exact names with
+--                                    incompatible shapes (different
+--                                    columns, different CHECK
+--                                    constraints, FKs to public.users
+--                                    instead of public.profiles). CREATE
+--                                    TABLE IF NOT EXISTS would have been
+--                                    a silent no-op against the real
+--                                    production tables, and every write
+--                                    this migration's own RPCs make
+--                                    (confirm_caterlink_destination_
+--                                    receipt_secure() -> part_hub) would
+--                                    have failed the production CHECK/FK
+--                                    constraints at runtime. Renamed
+--                                    below to public.caterlink_
+--                                    checkpoint_part_a/part_d/hub/redq --
+--                                    collision-free, CaterLink-specific,
+--                                    and (part_hub only) actually written
+--                                    to by this migration's RPCs today;
+--                                    part_a/part_d/redq remain declared
+--                                    for a future checkpoint flow that
+--                                    does not exist yet, same as before
+--                                    the rename.
+--   public.part_b_c               -- SAFE, not a rename target: the
+--                                    legacy schema has separate part_b/
+--                                    part_c tables, never a combined
+--                                    part_b_c -- this name never
+--                                    collided.
+--   public.caterlink_station_capabilities, public.caterlink_incidents,
+--   public.caterlink_incident_notes, public.caterlink_archives
+--                                 -- SAFE: no earlier migration anywhere
+--                                    in the repo declares any of these
+--                                    names (grep-verified against every
+--                                    migrations/*.sql and migrations/
+--                                    icms/*.sql file).
+--   Every public.*_caterlink_*()/public.*_caterlink_whitelist_*()
+--   function, public.has_*_in_aoc()/public.resolve_usable_caterlink_*()
+--   function, trg_*_caterlink_*/trg_*_sync_status trigger, "caterlink_*"
+--   policy, idx_*_caterlink_*/idx_*_aoc_status index, and
+--   cl_txn_seq_<year> sequence
+--                                 -- SAFE: every name is either entirely
+--                                    new (grep-verified, zero matches
+--                                    anywhere else in the repo) or an
+--                                    intentional CREATE OR REPLACE on a
+--                                    function this same migration (or
+--                                    Phase 8's) already owns -- never a
+--                                    name collision with an unrelated
+--                                    pre-existing object.
+--   Storage buckets, cron jobs, enum/type names -- this migration
+--   declares none of these object kinds at all (grep-verified: no
+--   `create type`, no storage.buckets insert, no cron.schedule call
+--   anywhere in this file).
+-- =======================================================================
 
 create table if not exists public.transactions (
   id uuid primary key default gen_random_uuid(),
@@ -250,20 +363,74 @@ create table if not exists public.seals (
   superseded_reason text
 );
 
-create table if not exists public.seal_verifications (
-  id uuid primary key default gen_random_uuid(),
-  seal_id uuid not null references public.seals(id) on delete cascade,
-  checkpoint text not null check (checkpoint in ('INFLIGHT_POST', 'AIRPORT_POST', 'PART_D', 'REDQ', 'HUB')),
-  entered_seal_number text not null,
-  observed_seal_color text check (observed_seal_color in ('BLUE', 'GREEN', 'OTHER') or observed_seal_color is null),
-  matched boolean not null,
-  verified_by uuid references public.profiles(id),
-  verified_at timestamptz not null default now(),
-  photo_url text
-);
+-- CORRECTED (post-review, round 3): CREATE TABLE IF NOT EXISTS is a
+-- silent no-op against the real production table (icms/20260301000001_
+-- phase2_seals.sql), so declaring a widened checkpoint CHECK and a
+-- profiles-based verified_by FK here would have been FALSE compatibility
+-- -- production would keep the legacy CHECK ('INFLIGHT_POST',
+-- 'AIRPORT_POST', 'PART_D' only, no 'REDQ'/'HUB') and the legacy
+-- public.users(id) FK regardless of what this file declared. No RPC in
+-- this migration writes to this table yet (grep-verified), so this is
+-- not a functional defect today, but it must not be left as a trap for
+-- the first future feature that does. The bootstrap-only create below
+-- now matches the REAL legacy shape exactly; the widened CHECK is a
+-- genuine ALTER, not an assumption -- and verified_by's FK target is
+-- deliberately left untouched (still public.users(id), matching
+-- production) rather than silently redirected to public.profiles, since
+-- no caller exists yet to prove which identity model it should resolve
+-- against. Whichever CaterLink feature eventually writes here must
+-- resolve a real public.users(id) row for verified_by, or this FK must
+-- be revisited as its own decision -- not assumed by this migration.
+-- public.users only exists where icms/ has actually run (production, or a
+-- dev DB that ran the full icms/ chain); this test/CI harness never
+-- bootstraps it (see the earlier "Bootstrap-only RLS/grants" note). The
+-- FK below is therefore made conditional on its target existing, so the
+-- harness can still create this table at all -- production, where
+-- public.users is real, gets the full FK; the harness gets the same
+-- columns with no FK (acceptable: nothing here reads/writes verified_by
+-- in either environment today).
+do $$
+begin
+  if to_regclass('public.users') is not null then
+    create table if not exists public.seal_verifications (
+      id uuid primary key default gen_random_uuid(),
+      seal_id uuid not null references public.seals(id) on delete cascade,
+      checkpoint text not null check (checkpoint in ('INFLIGHT_POST', 'AIRPORT_POST', 'PART_D')),
+      entered_seal_number text not null,
+      matched boolean not null,
+      verified_by uuid references public.users(id),
+      verified_at timestamptz not null default now(),
+      photo_url text
+    );
+  else
+    create table if not exists public.seal_verifications (
+      id uuid primary key default gen_random_uuid(),
+      seal_id uuid not null references public.seals(id) on delete cascade,
+      checkpoint text not null check (checkpoint in ('INFLIGHT_POST', 'AIRPORT_POST', 'PART_D')),
+      entered_seal_number text not null,
+      matched boolean not null,
+      verified_by uuid,
+      verified_at timestamptz not null default now(),
+      photo_url text
+    );
+  end if;
+end $$;
+
+alter table public.seal_verifications
+  add column if not exists observed_seal_color text;
+alter table public.seal_verifications
+  drop constraint if exists seal_verifications_observed_seal_color_check;
+alter table public.seal_verifications
+  add constraint seal_verifications_observed_seal_color_check
+  check (observed_seal_color in ('BLUE', 'GREEN', 'OTHER') or observed_seal_color is null);
+alter table public.seal_verifications
+  drop constraint if exists seal_verifications_checkpoint_check;
+alter table public.seal_verifications
+  add constraint seal_verifications_checkpoint_check
+  check (checkpoint in ('INFLIGHT_POST', 'AIRPORT_POST', 'PART_D', 'REDQ', 'HUB'));
 
 -- Checkpoint Details
-create table if not exists public.part_a (
+create table if not exists public.caterlink_checkpoint_part_a (
   id uuid primary key default gen_random_uuid(),
   transaction_id uuid not null unique references public.transactions(id) on delete cascade,
   pic_name text not null,
@@ -294,7 +461,7 @@ create table if not exists public.part_b_c (
   completed_at timestamptz not null default now()
 );
 
-create table if not exists public.part_d (
+create table if not exists public.caterlink_checkpoint_part_d (
   id uuid primary key default gen_random_uuid(),
   transaction_id uuid not null unique references public.transactions(id) on delete cascade,
   delivery_location text not null check (delivery_location in ('SRA_WAREHOUSE', 'AIRCRAFT')),
@@ -311,7 +478,7 @@ create table if not exists public.part_d (
   completed_at timestamptz not null default now()
 );
 
-create table if not exists public.part_hub (
+create table if not exists public.caterlink_checkpoint_hub (
   id uuid primary key default gen_random_uuid(),
   transaction_id uuid not null unique references public.transactions(id) on delete cascade,
   confirmed_destination text not null,
@@ -324,7 +491,7 @@ create table if not exists public.part_hub (
   completed_at timestamptz not null default now()
 );
 
-create table if not exists public.part_redq (
+create table if not exists public.caterlink_checkpoint_redq (
   id uuid primary key default gen_random_uuid(),
   transaction_id uuid not null unique references public.transactions(id) on delete cascade,
   old_seal_id uuid not null references public.seals(id),
@@ -723,32 +890,49 @@ begin
     raise exception 'Only CaterLink Management may add whitelist entries.';
   end if;
 
-  if p_entry_type = 'vendor' then
-    if p_name is null or p_code is null then raise exception 'Vendor entries require name and code.'; end if;
-    insert into public.catering_companies as cc (name, code, aoc_id, operating_entity_id, created_by, effective_from)
-    values (p_name, upper(p_code), p_aoc_id, p_operating_entity_id, v_caller, coalesce(p_effective_from, current_date))
-    returning cc.id, cc.status into v_id, v_status;
-  elsif p_entry_type = 'vehicle' then
-    if p_identifier is null then raise exception 'Vehicle entries require an identifier (vehicle number).'; end if;
-    insert into public.vehicles as v (
-      vehicle_number, catering_company_id, airport_pass_number, pass_expiry_date,
-      truck_type, truck_registration_number, aoc_id, operating_entity_id, created_by, effective_from
-    ) values (
-      upper(p_identifier), p_catering_company_id, p_airport_pass_number, p_pass_expiry_date,
-      p_truck_type, p_truck_registration_number, p_aoc_id, p_operating_entity_id, v_caller, coalesce(p_effective_from, current_date)
-    ) returning v.id, v.status into v_id, v_status;
-  elsif p_entry_type = 'driver' then
-    if p_name is null or p_identifier is null then raise exception 'Driver entries require name and identifier (staff ID).'; end if;
-    insert into public.drivers as d (
-      name, staff_id, catering_company_id, airport_pass_number, pass_expiry_date,
-      swap_to_staff_ic, staff_ic_number, aoc_id, operating_entity_id, created_by, effective_from
-    ) values (
-      p_name, upper(p_identifier), p_catering_company_id, p_airport_pass_number, p_pass_expiry_date,
-      coalesce(p_swap_to_staff_ic, false), p_staff_ic_number, p_aoc_id, p_operating_entity_id, v_caller, coalesce(p_effective_from, current_date)
-    ) returning d.id, d.status into v_id, v_status;
-  else
-    raise exception 'Unknown whitelist entry_type: %', p_entry_type;
-  end if;
+  -- CORRECTED (post-review, round 3) -- identifier-reuse rule: this
+  -- schema's unique constraints (vehicle_number/staff_id/code) are
+  -- GLOBAL, not per-AOC, and are deliberately left untouched (see the
+  -- round-1 correction's note). A different identity attempting to reuse
+  -- an existing identifier always hits this constraint -- the exception
+  -- handler below turns Postgres's raw "duplicate key value violates
+  -- unique constraint ..." into a clear, actionable message instead of a
+  -- generic duplicate error, so the UI can surface the real rule: the
+  -- SAME verified identity may only be reactivated from 'deactivated'
+  -- (via activate_caterlink_whitelist_entry_secure); a rejected/revoked
+  -- identifier is terminal and can never be silently recreated through
+  -- this RPC -- reusing it for a genuinely different identity requires
+  -- manual reconciliation (contact an Admin), not a retry here.
+  begin
+    if p_entry_type = 'vendor' then
+      if p_name is null or p_code is null then raise exception 'Vendor entries require name and code.'; end if;
+      insert into public.catering_companies as cc (name, code, aoc_id, operating_entity_id, created_by, effective_from)
+      values (p_name, upper(p_code), p_aoc_id, p_operating_entity_id, v_caller, coalesce(p_effective_from, current_date))
+      returning cc.id, cc.status into v_id, v_status;
+    elsif p_entry_type = 'vehicle' then
+      if p_identifier is null then raise exception 'Vehicle entries require an identifier (vehicle number).'; end if;
+      insert into public.vehicles as v (
+        vehicle_number, catering_company_id, airport_pass_number, pass_expiry_date,
+        truck_type, truck_registration_number, aoc_id, operating_entity_id, created_by, effective_from
+      ) values (
+        upper(p_identifier), p_catering_company_id, p_airport_pass_number, p_pass_expiry_date,
+        p_truck_type, p_truck_registration_number, p_aoc_id, p_operating_entity_id, v_caller, coalesce(p_effective_from, current_date)
+      ) returning v.id, v.status into v_id, v_status;
+    elsif p_entry_type = 'driver' then
+      if p_name is null or p_identifier is null then raise exception 'Driver entries require name and identifier (staff ID).'; end if;
+      insert into public.drivers as d (
+        name, staff_id, catering_company_id, airport_pass_number, pass_expiry_date,
+        swap_to_staff_ic, staff_ic_number, aoc_id, operating_entity_id, created_by, effective_from
+      ) values (
+        p_name, upper(p_identifier), p_catering_company_id, p_airport_pass_number, p_pass_expiry_date,
+        coalesce(p_swap_to_staff_ic, false), p_staff_ic_number, p_aoc_id, p_operating_entity_id, v_caller, coalesce(p_effective_from, current_date)
+      ) returning d.id, d.status into v_id, v_status;
+    else
+      raise exception 'Unknown whitelist entry_type: %', p_entry_type;
+    end if;
+  exception when unique_violation then
+    raise exception 'IDENTIFIER_ALREADY_REGISTERED: this identifier is already on file (active, pending, or previously rejected/revoked). If this is the SAME verified identity returning, ask CaterLink Management to reactivate the existing entry instead of creating a new one. If this is a DIFFERENT identity reusing a previously-revoked plate/staff ID/company code, this cannot be created automatically -- contact an Admin for manual reconciliation.';
+  end;
 
   perform public.phase8_write_audit('caterlink_whitelist_create', 'caterlink_whitelist_' || p_entry_type, v_id,
     jsonb_build_object('aoc_id', p_aoc_id, 'entry_type', p_entry_type));
@@ -1703,13 +1887,13 @@ begin
   select name, staff_no into v_officer_name, v_officer_staff_no from public.profiles where id = v_caller;
 
   -- Insert Part Hub receipt confirmation
-  insert into public.part_hub (
+  insert into public.caterlink_checkpoint_hub (
     transaction_id, confirmed_destination, hub_avsec_name, hub_avsec_staff_id, remarks, signature_url, completed_by
   ) values (
     p_transaction_id, p_station_code, coalesce(v_officer_name, 'AVSEC'), coalesce(v_officer_staff_no, 'OFFICER'),
     p_remarks, p_signature_url, v_caller
   )
-  on conflict on constraint part_hub_transaction_id_key do update set
+  on conflict on constraint caterlink_checkpoint_hub_transaction_id_key do update set
     confirmed_destination = excluded.confirmed_destination,
     hub_avsec_name = excluded.hub_avsec_name,
     completed_at = now();
@@ -2037,7 +2221,7 @@ begin
     v_is_auth := true;
   -- Destination AVSEC officer who signed receipt
   elsif exists (
-    select 1 from public.part_hub ph
+    select 1 from public.caterlink_checkpoint_hub ph
     where ph.transaction_id = p_transaction_id and ph.completed_by = v_caller
   ) then
     v_is_auth := true;

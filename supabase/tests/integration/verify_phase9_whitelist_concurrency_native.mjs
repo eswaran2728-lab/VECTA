@@ -181,7 +181,10 @@ async function main() {
     bError = e;
   }
   assert(bError !== null, 'Session B failed once unblocked -- the duplicate identifier was rejected, not silently accepted');
-  assert(/duplicate key|unique/i.test(bError.message), `Session B error is a genuine unique-constraint violation (found: "${bError.message}")`);
+  // Round 3: create_caterlink_whitelist_entry_secure() now catches the raw unique_violation and
+  // re-raises the clearer IDENTIFIER_ALREADY_REGISTERED message (see the identifier-reuse
+  // correction) -- either that or the raw Postgres text proves the same underlying constraint fired.
+  assert(/duplicate key|unique|IDENTIFIER_ALREADY_REGISTERED/i.test(bError.message), `Session B error is a genuine unique-constraint violation (found: "${bError.message}")`);
   await clientB.query('rollback;').catch(() => {});
 
   const count = (

@@ -495,9 +495,10 @@ async function main() {
   `, [txId]);
   assert(rcptRes.rows[0].status === 'COMPLETED', 'Destination receipt confirmed at PEN -> status COMPLETED');
 
-  // Verify part_hub record was written
-  const hubRec = (await db.query("select confirmed_destination, hub_avsec_staff_id from public.part_hub where transaction_id = $1;", [txId])).rows[0];
-  assert(hubRec.confirmed_destination === 'PEN' && hubRec.hub_avsec_staff_id === 'PEN-AV-01', 'part_hub recorded destination and confirming officer details');
+  // Verify caterlink_checkpoint_hub record was written (renamed from the colliding
+  // legacy-named public.part_hub -- see the migration's collision-inventory note)
+  const hubRec = (await db.query("select confirmed_destination, hub_avsec_staff_id from public.caterlink_checkpoint_hub where transaction_id = $1;", [txId])).rows[0];
+  assert(hubRec.confirmed_destination === 'PEN' && hubRec.hub_avsec_staff_id === 'PEN-AV-01', 'caterlink_checkpoint_hub recorded destination and confirming officer details');
 
   // Test 4.6: Repeated confirmation safely rejected
   const repeatFailed = await expectFail(() => db.query(`
@@ -508,6 +509,19 @@ async function main() {
     );
   `, [txId]));
   assert(repeatFailed, 'Repeated receipt confirmation on already-COMPLETED transaction safely rejected');
+
+  // Test 4.7: Cross-AOC denial for destination receipt confirmation -- a ZZ-scoped caller
+  // (no role assignment in MY's AOC at all) cannot confirm receipt on a MY transaction, even
+  // though the transaction is already COMPLETED and this probes a clean error path.
+  await simulateUser(zzCaterlinkMgmtId);
+  const crossAocReceiptFailed = await expectFail(() => db.query(`
+    select * from public.confirm_caterlink_destination_receipt_secure(
+      p_transaction_id => $1,
+      p_station_code => 'PEN',
+      p_signature_url => 'sig_cross_aoc.png'
+    );
+  `, [txId]));
+  assert(crossAocReceiptFailed, 'Cross-AOC caller (no role assignment in the transaction AOC) denied from confirming destination receipt');
 
   console.log('\n--- SECTION 5: CaterLink Incidents ---');
 
