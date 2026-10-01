@@ -247,22 +247,34 @@ alter table public.discussion_identity_resolutions enable row level security;
 revoke all on public.discussion_identity_resolutions from public, anon, authenticated;
 grant all on public.discussion_identity_resolutions to service_role;
 
+-- -----------------------------------------------------------------------
+-- PART F-2: Server-side secret salt for cryptographic alias derivation.
+-- Persisted once per database instance, never hardcoded, never exposed to clients.
+-- Ensures that an offline observer knowing profile_id + thread_id cannot precompute
+-- or reverse-engineer aliases without access to this protected table.
+-- -----------------------------------------------------------------------
+create table if not exists public.discussion_alias_salt (
+  id integer primary key default 1 check (id = 1),
+  secret_salt text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.discussion_alias_salt enable row level security;
+revoke all on public.discussion_alias_salt from public, anon, authenticated;
+grant all on public.discussion_alias_salt to service_role;
+
+insert into public.discussion_alias_salt (id, secret_salt)
+values (1, encode(sha256((gen_random_uuid()::text || ':' || clock_timestamp()::text || ':' || random()::text)::bytea), 'hex'))
+on conflict (id) do nothing;
+
 -- =======================================================================
 -- PART G: Alias generation (deterministic within a thread, independent
 -- across threads)
 -- =======================================================================
--- The "secret" here is NOT the actual security boundary -- that is the
--- RLS/grant lockdown on discussion_author_mappings above, which no
--- client role can read under any circumstance. This hash only needs to
--- make the SAME (thread_id, profile_id) pair always produce the SAME
--- alias, and a DIFFERENT thread produce an unrelated-looking one; it does
--- not need to resist a determined attacker with raw SQL access, because
--- that attacker is already blocked by the grant model, not by alias
--- unguessability.
 create or replace function public.generate_discussion_alias(p_thread_id uuid, p_profile_id uuid)
 returns text
 language plpgsql
-stable
+security definer
+set search_path to 'public'
 as $function$
 declare
   v_adjectives text[] := array[
@@ -273,9 +285,18 @@ declare
     'Falcon','Heron','Tiger','Eagle','Otter','Lynx','Hawk','Wolf','Osprey','Kestrel',
     'Panther','Raven','Dolphin','Badger','Falconer','Marlin','Harrier','Condor','Jaguar','Merlin'
   ];
+  v_salt text;
+  v_hash_hex text;
   v_hash bigint;
 begin
-  v_hash := abs(('x' || substr(md5(p_thread_id::text || ':' || p_profile_id::text), 1, 15))::bit(60)::bigint);
+  select secret_salt into v_salt from public.discussion_alias_salt where id = 1;
+  if v_salt is null then
+    v_salt := 'vecta_discussion_alias_default_seed';
+  end if;
+
+  -- Cryptographically keyed SHA-256 derivation using unguessable database salt
+  v_hash_hex := encode(sha256((v_salt || ':' || p_thread_id::text || ':' || p_profile_id::text)::bytea), 'hex');
+  v_hash := abs(('x' || substr(v_hash_hex, 1, 15))::bit(60)::bigint);
   return v_adjectives[(v_hash % array_length(v_adjectives, 1)) + 1] || ' ' || v_nouns[((v_hash / 1000) % array_length(v_nouns, 1)) + 1];
 end;
 $function$;

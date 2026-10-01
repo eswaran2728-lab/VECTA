@@ -312,6 +312,25 @@ async function main() {
   const directMappingRead = await expectFail(() => db.query('select * from public.discussion_author_mappings limit 1;'));
   assert(directMappingRead.failed, 'Ordinary authenticated user denied direct SELECT on the protected author-mapping table');
 
+  const directSaltRead = await expectFail(() => db.query('select * from public.discussion_alias_salt limit 1;'));
+  assert(directSaltRead.failed, 'Ordinary authenticated user denied direct SELECT on secret salt table (cannot retrieve key material)');
+
+  const directGenAlias = await expectFail(() => db.query("select public.generate_discussion_alias('00000000-0000-0000-0000-000000000001'::uuid, '00000000-0000-0000-0000-000000000002'::uuid);"));
+  assert(directGenAlias.failed, 'Ordinary authenticated user denied direct EXECUTE on generate_discussion_alias');
+
+  const directResolveAlias = await expectFail(() => db.query("select public.resolve_discussion_alias('00000000-0000-0000-0000-000000000001'::uuid, '00000000-0000-0000-0000-000000000002'::uuid);"));
+  assert(directResolveAlias.failed, 'Ordinary authenticated user denied direct EXECUTE on resolve_discussion_alias');
+
+  // Spoofing resistance: User C replying cannot specify or impersonate User A's alias
+  await simulateUser(userCId);
+  const userCReply = await db.query("select id, author_alias from public.create_discussion_reply_secure($1, 'Charlie replying in thread');", [threadId]);
+  const aliasC = userCReply.rows[0].author_alias;
+  assert(aliasC !== aliasA && aliasC !== aliasB, 'Another user (User C) receives their own distinct alias and cannot spoof another participant');
+
+  // Alias non-reversibility: ordinary user cannot reverse alias to identity
+  const aliasReverseAttempt = await expectFail(() => db.query("select * from public.resolve_discussion_author_identity_secure('thread', $1, 'Attempting reverse');", [threadId]));
+  assert(aliasReverseAttempt.failed, 'Alias cannot be directly reversed through an application/RPC path by an ordinary user');
+
   console.log('\n--- SECTION 4: Authorization ---');
   await simulateUser(disabledUserId);
   const disabledCreate = await expectFail(() => db.query(
