@@ -429,7 +429,7 @@ export interface ManagementAnnouncementView extends AnnouncementRow {
 }
 
 // Phase 11: Global & Malaysia AOC Announcements types
-export type AnnouncementScope = "global" | "aoc" | "entity" | "department" | "station";
+export type AnnouncementScope = "global" | "aoc";
 export type AnnouncementCategory = "safety" | "security" | "operational" | "policy" | "system" | "general";
 export type AnnouncementPriority = "normal" | "important" | "urgent";
 export type AnnouncementStatus = "draft" | "scheduled" | "published" | "archived";
@@ -455,9 +455,6 @@ export interface AnnouncementItem {
 }
 
 export interface AnnouncementDetail extends AnnouncementItem {
-  operating_entity_id: string | null;
-  department_id: string | null;
-  station_id: string | null;
   author_id: string;
   author_name: string;
   can_manage: boolean;

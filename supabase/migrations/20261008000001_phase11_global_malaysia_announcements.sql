@@ -1,19 +1,24 @@
 -- =======================================================================
 -- PHASE 11: Global & Malaysia AOC Announcements
 -- =======================================================================
--- Controlled internal announcements at multiple organizational scopes:
---   - GLOBAL: All authorized VECTA personnel across AOCs
---   - AOC: Isolated to personnel holding active role assignments in a specific AOC (e.g. Malaysia 'MY')
---   - Extensible to entity, department, and station scopes
+-- Controlled internal announcements at two authoritative organizational scopes:
+--   - GLOBAL: All authorized active VECTA personnel across active AOCs.
+--             Publisher: GHOD only. AirAsia Management is strictly read-only.
+--   - AOC: Isolated to personnel holding active role assignments in Malaysia AOC.
+--          Publishers: maa_boss, maa_admin, aax_boss, aax_admin.
+--          One Malaysia-wide channel broadcasting to both MAA and AAX personnel.
+--          GHOD must not publish AOC announcements (GHOD uses Global channel).
 --
 -- Features:
 --   - Strictly authoritative publication lifecycle (draft, scheduled, published, expired, archived)
---   - Role-gated publishing (GHOD / Super Admin for Global; Malaysia Leadership for Malaysia AOC)
+--   - Strict role-gated publishing with active assignment validation (rejecting expired, future, revoked, deactivated)
+--   - Published content immutability & approved archive lifecycle enforcement
 --   - Exact eligibility predicate for mandatory acknowledgements
---   - Privacy-safe acknowledgement reporting (summary + denominator from active assignments)
---   - Attachment authorization metadata
---   - Full audit logging of creation, edit, publish, schedule, unpublish, archive, and priority changes
---   - Multi-AOC and cross-entity isolation enforced via RLS and SECURITY DEFINER RPCs
+--   - Privacy-safe acknowledgement reporting (GHOD for Global, MAA/AAX publishers for Malaysia AOC; AirAsia Management denied)
+--   - Scope-authorized and audited acknowledgement report access
+--   - Attachment authorization metadata with pre-publication recipient secrecy
+--   - Full audit logging of creation, edit, publish, schedule, unpublish, archive, and acknowledgement report access
+--   - Fail-closed cross-AOC isolation enforced via RLS and SECURITY DEFINER RPCs
 -- =======================================================================
 
 -- -----------------------------------------------------------------------
@@ -21,11 +26,8 @@
 -- -----------------------------------------------------------------------
 
 alter table public.announcements
-  add column if not exists scope text not null default 'aoc' check (scope in ('global', 'aoc', 'entity', 'department', 'station')),
+  add column if not exists scope text not null default 'aoc' check (scope in ('global', 'aoc')),
   add column if not exists aoc_id uuid references public.aocs(id),
-  add column if not exists operating_entity_id uuid references public.operating_entities(id),
-  add column if not exists department_id uuid references public.departments(id),
-  add column if not exists station_id uuid references public.org_stations(id),
   add column if not exists category text not null default 'operational' check (category in ('operational', 'safety', 'security', 'corporate', 'policy', 'system')),
   add column if not exists priority text not null default 'normal' check (priority in ('normal', 'important', 'urgent')),
   add column if not exists status text not null default 'published' check (status in ('draft', 'scheduled', 'published', 'expired', 'archived')),
@@ -39,17 +41,18 @@ alter table public.announcements
   add column if not exists updated_at timestamptz not null default now(),
   add column if not exists updated_by uuid references public.profiles(id);
 
--- Fail-closed scope constraint: Global must have null aoc_id; non-Global must have non-null aoc_id.
+-- Fail-closed scope constraint: Global must have null aoc_id; AOC must have non-null aoc_id.
 do $$
 begin
-  if not exists (select 1 from pg_constraint where conname = 'announcements_scope_aoc_check') then
-    alter table public.announcements
-      add constraint announcements_scope_aoc_check
-      check (
-        (scope = 'global' and aoc_id is null) or
-        (scope <> 'global' and aoc_id is not null)
-      );
+  if exists (select 1 from pg_constraint where conname = 'announcements_scope_aoc_check') then
+    alter table public.announcements drop constraint announcements_scope_aoc_check;
   end if;
+  alter table public.announcements
+    add constraint announcements_scope_aoc_check
+    check (
+      (scope = 'global' and aoc_id is null) or
+      (scope = 'aoc' and aoc_id is not null)
+    );
 end $$;
 
 -- Activate Malaysia AOC for operational Phase 11 use
@@ -99,10 +102,20 @@ create table if not exists public.announcement_audit_log (
   id uuid primary key default gen_random_uuid(),
   announcement_id uuid not null references public.announcements(id) on delete cascade,
   actor_profile_id uuid not null references public.profiles(id),
-  action text not null check (action in ('create', 'edit', 'publish', 'schedule', 'unpublish', 'archive', 'priority_change', 'scope_change', 'pin', 'unpin')),
+  action text not null,
   details jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
+
+do $$
+begin
+  if exists (select 1 from pg_constraint where conname = 'announcement_audit_log_action_check') then
+    alter table public.announcement_audit_log drop constraint announcement_audit_log_action_check;
+  end if;
+  alter table public.announcement_audit_log
+    add constraint announcement_audit_log_action_check
+    check (action in ('create', 'edit', 'publish', 'schedule', 'unpublish', 'archive', 'priority_change', 'scope_change', 'pin', 'unpin', 'view_acknowledgement_report'));
+end $$;
 create index if not exists idx_announcement_audit_log_ann on public.announcement_audit_log(announcement_id, created_at desc);
 
 alter table public.announcement_audit_log enable row level security;
@@ -122,42 +135,41 @@ security definer
 set search_path to 'public'
 as $function$
   select exists (
-    select 1 from public.user_role_assignments ura
+    select 1
+    from public.user_role_assignments ura
     join public.role_definitions rd on rd.id = ura.role_definition_id
+    join public.profiles p on p.id = ura.profile_id
+    left join public.aocs aoc on aoc.id = ura.aoc_id
     where ura.profile_id = auth.uid()
+      and p.status = 'approved'
+      and rd.is_active
       and ura.revoked_at is null
       and ura.starts_at <= now()
       and (ura.ends_at is null or ura.ends_at > now())
       and (
         -- Global authority: STRICTLY GHOD only
-        -- (VECTA requirement: GHOD is the authorized Global announcement publisher and has executive global oversight.
-        --  Super Admin, generic Admin, AirAsia Management, Operation Manager, Main Enforcement,
-        --  Compliance, and CaterLink Management are explicitly NOT granted Global publishing authority.)
-        (p_scope = 'global' and rd.code = 'ghod')
+        -- Super Admin, generic Admin, AirAsia Management, Operation Manager, Main Enforcement,
+        -- Compliance, CaterLink Management, and all other roles are strictly denied.
+        (p_scope = 'global' and p_aoc_id is null and rd.code = 'ghod')
         or
-        -- AOC authority: GHOD (executive global oversight) OR MAA/AAX Bosses and Admins for the specific AOC
-        (p_scope = 'aoc' and (
-          rd.code = 'ghod'
-          or (
-            ura.aoc_id = p_aoc_id
-            and rd.code in ('maa_boss', 'aax_boss', 'maa_admin', 'aax_admin')
-          )
-        ))
-        or
-        -- Sub-AOC scopes (entity, department, station): GHOD (global oversight) OR MAA/AAX Bosses and Admins for the specific AOC
-        (p_scope in ('entity', 'department', 'station') and (
-          rd.code = 'ghod'
-          or (
-            ura.aoc_id = p_aoc_id
-            and rd.code in ('maa_boss', 'aax_boss', 'maa_admin', 'aax_admin')
-          )
-        ))
+        -- Malaysia AOC authority: STRICTLY the 4 approved Malaysia leadership roles:
+        -- maa_boss, maa_admin, aax_boss, aax_admin.
+        -- Must match the requested AOC, and that AOC must be active.
+        -- GHOD must NOT publish an AOC announcement (GHOD uses Global channel).
+        (
+          p_scope = 'aoc'
+          and p_aoc_id is not null
+          and ura.aoc_id = p_aoc_id
+          and aoc.is_active
+          and rd.code in ('maa_boss', 'aax_boss', 'maa_admin', 'aax_admin')
+        )
       )
   );
 $function$;
-revoke execute on function public.can_user_publish_announcement(text, uuid) from public, anon, authenticated;
+revoke execute on function public.can_user_publish_announcement(text, uuid) from public, anon;
+grant execute on function public.can_user_publish_announcement(text, uuid) to authenticated, service_role;
 
--- Checks if caller can manage (edit/archive/publish) a specific announcement
+-- Checks if caller can manage (edit/archive/publish/attach) a specific announcement
 create or replace function public.can_user_manage_announcement(p_announcement_id uuid)
 returns boolean
 language sql
@@ -168,13 +180,11 @@ as $function$
   select exists (
     select 1 from public.announcements a
     where a.id = p_announcement_id
-      and (
-        a.created_by = auth.uid()
-        or public.can_user_publish_announcement(a.scope, a.aoc_id)
-      )
+      and public.can_user_publish_announcement(a.scope, a.aoc_id)
   );
 $function$;
-revoke execute on function public.can_user_manage_announcement(uuid) from public, anon, authenticated;
+revoke execute on function public.can_user_manage_announcement(uuid) from public, anon;
+grant execute on function public.can_user_manage_announcement(uuid) to authenticated, service_role;
 
 -- Authoritative visibility predicate: is announcement visible to the current caller?
 create or replace function public.is_announcement_visible_to_caller(p_announcement_id uuid)
@@ -185,14 +195,17 @@ security definer
 set search_path to 'public'
 as $function$
   select exists (
-    select 1 from public.announcements a
+    select 1
+    from public.announcements a
+    join public.profiles p on p.id = auth.uid()
     where a.id = p_announcement_id
+      and p.status = 'approved'
       -- Status must be published (or scheduled with publish time reached), and not expired
       and (a.status = 'published' or (a.status = 'scheduled' and a.published_at <= now()))
       and a.published_at <= now()
       and (a.expires_at is null or a.expires_at > now())
       and (
-        -- Global scope: caller must have at least one active assignment in an active AOC OR have global role
+        -- Global scope: caller must have at least one active assignment in an active AOC OR have international executive role
         (a.scope = 'global' and (
           exists (
             select 1 from public.user_role_assignments ura
@@ -214,56 +227,75 @@ as $function$
           )
         ))
         or
-        -- AOC scope: caller must hold an active assignment in that specific AOC OR have GHOD executive global oversight
-        (a.scope = 'aoc' and (
-          public.has_any_active_assignment_in_aoc(a.aoc_id)
-          or exists (
-            select 1 from public.user_role_assignments ura
-            join public.role_definitions rd on rd.id = ura.role_definition_id
-            where ura.profile_id = auth.uid()
-              and ura.revoked_at is null
-              and ura.starts_at <= now()
-              and (ura.ends_at is null or ura.ends_at > now())
-              and rd.code = 'ghod'
-          )
-        ))
-        or
-        -- Entity scope: caller's active assignment must match entity
-        (a.scope = 'entity' and exists (
+        -- AOC scope: caller must hold an active assignment in that specific AOC
+        -- (Audience: every eligible active user assigned to Malaysia AOC, regardless of MAA/AAX entity)
+        (a.scope = 'aoc' and exists (
           select 1 from public.user_role_assignments ura
+          join public.aocs aoc on aoc.id = ura.aoc_id
           where ura.profile_id = auth.uid()
             and ura.aoc_id = a.aoc_id
-            and ura.operating_entity_id = a.operating_entity_id
             and ura.revoked_at is null
             and ura.starts_at <= now()
             and (ura.ends_at is null or ura.ends_at > now())
-        ))
-        or
-        -- Department scope: caller's active assignment must match department
-        (a.scope = 'department' and exists (
-          select 1 from public.user_role_assignments ura
-          where ura.profile_id = auth.uid()
-            and ura.aoc_id = a.aoc_id
-            and ura.department_id = a.department_id
-            and ura.revoked_at is null
-            and ura.starts_at <= now()
-            and (ura.ends_at is null or ura.ends_at > now())
-        ))
-        or
-        -- Station scope: caller's active assignment must match station
-        (a.scope = 'station' and exists (
-          select 1 from public.user_role_assignments ura
-          where ura.profile_id = auth.uid()
-            and ura.aoc_id = a.aoc_id
-            and ura.station_id = a.station_id
-            and ura.revoked_at is null
-            and ura.starts_at <= now()
-            and (ura.ends_at is null or ura.ends_at > now())
+            and aoc.is_active
         ))
       )
   );
 $function$;
-revoke execute on function public.is_announcement_visible_to_caller(uuid) from public, anon, authenticated;
+revoke execute on function public.is_announcement_visible_to_caller(uuid) from public, anon;
+grant execute on function public.is_announcement_visible_to_caller(uuid) to authenticated, service_role;
+
+-- Published content immutability & archive guard triggers
+create or replace function public.enforce_announcement_immutability()
+returns trigger
+language plpgsql
+security definer
+as $$
+begin
+  if old.status = 'archived' then
+    raise exception 'Archived announcements cannot be modified.';
+  end if;
+
+  if old.status = 'published' then
+    if new.status = 'draft' then
+      raise exception 'Published announcements cannot be reverted to draft.';
+    end if;
+    if new.title <> old.title or new.body <> old.body or new.scope <> old.scope
+       or new.aoc_id is distinct from old.aoc_id or new.requires_acknowledgement <> old.requires_acknowledgement then
+      raise exception 'Published announcement content is immutable.';
+    end if;
+  end if;
+
+  if new.created_by <> old.created_by then
+    raise exception 'Announcement creator cannot be changed.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_enforce_announcement_immutability on public.announcements;
+create trigger trg_enforce_announcement_immutability
+  before update on public.announcements
+  for each row execute function public.enforce_announcement_immutability();
+
+create or replace function public.enforce_announcement_delete_guard()
+returns trigger
+language plpgsql
+security definer
+as $$
+begin
+  if old.status in ('published', 'archived') then
+    raise exception 'Published or archived announcements cannot be deleted. Use archive instead.';
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists trg_enforce_announcement_delete_guard on public.announcements;
+create trigger trg_enforce_announcement_delete_guard
+  before delete on public.announcements
+  for each row execute function public.enforce_announcement_delete_guard();
 
 -- Update RLS policies on public.announcements to use authoritative scope checks
 drop policy if exists "announcements_staff_select" on public.announcements;
@@ -486,15 +518,12 @@ $function$;
 revoke execute on function public.get_announcement_detail_secure(uuid) from public, anon;
 grant execute on function public.get_announcement_detail_secure(uuid) to authenticated, service_role;
 
--- 3. Create announcement
+-- 3. Create announcement (restricted to global and aoc scopes)
 create or replace function public.create_announcement_secure(
   p_title text,
   p_body text,
   p_scope text,
   p_aoc_id uuid default null,
-  p_operating_entity_id uuid default null,
-  p_department_id uuid default null,
-  p_station_id uuid default null,
   p_category text default 'operational',
   p_priority text default 'normal',
   p_status text default 'published',
@@ -520,8 +549,8 @@ begin
   if p_body is null or length(trim(p_body)) = 0 then raise exception 'Body is required.'; end if;
   if length(p_body) > 20000 then raise exception 'Body is too long (max 20000 characters).'; end if;
 
-  if p_scope not in ('global', 'aoc', 'entity', 'department', 'station') then
-    raise exception 'Invalid announcement scope.';
+  if p_scope not in ('global', 'aoc') then
+    raise exception 'Invalid announcement scope. Supported scopes are global and aoc.';
   end if;
   if p_category not in ('operational', 'safety', 'security', 'corporate', 'policy', 'system') then
     raise exception 'Invalid announcement category.';
@@ -560,9 +589,6 @@ begin
     body,
     scope,
     aoc_id,
-    operating_entity_id,
-    department_id,
-    station_id,
     category,
     priority,
     status,
@@ -579,9 +605,6 @@ begin
     p_body,
     p_scope,
     p_aoc_id,
-    p_operating_entity_id,
-    p_department_id,
-    p_station_id,
     p_category,
     p_priority,
     v_actual_status,
@@ -615,8 +638,8 @@ begin
   return v_announcement_id;
 end;
 $function$;
-revoke execute on function public.create_announcement_secure(text, text, text, uuid, uuid, uuid, uuid, text, text, text, timestamptz, timestamptz, boolean, boolean) from public, anon;
-grant execute on function public.create_announcement_secure(text, text, text, uuid, uuid, uuid, uuid, text, text, text, timestamptz, timestamptz, boolean, boolean) to authenticated, service_role;
+revoke execute on function public.create_announcement_secure(text, text, text, uuid, text, text, text, timestamptz, timestamptz, boolean, boolean) from public, anon;
+grant execute on function public.create_announcement_secure(text, text, text, uuid, text, text, text, timestamptz, timestamptz, boolean, boolean) to authenticated, service_role;
 
 -- 4. Update announcement
 create or replace function public.update_announcement_secure(
@@ -643,8 +666,12 @@ begin
     raise exception 'Unauthorized to edit this announcement.';
   end if;
 
-  select * into v_announcement from public.announcements where id = p_announcement_id;
+  select * into v_announcement from public.announcements where id = p_announcement_id for update;
   if v_announcement is null then raise exception 'Announcement not found.'; end if;
+
+  if v_announcement.status = 'archived' then
+    raise exception 'Archived announcements cannot be modified.';
+  end if;
 
   if p_title is null or length(trim(p_title)) = 0 then raise exception 'Title is required.'; end if;
   if length(p_title) > 200 then raise exception 'Title is too long (max 200 characters).'; end if;
@@ -686,7 +713,7 @@ $function$;
 revoke execute on function public.update_announcement_secure(uuid, text, text, text, text, timestamptz, boolean, boolean) from public, anon;
 grant execute on function public.update_announcement_secure(uuid, text, text, text, text, timestamptz, boolean, boolean) to authenticated, service_role;
 
--- 5. Publish / Schedule announcement
+-- 5. Publish / Schedule announcement (concurrency-safe, idempotent)
 create or replace function public.publish_announcement_secure(
   p_announcement_id uuid,
   p_publish_at timestamptz default null
@@ -698,6 +725,7 @@ set search_path to 'public'
 as $function$
 declare
   v_caller uuid := auth.uid();
+  v_announcement record;
   v_publish_at timestamptz := coalesce(p_publish_at, now());
   v_new_status text;
 begin
@@ -706,10 +734,29 @@ begin
     raise exception 'Unauthorized to publish this announcement.';
   end if;
 
+  -- Concurrency-safe row lock
+  select * into v_announcement
+  from public.announcements
+  where id = p_announcement_id
+  for update;
+
+  if v_announcement is null then
+    raise exception 'Announcement not found.';
+  end if;
+
+  if v_announcement.status = 'archived' then
+    raise exception 'Archived announcements cannot be published.';
+  end if;
+
   if v_publish_at > now() then
     v_new_status := 'scheduled';
   else
     v_new_status := 'published';
+  end if;
+
+  -- Idempotent exit if already in target status with matching published_at
+  if v_announcement.status = v_new_status and (p_publish_at is null or v_announcement.published_at = v_publish_at) then
+    return true;
   end if;
 
   update public.announcements set
@@ -773,7 +820,7 @@ $function$;
 revoke execute on function public.archive_announcement_secure(uuid, text) from public, anon;
 grant execute on function public.archive_announcement_secure(uuid, text) to authenticated, service_role;
 
--- 7. Acknowledge announcement
+-- 7. Acknowledge announcement (strictly idempotent)
 create or replace function public.acknowledge_announcement_secure(p_announcement_id uuid)
 returns boolean
 language plpgsql
@@ -811,11 +858,10 @@ $function$;
 revoke execute on function public.acknowledge_announcement_secure(uuid) from public, anon;
 grant execute on function public.acknowledge_announcement_secure(uuid) to authenticated, service_role;
 
--- 8. Acknowledgement Reporting for Authorized Management
+-- 8. Acknowledgement Reporting for Authorized Management (Scope-authorized and Audited)
 create or replace function public.get_announcement_acknowledgement_report_secure(p_announcement_id uuid)
 returns jsonb
 language plpgsql
-stable
 security definer
 set search_path to 'public'
 as $function$
@@ -825,12 +871,24 @@ declare
   v_report jsonb;
 begin
   if v_caller is null then raise exception 'Must be signed in.'; end if;
+
+  -- Strict scope-authorized access: GHOD for Global; MAA/AAX publishers for Malaysia AOC.
+  -- AirAsia Management, Super Admin, and ordinary staff are strictly denied.
   if not public.can_user_manage_announcement(p_announcement_id) then
     raise exception 'Unauthorized to view acknowledgement reports.';
   end if;
 
   select * into v_announcement from public.announcements where id = p_announcement_id;
   if v_announcement is null then raise exception 'Announcement not found.'; end if;
+
+  -- Audit acknowledgement report view
+  insert into public.announcement_audit_log (announcement_id, actor_profile_id, action, details)
+  values (
+    p_announcement_id,
+    v_caller,
+    'view_acknowledgement_report',
+    jsonb_build_object('scope', v_announcement.scope, 'aoc_id', v_announcement.aoc_id, 'viewed_at', now())
+  );
 
   with eligible as (
     select distinct p.id, p.name, p.staff_no, p.email, d.name as department_name, s.name as station_name
@@ -843,15 +901,23 @@ begin
       and ura.starts_at <= now()
       and (ura.ends_at is null or ura.ends_at > now())
       and (
-        (v_announcement.scope = 'global')
+        -- Global scope: all active users across all active AOCs or international assignments
+        (
+          v_announcement.scope = 'global'
+          and (
+            exists (
+              select 1 from public.aocs aoc
+              where aoc.id = ura.aoc_id and aoc.is_active
+            )
+            or ura.aoc_id is null
+          )
+        )
         or
-        (v_announcement.scope = 'aoc' and ura.aoc_id = v_announcement.aoc_id)
-        or
-        (v_announcement.scope = 'entity' and ura.aoc_id = v_announcement.aoc_id and ura.operating_entity_id = v_announcement.operating_entity_id)
-        or
-        (v_announcement.scope = 'department' and ura.aoc_id = v_announcement.aoc_id and ura.department_id = v_announcement.department_id)
-        or
-        (v_announcement.scope = 'station' and ura.aoc_id = v_announcement.aoc_id and ura.station_id = v_announcement.station_id)
+        -- Malaysia AOC scope: all active users assigned to Malaysia AOC (both MAA and AAX)
+        (
+          v_announcement.scope = 'aoc'
+          and ura.aoc_id = v_announcement.aoc_id
+        )
       )
   ),
   acks as (

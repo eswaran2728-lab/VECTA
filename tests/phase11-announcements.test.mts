@@ -12,7 +12,7 @@ import type {
 
 // Role definitions and permission matrix matching database rules
 const AUTHORIZED_GLOBAL_PUBLISHERS = new Set(["ghod"]);
-const AUTHORIZED_AOC_PUBLISHERS = new Set(["ghod", "maa_boss", "maa_admin", "aax_boss", "aax_admin"]);
+const AUTHORIZED_MALAYSIA_AOC_PUBLISHERS = new Set(["maa_boss", "maa_admin", "aax_boss", "aax_admin"]);
 const STRICTLY_READ_ONLY_EXECUTIVE = new Set(["airasia_management"]);
 const DENIED_GLOBAL_PUBLISHERS = new Set([
   "super_admin",
@@ -28,14 +28,15 @@ const DENIED_GLOBAL_PUBLISHERS = new Set([
   "dse",
 ]);
 
-function canPublishAnnouncement(roleCode: string, scope: AnnouncementScope, aocCode?: string | null): boolean {
+function canPublishAnnouncement(roleCode: string, scope: string, aocCode?: string | null): boolean {
   if (scope === "global") {
-    return AUTHORIZED_GLOBAL_PUBLISHERS.has(roleCode);
+    return AUTHORIZED_GLOBAL_PUBLISHERS.has(roleCode) && !aocCode;
   }
   if (scope === "aoc") {
-    if (roleCode === "ghod") return true; // GHOD executive global oversight
+    // GHOD must NOT publish an AOC announcement. GHOD uses the Global announcement channel.
+    if (roleCode === "ghod") return false;
     if (aocCode === "MY") {
-      return roleCode === "maa_boss" || roleCode === "maa_admin" || roleCode === "aax_boss" || roleCode === "aax_admin";
+      return AUTHORIZED_MALAYSIA_AOC_PUBLISHERS.has(roleCode);
     }
   }
   return false;
@@ -53,9 +54,14 @@ function isAnnouncementVisibleToCaller(
     roleCode: string;
     aocCode: string | null;
     hasActiveAssignment: boolean;
+    profileStatus?: "approved" | "pending" | "rejected" | "deactivated";
   },
   nowTime: string
 ): boolean {
+  if (caller.profileStatus && caller.profileStatus !== "approved") {
+    return false;
+  }
+
   // Lifecycle checks
   const isPublishedTime = announcement.published_at <= nowTime;
   const isNotExpired = !announcement.expires_at || announcement.expires_at > nowTime;
@@ -76,9 +82,7 @@ function isAnnouncementVisibleToCaller(
   }
 
   if (announcement.scope === "aoc") {
-    // GHOD can view any AOC under executive global oversight
-    if (caller.roleCode === "ghod") return true;
-    // Otherwise caller must belong to the matching AOC
+    // Audience: every eligible active user assigned to Malaysia AOC (both MAA and AAX)
     return caller.aocCode === announcement.aoc_code;
   }
 
@@ -97,10 +101,15 @@ test("Phase 11 Role Matrix: GHOD is the SOLE authorized Global announcement publ
   assert.equal(canPublishAnnouncement("caterlink_management", "global"), false, "CaterLink Management cannot publish Global");
 });
 
+test("Phase 11 Role Matrix: GHOD CANNOT publish Malaysia AOC announcements", () => {
+  // Authoritative rule: GHOD must not publish an AOC announcement. GHOD uses the Global announcement channel.
+  assert.equal(canPublishAnnouncement("ghod", "aoc", "MY"), false, "GHOD must NOT publish Malaysia AOC announcements");
+  assert.equal(canPublishAnnouncement("ghod", "aoc", "ZZ"), false, "GHOD must NOT publish foreign AOC announcements");
+});
+
 test("Phase 11 Role Matrix: VECTA has NO generic HOD role", () => {
-  // Confirm that generic 'hod' is neither an authorized role nor recognized
   assert.equal(AUTHORIZED_GLOBAL_PUBLISHERS.has("hod"), false);
-  assert.equal(AUTHORIZED_AOC_PUBLISHERS.has("hod"), false);
+  assert.equal(AUTHORIZED_MALAYSIA_AOC_PUBLISHERS.has("hod"), false);
   assert.equal(canPublishAnnouncement("hod", "global"), false);
   assert.equal(canPublishAnnouncement("hod", "aoc", "MY"), false);
 });
@@ -126,16 +135,31 @@ test("Phase 11 Role Matrix: AirAsia Management remains strictly executive-dashbo
   assert.equal(isAnnouncementVisibleToCaller(globalAnn, mgmtCaller, "2026-10-01T12:00:00Z"), true);
 });
 
-test("Phase 11 Role Matrix: Malaysia AOC / entity publishers within authorized scope", () => {
+test("Phase 11 Role Matrix: Approved Malaysia AOC publishers (MAA/AAX Boss & Admin)", () => {
   assert.equal(canPublishAnnouncement("maa_boss", "aoc", "MY"), true);
   assert.equal(canPublishAnnouncement("maa_admin", "aoc", "MY"), true);
   assert.equal(canPublishAnnouncement("aax_boss", "aoc", "MY"), true);
   assert.equal(canPublishAnnouncement("aax_admin", "aoc", "MY"), true);
-  assert.equal(canPublishAnnouncement("ghod", "aoc", "MY"), true, "GHOD has global oversight over Malaysia AOC");
 
   // Denied in foreign AOC
   assert.equal(canPublishAnnouncement("maa_boss", "aoc", "SG"), false);
   assert.equal(canPublishAnnouncement("aax_boss", "aoc", "TH"), false);
+
+  // Non-approved roles cannot publish in Malaysia AOC
+  assert.equal(canPublishAnnouncement("operation_manager", "aoc", "MY"), false);
+  assert.equal(canPublishAnnouncement("main_enforcement", "aoc", "MY"), false);
+  assert.equal(canPublishAnnouncement("compliance", "aoc", "MY"), false);
+  assert.equal(canPublishAnnouncement("caterlink_management", "aoc", "MY"), false);
+  assert.equal(canPublishAnnouncement("super_admin", "aoc", "MY"), false);
+});
+
+test("Phase 11 Subscopes Removed: entity, department, and station rejected", () => {
+  const unapprovedSubscopes = ["entity", "department", "station"];
+  for (const subscope of unapprovedSubscopes) {
+    assert.equal(canPublishAnnouncement("ghod", subscope), false, `GHOD cannot publish to unapproved subscope: ${subscope}`);
+    assert.equal(canPublishAnnouncement("maa_boss", subscope, "MY"), false, `MAA Boss cannot publish to unapproved subscope: ${subscope}`);
+    assert.equal(canPublishAnnouncement("aax_boss", subscope, "MY"), false, `AAX Boss cannot publish to unapproved subscope: ${subscope}`);
+  }
 });
 
 test("Phase 11 Multi-AOC Isolation: Malaysia announcements hidden from foreign personnel", () => {
@@ -147,14 +171,35 @@ test("Phase 11 Multi-AOC Isolation: Malaysia announcements hidden from foreign p
     aoc_code: "MY",
   };
 
-  const myStaff = { roleCode: "aso", aocCode: "MY", hasActiveAssignment: true };
+  const myStaffMAA = { roleCode: "aso", aocCode: "MY", hasActiveAssignment: true };
+  const myStaffAAX = { roleCode: "so", aocCode: "MY", hasActiveAssignment: true };
   const foreignStaff = { roleCode: "aso", aocCode: "ZZ", hasActiveAssignment: true };
-  const ghodUser = { roleCode: "ghod", aocCode: null, hasActiveAssignment: true };
 
   const now = "2026-10-01T12:00:00Z";
-  assert.equal(isAnnouncementVisibleToCaller(myAnn, myStaff, now), true, "Malaysia staff can see Malaysia announcement");
+  assert.equal(isAnnouncementVisibleToCaller(myAnn, myStaffMAA, now), true, "MAA staff can see Malaysia announcement");
+  assert.equal(isAnnouncementVisibleToCaller(myAnn, myStaffAAX, now), true, "AAX staff can see Malaysia announcement");
   assert.equal(isAnnouncementVisibleToCaller(myAnn, foreignStaff, now), false, "Foreign staff cannot see Malaysia announcement");
-  assert.equal(isAnnouncementVisibleToCaller(myAnn, ghodUser, now), true, "GHOD can see Malaysia announcement under oversight");
+});
+
+test("Phase 11 Inactive / Deactivated / Pending assignments rejected", () => {
+  const myAnn = {
+    status: "published" as AnnouncementStatus,
+    published_at: "2026-10-01T00:00:00Z",
+    expires_at: null,
+    scope: "aoc" as AnnouncementScope,
+    aoc_code: "MY",
+  };
+  const now = "2026-10-01T12:00:00Z";
+
+  const pendingUser = { roleCode: "aso", aocCode: "MY", hasActiveAssignment: true, profileStatus: "pending" as const };
+  const rejectedUser = { roleCode: "aso", aocCode: "MY", hasActiveAssignment: true, profileStatus: "rejected" as const };
+  const deactivatedUser = { roleCode: "aso", aocCode: "MY", hasActiveAssignment: true, profileStatus: "deactivated" as const };
+  const inactiveAssignmentUser = { roleCode: "aso", aocCode: "MY", hasActiveAssignment: false, profileStatus: "approved" as const };
+
+  assert.equal(isAnnouncementVisibleToCaller(myAnn, pendingUser, now), false, "Pending profile cannot see announcement");
+  assert.equal(isAnnouncementVisibleToCaller(myAnn, rejectedUser, now), false, "Rejected profile cannot see announcement");
+  assert.equal(isAnnouncementVisibleToCaller(myAnn, deactivatedUser, now), false, "Deactivated profile cannot see announcement");
+  assert.equal(isAnnouncementVisibleToCaller(myAnn, inactiveAssignmentUser, now), false, "Inactive assignment user cannot see announcement");
 });
 
 test("Phase 11 Scheduling & Expiry Lifecycle", () => {
@@ -196,53 +241,51 @@ test("Phase 11 Scheduling & Expiry Lifecycle", () => {
 });
 
 test("Phase 11 Fail-Closed Scope Validation", () => {
-  function validateScopeConstraints(scope: AnnouncementScope, aocId: string | null): boolean {
+  function validateScopeConstraints(scope: string, aocId: string | null): boolean {
     if (scope === "global") {
-      return aocId === null; // Must be NULL
+      return aocId === null;
     }
-    return aocId !== null; // Must NOT be NULL
+    if (scope === "aoc") {
+      return aocId !== null;
+    }
+    return false; // Subscopes entity, department, station are invalid
   }
 
   assert.equal(validateScopeConstraints("global", null), true);
   assert.equal(validateScopeConstraints("global", "00000000-0000-0000-0000-000000000001"), false, "Global with AOC rejected");
   assert.equal(validateScopeConstraints("aoc", "00000000-0000-0000-0000-000000000001"), true);
   assert.equal(validateScopeConstraints("aoc", null), false, "AOC with NULL AOC ID rejected");
+  assert.equal(validateScopeConstraints("entity", "00000000-0000-0000-0000-000000000001"), false, "Entity scope rejected");
+  assert.equal(validateScopeConstraints("department", "00000000-0000-0000-0000-000000000001"), false, "Department scope rejected");
+  assert.equal(validateScopeConstraints("station", "00000000-0000-0000-0000-000000000001"), false, "Station scope rejected");
 });
 
-test("Phase 11 Acknowledgement Report: Exact active denominator and progress computation", () => {
-  const mockReport: AnnouncementAcknowledgementReport = {
-    announcement_id: "00000000-0000-0000-0000-000000000001",
-    title: "Mandatory Runway Safety Directive",
-    scope: "aoc",
-    aoc_code: "MY",
-    requires_acknowledgement: true,
-    total_eligible: 10,
-    total_acknowledged: 8,
-    pending_count: 2,
-    compliance_percentage: 80,
-    acknowledged_staff: [
-      {
-        profile_id: "p1",
-        name: "Ahmad",
-        staff_no: "ST-01",
-        department: "operation",
-        station: "KUL - MAA",
-        acknowledged_at: "2026-10-01T10:00:00Z",
-      },
-    ],
-    pending_staff: [
-      {
-        profile_id: "p2",
-        name: "Siti",
-        staff_no: "ST-02",
-        department: "operation",
-        station: "KUL - MAA",
-      },
-    ],
-  };
+test("Phase 11 Acknowledgement Report Privacy Matrix", () => {
+  function canAccessAcknowledgementReport(roleCode: string, scope: string, aocCode?: string | null): boolean {
+    if (scope === "global") {
+      return roleCode === "ghod";
+    }
+    if (scope === "aoc" && aocCode === "MY") {
+      return AUTHORIZED_MALAYSIA_AOC_PUBLISHERS.has(roleCode);
+    }
+    return false;
+  }
 
-  assert.equal(mockReport.total_eligible, mockReport.total_acknowledged + mockReport.pending_count);
-  assert.equal(mockReport.compliance_percentage, Math.round((mockReport.total_acknowledged / mockReport.total_eligible) * 100));
-  assert.equal(mockReport.acknowledged_staff.length > 0, true);
-  assert.equal(mockReport.pending_staff.length > 0, true);
+  // GHOD can view Global report; denied viewing Malaysia AOC report
+  assert.equal(canAccessAcknowledgementReport("ghod", "global"), true);
+  assert.equal(canAccessAcknowledgementReport("ghod", "aoc", "MY"), false);
+
+  // Malaysia publishers can view Malaysia AOC report; denied viewing Global report
+  assert.equal(canAccessAcknowledgementReport("maa_boss", "aoc", "MY"), true);
+  assert.equal(canAccessAcknowledgementReport("aax_admin", "aoc", "MY"), true);
+  assert.equal(canAccessAcknowledgementReport("maa_boss", "global"), false);
+  assert.equal(canAccessAcknowledgementReport("aax_admin", "global"), false);
+
+  // AirAsia Management, Super Admin, and ordinary staff cannot view any report
+  assert.equal(canAccessAcknowledgementReport("airasia_management", "global"), false);
+  assert.equal(canAccessAcknowledgementReport("airasia_management", "aoc", "MY"), false);
+  assert.equal(canAccessAcknowledgementReport("super_admin", "global"), false);
+  assert.equal(canAccessAcknowledgementReport("super_admin", "aoc", "MY"), false);
+  assert.equal(canAccessAcknowledgementReport("aso", "global"), false);
+  assert.equal(canAccessAcknowledgementReport("aso", "aoc", "MY"), false);
 });

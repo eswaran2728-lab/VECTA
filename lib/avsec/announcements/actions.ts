@@ -18,20 +18,17 @@ export interface AnnouncementActionResult {
 }
 
 /**
- * Phase 11: Create a secure announcement targeting Global, AOC, Entity, Department, or Station.
+ * Phase 11: Create a secure announcement targeting Global or Malaysia AOC.
  * Authorization enforced at database RPC layer:
  *  - Global: GHOD ONLY
- *  - Malaysia AOC: GHOD or MAA/AAX Boss / Admin
- *  - Super Admin, AirAsia Management, Operation Manager, Main Enforcement, Compliance, CaterLink: Denied Global publish
+ *  - Malaysia AOC: MAA/AAX Boss / Admin ONLY (GHOD must not publish AOC)
+ *  - Super Admin, AirAsia Management, Operation Manager, Main Enforcement, Compliance, CaterLink: Denied
  */
 export async function createAnnouncementSecure({
   title,
   body,
   scope = "aoc",
   aocId = null,
-  operatingEntityId = null,
-  departmentId = null,
-  stationId = null,
   category = "operational",
   priority = "normal",
   status = "published",
@@ -44,9 +41,6 @@ export async function createAnnouncementSecure({
   body: string;
   scope?: AnnouncementScope;
   aocId?: string | null;
-  operatingEntityId?: string | null;
-  departmentId?: string | null;
-  stationId?: string | null;
   category?: AnnouncementCategory;
   priority?: AnnouncementPriority;
   status?: AnnouncementStatus;
@@ -68,9 +62,6 @@ export async function createAnnouncementSecure({
     p_body: trimmedBody,
     p_scope: scope,
     p_aoc_id: aocId || null,
-    p_operating_entity_id: operatingEntityId || null,
-    p_department_id: departmentId || null,
-    p_station_id: stationId || null,
     p_category: category,
     p_priority: priority,
     p_status: status,

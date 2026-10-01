@@ -38,8 +38,12 @@ import {
 
 export function ManagementAnnouncementsView({
   initialAnnouncements,
+  isGhod = false,
+  isMalaysiaPublisher = false,
 }: {
   initialAnnouncements: ManagementAnnouncementView[];
+  isGhod?: boolean;
+  isMalaysiaPublisher?: boolean;
 }) {
   const [announcements, setAnnouncements] = useState(initialAnnouncements);
   const [isCreating, setIsCreating] = useState(false);
@@ -50,14 +54,13 @@ export function ManagementAnnouncementsView({
   // Form states
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [scope, setScope] = useState<AnnouncementScope>("aoc");
+  const [scope, setScope] = useState<AnnouncementScope>(isGhod ? "global" : "aoc");
   const [category, setCategory] = useState<AnnouncementCategory>("operational");
   const [priority, setPriority] = useState<AnnouncementPriority>("normal");
   const [status, setStatus] = useState<AnnouncementStatus>("published");
   const [scheduledAt, setScheduledAt] = useState("");
   const [requiresAck, setRequiresAck] = useState(true);
   const [isPinned, setIsPinned] = useState(false);
-  const [station, setStation] = useState<string>("ALL");
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -127,16 +130,7 @@ export function ManagementAnnouncementsView({
         photo_url: photoDataUrl,
         is_pop: priority === "urgent",
         created_at: new Date().toISOString(),
-        targets: [
-          {
-            id: "temp",
-            announcement_id: res.announcementId,
-            branch: null,
-            station: station === "ALL" ? null : station,
-            team: null,
-            created_at: new Date().toISOString(),
-          },
-        ],
+        targets: [],
         total_target_users: 0,
         acknowledged_count: 0,
         acknowledgements: [],
@@ -145,14 +139,13 @@ export function ManagementAnnouncementsView({
       setAnnouncements([newAnn, ...announcements]);
       setTitle("");
       setBody("");
-      setScope("aoc");
+      setScope(isGhod ? "global" : "aoc");
       setCategory("operational");
       setPriority("normal");
       setStatus("published");
       setScheduledAt("");
       setRequiresAck(true);
       setIsPinned(false);
-      setStation("ALL");
       setPhotoDataUrl(null);
       setIsCreating(false);
     } else {
@@ -210,13 +203,12 @@ export function ManagementAnnouncementsView({
         <ShieldAlert className="h-5 w-5 text-sky-400 shrink-0 mt-0.5" />
         <div className="text-xs space-y-1">
           <p className="font-semibold text-foreground">
-            Announcement Publishing Authority &amp; Scope Matrix (Phase 11)
+            Authoritative Announcement Publishing Scope Matrix (Phase 11)
           </p>
           <p className="text-muted-foreground leading-relaxed">
-            <strong className="text-sky-300">Global Announcements:</strong> Authorized strictly to <strong>GHOD</strong> with executive global oversight. Generic Admin, Super Admin, and AirAsia Management cannot publish Global notices.
+            <strong className="text-sky-300">Global Scope:</strong> Publisher: <strong>GHOD</strong> only. Audience: every eligible active VECTA user across every active AOC. AirAsia Management may read but cannot create, edit, publish, or archive.
             <br />
-            <strong className="text-sky-300">Malaysia AOC Announcements:</strong> Managed by <strong>MAA Boss, MAA Admin, AAX Boss, AAX Admin</strong>, and GHOD.
-            AirAsia Management dashboard remains strictly read-only.
+            <strong className="text-sky-300">Malaysia AOC Scope:</strong> Publishers: <strong>MAA Boss, MAA Admin, AAX Boss, AAX Admin</strong> only. Audience: every eligible active user assigned to Malaysia AOC (both MAA and AAX). GHOD must not publish AOC announcements.
           </p>
         </div>
       </div>
@@ -276,11 +268,15 @@ export function ManagementAnnouncementsView({
                   onChange={(e) => setScope(e.target.value as AnnouncementScope)}
                   className="input-base w-full text-xs"
                 >
-                  <option value="global">Global (AirAsia Network — GHOD Authorized)</option>
-                  <option value="aoc">Malaysia AOC (MAA / AAX — Boss/Admin Authorized)</option>
-                  <option value="entity">Operating Entity Specific</option>
-                  <option value="department">Department Specific</option>
-                  <option value="station">Station Specific</option>
+                  {isGhod && (
+                    <option value="global">Global (AirAsia Network — GHOD Authorized)</option>
+                  )}
+                  {isMalaysiaPublisher && (
+                    <option value="aoc">Malaysia AOC (MAA / AAX — Approved Publishers)</option>
+                  )}
+                  {!isGhod && !isMalaysiaPublisher && (
+                    <option value="aoc" disabled>No Publishing Authority</option>
+                  )}
                 </select>
               </div>
 

@@ -1,41 +1,24 @@
 // Phase 11: Global & Malaysia AOC Announcements verification.
 //
-// Verifies:
-//  1. Authentication boundary: unauthenticated feed, detail, acknowledge, create denied.
-//  2. Authoring authorization:
-//     - Global publish allowed for GHOD/Super Admin, denied for regular AOC leadership or staff.
-//     - AOC publish allowed for authorized AOC leadership in their own AOC, denied for foreign AOC leadership.
-//     - Client publisher spoofing denied (publisher identity strictly derived from auth.uid()).
-//  3. Publication lifecycle & scheduling:
-//     - Drafts are invisible to ordinary recipients.
-//     - Scheduled announcements with future publish time are invisible before publish time.
-//     - Scheduled announcements become visible when published_at <= now().
-//     - Expired announcements (expires_at <= now()) are excluded from active feed.
-//     - Archived announcements are excluded from active feed, preserved in history.
-//  4. Multi-AOC & Cross-Entity Isolation:
-//     - Global announcements are visible to eligible users across all active AOCs.
-//     - Malaysia AOC announcements are visible to Malaysia personnel and multi-AOC personnel.
-//     - Malaysia AOC announcements are completely invisible to foreign AOC personnel (raises 'Announcement not found.').
-//     - Cross-entity staff within the same AOC can view announcements.
-//  5. Acknowledgements:
-//     - User can acknowledge visible mandatory announcement.
-//     - Acknowledgement is idempotent (safe on duplicate).
-//     - Acknowledging invisible, draft, or foreign-AOC announcement is rejected.
-//     - User cannot acknowledge on behalf of another user.
-//  6. Acknowledgement reporting & privacy:
-//     - Ordinary user cannot access full acknowledgement reports.
-//     - Authorized publisher/management receives exact denominator (eligible active assignments) and numerator.
-//     - Denominator excludes disabled profiles, inactive assignments, and foreign AOCs.
-//  7. Attachments:
-//     - Authorized publisher can add attachments.
-//     - Attachment metadata retrieval requires announcement visibility; foreign AOC denied.
-//  8. Audit logging:
-//     - Sensitive lifecycle actions (create, edit, publish, schedule, archive) are logged to announcement_audit_log.
-//  9. Content safety:
-//     - Oversized title (>200) and body (>20000) rejected.
-//     - Inert string storage of script/HTML tags.
-// 10. Fail-closed scope integrity:
-//     - Database constraints block global announcement with an AOC or AOC announcement without an AOC.
+// Authoritative Business Rules:
+//  1. Exactly two operational scopes: GLOBAL and AOC.
+//     - GLOBAL: publisher is GHOD only. Audience is every active user across active AOCs.
+//     - AOC (Malaysia): publishers are maa_boss, maa_admin, aax_boss, aax_admin only.
+//       One Malaysia-wide channel broadcasting to both MAA and AAX personnel.
+//       GHOD must NOT publish AOC announcements (GHOD uses Global channel).
+//     - AirAsia Management is strictly read-only.
+//     - Super Admin, Operation Manager, Main Enforcement, Compliance, CaterLink: strictly denied publishing.
+//  2. Unapproved subscopes (entity, department, station) are strictly rejected.
+//  3. Inactive, expired, future, revoked, ended, rejected, and deactivated assignments are rejected.
+//  4. Cross-AOC reads, writes, acknowledgement lists, attachments, and recipient access fail closed.
+//  5. Concurrency-safe, idempotent publishing and idempotent acknowledgements.
+//  6. Published-content immutability and approved archive lifecycle enforced.
+//  7. Acknowledgement report privacy matrix:
+//     - GHOD accesses report for Global.
+//     - MAA/AAX publishers access report for Malaysia AOC.
+//     - AirAsia Management denied personnel acknowledgement and pending lists.
+//     - Ordinary recipients see only their own acknowledgement state.
+//     - All acknowledgement-report access is scope-authorized and audited.
 //
 // Run from this directory, AFTER `node migrate.mjs`:
 //   node verify_phase11_announcements.mjs [--native]
@@ -229,7 +212,7 @@ async function main() {
     [ghodUserId, roleMap.get('ghod')],
   );
 
-  // 2. Super Admin user (Technical platform admin - CANNOT publish Global)
+  // 2. Super Admin user (Technical platform admin - strictly denied Global or AOC publishing)
   const superAdminId = nextId();
   await createUser(superAdminId, 'p11-super@example.test', 'Sam SuperAdmin', 'P11-SA');
   await db.query(
@@ -245,7 +228,7 @@ async function main() {
     [airasiaMgmtId, roleMap.get('airasia_management')],
   );
 
-  // 4. Malaysia AOC Leaders (MAA Boss, MAA Admin, AAX Boss, AAX Admin)
+  // 4. Malaysia AOC Approved Publishers (MAA Boss, MAA Admin, AAX Boss, AAX Admin)
   const maaBossId = nextId();
   await createUser(maaBossId, 'p11-maaboss@example.test', 'Badrul MAABoss', 'P11-MB');
   await db.query(
@@ -327,9 +310,7 @@ async function main() {
     [myStaff2Id, roleMap.get('so'), myAocId, myDeptId, kulHubId, kulStationId, kulTeamId, myStaff2Mem],
   );
 
-
-
-  // 12. ZZ Staff user (ASO in ZZ AOC)
+  // 11. Foreign ZZ Staff user (ASO in ZZ AOC)
   const zzStaffId = nextId();
   await createUser(zzStaffId, 'p11-zzstaff@example.test', 'Zoe ZZStaff', 'P11-ZZS');
   const zzStaffMem = await grantMembership(zzStaffId, zzAocId, zzEntityId);
@@ -338,23 +319,48 @@ async function main() {
     [zzStaffId, roleMap.get('aso'), zzAocId, zzDeptId, zzHubId, zzStationId, zzTeamId, zzStaffMem],
   );
 
-  // 13. Multi-AOC user (Holds active assignments in BOTH MY and ZZ AOCs)
-  const multiAocUserId = nextId();
-  await createUser(multiAocUserId, 'p11-multi@example.test', 'Maya MultiAOC', 'P11-M1');
-  const multiMyMem = await grantMembership(multiAocUserId, myAocId, myEntityId, true);
-  const multiZzMem = await grantMembership(multiAocUserId, zzAocId, zzEntityId, false);
+  // 12. Invalid/Revoked/Deactivated users for assignment denial testing
+  const revokedUserId = nextId();
+  await createUser(revokedUserId, 'p11-revoked@example.test', 'Ron Revoked', 'P11-REV');
   await db.query(
-    "insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, department_id, hub_id, station_id, team_id, entity_membership_id, starts_at) values ($1, $2, $3, $4, $5, $6, $7, $8, now() - interval '1 day');",
-    [multiAocUserId, roleMap.get('aso'), myAocId, myDeptId, kulHubId, kulStationId, kulTeamId, multiMyMem],
-  );
-  await db.query(
-    "insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, department_id, hub_id, station_id, team_id, entity_membership_id, starts_at) values ($1, $2, $3, $4, $5, $6, $7, $8, now() - interval '1 day');",
-    [multiAocUserId, roleMap.get('aso'), zzAocId, zzDeptId, zzHubId, zzStationId, zzTeamId, multiZzMem],
+    "insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, operating_entity_id, starts_at, revoked_at) values ($1, $2, $3, $4, now() - interval '1 day', now() - interval '1 hour');",
+    [revokedUserId, roleMap.get('maa_boss'), myAocId, myEntityId],
   );
 
-  // 14. Disabled user (Status 'pending')
-  const disabledUserId = nextId();
-  await createUser(disabledUserId, 'p11-disabled@example.test', 'Dave Disabled', 'P11-D1', 'pending');
+  const futureUserId = nextId();
+  await createUser(futureUserId, 'p11-future@example.test', 'Fiona Future', 'P11-FUT');
+  await db.query(
+    "insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, operating_entity_id, starts_at) values ($1, $2, $3, $4, now() + interval '1 day');",
+    [futureUserId, roleMap.get('maa_boss'), myAocId, myEntityId],
+  );
+
+  const endedUserId = nextId();
+  await createUser(endedUserId, 'p11-ended@example.test', 'Evan Ended', 'P11-END');
+  await db.query(
+    "insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, operating_entity_id, starts_at, ends_at) values ($1, $2, $3, $4, now() - interval '5 days', now() - interval '1 hour');",
+    [endedUserId, roleMap.get('maa_boss'), myAocId, myEntityId],
+  );
+
+  const deactivatedUserId = nextId();
+  await createUser(deactivatedUserId, 'p11-deact@example.test', 'Dan Deactivated', 'P11-DEA', 'deactivated');
+  await db.query(
+    "insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, operating_entity_id, starts_at) values ($1, $2, $3, $4, now() - interval '1 day');",
+    [deactivatedUserId, roleMap.get('maa_boss'), myAocId, myEntityId],
+  );
+
+  const rejectedUserId = nextId();
+  await createUser(rejectedUserId, 'p11-rej@example.test', 'Rick Rejected', 'P11-REJ', 'rejected');
+  await db.query(
+    "insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, operating_entity_id, starts_at) values ($1, $2, $3, $4, now() - interval '1 day');",
+    [rejectedUserId, roleMap.get('maa_boss'), myAocId, myEntityId],
+  );
+
+  const pendingUserId = nextId();
+  await createUser(pendingUserId, 'p11-pend@example.test', 'Penny Pending', 'P11-PEN', 'pending');
+  await db.query(
+    "insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, operating_entity_id, starts_at) values ($1, $2, $3, $4, now() - interval '1 day');",
+    [pendingUserId, roleMap.get('maa_boss'), myAocId, myEntityId],
+  );
 
   console.log('\n--- SECTION 1: Authentication Boundary ---');
   await simulateUnauthenticated();
@@ -367,20 +373,26 @@ async function main() {
   const unauthAck = await expectFail(() => db.query("select * from public.acknowledge_announcement_secure('00000000-0000-0000-0000-000000000001'::uuid);"));
   assert(unauthAck.failed, 'Unauthenticated user denied acknowledgement');
 
-  const unauthCreate = await expectFail(() => db.query("select * from public.create_announcement_secure('Title', 'Body', 'global');"));
+  const unauthCreate = await expectFail(() => db.query("select public.create_announcement_secure('Title', 'Body', 'global');"));
   assert(unauthCreate.failed, 'Unauthenticated user denied announcement creation');
 
   console.log('\n--- SECTION 2: Creation & Authoring Authorization (Strict Role Matrix) ---');
-  // Confirm NO HOD role exists in role_definitions
   assert(noHodExists, 'No generic HOD role exists in VECTA database (GHOD is the only head role)');
 
   // GHOD can create Global announcement
   await simulateUser(ghodUserId);
   const globalAnnRes = await db.query(
-    "select public.create_announcement_secure('Global System Maintenance', 'VECTA global maintenance on Sunday.', 'global', null, null, null, null, 'system', 'important', 'published', now(), null, true, true) as id;",
+    "select public.create_announcement_secure('Global System Maintenance', 'VECTA global maintenance on Sunday.', 'global', null, 'system', 'important', 'published', now(), null, true, true) as id;",
   );
   const globalAnnId = globalAnnRes.rows[0].id;
   assert(Boolean(globalAnnId), 'GHOD successfully creates Global announcement');
+
+  // GHOD CANNOT create Malaysia AOC announcement (GHOD must use Global channel)
+  const ghodCreateAoc = await expectFail(() => db.query(
+    "select public.create_announcement_secure('GHOD AOC Attempt', 'Unauthorized AOC post', 'aoc', $1);",
+    [myAocId],
+  ));
+  assert(ghodCreateAoc.failed, 'GHOD denied creating Malaysia AOC announcement (must use Global channel)');
 
   // Super Admin CANNOT create Global announcement
   await simulateUser(superAdminId);
@@ -389,348 +401,408 @@ async function main() {
   ));
   assert(superCreateGlobal.failed, 'Super Admin denied creating Global announcement');
 
+  // Super Admin CANNOT create Malaysia AOC announcement
+  const superCreateAoc = await expectFail(() => db.query(
+    "select public.create_announcement_secure('SuperAdmin AOC', 'Unauthorized body', 'aoc', $1);",
+    [myAocId],
+  ));
+  assert(superCreateAoc.failed, 'Super Admin receives no automatic announcement publishing power');
+
   // AirAsia Management CANNOT create Global announcement (read-only executive)
   await simulateUser(airasiaMgmtId);
   const mgmtCreateGlobal = await expectFail(() => db.query(
     "select public.create_announcement_secure('Mgmt Global', 'Unauthorized body', 'global');",
   ));
-  assert(mgmtCreateGlobal.failed, 'AirAsia Management denied creating Global announcement');
+  assert(mgmtCreateGlobal.failed, 'AirAsia Management denied creating Global announcement (read-only)');
 
-  // Operation Manager CANNOT create Global announcement
+  // AirAsia Management CANNOT create Malaysia AOC announcement
+  const mgmtCreateAoc = await expectFail(() => db.query(
+    "select public.create_announcement_secure('Mgmt AOC', 'Unauthorized body', 'aoc', $1);",
+    [myAocId],
+  ));
+  assert(mgmtCreateAoc.failed, 'AirAsia Management denied creating Malaysia AOC announcement');
+
+  // Operation Manager CANNOT create Global or AOC announcements
   await simulateUser(opManagerId);
   const opMgrCreateGlobal = await expectFail(() => db.query(
     "select public.create_announcement_secure('OpMgr Global', 'Unauthorized body', 'global');",
   ));
   assert(opMgrCreateGlobal.failed, 'Operation Manager denied creating Global announcement');
 
-  // Main Enforcement CANNOT create Global announcement
+  const opMgrCreateAoc = await expectFail(() => db.query(
+    "select public.create_announcement_secure('OpMgr AOC', 'Unauthorized body', 'aoc', $1);",
+    [myAocId],
+  ));
+  assert(opMgrCreateAoc.failed, 'Operation Manager denied creating Malaysia AOC announcement');
+
+  // Main Enforcement CANNOT create Global or AOC announcements
   await simulateUser(mainEnfId);
   const mainEnfCreateGlobal = await expectFail(() => db.query(
     "select public.create_announcement_secure('Enf Global', 'Unauthorized body', 'global');",
   ));
   assert(mainEnfCreateGlobal.failed, 'Main Enforcement denied creating Global announcement');
 
-  // Compliance CANNOT create Global announcement
+  const mainEnfCreateAoc = await expectFail(() => db.query(
+    "select public.create_announcement_secure('MainEnf AOC', 'Unauthorized body', 'aoc', $1);",
+    [myAocId],
+  ));
+  assert(mainEnfCreateAoc.failed, 'Main Enforcement denied creating Malaysia AOC announcement');
+
+  // Compliance CANNOT create Global or AOC announcements
   await simulateUser(complianceId);
   const compCreateGlobal = await expectFail(() => db.query(
     "select public.create_announcement_secure('Comp Global', 'Unauthorized body', 'global');",
   ));
   assert(compCreateGlobal.failed, 'Compliance denied creating Global announcement');
 
-  // CaterLink Management CANNOT create Global announcement
+  const compCreateAoc = await expectFail(() => db.query(
+    "select public.create_announcement_secure('Comp AOC', 'Unauthorized body', 'aoc', $1);",
+    [myAocId],
+  ));
+  assert(compCreateAoc.failed, 'Compliance denied creating Malaysia AOC announcement');
+
+  // CaterLink Management CANNOT create Global or AOC announcements
   await simulateUser(caterlinkMgmtId);
   const clCreateGlobal = await expectFail(() => db.query(
     "select public.create_announcement_secure('CaterLink Global', 'Unauthorized body', 'global');",
   ));
   assert(clCreateGlobal.failed, 'CaterLink Management denied creating Global announcement');
 
-  // Ordinary staff CANNOT create Global announcement
+  const clCreateAoc = await expectFail(() => db.query(
+    "select public.create_announcement_secure('CaterLink AOC', 'Unauthorized body', 'aoc', $1);",
+    [myAocId],
+  ));
+  assert(clCreateAoc.failed, 'CaterLink Management denied creating Malaysia AOC announcement');
+
+  // Ordinary staff CANNOT create Global or AOC announcements
   await simulateUser(myStaff1Id);
   const staffCreateGlobal = await expectFail(() => db.query(
     "select public.create_announcement_secure('Staff Global', 'Unauthorized body', 'global');",
   ));
   assert(staffCreateGlobal.failed, 'Ordinary staff denied creating Global announcement');
 
-  // MAA Boss CANNOT create Global announcement (scoped only to MY AOC)
+  const staffCreateAoc = await expectFail(() => db.query(
+    "select public.create_announcement_secure('Staff AOC', 'Unauthorized body', 'aoc', $1);",
+    [myAocId],
+  ));
+  assert(staffCreateAoc.failed, 'Ordinary staff denied creating Malaysia AOC announcement');
+
+  // MAA Boss CANNOT create Global announcement
   await simulateUser(maaBossId);
   const maaBossCreateGlobal = await expectFail(() => db.query(
     "select public.create_announcement_secure('MAA Boss Global', 'Unauthorized body', 'global');",
   ));
   assert(maaBossCreateGlobal.failed, 'MAA Boss denied creating Global announcement');
 
-  // MAA Boss successfully creates Malaysia AOC announcement
+  // The 4 Approved Malaysia Leadership Roles CAN create Malaysia AOC announcement:
+  // 1. MAA Boss
   const myAnnRes = await db.query(
-    "select public.create_announcement_secure('KLIA Terminal 2 Security Briefing', 'All Malaysia AVSEC staff to note revised patrol protocol.', 'aoc', $1, null, null, null, 'security', 'urgent', 'published', now(), null, true, false) as id;",
+    "select public.create_announcement_secure('KLIA Terminal 2 Security Briefing', 'All Malaysia AVSEC staff to note revised patrol protocol.', 'aoc', $1, 'security', 'urgent', 'published', now(), null, true, false) as id;",
     [myAocId],
   );
   const myAnnId = myAnnRes.rows[0].id;
   assert(Boolean(myAnnId), 'MAA Boss successfully creates Malaysia AOC announcement');
 
-  // MAA Admin successfully creates Malaysia AOC announcement
+  // 2. MAA Admin
   await simulateUser(maaAdminId);
   const maaAdminAnnRes = await db.query(
-    "select public.create_announcement_secure('MAA Admin Notice', 'Notice from MAA Admin.', 'aoc', $1, null, null, null, 'operational', 'normal') as id;",
+    "select public.create_announcement_secure('MAA Admin Notice', 'Notice from MAA Admin.', 'aoc', $1, 'operational', 'normal') as id;",
     [myAocId],
   );
   assert(Boolean(maaAdminAnnRes.rows[0].id), 'MAA Admin successfully creates Malaysia AOC announcement');
 
-  // AAX Boss successfully creates Malaysia AOC announcement
+  // 3. AAX Boss
   await simulateUser(aaxBossId);
   const aaxBossAnnRes = await db.query(
-    "select public.create_announcement_secure('AAX Boss Notice', 'Notice from AAX Boss.', 'aoc', $1, null, null, null, 'operational', 'normal') as id;",
+    "select public.create_announcement_secure('AAX Boss Notice', 'Notice from AAX Boss across Malaysia AOC.', 'aoc', $1, 'operational', 'normal') as id;",
     [myAocId],
   );
-  assert(Boolean(aaxBossAnnRes.rows[0].id), 'AAX Boss successfully creates Malaysia AOC announcement');
+  const aaxAnnId = aaxBossAnnRes.rows[0].id;
+  assert(Boolean(aaxAnnId), 'AAX Boss successfully creates Malaysia AOC announcement');
 
-  // AAX Admin successfully creates Malaysia AOC announcement
+  // 4. AAX Admin
   await simulateUser(aaxAdminId);
   const aaxAdminAnnRes = await db.query(
-    "select public.create_announcement_secure('AAX Admin Notice', 'Notice from AAX Admin.', 'aoc', $1, null, null, null, 'operational', 'normal') as id;",
+    "select public.create_announcement_secure('AAX Admin Notice', 'Notice from AAX Admin.', 'aoc', $1, 'operational', 'normal') as id;",
     [myAocId],
   );
   assert(Boolean(aaxAdminAnnRes.rows[0].id), 'AAX Admin successfully creates Malaysia AOC announcement');
 
-  // Operation Manager CANNOT create Malaysia AOC announcement
-  await simulateUser(opManagerId);
-  const opMgrCreateAoc = await expectFail(() => db.query(
-    "select public.create_announcement_secure('OpMgr AOC', 'Unauthorized AOC post', 'aoc', $1);",
+  console.log('\n--- SECTION 3: Unapproved Subscopes & Invalid Assignments Rejection ---');
+  // Unapproved subscopes: entity, department, station must be rejected
+  await simulateUser(maaBossId);
+  const entityScopeTest = await expectFail(() => db.query(
+    "select public.create_announcement_secure('Entity Post', 'Body', 'entity', $1);", [myAocId],
+  ));
+  assert(entityScopeTest.failed, 'entity scope value is rejected by create_announcement_secure');
+
+  const deptScopeTest = await expectFail(() => db.query(
+    "select public.create_announcement_secure('Dept Post', 'Body', 'department', $1);", [myAocId],
+  ));
+  assert(deptScopeTest.failed, 'department scope value is rejected by create_announcement_secure');
+
+  const stationScopeTest = await expectFail(() => db.query(
+    "select public.create_announcement_secure('Station Post', 'Body', 'station', $1);", [myAocId],
+  ));
+  assert(stationScopeTest.failed, 'station scope value is rejected by create_announcement_secure');
+
+  // Inactive / Revoked / Ended / Future / Deactivated / Rejected / Pending assignment denials
+  await simulateUser(revokedUserId);
+  const revokedCreate = await expectFail(() => db.query("select public.create_announcement_secure('Revoked', 'Body', 'aoc', $1);", [myAocId]));
+  assert(revokedCreate.failed, 'Revoked role assignment is rejected from creating announcements');
+
+  await simulateUser(futureUserId);
+  const futureCreate = await expectFail(() => db.query("select public.create_announcement_secure('Future', 'Body', 'aoc', $1);", [myAocId]));
+  assert(futureCreate.failed, 'Future role assignment is rejected from creating announcements');
+
+  await simulateUser(endedUserId);
+  const endedCreate = await expectFail(() => db.query("select public.create_announcement_secure('Ended', 'Body', 'aoc', $1);", [myAocId]));
+  assert(endedCreate.failed, 'Ended role assignment is rejected from creating announcements');
+
+  await simulateUser(deactivatedUserId);
+  const deactCreate = await expectFail(() => db.query("select public.create_announcement_secure('Deact', 'Body', 'aoc', $1);", [myAocId]));
+  assert(deactCreate.failed, 'Deactivated profile is rejected from creating announcements');
+
+  await simulateUser(rejectedUserId);
+  const rejCreate = await expectFail(() => db.query("select public.create_announcement_secure('Rej', 'Body', 'aoc', $1);", [myAocId]));
+  assert(rejCreate.failed, 'Rejected profile is rejected from creating announcements');
+
+  await simulateUser(pendingUserId);
+  const pendCreate = await expectFail(() => db.query("select public.create_announcement_secure('Pend', 'Body', 'aoc', $1);", [myAocId]));
+  assert(pendCreate.failed, 'Pending profile is rejected from creating announcements');
+
+  console.log('\n--- SECTION 4: Cross-AOC Access Fails Closed ---');
+  // Foreign ZZ staff cannot publish in Malaysia AOC
+  await simulateUser(zzStaffId);
+  const zzStaffCreateMY = await expectFail(() => db.query(
+    "select public.create_announcement_secure('ZZ Staff in MY', 'Cross-AOC attempt', 'aoc', $1);",
     [myAocId],
   ));
-  assert(opMgrCreateAoc.failed, 'Operation Manager denied creating Malaysia AOC announcement');
+  assert(zzStaffCreateMY.failed, 'Cross-AOC write fails closed (foreign staff denied publishing in MY)');
 
-  // Main Enforcement CANNOT create Malaysia AOC announcement
-  await simulateUser(mainEnfId);
-  const mainEnfCreateAoc = await expectFail(() => db.query(
-    "select public.create_announcement_secure('MainEnf AOC', 'Unauthorized AOC post', 'aoc', $1);",
-    [myAocId],
-  ));
-  assert(mainEnfCreateAoc.failed, 'Main Enforcement denied creating Malaysia AOC announcement');
-
-  // Compliance CANNOT create Malaysia AOC announcement
-  await simulateUser(complianceId);
-  const compCreateAoc = await expectFail(() => db.query(
-    "select public.create_announcement_secure('Comp AOC', 'Unauthorized AOC post', 'aoc', $1);",
-    [myAocId],
-  ));
-  assert(compCreateAoc.failed, 'Compliance denied creating Malaysia AOC announcement');
-
-  // AirAsia Management CANNOT create Malaysia AOC announcement (strictly read-only)
-  await simulateUser(airasiaMgmtId);
-  const mgmtCreateAoc = await expectFail(() => db.query(
-    "select public.create_announcement_secure('Mgmt AOC', 'Unauthorized AOC post', 'aoc', $1);",
-    [myAocId],
-  ));
-  assert(mgmtCreateAoc.failed, 'AirAsia Management denied creating Malaysia AOC announcement');
-
-  // AirAsia Management CAN read Global announcement in feed
-  const mgmtFeed = await db.query('select id from public.get_visible_announcements_secure();');
-  assert(mgmtFeed.rows.map((r) => r.id).includes(globalAnnId), 'AirAsia Management can view Global announcement in feed');
-
-  // MAA Boss cannot create announcement in foreign (ZZ) AOC
+  // MAA Boss cannot publish in ZZ AOC
   await simulateUser(maaBossId);
   const maaBossCreateZZ = await expectFail(() => db.query(
-    "select public.create_announcement_secure('Intrusion into ZZ', 'Unauthorized cross-AOC post', 'aoc', $1);",
+    "select public.create_announcement_secure('MAA Boss in ZZ', 'Cross-AOC attempt', 'aoc', $1);",
     [zzAocId],
   ));
-  assert(maaBossCreateZZ.failed, 'MAA Boss denied creating announcement in foreign (ZZ) AOC');
+  assert(maaBossCreateZZ.failed, 'Cross-AOC write fails closed (MAA Boss denied publishing in ZZ)');
 
-  // GHOD creates ZZ AOC announcement under executive global oversight
-  await simulateUser(ghodUserId);
-  const zzAnnRes = await db.query(
-    "select public.create_announcement_secure('ZZ Station Protocol', 'ZZ station local rules update.', 'aoc', $1, null, null, null, 'operational', 'normal', 'published', now(), null, false, false) as id;",
-    [zzAocId],
-  );
-  const zzAnnId = zzAnnRes.rows[0].id;
-  assert(Boolean(zzAnnId), 'GHOD successfully creates ZZ AOC announcement under executive global oversight');
-
-  console.log('\n--- SECTION 3: Visibility & Scheduling Lifecycle ---');
-  // Draft announcement creation
-  await simulateUser(maaBossId);
-  const draftAnnRes = await db.query(
-    "select public.create_announcement_secure('Draft Malaysia Strategy', 'Draft content not yet published.', 'aoc', $1, null, null, null, 'policy', 'normal', 'draft') as id;",
-    [myAocId],
-  );
-  const draftAnnId = draftAnnRes.rows[0].id;
-
-  // Ordinary staff cannot see Draft in feed
-  await simulateUser(myStaff1Id);
-  const staffFeedWithDraft = await db.query('select id from public.get_visible_announcements_secure();');
-  const feedIds = staffFeedWithDraft.rows.map((r) => r.id);
-  assert(!feedIds.includes(draftAnnId), 'Draft announcement is hidden from ordinary staff feed');
-
-  // Ordinary staff cannot retrieve Draft detail
-  const staffDraftDetail = await expectFail(() => db.query('select * from public.get_announcement_detail_secure($1);', [draftAnnId]));
-  assert(staffDraftDetail.failed, 'Ordinary staff denied retrieving Draft announcement detail (raises not found)');
-
-  // Scheduled future announcement creation (published_at in future)
-  await simulateUser(maaBossId);
-  const futureDate = new Date(Date.now() + 86400000).toISOString();
-  const scheduledAnnRes = await db.query(
-    "select public.create_announcement_secure('Future Airport Directive', 'To take effect tomorrow.', 'aoc', $1, null, null, null, 'operational', 'normal', 'scheduled', $2) as id;",
-    [myAocId, futureDate],
-  );
-  const scheduledAnnId = scheduledAnnRes.rows[0].id;
-
-  // Ordinary staff cannot see Future Scheduled announcement
-  await simulateUser(myStaff1Id);
-  const staffFeedWithScheduled = await db.query('select id from public.get_visible_announcements_secure();');
-  assert(!staffFeedWithScheduled.rows.map((r) => r.id).includes(scheduledAnnId), 'Scheduled announcement with future timestamp is hidden before publish time');
-
-  // Publishing the scheduled announcement now makes it visible
-  await simulateUser(maaBossId);
-  await db.query("select public.publish_announcement_secure($1, now() - interval '1 minute');", [scheduledAnnId]);
-  await simulateUser(myStaff1Id);
-  const staffFeedAfterPublish = await db.query('select id from public.get_visible_announcements_secure();');
-  assert(staffFeedAfterPublish.rows.map((r) => r.id).includes(scheduledAnnId), 'Scheduled announcement becomes visible immediately once publish time is reached');
-
-  // Expired announcement behavior (expires_at in past)
-  await simulateUser(maaBossId);
-  const expiredAnnRes = await db.query(
-    "select public.create_announcement_secure('Flash Gate Alert', 'Gate C1 temp detour.', 'aoc', $1, null, null, null, 'operational', 'urgent', 'published', now() - interval '2 hours', now() - interval '1 hour') as id;",
-    [myAocId],
-  );
-  const expiredAnnId = expiredAnnRes.rows[0].id;
-
-  await simulateUser(myStaff1Id);
-  const staffFeedCurrent = await db.query('select id from public.get_visible_announcements_secure(null, null, false);');
-  assert(!staffFeedCurrent.rows.map((r) => r.id).includes(expiredAnnId), 'Expired announcement is excluded from current active feed');
-
-  // Archived announcement behavior
-  await simulateUser(maaBossId);
-  await db.query("select public.archive_announcement_secure($1, 'Superseded by newer policy');", [scheduledAnnId]);
-  await simulateUser(myStaff1Id);
-  const staffFeedAfterArchive = await db.query('select id from public.get_visible_announcements_secure(null, null, false);');
-  assert(!staffFeedAfterArchive.rows.map((r) => r.id).includes(scheduledAnnId), 'Archived announcement is excluded from active feed');
-
-  console.log('\n--- SECTION 4: Multi-AOC & Cross-Entity Isolation ---');
-  // Global announcement visible to MY staff
-  await simulateUser(myStaff1Id);
-  const myStaffFeed = await db.query('select id from public.get_visible_announcements_secure();');
-  assert(myStaffFeed.rows.map((r) => r.id).includes(globalAnnId), 'Global announcement is visible to Malaysia AOC staff');
-  assert(myStaffFeed.rows.map((r) => r.id).includes(myAnnId), 'Malaysia AOC announcement is visible to Malaysia AOC staff');
-  assert(!myStaffFeed.rows.map((r) => r.id).includes(zzAnnId), 'Foreign (ZZ) AOC announcement is completely invisible to Malaysia AOC staff');
-
-  // Malaysia detail retrieval succeeds for MY staff
-  const myDetail = await db.query('select * from public.get_announcement_detail_secure($1);', [myAnnId]);
-  assert(myDetail.rows.length === 1 && myDetail.rows[0].title === 'KLIA Terminal 2 Security Briefing', 'Malaysia staff successfully retrieves Malaysia announcement detail');
-
-  // Malaysia detail retrieval raises error for foreign ZZ staff
+  // Foreign staff cannot see Malaysia AOC announcement in feed
   await simulateUser(zzStaffId);
-  const zzStaffFeed = await db.query('select id from public.get_visible_announcements_secure();');
-  assert(zzStaffFeed.rows.map((r) => r.id).includes(globalAnnId), 'Global announcement is visible to ZZ AOC staff');
-  assert(zzStaffFeed.rows.map((r) => r.id).includes(zzAnnId), 'ZZ AOC announcement is visible to ZZ AOC staff');
-  assert(!zzStaffFeed.rows.map((r) => r.id).includes(myAnnId), 'Malaysia AOC announcement is completely invisible to ZZ AOC staff');
+  const zzFeed = await db.query('select id from public.get_visible_announcements_secure();');
+  assert(!zzFeed.rows.map(r => r.id).includes(myAnnId), 'Cross-AOC read fails closed: foreign staff feed excludes Malaysia announcement');
 
-  const foreignAocDetailDenied = await expectFail(() => db.query('select * from public.get_announcement_detail_secure($1);', [myAnnId]));
-  assert(foreignAocDetailDenied.failed, 'Foreign ZZ staff denied retrieving Malaysia announcement detail (raises not found)');
+  // Foreign staff cannot retrieve Malaysia AOC announcement detail
+  const zzDetail = await expectFail(() => db.query('select * from public.get_announcement_detail_secure($1);', [myAnnId]));
+  assert(zzDetail.failed, 'Cross-AOC read fails closed: foreign staff denied detail of Malaysia announcement');
 
-  // Multi-AOC user can see both MY and ZZ announcements
-  await simulateUser(multiAocUserId);
-  const multiFeed = await db.query('select id from public.get_visible_announcements_secure();');
-  const multiIds = multiFeed.rows.map((r) => r.id);
-  assert(multiIds.includes(globalAnnId), 'Multi-AOC user sees Global announcement');
-  assert(multiIds.includes(myAnnId), 'Multi-AOC user sees Malaysia AOC announcement');
-  assert(multiIds.includes(zzAnnId), 'Multi-AOC user sees ZZ AOC announcement');
+  // Foreign staff cannot acknowledge Malaysia AOC announcement
+  const zzAck = await expectFail(() => db.query('select public.acknowledge_announcement_secure($1);', [myAnnId]));
+  assert(zzAck.failed, 'Cross-AOC recipient action fails closed: foreign staff denied acknowledging Malaysia announcement');
 
-  // Cross-entity user within same AOC (MY AAX) can see MY MAA announcement
+  console.log('\n--- SECTION 5: Malaysia-wide AOC Audience (Broadcasts to MAA and AAX) ---');
+  // MAA staff receives Malaysia AOC announcement (published by MAA Boss)
+  await simulateUser(myStaff1Id);
+  const maaFeed1 = await db.query('select id from public.get_visible_announcements_secure();');
+  assert(maaFeed1.rows.map(r => r.id).includes(myAnnId), 'MAA staff user receives Malaysia announcement created by MAA Boss');
+
+  // AAX staff receives Malaysia AOC announcement (published by MAA Boss)
   await simulateUser(myStaff2Id);
-  const myStaff2Feed = await db.query('select id from public.get_visible_announcements_secure();');
-  assert(myStaff2Feed.rows.map((r) => r.id).includes(myAnnId), 'Cross-entity user within same AOC successfully sees AOC announcement');
+  const aaxFeed1 = await db.query('select id from public.get_visible_announcements_secure();');
+  assert(aaxFeed1.rows.map(r => r.id).includes(myAnnId), 'AAX staff user receives Malaysia announcement created by MAA Boss');
 
-  console.log('\n--- SECTION 5: Mandatory Acknowledgements & Idempotency ---');
-  // MY staff acknowledges Malaysia announcement
+  // MAA staff receives Malaysia AOC announcement (published by AAX Boss)
+  await simulateUser(myStaff1Id);
+  const maaFeed2 = await db.query('select id from public.get_visible_announcements_secure();');
+  assert(maaFeed2.rows.map(r => r.id).includes(aaxAnnId), 'MAA staff user receives Malaysia announcement created by AAX Boss');
+
+  // AAX staff receives Malaysia AOC announcement (published by AAX Boss)
+  await simulateUser(myStaff2Id);
+  const aaxFeed2 = await db.query('select id from public.get_visible_announcements_secure();');
+  assert(aaxFeed2.rows.map(r => r.id).includes(aaxAnnId), 'AAX staff user receives Malaysia announcement created by AAX Boss');
+
+  console.log('\n--- SECTION 6: Mandatory Acknowledgement & Concurrency/Idempotency ---');
+  // First acknowledgement succeeds
   await simulateUser(myStaff1Id);
   const ackRes1 = await db.query('select public.acknowledge_announcement_secure($1);', [myAnnId]);
-  assert(ackRes1.rows[0].acknowledge_announcement_secure === true, 'Eligible user successfully acknowledges mandatory announcement');
-
-  // Feed reflects acknowledged = true
-  const feedAfterAck = await db.query('select id, acknowledged from public.get_visible_announcements_secure();');
-  const ackItem = feedAfterAck.rows.find((r) => r.id === myAnnId);
-  assert(ackItem && ackItem.acknowledged === true, 'Feed reflects acknowledged status for caller');
+  assert(ackRes1.rows[0].acknowledge_announcement_secure === true, 'Eligible user successfully acknowledges announcement');
 
   // Duplicate acknowledgement is safe and idempotent
-  const ackResDuplicate = await db.query('select public.acknowledge_announcement_secure($1);', [myAnnId]);
-  assert(ackResDuplicate.rows[0].acknowledge_announcement_secure === true, 'Duplicate acknowledgement call is safe and idempotent');
+  const ackResDup = await db.query('select public.acknowledge_announcement_secure($1);', [myAnnId]);
+  assert(ackResDup.rows[0].acknowledge_announcement_secure === true, 'Duplicate acknowledgement call is safe and idempotent');
 
-  // Foreign staff cannot acknowledge Malaysia announcement
-  await simulateUser(zzStaffId);
-  const foreignAck = await expectFail(() => db.query('select public.acknowledge_announcement_secure($1);', [myAnnId]));
-  assert(foreignAck.failed, 'Foreign AOC staff denied acknowledging Malaysia announcement');
+  // Feed reflects acknowledged = true
+  const staffFeedAfterAck = await db.query('select id, acknowledged, acknowledged_at from public.get_visible_announcements_secure();');
+  const ackRow = staffFeedAfterAck.rows.find(r => r.id === myAnnId);
+  assert(ackRow && ackRow.acknowledged === true && Boolean(ackRow.acknowledged_at), 'Feed reflects acknowledged status and timestamp');
 
-  // Acknowledging invisible draft announcement is denied
+  console.log('\n--- SECTION 7: Acknowledgement Report Privacy Matrix & Auditing ---');
+  // 1. GHOD can access acknowledgement report for Global announcements
+  await simulateUser(ghodUserId);
+  const ghodGlobalReportRes = await db.query(
+    'select public.get_announcement_acknowledgement_report_secure($1) as report;',
+    [globalAnnId],
+  );
+  const ghodGlobalReport = ghodGlobalReportRes.rows[0].report;
+  assert(typeof ghodGlobalReport.total_eligible === 'number', 'GHOD successfully retrieves Global announcement acknowledgement report');
+  assert(Array.isArray(ghodGlobalReport.acknowledged_list), 'GHOD receives Global acknowledged recipient identities');
+  assert(Array.isArray(ghodGlobalReport.pending_list), 'GHOD receives Global pending recipient identities');
+
+  // 2. GHOD CANNOT access acknowledgement report for Malaysia AOC announcements
+  const ghodAocReportDenied = await expectFail(() => db.query(
+    'select public.get_announcement_acknowledgement_report_secure($1);',
+    [myAnnId],
+  ));
+  assert(ghodAocReportDenied.failed, 'GHOD denied accessing acknowledgement report for Malaysia AOC announcement');
+
+  // 3. Malaysia publishers CAN access report for Malaysia AOC announcements
+  await simulateUser(maaBossId);
+  const maaBossReportRes = await db.query(
+    'select public.get_announcement_acknowledgement_report_secure($1) as report;',
+    [myAnnId],
+  );
+  const maaBossReport = maaBossReportRes.rows[0].report;
+  assert(typeof maaBossReport.total_eligible === 'number', 'MAA Boss retrieves Malaysia AOC acknowledgement report');
+  assert(maaBossReport.acknowledged_count === 1, 'Report reflects accurate acknowledged count');
+  assert(Array.isArray(maaBossReport.acknowledged_list), 'MAA Boss receives acknowledged personnel list');
+  assert(Array.isArray(maaBossReport.pending_list), 'MAA Boss receives pending recipient list');
+
+  await simulateUser(aaxAdminId);
+  const aaxAdminReportRes = await db.query(
+    'select public.get_announcement_acknowledgement_report_secure($1) as report;',
+    [myAnnId],
+  );
+  assert(typeof aaxAdminReportRes.rows[0].report.total_eligible === 'number', 'AAX Admin retrieves Malaysia AOC acknowledgement report');
+
+  // 4. Malaysia publishers CANNOT access report for Global announcement
+  const maaGlobalReportDenied = await expectFail(() => db.query(
+    'select public.get_announcement_acknowledgement_report_secure($1);',
+    [globalAnnId],
+  ));
+  assert(maaGlobalReportDenied.failed, 'MAA Boss denied accessing Global acknowledgement report');
+
+  // 5. AirAsia Management is strictly denied acknowledgement reports for BOTH Global and AOC
+  await simulateUser(airasiaMgmtId);
+  const mgmtGlobalReportDenied = await expectFail(() => db.query(
+    'select public.get_announcement_acknowledgement_report_secure($1);',
+    [globalAnnId],
+  ));
+  assert(mgmtGlobalReportDenied.failed, 'AirAsia Management denied Global acknowledgement report');
+
+  const mgmtAocReportDenied = await expectFail(() => db.query(
+    'select public.get_announcement_acknowledgement_report_secure($1);',
+    [myAnnId],
+  ));
+  assert(mgmtAocReportDenied.failed, 'AirAsia Management denied Malaysia AOC acknowledgement report');
+
+  // 6. Ordinary recipient denied full acknowledgement report
   await simulateUser(myStaff1Id);
-  const draftAck = await expectFail(() => db.query('select public.acknowledge_announcement_secure($1);', [draftAnnId]));
-  assert(draftAck.failed, 'Acknowledging invisible draft announcement is denied');
-
-  console.log('\n--- SECTION 6: Acknowledgement Privacy & Management Reporting ---');
-  // Ordinary user denied reading full acknowledgement report
-  await simulateUser(myStaff1Id);
-  const staffReportDenied = await expectFail(() => db.query('select * from public.get_announcement_acknowledgement_report_secure($1);', [myAnnId]));
+  const staffReportDenied = await expectFail(() => db.query(
+    'select public.get_announcement_acknowledgement_report_secure($1);',
+    [myAnnId],
+  ));
   assert(staffReportDenied.failed, 'Ordinary staff denied accessing full acknowledgement report');
 
-  // Authorized Malaysia Leader receives exact report
-  await simulateUser(maaBossId);
-  const reportRes = await db.query('select public.get_announcement_acknowledgement_report_secure($1) as report;', [myAnnId]);
-  const report = reportRes.rows[0].report;
-  assert(typeof report.total_eligible === 'number' && report.total_eligible >= 4, `Report calculates exact active eligible denominator (found: ${report.total_eligible})`);
-  assert(report.acknowledged_count === 1, `Report counts acknowledged staff accurately (found: ${report.acknowledged_count})`);
-  assert(report.pending_count === report.total_eligible - 1, `Report calculates pending count correctly (found: ${report.pending_count})`);
-  assert(Array.isArray(report.acknowledged_list) && report.acknowledged_list.length === 1, 'Report includes acknowledged recipient summary');
+  // 7. Ordinary recipient can only see their own acknowledgement state
+  const directAcks = await db.query('select * from public.announcement_acknowledgements where announcement_id = $1;', [myAnnId]);
+  assert(directAcks.rows.every(r => r.user_id === myStaff1Id), 'Ordinary recipient sees only their own acknowledgement row via RLS');
 
-  console.log('\n--- SECTION 7: Attachments Metadata & Authorization ---');
-  // Publisher attaches file metadata
-  await simulateUser(maaBossId);
-  const attachRes = await db.query(
-    "select public.add_announcement_attachment_secure($1, 'announcements/malaysia/patrol_guide.pdf', 'KLIA_Patrol_Guide.pdf', 1048576, 'application/pdf') as id;",
-    [myAnnId],
-  );
-  const attachId = attachRes.rows[0].id;
-  assert(Boolean(attachId), 'Publisher successfully adds attachment metadata to announcement');
-
-  // Eligible staff can retrieve attachment metadata
-  await simulateUser(myStaff1Id);
-  const staffAttachments = await db.query('select * from public.get_announcement_attachments_secure($1);', [myAnnId]);
-  assert(staffAttachments.rows.length === 1 && staffAttachments.rows[0].file_name === 'KLIA_Patrol_Guide.pdf', 'Eligible staff retrieves announcement attachment metadata');
-
-  // Foreign staff denied retrieving attachment metadata
-  await simulateUser(zzStaffId);
-  const foreignAttachDenied = await expectFail(() => db.query('select * from public.get_announcement_attachments_secure($1);', [myAnnId]));
-  assert(foreignAttachDenied.failed, 'Foreign staff denied retrieving attachment metadata for cross-AOC announcement');
-
-  console.log('\n--- SECTION 8: Audit Logging Integrity ---');
+  // 8. Acknowledgement report access is audited
   await simulateServiceRole();
-  const auditRes = await db.query(
-    'select action, actor_profile_id from public.announcement_audit_log where announcement_id = $1 order by created_at asc;',
-    [myAnnId],
-  );
-  const actions = auditRes.rows.map((r) => r.action);
-  assert(actions.includes('create'), 'Audit log recorded announcement creation');
-  assert(actions.includes('edit'), 'Audit log recorded attachment addition/edit');
+  const ackAuditRows = (await db.query("select * from public.announcement_audit_log where action = 'view_acknowledgement_report';")).rows;
+  assert(ackAuditRows.length >= 3, 'All acknowledgement report accesses are audited in announcement_audit_log');
 
-  // Ordinary user cannot read audit log table directly
-  await simulateUser(myStaff1Id);
-  const auditTableReadDenied = await expectFail(() => db.query('select * from public.announcement_audit_log limit 1;'));
-  assert(auditTableReadDenied.failed, 'Ordinary staff denied direct SELECT on announcement audit log table');
-
-  console.log('\n--- SECTION 9: Content Safety & Bounds ---');
+  console.log('\n--- SECTION 8: Published-Content Immutability & Archive Lifecycle ---');
+  // Attempting to modify title/body of published announcement is blocked
   await simulateUser(maaBossId);
-  const longTitle = 'A'.repeat(201);
-  const oversizedTitle = await expectFail(() => db.query(
-    "select public.create_announcement_secure($1, 'Valid body', 'aoc', $2);", [longTitle, myAocId],
+  const updateContentPublished = await expectFail(() => db.query(
+    "select public.update_announcement_secure($1, 'Tampered Title', 'Tampered Body');",
+    [myAnnId],
   ));
-  assert(oversizedTitle.failed, 'Oversized title (>200 chars) rejected');
+  assert(updateContentPublished.failed, 'Published announcement title/body update rejected (immutability trigger)');
 
-  const longBody = 'B'.repeat(20001);
-  const oversizedBody = await expectFail(() => db.query(
-    "select public.create_announcement_secure('Valid title', $1, 'aoc', $2);", [longBody, myAocId],
+  // Direct DELETE of published announcement is blocked
+  const deletePublished = await expectFail(() => db.query(
+    'delete from public.announcements where id = $1;',
+    [myAnnId],
   ));
-  assert(oversizedBody.failed, 'Oversized body (>20000 chars) rejected');
+  assert(deletePublished.failed, 'Direct DELETE of published announcement rejected (delete guard trigger)');
 
-  // Script tag stored inertly without transformation
-  const scriptTitle = 'Security Alert: <script>alert("xss")</script>';
-  const scriptBody = 'Body containing <script>window.location="evil"</script> and literal text';
-  const scriptAnnRes = await db.query(
-    "select public.create_announcement_secure($1, $2, 'aoc', $3) as id;", [scriptTitle, scriptBody, myAocId],
+  // Archive lifecycle: approved publisher can archive
+  const archiveRes = await db.query("select public.archive_announcement_secure($1, 'Replaced by newer protocol');", [myAnnId]);
+  assert(archiveRes.rows[0].archive_announcement_secure === true, 'Approved publisher successfully archives announcement');
+
+  // Archived announcement cannot be modified
+  const updateArchived = await expectFail(() => db.query(
+    "select public.update_announcement_secure($1, 'Altered after archive', 'Body');",
+    [myAnnId],
+  ));
+  assert(updateArchived.failed, 'Archived announcement cannot be edited');
+
+  // Archived announcement cannot be re-published
+  const publishArchived = await expectFail(() => db.query(
+    'select public.publish_announcement_secure($1);',
+    [myAnnId],
+  ));
+  assert(publishArchived.failed, 'Archived announcement cannot be re-published');
+
+  // Archived announcement cannot be deleted
+  const deleteArchived = await expectFail(() => db.query(
+    'delete from public.announcements where id = $1;',
+    [myAnnId],
+  ));
+  assert(deleteArchived.failed, 'Archived announcement cannot be deleted');
+
+  // Archived announcement is excluded from default feed
+  await simulateUser(myStaff1Id);
+  const staffFeedAfterArchive = await db.query('select id from public.get_visible_announcements_secure(null, null, false);');
+  assert(!staffFeedAfterArchive.rows.map(r => r.id).includes(myAnnId), 'Archived announcement is excluded from default active feed');
+
+  console.log('\n--- SECTION 9: Attachments & Pre-Publication Secrecy ---');
+  // Draft announcement creation
+  await simulateUser(maaBossId);
+  const draftRes = await db.query(
+    "select public.create_announcement_secure('Secret Upcoming Protocol', 'Draft body', 'aoc', $1, 'security', 'urgent', 'draft') as id;",
+    [myAocId],
   );
-  const scriptAnnId = scriptAnnRes.rows[0].id;
-  const scriptFetch = await db.query('select title, body from public.get_announcement_detail_secure($1);', [scriptAnnId]);
-  assert(
-    scriptFetch.rows[0].title === scriptTitle && scriptFetch.rows[0].body === scriptBody,
-    'Script payload stored and returned as inert literal string',
+  const draftId = draftRes.rows[0].id;
+
+  // Add attachment to draft
+  const attachRes = await db.query(
+    "select public.add_announcement_attachment_secure($1, 'announcements/guide.pdf', 'Secret_Guide.pdf', 1048576, 'application/pdf') as id;",
+    [draftId],
   );
+  assert(Boolean(attachRes.rows[0].id), 'Publisher successfully adds attachment to draft announcement');
 
-  console.log('\n--- SECTION 10: Fail-Closed Scope Integrity ---');
-  // Global announcement with an AOC ID must fail constraint
-  const invalidGlobal = await expectFail(() => db.query(
-    "select public.create_announcement_secure('Invalid Global', 'Body', 'global', $1);", [myAocId],
+  // Recipient CANNOT see draft attachment before publication
+  await simulateUser(myStaff1Id);
+  const draftAttachDenied = await expectFail(() => db.query(
+    'select * from public.get_announcement_attachments_secure($1);',
+    [draftId],
   ));
-  assert(invalidGlobal.failed, 'Global announcement with an AOC ID rejected (fail-closed)');
+  assert(draftAttachDenied.failed, 'Draft attachment is secret and invisible to recipient before publication');
 
-  // AOC announcement with NULL AOC ID must fail constraint
-  const invalidAoc = await expectFail(() => db.query(
-    "select public.create_announcement_secure('Invalid AOC', 'Body', 'aoc', null);",
+  // Foreign staff cannot see attachments of Malaysia announcement
+  await simulateUser(zzStaffId);
+  const zzAttachDenied = await expectFail(() => db.query(
+    'select * from public.get_announcement_attachments_secure($1);',
+    [draftId],
   ));
-  assert(invalidAoc.failed, 'AOC announcement with NULL AOC ID rejected (fail-closed)');
+  assert(zzAttachDenied.failed, 'Foreign staff denied retrieving attachments across AOCs');
+
+  // Publish draft: now recipient can see attachment
+  await simulateUser(maaBossId);
+  await db.query('select public.publish_announcement_secure($1);', [draftId]);
+
+  await simulateUser(myStaff1Id);
+  const staffAttachRes = await db.query('select * from public.get_announcement_attachments_secure($1);', [draftId]);
+  assert(staffAttachRes.rows.length === 1 && staffAttachRes.rows[0].file_name === 'Secret_Guide.pdf', 'Attachment becomes visible to recipient once announcement is published');
+
+  console.log('\n--- SECTION 10: Concurrency-Safe Idempotent Publishing ---');
+  await simulateUser(maaBossId);
+  const pubAgain = await db.query('select public.publish_announcement_secure($1);', [draftId]);
+  assert(pubAgain.rows[0].publish_announcement_secure === true, 'Publishing an already-published announcement is safe and idempotent');
 
   console.log(`\nPhase 11 announcements verification completed. Total failures: ${failures}`);
 

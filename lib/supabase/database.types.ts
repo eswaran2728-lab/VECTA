@@ -4997,9 +4997,6 @@ export type Database = {
           p_body: string
           p_scope?: string
           p_aoc_id?: string | null
-          p_operating_entity_id?: string | null
-          p_department_id?: string | null
-          p_station_id?: string | null
           p_category?: string
           p_priority?: string
           p_status?: string

@@ -149,14 +149,14 @@ async function main() {
 
   const [res1, res2] = await Promise.all([
     c1.query("select public.create_announcement_secure('Concurrent Global 1', 'Content G1', 'global') as id;"),
-    c2.query("select public.create_announcement_secure('Concurrent AOC 2', 'Content AOC2', 'aoc', $1) as id;", [myAocId]),
+    c2.query("select public.create_announcement_secure('Concurrent AOC 2', 'Content AOC2', 'aoc', $1, 'operational', 'normal', 'draft') as id;", [myAocId]),
   ]);
   const ann1Id = res1.rows[0].id;
   const ann2Id = res2.rows[0].id;
   assert(Boolean(ann1Id) && Boolean(ann2Id), 'Both simultaneous announcements created with distinct IDs');
   assert(ann1Id !== ann2Id, 'Created announcement IDs are distinct');
 
-  // TEST 2: Concurrent edit / update on an announcement
+  // TEST 2: Concurrent edit / update on an announcement draft
   console.log('\n--- CONCURRENCY TEST 2: Concurrent Update on Same Announcement ---');
   await setSimUser(c1, pub2Id);
   await setSimUser(c2, pub2Id);
@@ -179,7 +179,7 @@ async function main() {
   // Create an announcement requiring acknowledgement
   await setSimUser(c1, pub2Id);
   const ackAnnRes = await c1.query(
-    "select public.create_announcement_secure('Mandatory Briefing', 'Must acknowledge', 'aoc', $1, null, null, null, 'operational', 'urgent', 'published', now(), null, true) as id;",
+    "select public.create_announcement_secure('Mandatory Briefing', 'Must acknowledge', 'aoc', $1, 'operational', 'urgent', 'published', now(), null, true) as id;",
     [myAocId],
   );
   const ackAnnId = ackAnnRes.rows[0].id;
@@ -226,7 +226,7 @@ async function main() {
   // Create another announcement requiring acknowledgement
   await setSimUser(c1, pub2Id);
   const raceAnnRes = await c1.query(
-    "select public.create_announcement_secure('Race Notice', 'Race notice body', 'aoc', $1, null, null, null, 'operational', 'normal', 'published', now(), null, true) as id;",
+    "select public.create_announcement_secure('Race Notice', 'Race notice body', 'aoc', $1, 'operational', 'normal', 'published', now(), null, true) as id;",
     [myAocId],
   );
   const raceAnnId = raceAnnRes.rows[0].id;
@@ -251,7 +251,7 @@ async function main() {
   await setSimUser(c1, pub2Id);
   const nearFutureDate = new Date(Date.now() + 1200).toISOString();
   const schedAnnRes = await c1.query(
-    "select public.create_announcement_secure('Boundary Announcement', 'Visible in 1.2s', 'aoc', $1, null, null, null, 'operational', 'normal', 'scheduled', $2) as id;",
+    "select public.create_announcement_secure('Boundary Announcement', 'Visible in 1.2s', 'aoc', $1, 'operational', 'normal', 'scheduled', $2) as id;",
     [myAocId, nearFutureDate],
   );
   const schedAnnId = schedAnnRes.rows[0].id;
