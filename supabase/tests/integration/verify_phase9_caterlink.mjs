@@ -368,6 +368,34 @@ async function main() {
 
   console.log('\n--- SECTION 3: Transaction Creation & Station Policy ---');
 
+  // create_caterlink_transaction_secure() now resolves and populates
+  // vehicle_id/driver_id_ref via resolve_usable_caterlink_vehicle/driver()
+  // (see Section 11 below for the full denial-matrix proof) -- every
+  // vehicle/driver identifier any Section 3+ test uses to successfully
+  // create a transaction must be a genuinely usable (active, approved)
+  // whitelist entry first.
+  async function registerUsableVehicle(identifier) {
+    const res = await db.query(
+      `select id from public.create_caterlink_whitelist_entry_secure(p_entry_type => 'vehicle', p_aoc_id => $1, p_identifier => $2);`,
+      [myAocId, identifier],
+    );
+    await db.query("select * from public.approve_caterlink_whitelist_entry_secure('vehicle', $1);", [res.rows[0].id]);
+    return res.rows[0].id;
+  }
+  async function registerUsableDriver(identifier, name = 'Fixture Driver') {
+    const res = await db.query(
+      `select id from public.create_caterlink_whitelist_entry_secure(p_entry_type => 'driver', p_aoc_id => $1, p_name => $2, p_identifier => $3);`,
+      [myAocId, name, identifier],
+    );
+    await db.query("select * from public.approve_caterlink_whitelist_entry_secure('driver', $1);", [res.rows[0].id]);
+    return res.rows[0].id;
+  }
+  await simulateUser(caterlinkMgmtId);
+  await registerUsableVehicle('WXX 1234');
+  await registerUsableDriver('DRV-001', 'Ali Driver');
+  await registerUsableVehicle('WXX 5678');
+  await registerUsableDriver('DRV-002', 'Bakar Driver');
+
   await simulateUser(kulAvsecId);
 
   // Test 3.1: Creation at KUL succeeds
@@ -657,7 +685,7 @@ async function main() {
     "select event_type, payload from public.user_notifications where recipient_profile_id = $1 and event_type = 'caterlink_whitelist_approved';",
     [caterlinkMgmtId],
   )).rows;
-  assert(wlApprovalNotif.length >= 1 && wlApprovalNotif[0].payload.entry_id === vehicleId,
+  assert(wlApprovalNotif.some((r) => r.payload.entry_id === vehicleId),
     'caterlink_whitelist_approved notification sent to the entry creator, correct entry_id in payload');
 
   // Test 6.7: cannot re-approve an already-active entry
@@ -687,7 +715,7 @@ async function main() {
     "select event_type, payload from public.user_notifications where recipient_profile_id = $1 and event_type = 'caterlink_whitelist_rejected';",
     [caterlinkMgmtId],
   )).rows;
-  assert(wlRejectNotif.length >= 1 && wlRejectNotif[0].payload.reason === 'Duplicate of an existing approved vendor',
+  assert(wlRejectNotif.some((r) => r.payload.reason === 'Duplicate of an existing approved vendor'),
     'caterlink_whitelist_rejected notification sent to creator with the rejection reason in payload');
 
   // Test 6.9: deactivate an active entry, with mandatory reason
@@ -827,7 +855,7 @@ async function main() {
         `select id from public.create_caterlink_whitelist_entry_secure(p_entry_type => 'vehicle', p_aoc_id => $1, p_identifier => 'WYY 9998-PENDING-PROBE')` },
   ];
   for (const probe of denialMatrix) {
-    const created = await db.query(probe.setupSql, [myAocId]);
+    await db.query(probe.setupSql, [myAocId]);
     const lookup = await db.query(
       `select id from public.${probe.table} where ${probe.column} = $1 and is_active = true;`,
       [probe.value],
@@ -842,14 +870,23 @@ async function main() {
 
   console.log('\n--- SECTION 7: Archive Model ---');
 
-  // Test 7.1: Attempt to archive an incomplete transaction fails
+  // Fixture helper: enforce_whitelist_on_create() (now re-verifying real usability, not just a
+  // null check -- see Section 11 below) applies to EVERY insert into public.transactions,
+  // including these raw service_role fixture rows for sections unrelated to whitelist
+  // enforcement. One usable vehicle+driver pair, reused by id, satisfies the trigger here.
+  await simulateUser(caterlinkMgmtId);
+  const fixtureVehicleId = await registerUsableVehicle('WXX 0001');
+  const fixtureDriverId = await registerUsableDriver('T01', 'Fixture Driver');
   await simulateServiceRole();
+
+  // Test 7.1: Attempt to archive an incomplete transaction fails
   const tx3Id = nextId();
   await db.query(`
     insert into public.transactions (
-      id, transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, status, created_by
-    ) values ($1, 'CL-2026-INCOMPLETE', $2, 'OUTBOUND', 'WXX 0001', 'Test', 'T01', 'CREATED', $3);
-  `, [tx3Id, myAocId, kulAvsecId]);
+      id, transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id,
+      vehicle_id, driver_id_ref, status, created_by
+    ) values ($1, 'ZZ-FIXTURE-INCOMPLETE', $2, 'OUTBOUND', 'WXX 0001', 'Test', 'T01', $4, $5, 'CREATED', $3);
+  `, [tx3Id, myAocId, kulAvsecId, fixtureVehicleId, fixtureDriverId]);
 
   await simulateUser(caterlinkMgmtId);
   const incompleteArchiveFailed = await expectFail(() => db.query("select * from public.archive_caterlink_transaction_secure($1, 'Archive test');", [tx3Id]));
@@ -900,9 +937,10 @@ async function main() {
   const zzTxId = nextId();
   await db.query(`
     insert into public.transactions (
-      id, transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, status, created_by
-    ) values ($1, 'CL-2026-ZZ-001', $2, 'OUTBOUND', 'ZZ-100', 'ZZ Driver', 'ZZ-D01', 'COMPLETED', $3);
-  `, [zzTxId, zzAocId, zzCaterlinkMgmtId]);
+      id, transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id,
+      vehicle_id, driver_id_ref, status, created_by
+    ) values ($1, 'CL-2026-ZZ-001', $2, 'OUTBOUND', 'ZZ-100', 'ZZ Driver', 'ZZ-D01', $4, $5, 'COMPLETED', $3);
+  `, [zzTxId, zzAocId, zzCaterlinkMgmtId, fixtureVehicleId, fixtureDriverId]);
 
   // Step 1: MY CaterLink Management exports
   await simulateUser(caterlinkMgmtId);
@@ -966,6 +1004,125 @@ async function main() {
   assert(auditedActions.has('caterlink_whitelist_deactivate'), 'Audit recorded for whitelist entry deactivation');
   assert(auditedActions.has('caterlink_whitelist_activate'), 'Audit recorded for whitelist entry reactivation');
   assert(auditedActions.has('caterlink_whitelist_revoke'), 'Audit recorded for whitelist entry revocation');
+
+  console.log('\n--- SECTION 11: Transaction Creation -- Real Whitelist Trigger Enforcement ---');
+
+  // Every call below goes through the REAL create_caterlink_transaction_secure() RPC, which
+  // resolves vehicle_id/driver_id_ref and inserts into public.transactions, where the REAL
+  // enforce_whitelist_on_create() trigger independently re-verifies them. No transaction row is
+  // ever seeded directly as a substitute for exercising this path.
+  await simulateUser(caterlinkMgmtId);
+
+  // 11.1: valid active vehicle + driver -> succeeds, canonical ids populated
+  await registerUsableVehicle('S11-VEH-OK');
+  await registerUsableDriver('S11-DRV-OK', 'Section11 Driver');
+  await simulateUser(kulAvsecId);
+  const s11ValidRes = await db.query(
+    `select transaction_id from public.create_caterlink_transaction_secure(
+       p_aoc_id => $1, p_origin_station => 'KUL - MAA', p_direction => 'OUTBOUND', p_route => 'AIRCRAFT',
+       p_vehicle_number => 'S11-VEH-OK', p_driver_name => 'Section11 Driver', p_driver_id => 'S11-DRV-OK', p_seal_number => 'SEAL-S11-1'
+     );`,
+    [myAocId],
+  );
+  const s11TxId = s11ValidRes.rows[0].transaction_id;
+  const s11TxRow = (await db.query('select vehicle_id, driver_id_ref from public.transactions where id = $1;', [s11TxId])).rows[0];
+  assert(Boolean(s11TxRow.vehicle_id) && Boolean(s11TxRow.driver_id_ref), 'Valid active vehicle+driver: transaction created with canonical vehicle_id/driver_id_ref populated by the RPC');
+
+  // Shared denial-matrix runner: each case registers one specific whitelist state, then expects
+  // create_caterlink_transaction_secure() to be denied by either the RPC's own resolver check or
+  // the real trigger re-check -- either is an acceptable, equally-valid denial point.
+  async function expectTxCreateDenied(vehicleNumber, driverId, label) {
+    await simulateUser(kulAvsecId);
+    const denied = await expectFail(() => db.query(
+      `select * from public.create_caterlink_transaction_secure(
+         p_aoc_id => $1, p_origin_station => 'KUL - MAA', p_direction => 'OUTBOUND', p_route => 'AIRCRAFT',
+         p_vehicle_number => $2, p_driver_name => 'Probe Driver', p_driver_id => $3, p_seal_number => 'SEAL-PROBE'
+       );`,
+      [myAocId, vehicleNumber, driverId],
+    ));
+    assert(denied, `Transaction creation denied: ${label}`);
+  }
+
+  // 11.2: expired vehicle (active, approved, but pass_expiry_date in the past)
+  await simulateUser(caterlinkMgmtId);
+  const expVehId = await registerUsableVehicle('S11-VEH-EXP');
+  await simulateServiceRole();
+  await db.query("update public.vehicles set pass_expiry_date = current_date - interval '1 day' where id = $1;", [expVehId]);
+  await simulateUser(caterlinkMgmtId);
+  await registerUsableDriver('S11-DRV-FOR-EXP-VEH');
+  await expectTxCreateDenied('S11-VEH-EXP', 'S11-DRV-FOR-EXP-VEH', 'expired vehicle pass');
+
+  // 11.3: expired driver
+  await simulateUser(caterlinkMgmtId);
+  await registerUsableVehicle('S11-VEH-FOR-EXP-DRV');
+  const expDrvId = await registerUsableDriver('S11-DRV-EXP');
+  await simulateServiceRole();
+  await db.query("update public.drivers set pass_expiry_date = current_date - interval '1 day' where id = $1;", [expDrvId]);
+  await simulateUser(caterlinkMgmtId);
+  await expectTxCreateDenied('S11-VEH-FOR-EXP-DRV', 'S11-DRV-EXP', 'expired driver pass');
+
+  // 11.4: deactivated driver
+  await simulateUser(caterlinkMgmtId);
+  await registerUsableVehicle('S11-VEH-FOR-DEACT-DRV');
+  const deactDrvId = await registerUsableDriver('S11-DRV-DEACT');
+  await db.query("select * from public.deactivate_caterlink_whitelist_entry_secure('driver', $1, 'Section 11 probe');", [deactDrvId]);
+  await expectTxCreateDenied('S11-VEH-FOR-DEACT-DRV', 'S11-DRV-DEACT', 'deactivated driver');
+
+  // 11.5: revoked vehicle
+  await simulateUser(caterlinkMgmtId);
+  const revVehId = await registerUsableVehicle('S11-VEH-REV');
+  await registerUsableDriver('S11-DRV-FOR-REV-VEH');
+  await db.query("select * from public.revoke_caterlink_whitelist_entry_secure('vehicle', $1, 'Section 11 probe');", [revVehId]);
+  await expectTxCreateDenied('S11-VEH-REV', 'S11-DRV-FOR-REV-VEH', 'revoked vehicle');
+
+  // 11.6: future-effective entry (approved, but effective_from has not arrived)
+  await simulateUser(caterlinkMgmtId);
+  const futTxVehRes = await db.query(
+    `select id from public.create_caterlink_whitelist_entry_secure(p_entry_type => 'vehicle', p_aoc_id => $1, p_identifier => 'S11-VEH-FUT', p_effective_from => (current_date + interval '3 days')::date);`,
+    [myAocId],
+  );
+  await db.query("select * from public.approve_caterlink_whitelist_entry_secure('vehicle', $1);", [futTxVehRes.rows[0].id]);
+  await registerUsableDriver('S11-DRV-FOR-FUT-VEH');
+  await expectTxCreateDenied('S11-VEH-FUT', 'S11-DRV-FOR-FUT-VEH', 'future-effective (not-yet-usable) vehicle');
+
+  // 11.7: missing / never-whitelisted identity
+  await expectTxCreateDenied('S11-VEH-NEVER-LISTED', 'S11-DRV-NEVER-LISTED', 'never-whitelisted vehicle/driver');
+
+  // 11.8: wrong AOC -- vehicle/driver whitelisted, but in a different AOC than the transaction
+  await simulateUser(zzCaterlinkMgmtId);
+  const zzVehRes = await db.query(
+    `select id from public.create_caterlink_whitelist_entry_secure(p_entry_type => 'vehicle', p_aoc_id => $1, p_identifier => 'S11-VEH-ZZ');`,
+    [zzAocId],
+  );
+  await db.query("select * from public.approve_caterlink_whitelist_entry_secure('vehicle', $1);", [zzVehRes.rows[0].id]);
+  const zzDrvRes = await db.query(
+    `select id from public.create_caterlink_whitelist_entry_secure(p_entry_type => 'driver', p_aoc_id => $1, p_name => 'ZZ Driver', p_identifier => 'S11-DRV-ZZ');`,
+    [zzAocId],
+  );
+  await db.query("select * from public.approve_caterlink_whitelist_entry_secure('driver', $1);", [zzDrvRes.rows[0].id]);
+  await expectTxCreateDenied('S11-VEH-ZZ', 'S11-DRV-ZZ', 'vehicle/driver whitelisted in a DIFFERENT AOC than the transaction');
+
+  // 11.9: duplicate/replay creation -- two independent calls with identical inputs both succeed
+  // and produce distinct transaction numbers (no accidental idempotency collision/duplication bug)
+  await simulateUser(kulAvsecId);
+  const replayA = await db.query(
+    `select transaction_id, transaction_number from public.create_caterlink_transaction_secure(
+       p_aoc_id => $1, p_origin_station => 'KUL - MAA', p_direction => 'OUTBOUND', p_route => 'AIRCRAFT',
+       p_vehicle_number => 'S11-VEH-OK', p_driver_name => 'Section11 Driver', p_driver_id => 'S11-DRV-OK', p_seal_number => 'SEAL-S11-REPLAY-A'
+     );`,
+    [myAocId],
+  );
+  const replayB = await db.query(
+    `select transaction_id, transaction_number from public.create_caterlink_transaction_secure(
+       p_aoc_id => $1, p_origin_station => 'KUL - MAA', p_direction => 'OUTBOUND', p_route => 'AIRCRAFT',
+       p_vehicle_number => 'S11-VEH-OK', p_driver_name => 'Section11 Driver', p_driver_id => 'S11-DRV-OK', p_seal_number => 'SEAL-S11-REPLAY-B'
+     );`,
+    [myAocId],
+  );
+  assert(
+    replayA.rows[0].transaction_id !== replayB.rows[0].transaction_id && replayA.rows[0].transaction_number !== replayB.rows[0].transaction_number,
+    'Replay creation with the same still-usable vehicle/driver produces two distinct, independent transactions',
+  );
 
   console.log(`\nPhase 9 CaterLink verification completed. Total failures: ${failures}`);
 

@@ -497,11 +497,14 @@ end $$;
 -- status is DERIVED, never written directly by any RPC or client -- always
 -- recomputed from is_active/revoked_at/deactivated_at/approved_at so it can
 -- never disagree with the column the scanner/trigger path actually reads
--- (is_active). Six distinct, unambiguous lifecycle stages, each with its
--- own timestamp/actor pair so no two stages share a meaning:
+-- (is_active). Seven real lifecycle stages (plus one legacy catch-all,
+-- 'inactive', for pre-migration rows that predate this entire concept of
+-- approval/rejection -- never produced for any row created through the
+-- RPCs below), each with its own timestamp/actor pair so no two stages
+-- share a meaning:
 --
 --   pending     created_by set, approved_at null            -- awaiting CaterLink Management review
---   active      approved_at set, is_active=true              -- approved and currently usable
+--   active      approved_at set, is_active=true, currently effective and not expired
 --   rejected    revoked_at set, approved_at NEVER was set     -- denied before ever going live (terminal)
 --   revoked     revoked_at set, approved_at WAS set           -- pulled for cause after being live (terminal)
 --   deactivated deactivated_at set, revoked_at still null     -- temporarily set aside (reversible via activate)
@@ -509,11 +512,19 @@ end $$;
 --               force-held false here (unlike 'expired' below) because an entry that has never yet become
 --               effective is not the same pre-existing-production escape hatch as a lapsed pass -- nothing
 --               today relies on "approved early, usable early", so there is no compatibility reason to allow it.
---   expired     is_active=true but pass_expiry_date has passed -- still is_active (the legacy EXPIRED_PASS
---               escape hatch in icms/20260810000001_strict_whitelist.sql is deliberate, untouched, pre-
---               existing production behavior -- Part B/C record the movement anyway and auto-escalate an
---               EXPIRED_PASS incident rather than hard-blocking at the gate); 'expired' here is purely an
---               informational status for the admin list/RPCs, never an additional is_active-style hard gate.
+--   expired     is_active stays true (display/legacy-compatibility column only -- see
+--               icms/20260810000001_strict_whitelist.sql's pre-existing EXPIRED_PASS "record anyway, then
+--               escalate an incident" override, which this migration does not remove). CORRECTED (post-
+--               review, round 2): is_active alone is NO LONGER sufficient for AUTHORIZATION anywhere. Every
+--               real scanner/transaction-creation/checkpoint/receipt path now calls
+--               public.caterlink_identity_is_usable() (directly, or via resolve_usable_caterlink_vehicle/
+--               driver()) -- which treats an expired pass_expiry_date as categorically unusable, full stop.
+--               EXPIRED_PASS is a post-denial incident/result code, never a bypass that lets a movement
+--               proceed; see lib/icms/actions/transactions.ts's createTransaction() and
+--               checkWhitelistAtCheckpoint().
+--   inactive    legacy-only: is_active=false, created_by/approved_at/revoked_at/deactivated_at all null --
+--               a pre-Phase-9 row toggled off via the old (now-replaced) requireRole-gated
+--               toggleWhitelistRow() action, before this migration's approval concept existed.
 --
 -- CORRECTED (post-review): the first version of this trigger reused
 -- revoked_by/revoked_at for BOTH reject() and deactivate(), which made a
@@ -1024,6 +1035,170 @@ $function$;
 revoke execute on function public.update_caterlink_whitelist_pass_expiry_secure(text, uuid, date) from public, anon;
 grant execute on function public.update_caterlink_whitelist_pass_expiry_secure(text, uuid, date) to authenticated, service_role;
 
+-- -----------------------------------------------------------------------
+-- CORRECTED (post-review, round 2): the ONE authoritative "is this
+-- whitelist identity currently usable for a real movement/checkpoint"
+-- predicate. Every scanner, transaction-creation, checkpoint and receipt
+-- authorization path below calls this -- or one of the two resolver
+-- functions built on it -- instead of each re-implementing its own
+-- is_active-only check. Deliberately recomputes from the raw columns
+-- every time (never reads the stored `status` text column), so this
+-- stays correct even if a future direct UPDATE ever bypassed
+-- sync_caterlink_whitelist_status()'s trigger.
+--
+-- An entry is usable only when ALL of:
+--   - is_active = true (the column every legacy trigger/app check already
+--     reads -- kept as the single physical gate, never duplicated)
+--   - not pending (created_by set with no approved_at yet)
+--   - not deactivated (deactivated_at is null)
+--   - not revoked/rejected (revoked_at is null)
+--   - effective_from has arrived (or is null)
+--   - pass_expiry_date has not passed (or is null) -- an EXPIRED entry is
+--     NEVER usable through this predicate, closing the previous gap where
+--     is_active=true alone let an expired pass authorize a movement.
+create or replace function public.caterlink_identity_is_usable(
+  p_is_active boolean,
+  p_revoked_at timestamptz,
+  p_deactivated_at timestamptz,
+  p_created_by uuid,
+  p_approved_at timestamptz,
+  p_effective_from date,
+  p_pass_expiry_date date
+)
+returns boolean
+language sql
+stable
+as $function$
+  select coalesce(p_is_active, false)
+    and p_revoked_at is null
+    and p_deactivated_at is null
+    and not (p_created_by is not null and p_approved_at is null)
+    and (p_effective_from is null or p_effective_from <= current_date)
+    and (p_pass_expiry_date is null or p_pass_expiry_date >= current_date);
+$function$;
+
+-- Resolvers: the one place every caller (app code via RPC, triggers via
+-- direct SQL call) looks up a currently-usable vehicle/driver by its
+-- natural identifier. p_aoc_id defaults to 'MY' for every pre-Phase-9,
+-- single-AOC caller (scan.ts, transactions.ts) that has never had to pass
+-- one; CaterLink's own RPC below always passes its real target AOC
+-- explicitly, closing the cross-AOC authorization gap a bare
+-- vehicle_number/staff_id lookup would otherwise have.
+create or replace function public.resolve_usable_caterlink_vehicle(p_vehicle_number text, p_aoc_id uuid default null)
+returns uuid
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select v.id from public.vehicles v
+  where upper(v.vehicle_number) = upper(p_vehicle_number)
+    and v.aoc_id = coalesce(p_aoc_id, (select id from public.aocs where code = 'MY'))
+    and public.caterlink_identity_is_usable(v.is_active, v.revoked_at, v.deactivated_at, v.created_by, v.approved_at, v.effective_from, v.pass_expiry_date)
+  limit 1;
+$function$;
+revoke execute on function public.resolve_usable_caterlink_vehicle(text, uuid) from public, anon;
+grant execute on function public.resolve_usable_caterlink_vehicle(text, uuid) to authenticated, service_role;
+
+create or replace function public.resolve_usable_caterlink_driver(p_staff_id text, p_aoc_id uuid default null)
+returns uuid
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select d.id from public.drivers d
+  where upper(d.staff_id) = upper(p_staff_id)
+    and d.aoc_id = coalesce(p_aoc_id, (select id from public.aocs where code = 'MY'))
+    and public.caterlink_identity_is_usable(d.is_active, d.revoked_at, d.deactivated_at, d.created_by, d.approved_at, d.effective_from, d.pass_expiry_date)
+  limit 1;
+$function$;
+revoke execute on function public.resolve_usable_caterlink_driver(text, uuid) from public, anon;
+grant execute on function public.resolve_usable_caterlink_driver(text, uuid) to authenticated, service_role;
+
+-- CORRECTED (post-review, round 2): enforce_whitelist_on_create()
+-- previously only null-checked vehicle_id/driver_id_ref -- it trusted
+-- whatever the app layer resolved earlier and never independently
+-- re-verified usability at the actual insert. This version re-verifies
+-- both referenced rows against the same authoritative predicate,
+-- defense-in-depth against any future caller that supplies a stale or
+-- otherwise-unusable id. Still never accepts a null reference.
+create or replace function public.enforce_whitelist_on_create()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_vehicle_ok boolean := false;
+  v_driver_ok boolean := false;
+begin
+  if new.vehicle_id is null or new.driver_id_ref is null then
+    raise exception 'ICMS: WHITELIST_VIOLATION - vehicle and driver must both be on the active whitelist to create a transaction / Kenderaan dan pemandu mesti berada dalam senarai putih aktif untuk mencipta transaksi';
+  end if;
+
+  select public.caterlink_identity_is_usable(v.is_active, v.revoked_at, v.deactivated_at, v.created_by, v.approved_at, v.effective_from, v.pass_expiry_date)
+    into v_vehicle_ok
+    from public.vehicles v where v.id = new.vehicle_id;
+  select public.caterlink_identity_is_usable(d.is_active, d.revoked_at, d.deactivated_at, d.created_by, d.approved_at, d.effective_from, d.pass_expiry_date)
+    into v_driver_ok
+    from public.drivers d where d.id = new.driver_id_ref;
+
+  if not coalesce(v_vehicle_ok, false) or not coalesce(v_driver_ok, false) then
+    raise exception 'ICMS: WHITELIST_VIOLATION - vehicle and driver must both be an active, approved, currently-effective, non-expired whitelist entry / Kenderaan dan pemandu mesti berada dalam senarai putih yang aktif, diluluskan, berkesan dan tidak tamat tempoh';
+  end if;
+
+  return new;
+end;
+$function$;
+
+-- CORRECTED (post-review, round 2): enforce_secondary_whitelist() (Part
+-- B/C defense-in-depth) previously checked raw is_active only, which let
+-- an expired pass pass a secondary check as long as it was still
+-- is_active. Now routed through the same authoritative resolvers used
+-- everywhere else.
+create or replace function public.enforce_secondary_whitelist()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if new.result = 'PASS' then
+    if public.resolve_usable_caterlink_vehicle(coalesce(new.observed_vehicle_number, '')) is null
+       or public.resolve_usable_caterlink_driver(coalesce(new.observed_driver_id, '')) is null
+    then
+      raise exception 'ICMS: WHITELIST_VIOLATION - observed vehicle/driver is not an active, approved, currently-effective, non-expired whitelist entry; escalate instead of passing / Kenderaan/pemandu yang diperhatikan tiada dalam senarai putih yang aktif, diluluskan, berkesan dan tidak tamat tempoh; eskalasi, jangan lulus';
+    end if;
+  end if;
+  return new;
+end;
+$function$;
+
+-- Bootstrap-only: this test/CI harness never applies icms/ migrations, so
+-- trg_enforce_whitelist_on_create does not exist there yet either (unlike
+-- production, where icms/20260810000001_strict_whitelist.sql already
+-- installed it). Registering it here -- guarded by the same "did icms/
+-- already run" signal used elsewhere in this file -- is what lets
+-- create_caterlink_transaction_secure()'s tests exercise the REAL hard-
+-- block trigger, not a simulation of it. A no-op against production,
+-- where the trigger already exists and this migration only replaces its
+-- function body above.
+do $$
+begin
+  if not exists (
+    select 1 from pg_trigger where tgname = 'trg_catering_companies_no_delete'
+  ) then
+    drop trigger if exists trg_enforce_whitelist_on_create on public.transactions;
+    create trigger trg_enforce_whitelist_on_create
+      before insert on public.transactions
+      for each row execute function public.enforce_whitelist_on_create();
+  end if;
+end $$;
+
+revoke execute on function public.enforce_whitelist_on_create() from public, anon, authenticated;
+revoke execute on function public.enforce_secondary_whitelist() from public, anon, authenticated;
+
 -- =======================================================================
 -- PART D: CaterLink Incident System
 -- =======================================================================
@@ -1328,6 +1503,8 @@ declare
   v_seal_id uuid;
   v_year integer := extract(year from now())::integer;
   v_seq integer;
+  v_vehicle_id uuid;
+  v_driver_id uuid;
 begin
   if v_caller is null then
     raise exception 'Must be signed in.';
@@ -1346,6 +1523,24 @@ begin
   v_can_create := public.check_station_caterlink_capability(p_aoc_id, p_origin_station, 'create');
   if not v_can_create then
     raise exception 'Station % is not configured to initiate CaterLink transactions.', p_origin_station;
+  end if;
+
+  -- CORRECTED (post-review, round 2): resolve the vehicle/driver whitelist
+  -- rows to their canonical ids INSIDE this RPC, against the target AOC,
+  -- using the same authoritative predicate every other authorization path
+  -- uses. enforce_whitelist_on_create() independently re-verifies these
+  -- same ids at the actual INSERT below (defense-in-depth, not a
+  -- duplicate decision) -- this resolution is what makes that trigger
+  -- pass for a genuinely valid movement instead of rejecting every
+  -- CaterLink transaction for a null vehicle_id/driver_id_ref. The error
+  -- here deliberately does not reveal WHY a given plate/staff id failed
+  -- (unlisted vs expired vs revoked vs not-yet-effective are all the same
+  -- caller-facing message) -- that detail is for CaterLink Management's
+  -- own whitelist admin view, not the checkpoint officer's screen.
+  v_vehicle_id := public.resolve_usable_caterlink_vehicle(p_vehicle_number, p_aoc_id);
+  v_driver_id := public.resolve_usable_caterlink_driver(p_driver_id, p_aoc_id);
+  if v_vehicle_id is null or v_driver_id is null then
+    raise exception 'Vehicle or driver is not an active, approved, currently-effective whitelist entry for this AOC.';
   end if;
 
   -- Caller role verification: Must hold active assignment in target AOC
@@ -1367,18 +1562,42 @@ begin
     select id into v_hub_dest_id from public.org_stations where code = p_hub_destination;
   end if;
 
-  -- Generate sequential transaction number
-  v_seq := (select coalesce(max(substr(t.transaction_number, 11)::integer), 0) + 1
-            from public.transactions t
-            where t.transaction_number like 'CL-' || v_year || '-%');
+  -- CORRECTED (post-review, round 2): max(...)+1 over existing rows is a
+  -- genuine read-then-write race -- two concurrent callers can compute the
+  -- SAME v_seq before either commits, then both fail (or worse, under a
+  -- weaker isolation level, both succeed) on transaction_number's unique
+  -- constraint. Proven empirically via a real two-connection concurrency
+  -- test before this fix. A real Postgres SEQUENCE's nextval() is atomic
+  -- across concurrent callers by construction -- the same pattern the
+  -- legacy icms next_transaction_number() already uses for its own
+  -- 'CSCS-YYYY-NNNNNN' numbers, applied here for 'CL-YYYY-NNNNNN'.
+  -- "IF NOT EXISTS" alone is not safe here: two sessions can both pass the
+  -- existence check before either commits the CREATE, so the second
+  -- CREATE still raises duplicate_table against the catalog -- the exact
+  -- same read-then-write race this whole fix exists to avoid, just moved
+  -- one level down. Catching that specific exception and retrying the
+  -- nextval() is what actually makes this safe under real concurrency.
+  if to_regclass('public.cl_txn_seq_' || v_year) is null then
+    begin
+      execute format('create sequence public.cl_txn_seq_%s start with 1', v_year);
+    exception when duplicate_table or unique_violation then
+      -- a concurrent caller created it first -- under real concurrent DDL,
+      -- Postgres can surface this as either condition depending on timing;
+      -- both mean the same thing here, so both are swallowed the same way.
+      null;
+    end;
+  end if;
+  execute format('select nextval(''public.cl_txn_seq_%s'')', v_year) into v_seq;
   v_tx_number := 'CL-' || v_year || '-' || lpad(v_seq::text, 6, '0');
 
   insert into public.transactions (
     transaction_number, aoc_id, direction, route, vehicle_number, driver_name, driver_id,
+    vehicle_id, driver_id_ref,
     seal_number, hub_destination, station, origin_station_id, destination_station_id,
     flight_number, aircraft_registration, trolley_count, cargo_types, status, created_by
   ) values (
     v_tx_number, p_aoc_id, p_direction, p_route, p_vehicle_number, p_driver_name, p_driver_id,
+    v_vehicle_id, v_driver_id,
     p_seal_number, p_hub_destination, p_origin_station, v_station_id, v_hub_dest_id,
     p_flight_number, p_aircraft_reg, p_trolley_count, p_cargo_types, 'CREATED', v_caller
   )

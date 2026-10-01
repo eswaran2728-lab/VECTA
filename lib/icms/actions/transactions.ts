@@ -189,19 +189,13 @@ async function checkWhitelistAtCheckpoint(
   observedVehicleNumber: string,
   observedDriverId: string
 ): Promise<string | null> {
+  // CORRECTED (post-review, round 2): routed through the same
+  // resolve_usable_caterlink_*() predicate every other authorization path
+  // uses, so an expired-but-is_active pass is caught here too, not just
+  // unlisted vehicles/drivers.
   const [vehicleRes, driverRes] = await Promise.all([
-    supabase
-      .from("vehicles")
-      .select("id")
-      .eq("vehicle_number", observedVehicleNumber)
-      .eq("is_active", true)
-      .maybeSingle(),
-    supabase
-      .from("drivers")
-      .select("id")
-      .eq("staff_id", observedDriverId)
-      .eq("is_active", true)
-      .maybeSingle(),
+    supabase.rpc("resolve_usable_caterlink_vehicle", { p_vehicle_number: observedVehicleNumber }),
+    supabase.rpc("resolve_usable_caterlink_driver", { p_staff_id: observedDriverId }),
   ]);
 
   if (vehicleRes.data && driverRes.data) return null;
@@ -275,7 +269,6 @@ export async function createTransaction(
   const escortName = str(formData, "escort_officer_name");
   const escortStaffId = str(formData, "escort_officer_staff_id");
   const escortVehicleNumber = str(formData, "escort_vehicle_number").toUpperCase();
-  const escalateExpired = bool(formData, "escalate_expired");
 
   // Route (AIRCRAFT/HUB/REDQ) and hub destination — chosen via the flat
   // Inbound/Outbound/Hub/REDQ→FOB selector on the form. Hub and REDQ imply
@@ -371,53 +364,63 @@ export async function createTransaction(
 
   const supabase = await createClient();
 
-  // Whitelist checks: matched entries link to the registry; expired passes
-  // block (or escalate on explicit confirmation); unlisted vehicle/driver
-  // is a hard block — see enforce_whitelist_on_create(). The escort
-  // officer/vehicle is deliberately NOT checked against any whitelist:
-  // escort staffing rotates and isn't a registered catering vehicle/driver,
-  // unlike the primary vehicle and driver.
-  const today = new Date().toISOString().slice(0, 10);
-  const [vehicleRes, driverRes] = await Promise.all([
-    supabase
-      .from("vehicles")
-      .select("id, pass_expiry_date, is_active")
-      .eq("vehicle_number", vehicleNumber)
-      .eq("is_active", true)
-      .maybeSingle(),
-    supabase
-      .from("drivers")
-      .select("id, name, pass_expiry_date, is_active")
-      .eq("staff_id", driverId)
-      .eq("is_active", true)
-      .maybeSingle(),
+  // Whitelist checks: CORRECTED (post-review, round 2) -- an expired pass
+  // must never authorize a transaction. resolve_usable_caterlink_vehicle/
+  // driver() is the single authoritative "currently usable" predicate
+  // (active, approved, not revoked/deactivated, effective, not expired)
+  // that the real enforce_whitelist_on_create() trigger below also
+  // re-verifies -- expiry is no longer a client-choosable override. The
+  // escort officer/vehicle is deliberately NOT checked against any
+  // whitelist: escort staffing rotates and isn't a registered catering
+  // vehicle/driver, unlike the primary vehicle and driver.
+  const [vehicleIdRes, driverIdRes, vehicleRawRes, driverRawRes] = await Promise.all([
+    supabase.rpc("resolve_usable_caterlink_vehicle", { p_vehicle_number: vehicleNumber }),
+    supabase.rpc("resolve_usable_caterlink_driver", { p_staff_id: driverId }),
+    supabase.from("vehicles").select("pass_expiry_date").eq("vehicle_number", vehicleNumber).maybeSingle(),
+    supabase.from("drivers").select("name, pass_expiry_date").eq("staff_id", driverId).maybeSingle(),
   ]);
-  const vehicleRec = vehicleRes.data;
-  const driverRec = driverRes.data;
+  const usableVehicleId = vehicleIdRes.data as string | null;
+  const usableDriverId = driverIdRes.data as string | null;
+  const driverRec = driverRawRes.data;
 
+  const today = new Date().toISOString().slice(0, 10);
   const expiredItems: string[] = [];
-  if (vehicleRec?.pass_expiry_date && vehicleRec.pass_expiry_date < today) {
+  if (!usableVehicleId && vehicleRawRes.data?.pass_expiry_date && vehicleRawRes.data.pass_expiry_date < today) {
     expiredItems.push(`vehicle ${vehicleNumber}`);
   }
-  if (driverRec?.pass_expiry_date && driverRec.pass_expiry_date < today) {
+  if (!usableDriverId && driverRec?.pass_expiry_date && driverRec.pass_expiry_date < today) {
     expiredItems.push(`driver ${driverId}`);
   }
-  if (expiredItems.length > 0 && !escalateExpired) {
+  if (expiredItems.length > 0) {
+    // CORRECTED: this is now a hard, non-bypassable denial -- the earlier
+    // "escalateExpired" flow let the transaction proceed anyway by still
+    // resolving an is_active-but-expired vehicle/driver id. The attempted
+    // expired credential is recorded for Admin follow-up (renewal/
+    // replacement), but it never grants permission to create the
+    // transaction. No transaction row is created, so this record is not
+    // tied to one.
+    await supabase.from("audit_logs").insert({
+      transaction_id: null,
+      action: "expired_whitelist_attempt",
+      performed_by: `${profile.name} (${profile.staff_id})`,
+      performed_by_id: profile.id,
+      old_values: null,
+      new_values: { vehicle_number: vehicleNumber, driver_id: driverId, expired_items: expiredItems },
+    });
     return {
       error:
         `EXPIRED_PASS: airport pass expired for ${expiredItems.join(" and ")}. ` +
-        `The vehicle must not proceed. You may create this record as an Expired Pass incident (escalated to the admin) using the button below. ` +
-        `/ Pas lapangan terbang telah tamat tempoh.`,
+        `This vehicle/driver cannot be used until the whitelist entry is renewed by an Admin — the attempt has been recorded. ` +
+        `/ Pas lapangan terbang telah tamat tempoh. Kenderaan/pemandu ini tidak boleh digunakan sehingga senarai putih diperbaharui oleh Admin — percubaan ini telah direkodkan.`,
     };
   }
 
-  // Strict whitelist: a vehicle/driver not on the active whitelist is a
-  // hard block, same severity tier as missing signature/seals — no more
-  // "allowed with mandatory remarks" escape hatch. Only the expired-pass
-  // path above stays an override (a vehicle already at the gate).
+  // Strict whitelist: a vehicle/driver not currently usable (unlisted,
+  // pending, deactivated, revoked, or not-yet-effective) is a hard block,
+  // same severity tier as missing signature/seals.
   const unlisted: string[] = [];
-  if (!vehicleRec) unlisted.push(`vehicle ${vehicleNumber}`);
-  if (!driverRec) unlisted.push(`driver ${driverId}`);
+  if (!usableVehicleId) unlisted.push(`vehicle ${vehicleNumber}`);
+  if (!usableDriverId) unlisted.push(`driver ${driverId}`);
   if (unlisted.length > 0) {
     return {
       error:
@@ -468,8 +471,8 @@ export async function createTransaction(
       flight_number: flightNumber || null,
       aircraft_registration: aircraftRegistration || null,
       catering_company_id: cateringCompanyId || null,
-      vehicle_id: vehicleRec?.id ?? null,
-      driver_id_ref: driverRec?.id ?? null,
+      vehicle_id: usableVehicleId,
+      driver_id_ref: usableDriverId,
       trolley_count: trolleyCount,
       escort_officer_name: escortName || null,
       escort_officer_staff_id: escortStaffId || null,
@@ -510,20 +513,6 @@ export async function createTransaction(
   );
   if (sealsError) {
     return { error: `Seals could not be saved: ${sealsError.message}` };
-  }
-
-  if (expiredItems.length > 0 && escalateExpired) {
-    await supabase.from("incidents").insert({
-      transaction_id: tx.id,
-      incident_type: "EXPIRED_PASS",
-      description: `Airport pass expired for ${expiredItems.join(" and ")}. Recorded and escalated at Part A by ${profile.name} (${profile.staff_id}).`,
-      reported_by: `${profile.name} (${profile.staff_id})`,
-      reported_by_id: profile.id,
-      photo_url: null,
-    });
-    revalidatePath("/icms/transactions");
-    revalidatePath("/icms/dashboard");
-    redirect(`/icms/transactions/${tx.id}?escalated=1`);
   }
 
   revalidatePath("/icms/transactions");

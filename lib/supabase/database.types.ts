@@ -4992,6 +4992,14 @@ export type Database = {
         Args: { p_entry_type: string; p_id: string; p_pass_expiry_date: string | null }
         Returns: { id: string; pass_expiry_date: string | null }[]
       }
+      resolve_usable_caterlink_vehicle: {
+        Args: { p_vehicle_number: string; p_aoc_id?: string | null }
+        Returns: string | null
+      }
+      resolve_usable_caterlink_driver: {
+        Args: { p_staff_id: string; p_aoc_id?: string | null }
+        Returns: string | null
+      }
       archive_caterlink_transaction_secure: {
         Args: { p_transaction_id: string; p_reason?: string | null }
         Returns: { archive_id: string; transaction_number: string }[]
