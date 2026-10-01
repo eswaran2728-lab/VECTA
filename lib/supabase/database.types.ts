@@ -5551,6 +5551,45 @@ export type Database = {
           total_count: number
         }[]
       }
+      is_wois_eligible_secure: { Args: Record<PropertyKey, never>; Returns: boolean }
+      record_wois_audit_event_secure: {
+        Args: { p_event_type: string; p_conversation_id?: string | null; p_details?: Json }
+        Returns: string
+      }
+      create_wois_conversation_secure: { Args: { p_title?: string }; Returns: string }
+      rename_wois_conversation_secure: { Args: { p_conversation_id: string; p_title: string }; Returns: boolean }
+      delete_wois_conversation_secure: { Args: { p_conversation_id: string }; Returns: boolean }
+      list_wois_conversations_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: { id: string; title: string; created_at: string; updated_at: string; archived_at: string | null }[]
+      }
+      list_wois_messages_secure: {
+        Args: { p_conversation_id: string }
+        Returns: {
+          id: string
+          sender: string
+          body: string
+          confidence_tag: string | null
+          source_type: string | null
+          sources: Json
+          tool_calls: Json
+          tool_results: Json
+          created_at: string
+        }[]
+      }
+      append_wois_message_secure: {
+        Args: {
+          p_conversation_id: string
+          p_sender: string
+          p_body: string
+          p_confidence_tag?: string | null
+          p_source_type?: string | null
+          p_sources?: Json
+          p_tool_calls?: Json
+          p_tool_results?: Json
+        }
+        Returns: string
+      }
       get_attachment_authorization_secure: {
         Args: { p_attachment_id: string }
         Returns: { storage_path: string; file_name: string; mime_type: string }[]

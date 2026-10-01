@@ -19,6 +19,17 @@ export interface UserContext {
   team?: string | null;
 }
 
+/** Phase 12: a single prior turn in the same conversation, used only to
+ * resolve short follow-up questions ("what about A321?") against the topic
+ * of the immediately preceding user message. The engine stays a stateless,
+ * deterministic function of (query, history) -- it never has its own
+ * persisted memory, so it is trivial to unit test and cannot drift from
+ * what's actually stored in wois_messages. */
+export interface ConversationTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
 // 1. Incident Escalation Keywords
 const ESCALATION_TRIGGERS = [
   "bomb threat",
@@ -102,7 +113,8 @@ const GREETING_PATTERNS = [
 
 export async function executeWoisQuery(
   query: string,
-  userContext: UserContext = {}
+  userContext: UserContext = {},
+  history: ConversationTurn[] = []
 ): Promise<WoisEngineResponse> {
   const normalizedQuery = query.toLowerCase().trim();
 
@@ -131,7 +143,24 @@ export async function executeWoisQuery(
   }
 
   // RAG Search & Chunk Retrieval
-  const searchResults = searchKnowledgeBase(normalizedQuery, userContext);
+  let searchResults = searchKnowledgeBase(normalizedQuery, userContext);
+
+  // Multi-turn follow-up resolution: a short message that matches nothing on
+  // its own ("what about A321?", "and for lithium?") is re-tried combined
+  // with the most recent USER turn, so the conversation's topic carries
+  // forward without the caller repeating it. Only engaged when the bare
+  // query genuinely found nothing -- a query that stands on its own is
+  // always answered on its own terms, never silently reinterpreted.
+  if (searchResults.length === 0 && normalizedQuery.split(/\s+/).length <= 6) {
+    const lastUserTurn = [...history].reverse().find((t) => t.role === "user" && t.content.trim().length > 0);
+    if (lastUserTurn) {
+      const combinedQuery = `${lastUserTurn.content} ${normalizedQuery}`.toLowerCase().trim();
+      const combinedResults = searchKnowledgeBase(combinedQuery, userContext);
+      if (combinedResults.length > 0) {
+        searchResults = combinedResults;
+      }
+    }
+  }
 
   if (searchResults.length === 0) {
     // Check if it's general aviation knowledge vs completely unknown/uncertain

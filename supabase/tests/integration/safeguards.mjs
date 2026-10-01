@@ -23,6 +23,7 @@ export const ALLOWED_DISPOSABLE_DATABASES = new Set([
   'vecta_phase10_discussion_concurrency_run',
   'vecta_phase11_announcements_run',
   'vecta_phase11_announcements_concurrency_run',
+  'vecta_phase12_wois_run',
 ]);
 
 export function assertDisposableLocalTarget(config, ...dbNames) {

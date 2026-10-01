@@ -16,22 +16,19 @@ export async function GET(req: Request) {
     const conversationId = searchParams.get("conversationId");
 
     if (conversationId) {
-      // Fetch messages for a specific conversation
-      const { data: messages } = await supabase
-        .from("wois_messages")
-        .select("*")
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true });
-
+      // Ownership is enforced inside the RPC -- a foreign conversation id
+      // returns an error, never another user's messages.
+      const { data: messages, error } = await supabase.rpc("list_wois_messages_secure", {
+        p_conversation_id: conversationId,
+      });
+      if (error) {
+        return NextResponse.json({ error: "Conversation not found or not accessible." }, { status: 403 });
+      }
       return NextResponse.json({ messages: messages || [] });
     }
 
-    // Fetch conversation list
-    const { data: conversations } = await supabase
-      .from("wois_conversations")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("updated_at", { ascending: false });
+    // Excludes soft-deleted conversations -- see list_wois_conversations_secure().
+    const { data: conversations } = await supabase.rpc("list_wois_conversations_secure");
 
     return NextResponse.json({ conversations: conversations || [] });
   } catch (error: unknown) {

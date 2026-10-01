@@ -554,11 +554,12 @@ export interface WoisChunk {
 
 export interface WoisConversation {
   id: string;
-  org_id: string | null;
-  user_id: string;
+  org_id?: string | null;
+  user_id?: string;
   title: string;
   created_at: string;
   updated_at: string;
+  archived_at?: string | null;
 }
 
 export interface WoisMessage {
@@ -572,6 +573,9 @@ export interface WoisMessage {
   attachment?: WoisAttachment;
   actionHref?: string;
   actionLabel?: string;
+  /** Phase 12: names of any allowlisted tools invoked for this turn, kept
+   * minimal (names/args only, never raw record payloads) for display and audit. */
+  toolCalls?: WoisToolCall[];
   created_at: string;
 }
 
@@ -586,6 +590,24 @@ export interface WoisEngineResponse {
    * directly, e.g. "Open My Overtime" -> /avsec/duty/overtime. */
   actionHref?: string;
   actionLabel?: string;
+  toolCalls?: WoisToolCall[];
+}
+
+// Phase 12: WOIS AI 2.0 -- conversational, tool-grounded Malaysia AOC assistant.
+export interface WoisToolCall {
+  tool: string;
+  /** Short, redacted summary of what the tool returned -- never the raw record payload. */
+  resultSummary: string;
+}
+
+export interface WoisEligibility {
+  eligible: boolean;
+  reason?: "unauthenticated" | "not_approved" | "not_eligible" | "authorization_check_failed";
+}
+
+export interface WoisSuggestedAction {
+  label: string;
+  query: string;
 }
 
 
