@@ -4935,6 +4935,66 @@ export type Database = {
       }
     }
     Functions: {
+      list_discussion_categories_secure: {
+        Args: Record<string, never>
+        Returns: { id: string; code: string; display_name: string; description: string; aoc_id: string | null; sort_order: number }[]
+      }
+      list_discussion_threads_secure: {
+        Args: { p_category_id?: string | null }
+        Returns: { id: string; category_id: string; title: string; author_alias: string; status: string; report_count: number; reply_count: number; created_at: string; edited_at: string | null }[]
+      }
+      get_discussion_thread_secure: {
+        Args: { p_thread_id: string }
+        Returns: { id: string; category_id: string; title: string; body: string; author_alias: string; status: string; created_at: string; edited_at: string | null; reply_id: string | null; reply_body: string | null; reply_author_alias: string | null; reply_status: string | null; reply_created_at: string | null; reply_edited_at: string | null }[]
+      }
+      create_discussion_thread_secure: {
+        Args: { p_category_id: string; p_title: string; p_body: string }
+        Returns: { id: string; author_alias: string }[]
+      }
+      create_discussion_reply_secure: {
+        Args: { p_thread_id: string; p_body: string }
+        Returns: { id: string; author_alias: string }[]
+      }
+      edit_discussion_content_secure: {
+        Args: { p_content_type: string; p_content_id: string; p_body: string }
+        Returns: boolean
+      }
+      remove_own_discussion_content_secure: {
+        Args: { p_content_type: string; p_content_id: string }
+        Returns: boolean
+      }
+      report_discussion_content_secure: {
+        Args: { p_content_type: string; p_content_id: string; p_reason: string; p_details?: string | null }
+        Returns: string
+      }
+      moderate_discussion_content_secure: {
+        Args: { p_content_type: string; p_content_id: string; p_action: string; p_reason: string }
+        Returns: boolean
+      }
+      list_discussion_reports_secure: {
+        Args: Record<string, never>
+        Returns: { id: string; content_type: "thread" | "reply"; content_id: string; thread_id: string; reason: string; details: string | null; status: "open" | "reviewed" | "dismissed"; created_at: string }[]
+      }
+      review_discussion_report_secure: {
+        Args: { p_report_id: string; p_status: string; p_reason: string }
+        Returns: boolean
+      }
+      resolve_discussion_author_identity_secure: {
+        Args: { p_content_type: string; p_content_id: string; p_reason: string }
+        Returns: { profile_id: string; name: string; staff_no: string; email: string }[]
+      }
+      check_is_discussion_moderator_secure: {
+        Args: Record<string, never>
+        Returns: boolean
+      }
+      check_discussion_ownership_secure: {
+        Args: { p_content_type: string; p_content_id: string }
+        Returns: boolean
+      }
+      get_my_discussion_authored_ids_secure: {
+        Args: { p_thread_id: string }
+        Returns: { content_type: string; content_id: string }[]
+      }
       archive_all_pending: { Args: { p_reason?: string }; Returns: number }
       my_aoc_id: { Args: Record<string, never>; Returns: string }
       has_active_role_for_aoc: { Args: { p_role_code: string; p_aoc_id: string }; Returns: boolean }

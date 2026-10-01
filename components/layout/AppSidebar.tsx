@@ -281,7 +281,14 @@ export function AppSidebar({
     }
 
     // COMMUNICATION
-    const commsItems: NavItem[] = [];
+    const commsItems: NavItem[] = [
+      {
+        href: "/avsec/discussions",
+        label: "Discussion Board",
+        icon: MessageSquare,
+        match: ["/avsec/discussions"],
+      },
+    ];
     if (isOrgWide) {
       commsItems.push({
         href: "/avsec/management/announcements",
@@ -292,6 +299,12 @@ export function AppSidebar({
         href: "/avsec/management/feedback",
         label: "Staff Feedback Inbox",
         icon: MessageSquare,
+      });
+      commsItems.push({
+        href: "/avsec/discussions/moderation",
+        label: "Discussion Moderation",
+        icon: Shield,
+        match: ["/avsec/discussions/moderation"],
       });
     } else {
       commsItems.push({
