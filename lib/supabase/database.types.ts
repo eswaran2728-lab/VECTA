@@ -4935,6 +4935,163 @@ export type Database = {
       }
     }
     Functions: {
+      get_visible_announcements_secure: {
+        Args: {
+          p_scope?: string | null
+          p_category?: string | null
+          p_include_archived?: boolean
+        }
+        Returns: {
+          id: string
+          title: string
+          body: string
+          scope: "global" | "aoc" | "entity" | "department" | "station"
+          aoc_id: string | null
+          aoc_code: string | null
+          category: "safety" | "security" | "operational" | "policy" | "system" | "general"
+          priority: "normal" | "important" | "urgent"
+          status: "draft" | "scheduled" | "published" | "archived"
+          is_pinned: boolean
+          requires_acknowledgement: boolean
+          acknowledged: boolean
+          acknowledged_at: string | null
+          attachment_count: number
+          published_at: string
+          expires_at: string | null
+          created_at: string
+        }[]
+      }
+      get_announcement_detail_secure: {
+        Args: {
+          p_announcement_id: string
+        }
+        Returns: {
+          id: string
+          title: string
+          body: string
+          scope: "global" | "aoc" | "entity" | "department" | "station"
+          aoc_id: string | null
+          aoc_code: string | null
+          category: "safety" | "security" | "operational" | "policy" | "system" | "general"
+          priority: "normal" | "important" | "urgent"
+          status: "draft" | "scheduled" | "published" | "archived"
+          is_pinned: boolean
+          requires_acknowledgement: boolean
+          acknowledged: boolean
+          acknowledged_at: string | null
+          attachment_count: number
+          published_at: string
+          expires_at: string | null
+          created_at: string
+          operating_entity_id: string | null
+          department_id: string | null
+          station_id: string | null
+          author_id: string
+          author_name: string
+          can_manage: boolean
+        }[]
+      }
+      create_announcement_secure: {
+        Args: {
+          p_title: string
+          p_body: string
+          p_scope?: string
+          p_aoc_id?: string | null
+          p_operating_entity_id?: string | null
+          p_department_id?: string | null
+          p_station_id?: string | null
+          p_category?: string
+          p_priority?: string
+          p_status?: string
+          p_published_at?: string | null
+          p_expires_at?: string | null
+          p_requires_acknowledgement?: boolean
+          p_is_pinned?: boolean
+        }
+        Returns: string
+      }
+      update_announcement_secure: {
+        Args: {
+          p_announcement_id: string
+          p_title: string
+          p_body: string
+          p_category: string
+          p_priority: string
+        }
+        Returns: boolean
+      }
+      publish_announcement_secure: {
+        Args: {
+          p_announcement_id: string
+          p_published_at?: string | null
+        }
+        Returns: boolean
+      }
+      archive_announcement_secure: {
+        Args: {
+          p_announcement_id: string
+          p_reason?: string
+        }
+        Returns: boolean
+      }
+      acknowledge_announcement_secure: {
+        Args: {
+          p_announcement_id: string
+        }
+        Returns: boolean
+      }
+      get_announcement_acknowledgement_report_secure: {
+        Args: {
+          p_announcement_id: string
+        }
+        Returns: Json
+      }
+      list_manageable_announcements_secure: {
+        Args: Record<string, never>
+        Returns: {
+          id: string
+          title: string
+          body: string
+          scope: "global" | "aoc" | "entity" | "department" | "station"
+          aoc_id: string | null
+          aoc_code: string | null
+          category: "safety" | "security" | "operational" | "policy" | "system" | "general"
+          priority: "normal" | "important" | "urgent"
+          status: "draft" | "scheduled" | "published" | "archived"
+          is_pinned: boolean
+          requires_acknowledgement: boolean
+          acknowledged: boolean
+          acknowledged_at: string | null
+          attachment_count: number
+          published_at: string
+          expires_at: string | null
+          created_at: string
+        }[]
+      }
+      add_announcement_attachment_secure: {
+        Args: {
+          p_announcement_id: string
+          p_file_name: string
+          p_file_url: string
+          p_file_type?: string
+          p_file_size_bytes?: number
+        }
+        Returns: string
+      }
+      get_announcement_attachments_secure: {
+        Args: {
+          p_announcement_id: string
+        }
+        Returns: {
+          id: string
+          announcement_id: string
+          file_name: string
+          file_url: string
+          file_type: string
+          file_size_bytes: number
+          created_at: string
+        }[]
+      }
       list_discussion_categories_secure: {
         Args: Record<string, never>
         Returns: { id: string; code: string; display_name: string; description: string; aoc_id: string | null; sort_order: number }[]

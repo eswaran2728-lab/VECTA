@@ -4,11 +4,114 @@ import type {
   AnnouncementTargetRow,
   AnnouncementWithStatus,
   ManagementAnnouncementView,
+  AnnouncementItem,
+  AnnouncementDetail,
+  AnnouncementAttachment,
+  AnnouncementAcknowledgementReport,
+  AnnouncementScope,
+  AnnouncementCategory,
   Profile,
 } from "@/lib/avsec/types";
 
 /**
+ * Phase 11: Fetch all visible announcements for the authenticated caller via secure RPC.
+ * Respects strict multi-AOC isolation, global announcements, scheduling, and expiry.
+ */
+export async function getVisibleAnnouncements(
+  scope?: AnnouncementScope | null,
+  category?: AnnouncementCategory | null,
+  includeArchived: boolean = false
+): Promise<AnnouncementItem[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_visible_announcements_secure", {
+    p_scope: scope || null,
+    p_category: category || null,
+    p_include_archived: includeArchived,
+  });
+
+  if (error) {
+    console.error("Error fetching visible announcements:", error.message);
+    return [];
+  }
+
+  return ((data as unknown) as AnnouncementItem[]) || [];
+}
+
+/**
+ * Phase 11: Fetch detailed information for a single announcement via secure RPC.
+ * Raises not found if announcement is not visible to caller.
+ */
+export async function getAnnouncementDetail(
+  announcementId: string
+): Promise<AnnouncementDetail | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_announcement_detail_secure", {
+    p_announcement_id: announcementId,
+  });
+
+  if (error || !data || !Array.isArray(data) || data.length === 0) {
+    return null;
+  }
+
+  return ((data[0] as unknown) as AnnouncementDetail) || null;
+}
+
+/**
+ * Phase 11: Fetch metadata for attachments on a visible announcement.
+ */
+export async function getAnnouncementAttachments(
+  announcementId: string
+): Promise<AnnouncementAttachment[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_announcement_attachments_secure", {
+    p_announcement_id: announcementId,
+  });
+
+  if (error) {
+    console.error("Error fetching announcement attachments:", error.message);
+    return [];
+  }
+
+  return ((data as unknown) as AnnouncementAttachment[]) || [];
+}
+
+/**
+ * Phase 11: Fetch acknowledgement report for an announcement (author or authorized manager).
+ */
+export async function getAnnouncementReport(
+  announcementId: string
+): Promise<AnnouncementAcknowledgementReport | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_announcement_acknowledgement_report_secure", {
+    p_announcement_id: announcementId,
+  });
+
+  if (error || !data) {
+    console.error("Error fetching acknowledgement report:", error?.message);
+    return null;
+  }
+
+  return (data as unknown) as AnnouncementAcknowledgementReport;
+}
+
+/**
+ * Phase 11: List drafts, scheduled, and published announcements manageable by current user.
+ */
+export async function listManageableAnnouncements(): Promise<AnnouncementItem[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("list_manageable_announcements_secure");
+
+  if (error) {
+    console.error("Error listing manageable announcements:", error.message);
+    return [];
+  }
+
+  return ((data as unknown) as AnnouncementItem[]) || [];
+}
+
+/**
  * Fetch announcements targeting the given profile, with acknowledgement status.
+ * Backwards compatible: uses get_visible_announcements_secure first, falls back gracefully.
  */
 export async function getActiveAnnouncementsForUser(
   profile: {
@@ -21,7 +124,33 @@ export async function getActiveAnnouncementsForUser(
 ): Promise<AnnouncementWithStatus[]> {
   const supabase = await createClient();
 
-  // Fetch all announcements with their target specifications
+  // Try the Phase 11 secure RPC first
+  try {
+    const { data: rpcItems, error: rpcError } = await supabase.rpc(
+      "get_visible_announcements_secure",
+      { p_scope: null, p_category: null, p_include_archived: false }
+    );
+
+    if (!rpcError && rpcItems && Array.isArray(rpcItems) && rpcItems.length > 0) {
+      return ((rpcItems as unknown) as AnnouncementItem[]).map((item) => ({
+        id: item.id,
+        org_id: null,
+        created_by: "",
+        title: item.title,
+        body: item.body,
+        photo_url: null,
+        is_pop: item.priority === "urgent",
+        created_at: item.created_at,
+        targets: [],
+        acknowledged: item.acknowledged,
+        acknowledged_at: item.acknowledged_at,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to table query for announcements:", err);
+  }
+
+  // Fallback to table query for legacy schemas/tests
   const { data: announcements } = await supabase
     .from("announcements")
     .select("*")
@@ -53,14 +182,17 @@ export async function getActiveAnnouncementsForUser(
   });
 
   const normalizedRole = profile.role?.toUpperCase();
-  const isManagement = normalizedRole === "MANAGEMENT" || normalizedRole === "ADMIN" || normalizedRole === "SUPER_ADMIN" || profile.role === "management" || profile.role === "admin";
+  const isManagement =
+    normalizedRole === "MANAGEMENT" ||
+    normalizedRole === "ADMIN" ||
+    normalizedRole === "SUPER_ADMIN" ||
+    profile.role === "management" ||
+    profile.role === "admin";
 
-  // Filter announcements targeting this user
   const matching: AnnouncementWithStatus[] = [];
 
   for (const a of announcements as AnnouncementRow[]) {
     const tList = targetMap.get(a.id) || [];
-    // If no explicit targets or user is management, they can see it
     let matches = isManagement;
 
     if (!matches) {
@@ -121,14 +253,17 @@ export async function getManagementAnnouncements(): Promise<ManagementAnnounceme
     targetMap.set(t.announcement_id, list);
   });
 
-  const ackMap = new Map<string, Array<{
-    user_id: string;
-    name: string;
-    role: string;
-    station: string | null;
-    team: string | null;
-    acknowledged_at: string;
-  }>>();
+  const ackMap = new Map<
+    string,
+    Array<{
+      user_id: string;
+      name: string;
+      role: string;
+      station: string | null;
+      team: string | null;
+      acknowledged_at: string;
+    }>
+  >();
 
   (acks ?? []).forEach((a: Record<string, unknown>) => {
     const annId = String(a.announcement_id);
@@ -152,7 +287,6 @@ export async function getManagementAnnouncements(): Promise<ManagementAnnounceme
     const acked = ackMap.get(a.id) || [];
     const ackedUserIds = new Set(acked.map((x) => x.user_id));
 
-    // Calculate targeted audience from profiles
     const targetedUsers = allProfiles.filter((p) => {
       if (tList.length === 0) return true;
       return tList.some((t) => {

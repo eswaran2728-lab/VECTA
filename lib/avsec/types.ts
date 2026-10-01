@@ -428,6 +428,78 @@ export interface ManagementAnnouncementView extends AnnouncementRow {
   }[];
 }
 
+// Phase 11: Global & Malaysia AOC Announcements types
+export type AnnouncementScope = "global" | "aoc" | "entity" | "department" | "station";
+export type AnnouncementCategory = "safety" | "security" | "operational" | "policy" | "system" | "general";
+export type AnnouncementPriority = "normal" | "important" | "urgent";
+export type AnnouncementStatus = "draft" | "scheduled" | "published" | "archived";
+
+export interface AnnouncementItem {
+  id: string;
+  title: string;
+  body: string;
+  scope: AnnouncementScope;
+  aoc_id: string | null;
+  aoc_code: string | null;
+  category: AnnouncementCategory;
+  priority: AnnouncementPriority;
+  status: AnnouncementStatus;
+  is_pinned: boolean;
+  requires_acknowledgement: boolean;
+  acknowledged: boolean;
+  acknowledged_at: string | null;
+  attachment_count: number;
+  published_at: string;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export interface AnnouncementDetail extends AnnouncementItem {
+  operating_entity_id: string | null;
+  department_id: string | null;
+  station_id: string | null;
+  author_id: string;
+  author_name: string;
+  can_manage: boolean;
+}
+
+export interface AnnouncementAttachment {
+  id: string;
+  announcement_id: string;
+  file_name: string;
+  file_url: string;
+  file_type: string;
+  file_size_bytes: number;
+  created_at: string;
+}
+
+export interface AnnouncementAcknowledgementReport {
+  announcement_id: string;
+  title: string;
+  scope: AnnouncementScope;
+  aoc_code: string | null;
+  requires_acknowledgement: boolean;
+  total_eligible: number;
+  total_acknowledged: number;
+  pending_count: number;
+  compliance_percentage: number;
+  acknowledged_staff: Array<{
+    profile_id: string;
+    name: string;
+    staff_no: string;
+    department: string | null;
+    station: string | null;
+    acknowledged_at: string;
+  }>;
+  pending_staff: Array<{
+    profile_id: string;
+    name: string;
+    staff_no: string;
+    department: string | null;
+    station: string | null;
+  }>;
+}
+
 // W.O.I.S AI Types
 export type WoisConfidenceTag =
   | "VERIFIED"
