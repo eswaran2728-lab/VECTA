@@ -5552,6 +5552,17 @@ export type Database = {
         }[]
       }
       is_wois_eligible_secure: { Args: Record<PropertyKey, never>; Returns: boolean }
+      view_legacy_role_mapping_report_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          profile_id: string
+          legacy_role: string
+          profile_status: string
+          has_replacement_assignment: boolean
+          active_replacement_role_codes: string[]
+        }[]
+      }
+      view_release_readiness_report_secure: { Args: Record<PropertyKey, never>; Returns: Json }
       record_wois_audit_event_secure: {
         Args: { p_event_type: string; p_conversation_id?: string | null; p_details?: Json }
         Returns: string
