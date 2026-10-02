@@ -276,7 +276,16 @@ alter table public.profiles
 -- which profiles.ops_group only partially implies (operation_avsec /
 -- ifc_avsec / hub_avsec are Operation-department signals, not unit
 -- assignments) -- deferred to Phase 3's role/assignment system rather
--- than guessed here.
+-- Migration-only trigger bypass for deterministic legacy KUL profile backfill:
+-- The legacy profiles_enforce_self_update trigger checks auth.uid() = id, which
+-- is NULL during migration execution by the database superuser (postgres), causing
+-- the backfill to fail with 'Not authorized to modify this profile.'
+-- We narrowly disable only profiles_enforce_self_update for this controlled DDL
+-- backfill block and re-enable it immediately afterward in the same transaction.
+-- This introduces no permanent bypass into enforce_profile_self_update() and
+-- leaves all other triggers, constraints, and runtime protections intact.
+alter table public.profiles disable trigger profiles_enforce_self_update;
+
 update public.profiles p
 set
   aoc_id = my.id,
@@ -304,6 +313,9 @@ join public.org_stations s on s.code = 'KUL - AAX'
 where my.code = 'MY'
   and p.station = 'KUL - AAX'
   and p.aoc_id is null;
+
+-- Re-enable the profile self-update enforcement trigger immediately after backfill.
+alter table public.profiles enable trigger profiles_enforce_self_update;
 
 -- =======================================================================
 -- PART G: read-only backfill-coverage verification views

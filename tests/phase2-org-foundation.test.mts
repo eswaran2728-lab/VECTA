@@ -204,3 +204,48 @@ test("ROLLBACK: every one of the seven profiles FK constraints has an explicit d
     assert.match(text, new RegExp(`drop column if exists ${col}`));
   }
 });
+
+// --- Option A: Trigger bypass safety and exact ordering ---
+
+test("TRIGGER SAFETY: only profiles_enforce_self_update is disabled, never ALL triggers", () => {
+  assert.match(code, /alter table public\.profiles disable trigger profiles_enforce_self_update;/);
+  assert.doesNotMatch(code, /disable trigger all/i);
+  const disableMatches = code.match(/disable trigger\s+([a-zA-Z0-9_]+)/gi) ?? [];
+  assert.equal(disableMatches.length, 1, "expected exactly one trigger disable statement");
+  assert.match(disableMatches[0], /disable trigger profiles_enforce_self_update/i);
+});
+
+test("TRIGGER SAFETY: profiles_enforce_self_update is re-enabled immediately after the backfill", () => {
+  assert.match(code, /alter table public\.profiles enable trigger profiles_enforce_self_update;/);
+  const enableMatches = code.match(/enable trigger\s+([a-zA-Z0-9_]+)/gi) ?? [];
+  assert.equal(enableMatches.length, 1, "expected exactly one trigger enable statement");
+  assert.match(enableMatches[0], /enable trigger profiles_enforce_self_update/i);
+});
+
+test("TRIGGER SAFETY: exact ordering: disable trigger -> KUL-MAA update -> KUL-AAX update -> enable trigger", () => {
+  const disableIdx = code.indexOf("alter table public.profiles disable trigger profiles_enforce_self_update;");
+  const updateMaaIdx = code.indexOf("and p.station = 'KUL - MAA'");
+  const updateAaxIdx = code.indexOf("and p.station = 'KUL - AAX'");
+  const enableIdx = code.indexOf("alter table public.profiles enable trigger profiles_enforce_self_update;");
+
+  assert.ok(disableIdx > -1, "must find disable trigger statement");
+  assert.ok(updateMaaIdx > -1, "must find KUL - MAA update");
+  assert.ok(updateAaxIdx > -1, "must find KUL - AAX update");
+  assert.ok(enableIdx > -1, "must find enable trigger statement");
+
+  assert.ok(disableIdx < updateMaaIdx, "disable trigger must precede KUL - MAA update");
+  assert.ok(updateMaaIdx < updateAaxIdx, "KUL - MAA update must precede KUL - AAX update");
+  assert.ok(updateAaxIdx < enableIdx, "KUL - AAX update must precede enable trigger");
+});
+
+test("TRIGGER SAFETY: no permanent authorization bypass is added to enforce_profile_self_update()", () => {
+  assert.doesNotMatch(code, /create (or replace )?function public\.enforce_profile_self_update/i);
+  assert.doesNotMatch(code, /auth\.role\(\)\s*=\s*'service_role'/i);
+  assert.doesNotMatch(code, /current_user\s+in\s*\(/i);
+});
+
+test("TRANSACTIONAL INTEGRITY: migration contains no non-transactional statements", () => {
+  assert.doesNotMatch(code, /create index concurrently/i);
+  assert.doesNotMatch(code, /drop index concurrently/i);
+  assert.doesNotMatch(code, /\bvacuum\b/i);
+});

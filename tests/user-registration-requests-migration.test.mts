@@ -124,6 +124,8 @@ test("MIGRATION: Phase 2-3 applied state creates assignment FK and enforces self
         status text not null default 'approved',
         created_at timestamptz default now()
       );
+      create or replace function public.enforce_profile_self_update() returns trigger language plpgsql as $$ begin return new; end; $$;
+      create trigger profiles_enforce_self_update before update on public.profiles for each row execute function public.enforce_profile_self_update();
       create table if not exists public.users (id uuid primary key default gen_random_uuid());
     `);
 
