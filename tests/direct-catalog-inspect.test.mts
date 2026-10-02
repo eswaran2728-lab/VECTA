@@ -41,7 +41,7 @@ test("direct catalog inspector: rejects unapproved project reference", () => {
     }
   );
 
-  assert.ok(result.stdout.includes("Notice: Target host 'db.randomproject12345.supabase.co' does not contain approved staging ref 'ddlctzbnqewubltcavkh'"));
+  assert.ok(result.stdout.includes("Notice: Target connection does not match approved staging ref 'ddlctzbnqewubltcavkh' or localhost."));
   assert.ok(result.stdout.includes("OPERATOR CONFIGURATION INSTRUCTIONS"));
 });
 
@@ -52,9 +52,9 @@ test("direct catalog inspector: executes all 11 catalog inspection queries again
     CREATE SCHEMA IF NOT EXISTS supabase_migrations;
     CREATE TABLE supabase_migrations.schema_migrations (
       version text primary key,
-      inserted_at timestamp with time zone default clock_timestamp()
+      name text
     );
-    INSERT INTO supabase_migrations.schema_migrations (version) VALUES ('20240101000000');
+    INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('20240101000000', 'test_migration');
 
     CREATE SCHEMA IF NOT EXISTS storage;
     CREATE TABLE storage.buckets (

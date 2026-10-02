@@ -52,12 +52,16 @@ function validateAndSanitizeUrl(rawUrl) {
   try {
     const parsed = new URL(rawUrl);
     const host = parsed.hostname;
-    const isApprovedHost = host.includes(APPROVED_STAGING_REF) || host === "localhost" || host === "127.0.0.1";
+    const isLocal = host === "localhost" || host === "127.0.0.1";
+    const isDirectStaging = host === `db.${APPROVED_STAGING_REF}.supabase.co`;
+    const isApprovedPooler = host.endsWith(".pooler.supabase.com")
+      && parsed.username === `postgres.${APPROVED_STAGING_REF}`;
+    const isApprovedHost = isLocal || isDirectStaging || isApprovedPooler;
 
     if (!isApprovedHost) {
       return {
         valid: false,
-        reason: `Target host '${host}' does not contain approved staging ref '${APPROVED_STAGING_REF}' and is not localhost.`
+        reason: `Target connection does not match approved staging ref '${APPROVED_STAGING_REF}' or localhost.`
       };
     }
 
@@ -77,13 +81,13 @@ export async function runDirectCatalogInspection(dbClient) {
   console.log("\n--- 1. supabase_migrations.schema_migrations ---");
   try {
     const { rows } = await dbClient.query(`
-      SELECT version, inserted_at 
+      SELECT version, name
       FROM supabase_migrations.schema_migrations 
       ORDER BY version ASC;
     `);
     console.log(`  Total applied migrations: ${rows.length}`);
     for (const r of rows) {
-      console.log(`    ${r.version} (applied: ${r.inserted_at ?? "unknown"})`);
+      console.log(`    ${r.version} (${r.name ?? "unnamed"})`);
     }
   } catch (err) {
     console.log(`  Notice / Not Available: ${err.message}`);
@@ -289,7 +293,7 @@ async function main() {
     console.log("\nOPERATOR CONFIGURATION INSTRUCTIONS:");
     console.log("To run direct catalog inspection without revealing credentials:");
     console.log("1. Add the staging-only Postgres connection string to your local .env.local:");
-    console.log("   STAGING_DATABASE_URL=\"postgres://postgres.[ddlctzbnqewubltcavkh]:[PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres\"");
+    console.log("   Copy the Session pooler URI from the staging project's Connect dialog (port 5432). Replace its password placeholder locally.");
     console.log("2. Or use Supabase CLI local link / proxy:");
     console.log("   supabase link --project-ref ddlctzbnqewubltcavkh");
     console.log("3. Never commit .env.local (it is ignored by .gitignore).");
