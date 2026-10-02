@@ -42,3 +42,13 @@ android/.gradle/
 android/build/
 *.apk
 *.aab
+
+# Staging test-account provisioning (scripts/staging/) -- credentials and
+# recovery manifests must never be committed, regardless of where the
+# operator points --credentials-file/--manifest-file. These patterns are
+# defense in depth; the scripts themselves default to writing OUTSIDE this
+# repository entirely.
+*.staging-credentials.json
+*.staging-manifest.json
+staging-credentials*.json
+staging-manifest*.json
