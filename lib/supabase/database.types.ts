@@ -5068,10 +5068,10 @@ export type Database = {
       add_announcement_attachment_secure: {
         Args: {
           p_announcement_id: string
+          p_storage_path: string
           p_file_name: string
-          p_file_url: string
-          p_file_type?: string
-          p_file_size_bytes?: number
+          p_file_size: number
+          p_content_type: string
         }
         Returns: string
       }
@@ -5081,13 +5081,20 @@ export type Database = {
         }
         Returns: {
           id: string
-          announcement_id: string
           file_name: string
-          file_url: string
-          file_type: string
-          file_size_bytes: number
+          file_size: number
+          content_type: string
+          storage_path: string
           created_at: string
         }[]
+      }
+      get_announcement_attachment_download_secure: {
+        Args: { p_attachment_id: string }
+        Returns: { storage_path: string; file_name: string; content_type: string }[]
+      }
+      remove_announcement_attachment_secure: {
+        Args: { p_attachment_id: string }
+        Returns: string
       }
       list_discussion_categories_secure: {
         Args: Record<string, never>
@@ -5262,7 +5269,33 @@ export type Database = {
       }
       authorize_caterlink_pdf_secure: {
         Args: { p_transaction_id: string }
-        Returns: { authorized: boolean; transaction_number: string; pdf_storage_path: string }[]
+        Returns: { authorized: boolean; transaction_number: string; pdf_storage_path: string | null }[]
+      }
+      can_download_caterlink_pdf: { Args: { p_transaction_id: string }; Returns: boolean }
+      record_caterlink_transaction_pdf_secure: {
+        Args: {
+          p_transaction_id: string
+          p_storage_path: string
+          p_content_hash: string
+          p_size_bytes: number
+          p_mime_type: string
+        }
+        Returns: { id: string; version: number; is_new: boolean }[]
+      }
+      get_caterlink_transaction_pdf_secure: {
+        Args: { p_transaction_id: string }
+        Returns: { storage_path: string; version: number; size_bytes: number; generated_at: string }[]
+      }
+      list_entity_registration_requests_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          profile_id: string
+          requested_role_code: string | null
+          status: string
+          submitted_at: string
+          operating_entity_code: string
+        }[]
       }
       export_caterlink_data_secure: {
         Args: { p_target_aoc_id?: string | null }
@@ -5362,6 +5395,7 @@ export type Database = {
       }
       is_active_supervisor: { Args: never; Returns: boolean }
       is_entity_admin: { Args: { p_entity_code: string }; Returns: boolean }
+      resolve_operating_entity_id_secure: { Args: { p_code: string }; Returns: string | null }
       validate_org_hierarchy: {
         Args: {
           p_aoc_id: string | null

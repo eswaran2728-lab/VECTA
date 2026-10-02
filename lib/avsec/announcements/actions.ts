@@ -203,38 +203,16 @@ export async function acknowledgeAnnouncement(
 }
 
 /**
- * Phase 11: Attach metadata for an uploaded document or image.
+ * Phase 13 correction: the previous addAnnouncementAttachmentSecure()
+ * called add_announcement_attachment_secure with parameter names
+ * (p_file_url/p_file_type/p_file_size_bytes) that never matched that
+ * RPC's real signature (p_storage_path/p_content_type/p_file_size) --
+ * confirmed never actually invoked anywhere (the UI used inline base64
+ * instead). See lib/avsec/announcements/attachments.ts for the real,
+ * Storage-backed replacement (upload/download/remove), which calls the
+ * RPC with its correct parameter names and does a real upload through
+ * lib/storage/adapter.ts.
  */
-export async function addAnnouncementAttachmentSecure({
-  announcementId,
-  fileName,
-  fileUrl,
-  fileType = "application/octet-stream",
-  fileSizeBytes = 0,
-}: {
-  announcementId: string;
-  fileName: string;
-  fileUrl: string;
-  fileType?: string;
-  fileSizeBytes?: number;
-}): Promise<{ ok: boolean; error?: string }> {
-  const supabase = await createClient();
-
-  const { error } = await supabase.rpc("add_announcement_attachment_secure", {
-    p_announcement_id: announcementId,
-    p_file_name: fileName,
-    p_file_url: fileUrl,
-    p_file_type: fileType,
-    p_file_size_bytes: fileSizeBytes,
-  });
-
-  if (error) {
-    return { ok: false, error: error.message };
-  }
-
-  revalidatePath("/avsec/management/announcements");
-  return { ok: true };
-}
 
 /**
  * Phase 11: Fetch acknowledgement report for an announcement (author or authorized manager).
@@ -296,21 +274,26 @@ export async function createAnnouncement({
       requiresAcknowledgement: Boolean(isPop),
     });
     if (res.ok) {
-      if (photoUrl && res.announcementId) {
-        await addAnnouncementAttachmentSecure({
-          announcementId: res.announcementId,
-          fileName: "attachment.jpg",
-          fileUrl: photoUrl,
-          fileType: "image/jpeg",
-        });
-      }
+      // Phase 13 correction: this used to call the broken
+      // addAnnouncementAttachmentSecure() (wrong RPC parameter names --
+      // confirmed never actually invoked by anything, since this whole
+      // `createAnnouncement` function has zero callers anywhere in the
+      // app). A real photo/file attachment now goes through
+      // uploadAnnouncementAttachment() (lib/avsec/announcements/attachments.ts),
+      // which needs an actual File, not a caller-supplied URL string --
+      // callers of THIS function must upload separately after creation
+      // succeeds, the same two-step pattern every other attachment
+      // workflow in this phase uses.
       return res;
     }
   } catch (err) {
     console.warn("RPC create announcement fallback to direct table insert:", err);
   }
 
-  // Fallback to table insert for legacy tests/flows
+  // Fallback to table insert for legacy tests/flows. photo_url is
+  // intentionally never populated from a caller-supplied string here --
+  // see the comment above; base64/remote-URL persistence into this
+  // column is exactly what Phase 13 removed.
   const supabase = await createClient();
 
   const { data: announcement, error: annError } = await supabase
@@ -319,7 +302,7 @@ export async function createAnnouncement({
       created_by: profile.id,
       title: trimmedTitle,
       body: trimmedBody,
-      photo_url: photoUrl?.trim() || null,
+      photo_url: null,
       is_pop: Boolean(isPop),
     })
     .select("id")

@@ -8,6 +8,7 @@ import {
   publishAnnouncementSecure,
   fetchAnnouncementReport,
 } from "@/lib/avsec/announcements/actions";
+import { uploadAnnouncementAttachment } from "@/lib/avsec/announcements/attachments";
 import { compressImage } from "@/lib/avsec/image-compression";
 import type {
   ManagementAnnouncementView,
@@ -61,7 +62,14 @@ export function ManagementAnnouncementsView({
   const [scheduledAt, setScheduledAt] = useState("");
   const [requiresAck, setRequiresAck] = useState(true);
   const [isPinned, setIsPinned] = useState(false);
-  const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
+  // Phase 13 correction: the photo is held as a real File plus a local,
+  // never-persisted preview URL (URL.createObjectURL) -- never a base64
+  // data URL written anywhere. The file itself is only uploaded, through
+  // the real private-Storage workflow, AFTER the announcement is created
+  // (announcement_attachments.announcement_id is a required FK, so
+  // upload cannot happen before an id exists).
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -82,22 +90,24 @@ export function ManagementAnnouncementsView({
         quality: 0.8,
         format: "image/webp",
       });
-
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoDataUrl(reader.result as string);
-        setIsCompressingPhoto(false);
-      };
-      reader.readAsDataURL(compressedBlob);
+      const compressedFile = new File([compressedBlob], file.name.replace(/\.[^.]+$/, "") + ".webp", {
+        type: "image/webp",
+      });
+      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+      setPhotoFile(compressedFile);
+      setPhotoPreviewUrl(URL.createObjectURL(compressedFile));
     } catch (err) {
       console.error("Photo compression error:", err);
       alert("Failed to process image. Please try another image.");
+    } finally {
       setIsCompressingPhoto(false);
     }
   };
 
   const handleRemovePhoto = () => {
-    setPhotoDataUrl(null);
+    if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+    setPhotoFile(null);
+    setPhotoPreviewUrl(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -121,13 +131,26 @@ export function ManagementAnnouncementsView({
     });
 
     if (res.ok && res.announcementId) {
+      // Upload the real file, now that the announcement id exists.
+      // Authorization is re-checked server-side inside
+      // add_announcement_attachment_secure (can_user_manage_announcement) --
+      // the same draft-owner/publisher gate Phase 11 already enforces, not
+      // a new check invented here.
+      let uploadFailed = false;
+      if (photoFile) {
+        const attachForm = new FormData();
+        attachForm.set("file", photoFile);
+        const uploadRes = await uploadAnnouncementAttachment(res.announcementId, attachForm);
+        uploadFailed = !uploadRes.ok;
+      }
+
       const newAnn: ManagementAnnouncementView = {
         id: res.announcementId,
         org_id: null,
         created_by: "",
         title: title.trim(),
         body: body.trim(),
-        photo_url: photoDataUrl,
+        photo_url: null,
         is_pop: priority === "urgent",
         created_at: new Date().toISOString(),
         targets: [],
@@ -146,8 +169,11 @@ export function ManagementAnnouncementsView({
       setScheduledAt("");
       setRequiresAck(true);
       setIsPinned(false);
-      setPhotoDataUrl(null);
+      handleRemovePhoto();
       setIsCreating(false);
+      if (uploadFailed) {
+        alert("Announcement created, but the photo upload failed. You can try attaching it again.");
+      }
     } else {
       alert(res.error || "Failed to create announcement. Check role permissions.");
     }
@@ -359,10 +385,10 @@ export function ManagementAnnouncementsView({
             {/* Optional Photo Attachment */}
             <div className="space-y-2">
               <label className="field-label">Optional Photo Attachment</label>
-              {photoDataUrl ? (
+              {photoPreviewUrl ? (
                 <div className="relative inline-block border border-border rounded-xl overflow-hidden bg-background max-w-sm">
                   <img
-                    src={photoDataUrl}
+                    src={photoPreviewUrl}
                     alt="Attachment Preview"
                     className="max-h-48 w-auto object-contain"
                   />

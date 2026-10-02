@@ -17,7 +17,8 @@
     "verify-phase11-announcements": "node verify_phase11_announcements.mjs",
     "verify-phase12-wois-ai": "node verify_phase12_wois_ai.mjs",
     "verify-phase13-integration": "node verify_phase13_integration.mjs",
-    "test": "npm run migrate && npm run harness && npm run verify-export-isolation && npm run verify-phase7-dashboard-aggregates && npm run verify-phase7-entity-and-admin-aggregates && npm run verify-phase8-operational-workflows && npm run verify-phase8-multi-aoc && npm run verify-phase9-caterlink && npm run verify-phase10-discussion-board && npm run verify-phase11-announcements && npm run verify-phase12-wois-ai && npm run verify-phase13-integration",
+    "verify-phase13-storage-admin": "node verify_phase13_storage_and_admin.mjs",
+    "test": "npm run migrate && npm run harness && npm run verify-export-isolation && npm run verify-phase7-dashboard-aggregates && npm run verify-phase7-entity-and-admin-aggregates && npm run verify-phase8-operational-workflows && npm run verify-phase8-multi-aoc && npm run verify-phase9-caterlink && npm run verify-phase10-discussion-board && npm run verify-phase11-announcements && npm run verify-phase12-wois-ai && npm run verify-phase13-integration && npm run verify-phase13-storage-admin",
     "migrate:native": "node migrate.mjs --native",
     "harness:native": "node run_harness.mjs --native",
     "verify-export-isolation:native": "node verify_export_isolation.mjs --native",
@@ -31,6 +32,7 @@
     "verify-phase11-announcements-concurrency:native": "node verify_phase11_announcements_concurrency_native.mjs",
     "verify-phase12-wois-ai:native": "node verify_phase12_wois_ai.mjs --native",
     "verify-phase13-integration:native": "node verify_phase13_integration.mjs --native",
+    "verify-phase13-storage-admin:native": "node verify_phase13_storage_and_admin.mjs --native",
     "verify-phase8-leave-concurrency:native": "node verify_phase8_leave_concurrency_native.mjs",
     "verify-phase8-duty-draw-concurrency:native": "node verify_phase8_duty_draw_concurrency_native.mjs",
     "verify-phase8-concurrency-round2:native": "node verify_phase8_concurrency_round2_native.mjs",
@@ -39,7 +41,7 @@
     "verify-phase9-legacy-collision:native": "node verify_phase9_legacy_collision_non_regression_native.mjs",
     "verify-phase10-discussion-concurrency:native": "node verify_phase10_discussion_concurrency_native.mjs",
     "verify-concurrency:native": "node verify_concurrency_native.mjs",
-    "test:native": "npm run migrate:native && npm run harness:native && npm run verify-export-isolation:native && npm run verify-phase7-dashboard-aggregates:native && npm run verify-phase7-entity-and-admin-aggregates:native && npm run verify-phase8-operational-workflows:native && npm run verify-phase8-multi-aoc:native && npm run verify-phase9-caterlink:native && npm run verify-phase10-discussion-board:native && npm run verify-phase11-announcements:native && npm run verify-phase11-announcements-concurrency:native && npm run verify-phase12-wois-ai:native && npm run verify-phase13-integration:native && npm run verify-phase8-leave-concurrency:native && npm run verify-phase8-duty-draw-concurrency:native && npm run verify-phase8-concurrency-round2:native && npm run verify-phase9-whitelist-concurrency:native && npm run verify-phase9-txn-concurrency:native && npm run verify-phase9-legacy-collision:native && npm run verify-phase10-discussion-concurrency:native && npm run verify-concurrency:native"
+    "test:native": "npm run migrate:native && npm run harness:native && npm run verify-export-isolation:native && npm run verify-phase7-dashboard-aggregates:native && npm run verify-phase7-entity-and-admin-aggregates:native && npm run verify-phase8-operational-workflows:native && npm run verify-phase8-multi-aoc:native && npm run verify-phase9-caterlink:native && npm run verify-phase10-discussion-board:native && npm run verify-phase11-announcements:native && npm run verify-phase11-announcements-concurrency:native && npm run verify-phase12-wois-ai:native && npm run verify-phase13-integration:native && npm run verify-phase13-storage-admin:native && npm run verify-phase8-leave-concurrency:native && npm run verify-phase8-duty-draw-concurrency:native && npm run verify-phase8-concurrency-round2:native && npm run verify-phase9-whitelist-concurrency:native && npm run verify-phase9-txn-concurrency:native && npm run verify-phase9-legacy-collision:native && npm run verify-phase10-discussion-concurrency:native && npm run verify-concurrency:native"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.8",

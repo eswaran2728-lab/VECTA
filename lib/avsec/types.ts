@@ -462,11 +462,15 @@ export interface AnnouncementDetail extends AnnouncementItem {
 
 export interface AnnouncementAttachment {
   id: string;
-  announcement_id: string;
   file_name: string;
-  file_url: string;
-  file_type: string;
-  file_size_bytes: number;
+  file_size: number;
+  content_type: string;
+  /** Internal only (matches get_announcement_attachments_secure's real
+   * columns) -- never render this directly as a link. Resolve a real,
+   * short-lived download URL via getAnnouncementAttachmentDownloadUrl()
+   * (lib/avsec/announcements/attachments.ts), which re-authorizes before
+   * signing. */
+  storage_path: string;
   created_at: string;
 }
 
