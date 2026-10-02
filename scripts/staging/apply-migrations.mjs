@@ -268,6 +268,9 @@ async function main() {
     // 4.1 Check live migration history
     const liveMigs = await client.query("SELECT version, name FROM supabase_migrations.schema_migrations ORDER BY version ASC;");
     logger.log(`Live migrations count: ${liveMigs.rows.length}`);
+    if (liveMigs.rows.length !== 51) {
+      throw new Error(`Expected exactly 51 live migrations before application, found ${liveMigs.rows.length}`);
+    }
 
     const versions = liveMigs.rows.map(r => r.version);
     const liveVersions = new Set(versions);
@@ -276,6 +279,47 @@ async function main() {
     if (hasPrereq !== 1) {
       throw new Error(`Prerequisite migration 20260928000000 expected exactly once, found ${hasPrereq}`);
     }
+
+    // Verify none of the 8 unapplied migrations is present yet
+    const pendingVersions = [
+      "20260929000001",
+      "20260930000001",
+      "20261001000001",
+      "20261005000001",
+      "20261008000001",
+      "20261010000001",
+      "20261015000001",
+      "20261016000001"
+    ];
+    for (const pv of pendingVersions) {
+      if (liveVersions.has(pv)) {
+        throw new Error(`Migration ${pv} is already recorded in history before application!`);
+      }
+    }
+    logger.log(`Confirmed all 8 pending migrations are absent from migration history.`);
+
+    // Verify trigger profiles_enforce_self_update is currently enabled
+    const initialTrig = await client.query(`
+      SELECT tgname, tgenabled FROM pg_trigger
+      WHERE tgname = 'profiles_enforce_self_update' AND tgrelid = 'public.profiles'::regclass;
+    `);
+    if (initialTrig.rows.length === 0 || initialTrig.rows[0].tgenabled !== "O") {
+      throw new Error("Trigger 'profiles_enforce_self_update' is not currently enabled ('O')!");
+    }
+    logger.log("Trigger 'profiles_enforce_self_update' verified enabled before rollout.");
+
+    // Verify Phase 8-13 target objects are currently absent
+    const preObjectsCheck = await client.query(`
+      SELECT c.relname FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relname = ANY(ARRAY[
+        'absence_notices', 'caterlink_station_capabilities', 'discussion_threads', 'phase13_readiness_access_log'
+      ]::text[]);
+    `);
+    if (preObjectsCheck.rows.length > 0) {
+      throw new Error(`Phase 8-13 target objects already present on staging: ${preObjectsCheck.rows.map(r => r.relname).join(", ")}`);
+    }
+    logger.log("Confirmed Phase 8-13 target objects are absent before rollout.");
 
     // 4.2 Verify 16 Auth users and 16 profiles exist before any change
     const authUsersRes = await client.query("SELECT count(*) FROM auth.users;");
