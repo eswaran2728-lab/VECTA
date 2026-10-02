@@ -199,7 +199,9 @@ const PRE_SHIMS = {
   '20260923000003_super_admin_privilege_containment.sql': ICMS_USERS_STUB,
   '20260924000001_pre_upgrade_remediation.sql': ICMS_USERS_STUB + PRE_UPGRADE_ICMS_FN_STUBS,
   '20260928000001_phase2_org_foundation.sql': ICMS_USERS_STUB,
-  '20260928000003_phase4_registration_approval_admin.sql': USER_REGISTRATION_REQUESTS_STUB,
+  // Note: 20260928000003_phase4_registration_approval_admin.sql no longer needs
+  // USER_REGISTRATION_REQUESTS_STUB -- 20260928000000_user_registration_requests.sql
+  // is now a real versioned forward migration applied earlier in the chain.
 };
 // Note: 20260911000001_multi_tenant_scaffolding.sql no longer needs a
 // SUPER_ADMIN pre-shim -- the enum-comparison bug it depended on

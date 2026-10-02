@@ -59,5 +59,7 @@ staging-manifest*.json
 # os.tmpdir(), outside this repository entirely.
 vecta-staging-backups/
 *.staging-backup/
+*.enc.json
+*.enc
 auth-users-inventory.json
 storage-inventory.json

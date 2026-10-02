@@ -403,6 +403,33 @@ $function$;
 revoke execute on function public.list_entity_registration_requests_secure() from public, anon;
 grant execute on function public.list_entity_registration_requests_secure() to authenticated, service_role;
 
+-- Ensure enforce_profiles_org_fields_service_role_only permits updates executed by trusted
+-- SECURITY DEFINER administrative procedures (where current_user is postgres/supabase_admin)
+-- or service_role, while continuing to strictly block direct client updates by authenticated/anon callers.
+create or replace function public.enforce_profiles_org_fields_service_role_only()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if auth.role() = 'service_role' or current_user in ('postgres', 'supabase_admin') then
+    return new;
+  end if;
+  if new.aoc_id is distinct from old.aoc_id
+     or new.operating_entity_id is distinct from old.operating_entity_id
+     or new.department_id is distinct from old.department_id
+     or new.unit_id is distinct from old.unit_id
+     or new.hub_id is distinct from old.hub_id
+     or new.org_station_id is distinct from old.org_station_id
+     or new.org_team_id is distinct from old.org_team_id
+  then
+    raise exception 'profiles.aoc_id/operating_entity_id/department_id/unit_id/hub_id/org_station_id/org_team_id can only be changed by a trusted server-side process, never directly.';
+  end if;
+  return new;
+end;
+$function$;
+
 -- public.operating_entities carries zero grant to `authenticated` at all
 -- (Phase 2: "revoke all on public.operating_entities from public, anon,
 -- authenticated"), so the application layer cannot resolve a code to an
@@ -423,6 +450,153 @@ $function$;
 
 revoke execute on function public.resolve_operating_entity_id_secure(text) from public, anon;
 grant execute on function public.resolve_operating_entity_id_secure(text) to authenticated, service_role;
+
+-- Re-declare approve_registration_request to align assignment operational scope
+-- with Phase 3 scope-shape rules and Phase 4 entity-membership architecture:
+-- operating_entity_id on user_role_assignments is populated ONLY for entity-scoped
+-- roles (maa_boss, maa_admin, aax_boss, aax_admin); all other roles store administrative
+-- affiliation in entity_membership_id while keeping user_role_assignments.operating_entity_id NULL.
+create or replace function public.approve_registration_request(
+  p_request_id uuid,
+  p_role_code text,
+  p_aoc_id uuid,
+  p_operating_entity_id uuid,
+  p_department_id uuid,
+  p_unit_id uuid,
+  p_hub_id uuid,
+  p_station_id uuid,
+  p_team_id uuid,
+  p_ops_group text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_request record;
+  v_entity_code text;
+  v_admin_id uuid := auth.uid();
+  v_assignment_id uuid;
+  v_membership_id uuid;
+  v_old_membership_orphaned boolean;
+  v_old_membership_was_primary boolean;
+begin
+  if p_role_code = any(array[
+    'airasia_management', 'ghod', 'global_reporting_controller', 'super_admin',
+    'maa_boss', 'aax_boss', 'maa_admin', 'aax_admin',
+    'operation_manager', 'main_enforcement', 'compliance', 'caterlink_management'
+  ]) then
+    raise exception 'Protected role % cannot be granted through entity-admin approval; use the Super Admin-controlled path.', p_role_code;
+  end if;
+
+  select * into v_request from public.user_registration_requests where id = p_request_id for update;
+  if v_request is null then
+    raise exception 'Registration request not found.';
+  end if;
+  if v_request.status <> 'pending' then
+    raise exception 'Request has already been reviewed (status=%).', v_request.status;
+  end if;
+  if v_request.profile_id = v_admin_id then
+    raise exception 'Cannot approve your own registration request.';
+  end if;
+
+  select oe.code into v_entity_code from public.operating_entities oe where oe.id = p_operating_entity_id;
+  if v_entity_code is null or not public.is_entity_admin(v_entity_code) then
+    raise exception 'Not an authorized, approved entity Admin for the requested operating entity.';
+  end if;
+
+  v_membership_id := public.get_or_create_active_membership(v_request.profile_id, p_aoc_id, p_operating_entity_id, v_admin_id);
+
+  insert into public.user_role_assignments (
+    profile_id, role_definition_id, aoc_id, operating_entity_id, department_id,
+    unit_id, hub_id, station_id, team_id, granted_by, grant_reason, entity_membership_id
+  )
+  select
+    v_request.profile_id, rd.id, p_aoc_id,
+    case when rd.code in ('maa_boss', 'maa_admin', 'aax_boss', 'aax_admin') then p_operating_entity_id else null end,
+    p_department_id,
+    p_unit_id, p_hub_id, p_station_id, p_team_id, v_admin_id,
+    'Approved from registration request ' || p_request_id::text, v_membership_id
+  from public.role_definitions rd
+  where rd.code = p_role_code
+  returning id into v_assignment_id;
+
+  if v_assignment_id is null then
+    raise exception 'Unknown role code %.', p_role_code;
+  end if;
+
+  update public.user_registration_requests
+  set status = 'approved', reviewer_id = v_admin_id, reviewed_at = now(), final_assignment_id = v_assignment_id
+  where id = p_request_id;
+
+  perform public.apply_compatibility_profile_fields(
+    v_request.profile_id, p_role_code, p_hub_id, p_station_id, p_team_id, p_ops_group, v_admin_id
+  );
+
+  if v_request.transfer_of_assignment_id is not null then
+    update public.user_role_assignments
+    set revoked_at = now()
+    where id = v_request.transfer_of_assignment_id and revoked_at is null;
+
+    if v_request.transfer_of_membership_id is not null then
+      select not exists (
+        select 1 from public.user_role_assignments
+        where entity_membership_id = v_request.transfer_of_membership_id
+          and revoked_at is null
+          and id <> v_request.transfer_of_assignment_id
+      ) into v_old_membership_orphaned;
+
+      if v_old_membership_orphaned then
+        select is_primary into v_old_membership_was_primary
+        from public.user_entity_memberships
+        where id = v_request.transfer_of_membership_id and status = 'active';
+
+        update public.user_entity_memberships
+        set status = 'ended', ends_at = now(), is_primary = false
+        where id = v_request.transfer_of_membership_id and status = 'active';
+
+        if coalesce(v_old_membership_was_primary, false) then
+          update public.user_entity_memberships set is_primary = true where id = v_membership_id;
+        end if;
+      end if;
+    end if;
+
+    perform public.sync_primary_operating_entity(v_request.profile_id);
+
+    insert into public.user_admin_audit_log (actor_id, target_profile_id, action, previous_state, new_state, request_id, assignment_id)
+    values (
+      v_admin_id, v_request.profile_id, 'transfer_accepted',
+      jsonb_build_object('old_assignment_id', v_request.transfer_of_assignment_id),
+      jsonb_build_object('new_assignment_id', v_assignment_id, 'new_membership_id', v_membership_id),
+      p_request_id, v_assignment_id
+    );
+
+    perform public.notify(
+      v_request.profile_id, 'transfer_accepted', 'transfer_accepted:' || p_request_id::text,
+      p_request_id, v_assignment_id, v_membership_id, jsonb_build_object('role_code', p_role_code)
+    );
+  else
+    insert into public.user_admin_audit_log (actor_id, target_profile_id, action, previous_state, new_state, request_id, assignment_id)
+    values (
+      v_admin_id, v_request.profile_id, 'request_approved',
+      jsonb_build_object('status', 'pending'),
+      jsonb_build_object('status', 'approved', 'assignment_id', v_assignment_id, 'membership_id', v_membership_id, 'role_code', p_role_code),
+      p_request_id, v_assignment_id
+    );
+
+    perform public.notify(
+      v_request.profile_id, 'request_approved', 'request_approved:' || p_request_id::text,
+      p_request_id, v_assignment_id, v_membership_id, jsonb_build_object('role_code', p_role_code)
+    );
+  end if;
+
+  return v_assignment_id;
+end;
+$function$;
+
+revoke execute on function public.approve_registration_request(uuid, text, uuid, uuid, uuid, uuid, uuid, uuid, uuid, text) from public, anon;
+grant execute on function public.approve_registration_request(uuid, text, uuid, uuid, uuid, uuid, uuid, uuid, uuid, text) to authenticated, service_role;
 
 -- =====================================================================
 -- 4. Readiness report: add the new booleans this correction requires.

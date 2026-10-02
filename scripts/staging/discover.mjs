@@ -23,7 +23,11 @@
 import { resolveStagingAdminContext, printProjectIdentity } from "./lib/env-guard.mjs";
 
 async function headCount(client, table) {
-  const { count, error } = await client.from(table).select("*", { count: "exact", head: true });
+  // Use GET with limit(0) instead of head: true because @supabase/postgrest-js
+  // converts HTTP 404 responses to HEAD requests with empty bodies into
+  // synthetic { status: 204, count: 0, error: null }, causing absent tables
+  // to be misreported as existing with 0 rows.
+  const { count, error } = await client.from(table).select("*", { count: "exact" }).limit(0);
   if (error) return { exists: false, count: null, error: error.message };
   return { exists: true, count: count ?? 0, error: null };
 }

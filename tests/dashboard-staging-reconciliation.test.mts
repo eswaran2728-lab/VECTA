@@ -16,6 +16,7 @@ const MIGRATIONS_DIR = path.join(REPO_ROOT, "supabase", "migrations");
  */
 
 const EXPECTED_PHASE_ORDER = [
+  "20260928000000_user_registration_requests.sql",
   "20260928000001_phase2_org_foundation.sql",
   "20260928000002_phase3_role_permission_foundation.sql",
   "20260928000003_phase4_registration_approval_admin.sql",

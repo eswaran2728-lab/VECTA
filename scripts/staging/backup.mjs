@@ -13,22 +13,23 @@
 //     (id/email/created_at/role metadata), never a credential a restore
 //     could use to log in as that user without a password reset;
 //   - raw Storage object BYTES at scale without downloading every object
-///    individually (this script DOES download every object it finds,
+//     individually (this script DOES download every object it finds,
 //     since bucket/object counts observed this round are 0 -- see
 //     discover.mjs output -- so this is cheap today; it will not scale
 //     silently if objects are added later without re-checking).
-// Every one of these is stated in the script's own output, not left
-// implicit.
 //
 // Usage:
-//   node --env-file=.env.local scripts/staging/backup.mjs [--out-dir=<path>]
+//   node --env-file=.env.local scripts/staging/backup.mjs [--out-dir=<path>] [--passphrase=<secret>]
+//   (Passphrase can also be provided via VECTA_BACKUP_PASSPHRASE env var)
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { resolveStagingAdminContext, printProjectIdentity } from "./lib/env-guard.mjs";
+import { encryptBackupPayload } from "./lib/backup-crypto.mjs";
 
 const args = process.argv.slice(2);
 const outDirArg = args.find((a) => a.startsWith("--out-dir="))?.split("=")[1];
+const passphrase = process.env.VECTA_BACKUP_PASSPHRASE || args.find((a) => a.startsWith("--passphrase="))?.split("=")[1];
 
 async function main() {
   console.log("=== VECTA staging local backup/export (read-only against the hosted project) ===");
@@ -36,9 +37,8 @@ async function main() {
   printProjectIdentity(ctx);
   const { client } = ctx;
 
-  const outDir = outDirArg || path.join(os.tmpdir(), "vecta-staging-backups", `${ctx.projectRef}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
-  fs.mkdirSync(outDir, { recursive: true, mode: 0o700 });
-  console.log(`\nWriting to (outside the repository, gitignored defensively if ever created inside it): ${outDir}`);
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const targetDir = outDirArg || path.join(os.tmpdir(), "vecta-staging-backups", `${ctx.projectRef}-${timestamp}`);
 
   console.log("\n--- Database DATA export (every row this credential can read) ---");
   const tables = (await (async () => {
@@ -50,18 +50,17 @@ async function main() {
     return Object.keys(spec.paths ?? {}).map((p) => p.replace(/^\//, "")).filter((p) => p && !p.startsWith("rpc/"));
   })());
 
-  const dataDir = path.join(outDir, "data");
-  fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  const dataPayload = {};
   for (const table of tables) {
     const { data, error } = await client.from(table).select("*");
     if (error) {
       console.log(`  ${table}: SKIPPED (${error.message})`);
       continue;
     }
-    fs.writeFileSync(path.join(dataDir, `${table}.json`), JSON.stringify(data, null, 2), { mode: 0o600 });
+    dataPayload[table] = data;
     console.log(`  ${table}: ${data.length} row(s) exported`);
   }
-  console.log(`  NOTE: only the ${tables.length} table(s) exposed via the REST API (public-exposed, grant-dependent) were attempted -- Phase 2-13 tables with zero anon/authenticated grant are NOT included; see discover.mjs for the full existence check.`);
+  console.log(`  NOTE: only the ${tables.length} table(s) exposed via the REST API (public-exposed, grant-dependent) were attempted.`);
 
   console.log("\n--- Database SCHEMA backup ---");
   console.log("  NOT PRODUCED: no direct Postgres connection string or Management API token is configured, so no pg_dump-equivalent DDL text can be generated. The repository's own supabase/migrations/ tree IS the schema source of truth and needs no separate backup here.");
@@ -79,45 +78,88 @@ async function main() {
     if (data.users.length < 200) break;
     page += 1;
   }
-  fs.writeFileSync(path.join(outDir, "auth-users-inventory.json"), JSON.stringify(authInventory, null, 2), { mode: 0o600 });
   console.log(`  ${authInventory.length} user(s) inventoried (no password hash -- Supabase Auth never exposes one via any API).`);
 
   console.log("\n--- Storage bucket/object inventory (+ object bytes, since current volume is small) ---");
   const { data: buckets, error: bucketsError } = await client.storage.listBuckets();
-  const storageDir = path.join(outDir, "storage");
-  fs.mkdirSync(storageDir, { recursive: true, mode: 0o700 });
+  const storageItems = [];
   if (bucketsError) {
     console.log(`  ERROR: ${bucketsError.message}`);
   } else {
-    const inventory = [];
     for (const bucket of buckets ?? []) {
       const { data: objects, error: listError } = await client.storage.from(bucket.name).list(undefined, { limit: 1000 });
       if (listError) {
-        inventory.push({ bucket: bucket.name, error: listError.message });
+        storageItems.push({ bucket: bucket.name, error: listError.message });
         continue;
       }
-      const bucketDir = path.join(storageDir, bucket.name);
-      fs.mkdirSync(bucketDir, { recursive: true, mode: 0o700 });
       for (const obj of objects) {
-        if (!obj.id) continue; // folders have no id
+        if (!obj.id) continue;
         const { data: bytes, error: downloadError } = await client.storage.from(bucket.name).download(obj.name);
         if (downloadError) {
-          inventory.push({ bucket: bucket.name, object: obj.name, error: downloadError.message });
+          storageItems.push({ bucket: bucket.name, object: obj.name, error: downloadError.message });
           continue;
         }
-        fs.writeFileSync(path.join(bucketDir, obj.name.replace(/\//g, "__")), Buffer.from(await bytes.arrayBuffer()), { mode: 0o600 });
-        inventory.push({ bucket: bucket.name, object: obj.name, size: obj.metadata?.size ?? null });
+        const buf = Buffer.from(await bytes.arrayBuffer());
+        storageItems.push({
+          bucket: bucket.name,
+          object: obj.name,
+          size: obj.metadata?.size ?? buf.length,
+          base64Bytes: buf.toString("base64"),
+        });
       }
       console.log(`  ${bucket.name}: ${objects.length} object(s)`);
     }
-    fs.writeFileSync(path.join(outDir, "storage-inventory.json"), JSON.stringify(inventory, null, 2), { mode: 0o600 });
   }
 
   console.log("\n--- Migration history backup ---");
-  console.log("  NOT PRODUCED: supabase_migrations.schema_migrations is outside the `public` schema this credential can read; a direct Postgres connection or the Supabase CLI (`supabase migration list --linked`) is required. The repository's own git history of supabase/migrations/ is the durable record of what SHOULD be applied; it is not a substitute for reading what actually IS applied.");
+  console.log("  NOT PRODUCED: supabase_migrations.schema_migrations is outside the `public` schema this credential can read; a direct Postgres connection or the Supabase CLI (`supabase migration list --linked`) is required.");
 
-  console.log(`\n=== Backup complete at: ${outDir} ===`);
-  console.log("No record was created, modified, or deleted on the hosted project. All writes were local, to the path above.");
+  console.log("\n--- Backup Persistence & Encryption Status ---");
+  if (passphrase) {
+    const backupPayload = {
+      projectRef: ctx.projectRef,
+      exportedAt: new Date().toISOString(),
+      data: dataPayload,
+      authUsers: authInventory,
+      storage: storageItems,
+    };
+
+    const encryptedEnvelope = encryptBackupPayload(backupPayload, passphrase);
+    const encFile = `${targetDir}.enc.json`;
+    const encDir = path.dirname(encFile);
+    fs.mkdirSync(encDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(encFile, JSON.stringify(encryptedEnvelope, null, 2), { mode: 0o600 });
+
+    console.log(`  [ENCRYPTION STATUS] ENCRYPTED AT REST (AES-256-GCM + scrypt KDF).`);
+    console.log(`  Encrypted archive written to: ${encFile}`);
+    console.log("  Passphrase was securely consumed and never printed or committed.");
+  } else {
+    fs.mkdirSync(targetDir, { recursive: true, mode: 0o700 });
+    const dataDir = path.join(targetDir, "data");
+    fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+    for (const table of Object.keys(dataPayload)) {
+      fs.writeFileSync(path.join(dataDir, `${table}.json`), JSON.stringify(dataPayload[table], null, 2), { mode: 0o600 });
+    }
+    fs.writeFileSync(path.join(targetDir, "auth-users-inventory.json"), JSON.stringify(authInventory, null, 2), { mode: 0o600 });
+    const storageDir = path.join(targetDir, "storage");
+    fs.mkdirSync(storageDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(targetDir, "storage-inventory.json"), JSON.stringify(storageItems.map((s) => ({ bucket: s.bucket, object: s.object, size: s.size })), null, 2), { mode: 0o600 });
+    for (const item of storageItems) {
+      if (item.base64Bytes) {
+        const bDir = path.join(storageDir, item.bucket);
+        fs.mkdirSync(bDir, { recursive: true, mode: 0o700 });
+        fs.writeFileSync(path.join(bDir, item.object.replace(/\//g, "__")), Buffer.from(item.base64Bytes, "base64"), { mode: 0o600 });
+      }
+    }
+
+    console.log(`  [ENCRYPTION STATUS] PRIVATE BUT UNENCRYPTED AT REST.`);
+    console.log(`  Notice: Protected by OS filesystem permissions (mode 0700/0600) only.`);
+    console.log(`  Auth emails and user metadata are stored unencrypted in: ${targetDir}`);
+    console.log(`  To encrypt at rest, supply VECTA_BACKUP_PASSPHRASE in the environment or run with --passphrase=<secret>.`);
+  }
+
+  console.log("\n=== Backup complete ===");
+  console.log("No record was created, modified, or deleted on the hosted project. All writes were local.");
 }
 
 main().catch((err) => {
