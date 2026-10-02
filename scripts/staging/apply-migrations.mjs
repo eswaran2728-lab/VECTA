@@ -217,6 +217,20 @@ async function main() {
   }
 
   // 2. Environment & Project Ref Verification
+  if (!process.env.STAGING_DATABASE_URL && fs.existsSync(path.join(repoRoot, ".env.local"))) {
+    const envContent = fs.readFileSync(path.join(repoRoot, ".env.local"), "utf8");
+    for (const line of envContent.split("\n")) {
+      const match = line.trim().match(/^([A-Z0-9_]+)=(.*)$/);
+      if (match && !process.env[match[1]]) {
+        let val = match[2].trim();
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        process.env[match[1]] = val;
+      }
+    }
+  }
+
   const dbUrl = process.env.STAGING_DATABASE_URL;
   if (!dbUrl) {
     throw new Error("STAGING_DATABASE_URL is not set in environment");
