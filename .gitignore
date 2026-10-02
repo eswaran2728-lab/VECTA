@@ -52,3 +52,12 @@ android/build/
 *.staging-manifest.json
 staging-credentials*.json
 staging-manifest*.json
+
+# Staging backups (scripts/staging/backup.mjs) -- real Auth-user
+# inventories and real Storage object bytes, even though volumes are
+# currently tiny. Defense in depth; the script's default output path is
+# os.tmpdir(), outside this repository entirely.
+vecta-staging-backups/
+*.staging-backup/
+auth-users-inventory.json
+storage-inventory.json

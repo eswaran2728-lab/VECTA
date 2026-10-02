@@ -35,12 +35,18 @@ function randomStrongPassword() {
   return crypto.randomBytes(24).toString("base64url");
 }
 
-// Station-role variants, labeled as additional accounts (not reusing any
-// positive account). "stationCode: null" means the role-matrix module's
-// own default for that role.
+// Station-role variants, labeled as ADDITIONAL accounts beyond the base
+// 23 -- deliberately excludes PEN. resolveRoleScope()'s own default
+// station for sso/so/aso (lib/role-matrix.mjs) is already 'PEN', so the
+// base positive-role accounts for sso/so/aso are already PEN-scoped; a
+// separate "pen" variant would be a redundant, not-truly-additional
+// account covering the same station the base accounts already cover
+// (confirmed and corrected during the staging reconciliation round --
+// see docs/dashboard-review/README.md "Corrected account-plan
+// arithmetic"). KUL and JHB remain genuinely additional: the base
+// accounts never resolve to either of those stations for sso/so/aso.
 const STATION_VARIANTS = [
   { label: "kul", stationCode: "KUL - MAA" },
-  { label: "pen", stationCode: "PEN" },
   { label: "jhb", stationCode: "JHB" },
 ];
 
@@ -145,7 +151,7 @@ async function main() {
     for (const role of ALL_ROLE_CODES) {
       console.log(`  - ${role}`);
     }
-    console.log("\nPlanned station-role variants (kul/pen/jhb/no-CaterLink-station):");
+    console.log("\nPlanned station-role variants (kul/jhb/no-CaterLink-station -- PEN excluded, already covered by the base accounts' own default station):");
     for (const v of STATION_VARIANTS) console.log(`  - sso/so/aso @ ${v.label}`);
     console.log("  - sso/so/aso @ a station with no caterlink_station_capabilities row (resolved at run time, --live only)");
     console.log("\nPlanned negative-state accounts (each its own dedicated account):");

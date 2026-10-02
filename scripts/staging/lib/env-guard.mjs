@@ -9,13 +9,16 @@ import { createClient } from "@supabase/supabase-js";
 
 // Known/likely production project references for this codebase. This list
 // is intentionally conservative -- it blocks the one reference we already
-// know is live, and any reference the operator explicitly names as
-// production via VECTA_PRODUCTION_PROJECT_REF. It is NOT a substitute for
-// the operator's own confirmation step; it exists to catch an obvious
-// mistake, not to replace judgement.
-const KNOWN_NON_STAGING_REFS = new Set(
-  [process.env.VECTA_PRODUCTION_PROJECT_REF?.trim()].filter(Boolean)
-);
+// know is live ("vecta-prod", hardcoded here so this guard does not depend
+// on an operator remembering to set an env var every session), plus any
+// reference the operator additionally names via VECTA_PRODUCTION_PROJECT_REF.
+// It is NOT a substitute for the operator's own confirmation step; it
+// exists to catch an obvious mistake, not to replace judgement.
+const HARDCODED_PRODUCTION_REFS = ["zsxneokqulktgnccxgkz"]; // vecta-prod -- never touch
+const KNOWN_NON_STAGING_REFS = new Set([
+  ...HARDCODED_PRODUCTION_REFS,
+  ...[process.env.VECTA_PRODUCTION_PROJECT_REF?.trim()].filter(Boolean),
+]);
 
 export function projectRefFromUrl(url) {
   const match = /^https?:\/\/([a-z0-9]+)\.supabase\.co/i.exec(url ?? "");
