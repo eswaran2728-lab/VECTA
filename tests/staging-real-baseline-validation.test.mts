@@ -163,6 +163,24 @@ test("REAL-BASELINE-VALIDATION: Phase 1 through 13 with Phase 8 reconciliation a
     const p13Check = await db.query("SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'phase13_readiness_access_log';");
     assert.equal(p13Check.rows.length, 1);
 
+    // Check active roles
+    const rolesRes = await db.query("SELECT count(*) FROM public.role_definitions WHERE is_active = true;");
+    assert.equal(parseInt(rolesRes.rows[0].count, 10), 23);
+
+    // Check trigger profiles_enforce_self_update
+    const trigCheck = await db.query("SELECT tgname, tgenabled FROM pg_trigger WHERE tgname = 'profiles_enforce_self_update' AND tgrelid = 'public.profiles'::regclass;");
+    assert.equal(trigCheck.rows.length, 1);
+    assert.equal(trigCheck.rows[0].tgenabled, "O");
+
+    // Check Storage Buckets
+    const bucketsRes = await db.query("SELECT id FROM storage.buckets;");
+    const bucketIds = new Set(bucketsRes.rows.map(r => r.id));
+    for (const b of ["sat-combined-reports", "caterlink-final-pdfs", "announcement-attachments"]) {
+      assert.ok(bucketIds.has(b), `Expected bucket ${b} to exist`);
+    }
+    assert.ok(!bucketIds.has("announcement-photos"), "Forbidden bucket announcement-photos must not exist");
+    assert.ok(!bucketIds.has("caterlink-documents"), "Forbidden bucket caterlink-documents must not exist");
+
     console.log("Real-baseline validation test passed: all 16 migrations applied cleanly from real baseline through Phase 13!");
 
   } finally {

@@ -537,7 +537,7 @@ async function main() {
       "aocs", "operating_entities", "departments", "units", "hubs", "org_stations", "org_teams",
       "role_definitions", "user_role_assignments", "user_entity_memberships", "user_registration_requests",
       "user_notifications", "central_reports_index", "report_index_queue",
-      "overtime_requests", "caterlink_station_capabilities", "catering_companies", "vehicles", "drivers",
+      "absence_notices", "overtime_requests", "caterlink_station_capabilities", "catering_companies", "vehicles", "drivers",
       "transactions", "caterlink_checkpoint_hub", "caterlink_archives", "caterlink_transaction_pdfs",
       "discussion_author_mappings", "discussion_identity_resolutions", "discussion_threads", "discussion_replies",
       "announcements", "announcement_attachments", "announcement_audit_log", "announcement_acknowledgements",
@@ -562,15 +562,38 @@ async function main() {
     }
     logger.log(`Verified all ${allTablesToCheck.length} tables exist in catalog and have RLS ENABLED.`);
 
-    // 5. Storage Buckets
+    // 4.1 Check 23 active role definitions
+    const rolesRes = await client.query("SELECT count(*) FROM public.role_definitions WHERE is_active = true;");
+    const activeRolesCount = parseInt(rolesRes.rows[0].count, 10);
+    logger.log(`Active role definitions count: ${activeRolesCount}`);
+    if (activeRolesCount !== 23) {
+      throw new Error(`Expected 23 active role definitions, found ${activeRolesCount}`);
+    }
+
+    // 5. Storage Buckets (Canonical 7 buckets, verify no unexpected aliases)
     const buckets = await client.query("SELECT id, name, public FROM storage.buckets ORDER BY id;");
     logger.log(`Storage buckets (${buckets.rows.length}): ${buckets.rows.map(b => b.name).join(", ")}`);
     const bucketNames = new Set(buckets.rows.map(r => r.name));
-    for (const reqBucket of ["sat-combined-reports", "caterlink-final-pdfs", "announcement-attachments"]) {
+    const canonicalBuckets = [
+      "report-attachments",
+      "signatures",
+      "incident-photos",
+      "completed-forms",
+      "sat-combined-reports",
+      "caterlink-final-pdfs",
+      "announcement-attachments"
+    ];
+    for (const reqBucket of canonicalBuckets) {
       if (!bucketNames.has(reqBucket)) {
-        throw new Error(`Missing expected bucket '${reqBucket}'`);
+        throw new Error(`Missing expected canonical bucket '${reqBucket}'`);
       }
     }
+    for (const forbiddenBucket of ["announcement-photos", "caterlink-documents"]) {
+      if (bucketNames.has(forbiddenBucket)) {
+        throw new Error(`FATAL: Forbidden/alias bucket '${forbiddenBucket}' found in storage.buckets!`);
+      }
+    }
+    logger.log(`Verified all ${canonicalBuckets.length} canonical buckets exist and no forbidden aliases exist.`);
 
     // 6. Cron Jobs
     const cronJobs = await client.query("SELECT jobid, schedule, command, active FROM cron.job ORDER BY jobid;");
