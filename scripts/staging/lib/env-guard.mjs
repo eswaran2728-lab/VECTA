@@ -37,14 +37,20 @@ export function resolveStagingAdminContext({ requireApprovedRef = true } = {}) {
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Supabase's current naming is SUPABASE_SECRET_KEY (the publishable/
+  // secret key pair replacing anon/service_role in newer projects);
+  // SUPABASE_SERVICE_ROLE_KEY is kept as a fallback for a project still
+  // on the legacy key pair. Prefer the new name when both are present --
+  // never silently prefer the legacy one once the new one exists.
+  const secretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const usingLegacyKeyName = !process.env.SUPABASE_SECRET_KEY && Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   if (!url) {
     throw new Error("Refusing to run: NEXT_PUBLIC_SUPABASE_URL is not set.");
   }
-  if (!serviceRoleKey) {
+  if (!secretKey) {
     throw new Error(
-      "Refusing to run: SUPABASE_SERVICE_ROLE_KEY is not set. No staging script may proceed without it -- there is no fallback credential and none should ever be invented."
+      "Refusing to run: neither SUPABASE_SECRET_KEY nor SUPABASE_SERVICE_ROLE_KEY is set. No staging script may proceed without one -- there is no other fallback credential and none should ever be invented."
     );
   }
 
@@ -71,7 +77,11 @@ export function resolveStagingAdminContext({ requireApprovedRef = true } = {}) {
     }
   }
 
-  const client = createClient(url, serviceRoleKey, {
+  if (usingLegacyKeyName) {
+    console.warn("NOTE: using legacy SUPABASE_SERVICE_ROLE_KEY -- set SUPABASE_SECRET_KEY on this project to migrate off the legacy key name.");
+  }
+
+  const client = createClient(url, secretKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 

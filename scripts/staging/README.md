@@ -24,7 +24,7 @@ the same gate rather than re-implementing it.
 
 | Script | Purpose | Default | Live flag |
 |---|---|---|---|
-| `provision-test-accounts.mjs` | Creates one account per Phase 3 role, labeled station-role variants (KUL/PEN/JHB/no-CaterLink-station), and seven dedicated negative-state accounts | `--dry-run` (prints the plan, makes no network call) | `--live --email-domain=<operator-approved-domain>` |
+| `provision-test-accounts.mjs` | Creates one account for each of the 23 unique approved Phase 3 role codes, labeled station-role variants (KUL/PEN/JHB/no-CaterLink-station), and seven dedicated negative-state accounts | `--dry-run` (prints the plan, makes no network call) | `--live --email-domain=<operator-approved-domain>` |
 | `teardown-test-accounts.mjs` | Deletes accounts matching the `vecta.uat.` prefix AND an exact `--run-id` | `--dry-run` (lists what would be deleted) | `--live` |
 | `seed-uat-fixtures.mjs` | Synthetic UAT data for dashboard review, tagged `[UAT:<run-id>]` | `--dry-run` | `--live --as-profile-id=<id>` (announcements only this round — see the script's own output for what else is NOT implemented) |
 
