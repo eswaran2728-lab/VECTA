@@ -85,6 +85,18 @@ const REMAINING_MIGRATIONS = [
     countQueries: []
   },
   {
+    filename: "20260929000001_phase8_absence_prerequisites.sql",
+    expectedObjects: [
+      "absence_notices", "announcements", "announcement_acknowledgements",
+      "wois_conversations", "wois_messages"
+    ],
+    countQueries: [
+      { label: "absence_notices", query: "SELECT count(*) FROM public.absence_notices;" },
+      { label: "announcements", query: "SELECT count(*) FROM public.announcements;" },
+      { label: "wois_conversations", query: "SELECT count(*) FROM public.wois_conversations;" }
+    ]
+  },
+  {
     filename: "20260930000001_phase8_operational_workflows.sql",
     expectedObjects: ["overtime_requests"],
     countQueries: [

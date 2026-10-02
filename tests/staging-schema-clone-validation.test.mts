@@ -18,6 +18,7 @@ const PHASE2_13_CHAIN = [
   "20260928000005_phase6_secure_report_access.sql",
   "20260928000006_phase7_dashboard_aggregates.sql",
   "20260928000007_phase7_closure_dashboards.sql",
+  "20260929000001_phase8_absence_prerequisites.sql",
   "20260930000001_phase8_operational_workflows.sql",
   "20261001000001_phase9_caterlink_station_access.sql",
   "20261005000001_phase10_anonymous_discussion_board.sql",
