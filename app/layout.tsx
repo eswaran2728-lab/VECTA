@@ -75,7 +75,8 @@ try {
 `;
 
 import { WoisFloatingTrigger } from "@/components/wois/WoisFloatingTrigger";
-import { getCurrentProfile } from "@/lib/avsec/auth";
+import { getCurrentProfile, getPortalIdentity } from "@/lib/avsec/auth";
+import { isCaterLinkOnly } from "@/lib/auth/caterlink-access";
 
 export default async function RootLayout({
   children,
@@ -88,6 +89,10 @@ export default async function RootLayout({
   // re-derives the caller's identity and eligibility from the authenticated
   // session itself, ignoring whatever this value says.
   const profile = await getCurrentProfile();
+  // CaterLink-only (and conflicting / blocked) identities have no VECTA assistant: the widget is not offered, and the
+  // WOIS APIs answer 403 for them server-side regardless.
+  const portal = await getPortalIdentity();
+  const showWois = !(isCaterLinkOnly(portal.kind) || portal.kind === "conflict" || portal.kind === "blocked");
   const woisUserContext = profile
     ? {
         role: profile.role,
@@ -107,7 +112,7 @@ export default async function RootLayout({
       </head>
       <body>
         {children}
-        <WoisFloatingTrigger userContext={woisUserContext} />
+        {showWois && <WoisFloatingTrigger userContext={woisUserContext} />}
       </body>
     </html>
   );

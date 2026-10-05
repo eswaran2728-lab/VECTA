@@ -46,12 +46,17 @@ async function ctxFor(browser, vp) {
   return { ctx, page };
 }
 async function login(page, a) {
-  await page.goto(`${base}/login`, { waitUntil: "domcontentloaded" });
-  await page.fill('input[name="email"]', a.email);
-  await page.fill('input[name="password"]', a.password);
-  await page.getByRole("button", { name: /Sign in with Credentials/i }).click();
-  await page.waitForURL((u) => !/\/login/.test(u.pathname) || /error=/.test(u.search), { timeout: 25000 }).catch(() => {});
-  await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+  // Supabase Auth rate-limits sign-ins per IP: a rate-limit is not a credential failure, so retry with backoff.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await page.goto(`${base}/login`, { waitUntil: "domcontentloaded" });
+    await page.fill('input[name="email"]', a.email);
+    await page.fill('input[name="password"]', a.password);
+    await page.getByRole("button", { name: /Sign in with Credentials/i }).click();
+    await page.waitForURL((u) => !/\/login/.test(u.pathname), { timeout: 20000 }).catch(() => {});
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    if (!/\/login/.test(new URL(page.url()).pathname)) return;
+    await page.waitForTimeout(20000 * (attempt + 1));
+  }
 }
 const pathOf = (page) => new URL(page.url()).pathname;
 

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { requireRole } from "@/lib/icms/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/icms/ui/card";
 import {
   Table,
@@ -101,6 +102,8 @@ export default async function WhitelistsPage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  // Whitelist management is a CaterLink Management function: other identities are redirected before any data call.
+  await requireRole(["supervisor"]);
 
   const { q, status } = await searchParams;
   const search = (q ?? "").trim() || undefined;

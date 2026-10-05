@@ -179,3 +179,11 @@ test("the three identities keep their approved boundaries: Management gains no s
   assert.ok(!/caterlink_management/.test(canonical.slice(canonical.indexOf("STATION_OPERATOR_CODES"), canonical.indexOf("STATION_OPERATOR_CODES") + 120)));
   assert.equal(CATERLINK_ROLE_LABELS.caterlink_management, "CaterLink Management");
 });
+
+test("closure: the VECTA assistant widget is not offered to CaterLink-only identities and the whitelist page is role-gated", () => {
+  const layout = read("app/layout.tsx");
+  assert.match(layout, /isCaterLinkOnly\(portal\.kind\)/);
+  assert.match(layout, /\{showWois && <WoisFloatingTrigger/);
+  const wl = read("app/(icms)/icms/admin/whitelists/page.tsx");
+  assert.ok(wl.indexOf('requireRole(["supervisor"])') > 0 && wl.indexOf('requireRole(["supervisor"])') < wl.indexOf("listWhitelistEntries({ entryType"), "the role gate precedes any data call");
+});
