@@ -63,8 +63,11 @@ async function main() {
     check("No duplicate email among Auth users", (await n("select count(*)::int n from (select lower(email) e from auth.users group by 1 having count(*) > 1) d")) === 0);
     check("16 original Auth users unchanged in count", (await n("select count(*)::int n from auth.users where email not like 'vecta.uat.%'")) === 16);
     check("16 org_teams, 7 Storage buckets", (await n("select count(*)::int n from public.org_teams")) === 16 && (await n("select count(*)::int n from storage.buckets")) === 7);
-    check("Run accounts keep ops_group NULL (no authority metadata)", (await n("select count(*)::int n from public.profiles p join auth.users u on u.id = p.id where u.email like $1 and p.ops_group is not null", [prefix])) === 0);
-    check("No IFC role/assignment/profile exists", (await n("select count(*)::int n from public.role_definitions where code ilike '%ifc%'")) === 0 && (await n("select count(*)::int n from public.profiles where coalesce(ops_group,'') ilike '%ifc%'")) === 0);
+    const hasOpsGroup = (await n("select count(*)::int n from information_schema.columns where table_schema='public' and table_name='profiles' and column_name='ops_group'")) > 0;
+    check(hasOpsGroup ? "Run accounts keep ops_group NULL (no authority metadata)" : "profiles.ops_group column is absent on staging (no authority metadata possible)",
+      !hasOpsGroup || (await n("select count(*)::int n from public.profiles p join auth.users u on u.id = p.id where u.email like $1 and p.ops_group is not null", [prefix])) === 0);
+    check("No IFC role/assignment exists", (await n("select count(*)::int n from public.role_definitions where code ilike '%ifc%'")) === 0 && (await n("select count(*)::int n from public.user_role_assignments ura join public.role_definitions rd on rd.id = ura.role_definition_id where rd.code ilike '%ifc%'")) === 0);
+    check("No run profile uses an IFC compatibility value", !hasOpsGroup || (await n("select count(*)::int n from public.profiles where coalesce(ops_group,'') ilike '%ifc%'")) === 0);
 
     const rows = (await pg.query(`
       select u.email, p.id profile_id, p.status::text status, rd.code role_code, ura.id assignment_id, ura.entity_membership_id,
