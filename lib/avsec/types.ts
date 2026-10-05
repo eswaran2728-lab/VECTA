@@ -16,10 +16,10 @@ export interface Profile {
    *  org-wide roles (ADMIN/MANAGEMENT/ENFORCEMENT), one of
    *  operation_avsec/ifc_avsec/hub_avsec for SO/ASO/DSE. */
   ops_group: "operation_avsec" | "ifc_avsec" | "hub_avsec" | null;
-  /** Unified role vocabulary read layer (supabase/migrations/unified_role_model.sql) —
-   *  shared source of truth for org-tier across AVSEC and ICMS, since their
-   *  legacy `role` columns use different strings for the same tier. */
-  unified_role: string | null;
+  /** Canonical operational access (Phase 3 active assignments), attached by
+   *  requireProfile()/requireRole() only. Decisions come from this, never
+   *  from the legacy `role`/`ops_group` columns above. */
+  canonical?: import("@/lib/auth/canonical-access").CanonicalAccess;
   created_at: string;
   updated_at: string;
 }

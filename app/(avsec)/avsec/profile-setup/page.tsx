@@ -1,4 +1,4 @@
-import { getCurrentProfile, getCurrentUser, landingPathForRole } from "@/lib/avsec/auth";
+import { getRawProfile, getCurrentUser, landingPathForRole } from "@/lib/avsec/auth";
 import { redirect } from "next/navigation";
 import { updateProfile } from "@/lib/avsec/profile-actions";
 import { STATIONS, REQUESTABLE_ROLES, ROLE_LABELS, ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
@@ -11,7 +11,7 @@ export default async function ProfileSetupPage({
   const searchParams = await searchParamsPromise;
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const profile = await getCurrentProfile();
+  const profile = await getRawProfile();
 
   // If the profile is already complete, don't show this form again — send them onward to
   // wherever requireProfile() would otherwise land them. Without this, anyone who reaches

@@ -6,8 +6,11 @@ import {
   isSuperAdminPathForbidden,
   isOperationalPathForbiddenForSuperAdmin,
   isReadinessPath,
-  resolveEffectiveRole,
+  effectiveGateRole,
+  isExternalCaterLinkRole,
+  isShiftBasedAccess,
 } from "./middleware-gate-logic";
+import { deriveCanonicalAccess, assignmentsFromRpcRows } from "../auth/canonical-access";
 
 
 // Unified role vocabulary (see supabase/migrations/unified_role_model and
@@ -129,29 +132,25 @@ export async function updateSession(request: NextRequest) {
       return supabaseResponse;
     }
 
-    // Canonical Super Admin decision (active Phase 3 assignment) only.
-    const { data: loginIsSuperAdmin } = await supabase.rpc("has_active_role", { p_role_code: "super_admin" });
-    if (loginIsSuperAdmin === true) {
+    // Canonical decision only: active Phase 3 assignments.
+    const { data: loginRows } = await supabase.rpc("get_my_active_role_assignments");
+    const loginAccess = deriveCanonicalAccess(assignmentsFromRpcRows(loginRows));
+    if (loginAccess.isSuperAdmin) {
       const url = request.nextUrl.clone();
       url.pathname = "/super-admin";
       url.search = "";
       return NextResponse.redirect(url);
     }
 
-    const userEmail = (user.email ?? "").toLowerCase();
-    const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
-    const isCaterLinkEmail =
-      userMeta.system_type === "caterlink" ||
-      userMeta.role === "vendor" ||
-      userMeta.driver_type !== undefined ||
-      userEmail.endsWith("@caterlink.internal") ||
-      userEmail.includes("driver") ||
-      userEmail.includes("warehouse") ||
-      userEmail.includes("vendor") ||
-      userEmail.includes("caterlink");
+    // External CaterLink identity = the ICMS users-table role, never an email/metadata string.
+    let landing = "/";
+    if (!loginAccess.hasAssignment) {
+      const { data: loginIcms } = await supabase.from("users").select("role").eq("id", user.id).maybeSingle();
+      if (isExternalCaterLinkRole(loginIcms?.role as string | undefined)) landing = "/caterlink/dashboard";
+    }
 
     const url = request.nextUrl.clone();
-    url.pathname = isCaterLinkEmail ? "/caterlink/dashboard" : "/";
+    url.pathname = landing;
     url.search = "";
     return NextResponse.redirect(url);
   }
@@ -173,27 +172,27 @@ export async function updateSession(request: NextRequest) {
 
   // --- Role + check-in gate ---
   if (user && (isGated || path === "/")) {
-    const userEmail = (user.email ?? "").toLowerCase();
-    const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
-    const isCaterLinkUser =
-      userMeta.system_type === "caterlink" ||
-      userMeta.role === "vendor" ||
-      userMeta.driver_type !== undefined ||
-      userEmail.endsWith("@caterlink.internal") ||
-      userEmail.includes("driver") ||
-      userEmail.includes("warehouse") ||
-      userEmail.includes("vendor") ||
-      userEmail.includes("caterlink");
+    // Canonical access: the caller's own active Phase 3 assignments
+    // (auth.uid() identity, approved profile, active role definition,
+    // non-revoked, effective dates all enforced inside the RPC).
+    const { data: assignmentRows } = await supabase.rpc("get_my_active_role_assignments");
+    const access = deriveCanonicalAccess(assignmentsFromRpcRows(assignmentRows));
 
-    // Seamless URL remapping: redirect drivers visiting /icms to /caterlink —
+    // Legacy tables are read ONLY for account status and to recognise
+    // ICMS-origin external CaterLink identities -- never to grant anything.
+    const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
+      supabase.from("profiles").select("status").eq("id", user.id).maybeSingle(),
+      supabase.from("users").select("role, status").eq("id", user.id).maybeSingle(),
+    ]);
+    const icmsRole = (icmsProfile?.role ?? null) as string | null;
+    const isCaterLinkUser = !access.hasAssignment && isExternalCaterLinkRole(icmsRole);
+
+    // Seamless URL remapping: redirect drivers visiting /icms to /caterlink --
     // but only for the paths next.config.ts actually rewrites back
     // (dashboard, transactions, vendor-transactions). A driver hitting an
-    // unmapped ICMS path (e.g. /icms/admin/users, which they have no access
-    // to anyway) must NOT be remapped to a /caterlink/* URL that has no
-    // matching rewrite — that produced a genuine 404 instead of a
-    // forbidden/redirect response. Falling through here lets the page's own
-    // requireRole() check redirect to /icms/dashboard?error=forbidden,
-    // which IS a remapped path and resolves correctly on the next pass.
+    // unmapped ICMS path must NOT be remapped to a /caterlink/* URL with no
+    // matching rewrite; falling through lets the page's own requireRole()
+    // check redirect to /icms/dashboard?error=forbidden.
     const CATERLINK_REMAPPED_PREFIXES = ["/icms/dashboard", "/icms/transactions", "/icms/vendor-transactions"];
     if (isCaterLinkUser && CATERLINK_REMAPPED_PREFIXES.some((p) => path === p || path.startsWith(p + "/"))) {
       const url = request.nextUrl.clone();
@@ -201,37 +200,15 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // Boundary Gate: Driver & CaterLink accounts trying to access AVSEC are redirected to CaterLink
+    // Boundary Gate: external CaterLink accounts trying to access AVSEC go to CaterLink
     if (isCaterLinkUser && path.startsWith("/avsec")) {
       const url = request.nextUrl.clone();
       url.pathname = "/caterlink/dashboard";
       return NextResponse.redirect(url);
     }
 
-    // Unified profile lives in whichever app's table the account was
-    // created through — AVSEC's public.profiles or ICMS's public.users —
-    // both now carry the same unified_role vocabulary in this shared project.
-    const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("unified_role, role, status")
-        .eq("id", user.id)
-        .maybeSingle(),
-      supabase
-        .from("users")
-        .select("unified_role, role, status")
-        .eq("id", user.id)
-        .maybeSingle(),
-    ]);
-    const profile = avsecProfile ?? icmsProfile;
-
-    // Pending/rejected/deactivated users must be routed to profile
-    // setup or the "awaiting approval" page — never to an operational
-    // route, and never bounced away from the very pages that explain
-    // their status (that page's own requireProfile()/getCurrentProfile()
-    // call does the precise incomplete-vs-pending-vs-rejected routing;
-    // this is only a coarse edge-level gate so a non-active AVSEC user
-    // can never reach an operational route at all, even for a moment).
+    // Pending/rejected/deactivated users are routed to profile setup / the
+    // "awaiting approval" page -- never to an operational route.
     const activeStatuses = ["approved", "active"];
     const onOwnStatusPages = path.startsWith("/avsec/profile-setup") || path.startsWith("/avsec/pending-approval");
     if (avsecProfile && avsecProfile.status && !activeStatuses.includes(avsecProfile.status as string) && !onOwnStatusPages) {
@@ -240,8 +217,6 @@ export async function updateSession(request: NextRequest) {
       url.search = "";
       return NextResponse.redirect(url);
     }
-    // ICMS/CaterLink-origin non-active accounts keep their existing
-    // behavior (driver self-registration flow is out of scope here).
     if (!avsecProfile && icmsProfile && icmsProfile.status && !activeStatuses.includes(icmsProfile.status as string)) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
@@ -249,12 +224,15 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // Super Admin is decided by the canonical active-assignment RPC, never by
-    // a legacy profile/user column; every other role keeps the legacy
-    // unified_role compatibility value.
-    const { data: canonicalSuperAdmin } = await supabase.rpc("has_active_role", { p_role_code: "super_admin" });
-    const legacyRole = (profile?.unified_role ?? (isCaterLinkUser ? "vendor" : null)) as string | null;
-    const role = resolveEffectiveRole(legacyRole, canonicalSuperAdmin === true);
+    // An approved AVSEC profile with no active assignment has no operational access.
+    if (avsecProfile && !access.hasAssignment && path.startsWith("/avsec") && !onOwnStatusPages) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/avsec/pending-approval";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+
+    const role = effectiveGateRole(access, icmsRole);
 
     // Super Admin: platform portal only. Forbidden from operational routes.
     if (isOperationalPathForbiddenForSuperAdmin(path, role) || (path === "/" && role === "super_admin")) {
@@ -273,18 +251,19 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // Boundary Gate: Driver & Vendor accounts are restricted from AVSEC reports and routed to CaterLink
+    // Boundary Gate: external CaterLink accounts are restricted from AVSEC
     if (role === "vendor" && path.startsWith("/avsec")) {
       const url = request.nextUrl.clone();
       url.pathname = "/caterlink/dashboard";
       return NextResponse.redirect(url);
     }
 
-    // ICMS/CaterLink checkpoint accounts have no way to ever satisfy
-    // this gate: check-in/duty_records/team_rosters are entirely AVSEC-side
-    // concepts keyed to a profiles row.
+    // ICMS-origin accounts (public.users, no profiles row) have no duty
+    // check-in concept. Canonical accounts are subject to the check-in gate
+    // only when they hold a shift-based (ASO/SO/DSE rank) role.
     const icmsOnlyExempt = !avsecProfile && Boolean(icmsProfile);
-    const exempt = isCheckinGateExempt(role) || icmsOnlyExempt || isCaterLinkUser || path.startsWith("/icms") || path.startsWith("/caterlink") || path.startsWith("/super-admin");
+    const checkinRequired = access.hasAssignment ? isShiftBasedAccess(access) : false;
+    const exempt = !checkinRequired || icmsOnlyExempt || path.startsWith("/icms") || path.startsWith("/caterlink") || path.startsWith("/super-admin");
     const alreadyOnCheckin =
       path.startsWith("/avsec/duty") ||
       path.startsWith("/avsec/profile-setup") ||

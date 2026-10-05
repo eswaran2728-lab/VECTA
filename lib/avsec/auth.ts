@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Profile } from "./types";
-import { ORG_WIDE_ROLES, type UserRole } from "./reference-data";
-import { hasActiveSuperAdminRole } from "@/lib/super-admin/authority";
+import type { UserRole } from "./reference-data";
+import { getActiveRoleAssignments } from "@/lib/dashboard/context";
+import { deriveCanonicalAccess, accessSatisfiesRoles, type CanonicalAccess } from "@/lib/auth/canonical-access";
+import { routeAllows } from "@/lib/auth/route-access";
 
 export async function getCurrentUser() {
   const supabase = await createClient();
@@ -12,7 +14,18 @@ export async function getCurrentUser() {
   return user;
 }
 
-export async function getCurrentProfile(): Promise<Profile | null> {
+/** The caller's own canonical operational access, from their active Phase 3
+ *  assignments (identity from auth.uid() inside the RPC). */
+export async function getCanonicalAccess(): Promise<CanonicalAccess> {
+  return deriveCanonicalAccess(await getActiveRoleAssignments());
+}
+
+/** Identity/status row for the signed-in user, INCLUDING unapproved and
+ *  unassigned accounts. For setup / awaiting-approval / chrome-display pages
+ *  only: the legacy role/ops_group values here are display data and must
+ *  never decide access. Station/team are filled from the canonical
+ *  assignment scope when the legacy text fields are blank. */
+export async function getRawProfile(): Promise<Profile | null> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -20,7 +33,37 @@ export async function getCurrentProfile(): Promise<Profile | null> {
   if (!user) return null;
 
   const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single();
-  return (data as unknown as Profile) ?? null;
+  const profile = (data as unknown as Profile) ?? null;
+  if (!profile) return null;
+  if (!profile.station || !profile.team) {
+    const access = await getCanonicalAccess();
+    return {
+      ...profile,
+      station: profile.station ?? ((access.stationCode as Profile["station"]) ?? null),
+      team: profile.team ?? access.teamName,
+    };
+  }
+  return profile;
+}
+
+/** The signed-in user's profile for ANY decision or data-stamping use. Returns
+ *  null unless the profile is approved AND holds an active canonical
+ *  assignment (so a server action reached directly is denied exactly like a
+ *  page is). `role` is the canonical-derived compatibility rank, never the
+ *  legacy column. */
+export async function getCurrentProfile(): Promise<Profile | null> {
+  const raw = await getRawProfile();
+  if (!raw || raw.status !== "approved") return null;
+  const access = await getCanonicalAccess();
+  if (!access.hasAssignment || access.isSuperAdmin) return null;
+  return { ...raw, role: access.primaryCompatRole ?? "ASO", canonical: access };
+}
+
+/** Where a user with this canonical access should land. */
+export function landingPathForAccess(access: CanonicalAccess): string {
+  if (!access.hasAssignment) return "/avsec/pending-approval";
+  if (access.primaryCompatRole) return landingPathForRole(access.primaryCompatRole);
+  return "/avsec/my-dashboard";
 }
 
 export function landingPathForRole(role: UserRole): string {
@@ -29,28 +72,35 @@ export function landingPathForRole(role: UserRole): string {
 }
 
 export async function requireProfile(): Promise<Profile> {
-  const profile = await getCurrentProfile();
+  const profile = await getRawProfile();
   if (!profile) redirect("/login");
+  const access = await getCanonicalAccess();
   // Canonical Super Admin (active Phase 3 assignment) never works operational routes.
-  if (await hasActiveSuperAdminRole()) redirect("/super-admin");
-  // Org-wide roles (Enforcement/Management) aren't tied to a station or team, so
-  // both are expected blank for them — only the team-scoped roles (ASO/SO/DSE) must
-  // have station+team set.
-  const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role) || profile.role === "ADMIN";
-  if (!profile.name || (!isOrgWide && (!profile.station || !profile.team))) {
-    redirect("/avsec/profile-setup");
-  }
-  if (profile.status !== "approved") {
-    redirect("/avsec/pending-approval");
-  }
-  return profile;
+  if (access.isSuperAdmin) redirect("/super-admin");
+  if (!profile.name) redirect("/avsec/profile-setup");
+  if (profile.status !== "approved") redirect("/avsec/pending-approval");
+  // Approved but holding no active assignment: no operational access at all.
+  if (!access.hasAssignment) redirect("/avsec/pending-approval");
+  // The legacy `role` is replaced by the canonical-derived compatibility rank
+  // (least-privilege ASO when the canonical role has no legacy-page equivalent),
+  // so no code reading profile.role can be granted anything by a legacy column.
+  return { ...profile, role: access.primaryCompatRole ?? "ASO", canonical: access };
 }
 
 export async function requireRole(roles: UserRole[]): Promise<Profile> {
   const profile = await requireProfile();
-  if (!roles.includes(profile.role) && !(roles.includes("MANAGEMENT") && profile.role === "ADMIN")) {
-    redirect(landingPathForRole(profile.role));
+  const access = profile.canonical as CanonicalAccess;
+  if (!accessSatisfiesRoles(access, roles)) {
+    redirect(landingPathForAccess(access));
   }
+  return profile;
+}
+
+/** Gate for a route the Phase 7 dashboards link to: the canonical role codes linking to it, or its legacy rank list via the compat mapping. */
+export async function requireRouteAccess(href: string, legacyRoles: UserRole[]): Promise<Profile> {
+  const profile = await requireProfile();
+  const access = profile.canonical as CanonicalAccess;
+  if (!routeAllows(href, access, legacyRoles)) redirect(landingPathForAccess(access));
   return profile;
 }
 

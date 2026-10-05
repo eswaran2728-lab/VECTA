@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { requireRole } from "@/lib/avsec/auth";
+import { requireRouteAccess } from "@/lib/avsec/auth";
 import { searchByReportNoPrefix } from "@/lib/avsec/reports/queries";
 import { REPORT_META, ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { formatDateTimeMY } from "@/lib/avsec/datetime";
@@ -11,7 +11,7 @@ export default async function ReportLookupPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  await requireRole([...ORG_WIDE_ROLES]);
+  await requireRouteAccess("/avsec/reports/lookup", [...ORG_WIDE_ROLES]);
   const q = (searchParams.q || "").trim();
 
   const results = q ? await searchByReportNoPrefix(q) : [];

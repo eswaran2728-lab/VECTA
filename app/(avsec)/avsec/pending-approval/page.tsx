@@ -1,14 +1,16 @@
 import { redirect } from "next/navigation";
-import { getCurrentProfile, landingPathForRole } from "@/lib/avsec/auth";
+import { getRawProfile, getCanonicalAccess, landingPathForAccess } from "@/lib/avsec/auth";
 import { signOut } from "@/lib/avsec/profile-actions";
 import { ROLE_LABELS } from "@/lib/avsec/reference-data";
 import { APP_NAME } from "@/lib/avsec/branding";
 
 export default async function PendingApprovalPage() {
-  const profile = await getCurrentProfile();
+  const profile = await getRawProfile();
   if (!profile) redirect("/login");
-  if (!profile.name || !profile.station || !profile.team) redirect("/avsec/profile-setup");
-  if (profile.status === "approved") redirect(landingPathForRole(profile.role));
+  if (!profile.name) redirect("/avsec/profile-setup");
+  const access = await getCanonicalAccess();
+  if (profile.status === "approved" && access.hasAssignment) redirect(landingPathForAccess(access));
+  const approvedWithoutAssignment = profile.status === "approved" && !access.hasAssignment;
 
   const rejected = profile.status === "rejected";
   const deactivated = profile.status === "deactivated";
@@ -31,6 +33,14 @@ export default async function PendingApprovalPage() {
             <p className="font-mono text-xs text-muted-foreground">
               Your account request was not approved. Contact your administrator if you believe this
               is a mistake.
+            </p>
+          </>
+        ) : approvedWithoutAssignment ? (
+          <>
+            <p className="font-semibold text-primary font-mono text-xs uppercase tracking-wider">No workspace assigned yet</p>
+            <p className="font-mono text-xs text-muted-foreground">
+              Your account is approved, but no active role assignment grants you a workspace in {APP_NAME} yet.
+              Contact your administrator.
             </p>
           </>
         ) : (

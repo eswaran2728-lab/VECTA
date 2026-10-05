@@ -28,6 +28,38 @@ export function isAdminPathForbidden(path: string, role: string | null): boolean
   return path.startsWith("/avsec/admin") && role !== "management" && role !== "admin";
 }
 
+import type { CanonicalAccess } from "../auth/canonical-access";
+import { canonicalCodesForRoute } from "../auth/route-access.ts";
+
+// The canonical roles whose workspace includes the duty terminal / check-in.
+const DUTY_CODES = new Set(canonicalCodesForRoute("/avsec/duty"));
+
+// ICMS-origin external identities (public.users.role) routed to CaterLink.
+// Recognised ONLY from that table's role -- never from an email string or
+// user-editable metadata.
+export const EXTERNAL_CATERLINK_ICMS_ROLES = ["vendor", "warehouse_pic", "driver_ifc", "driver_vendor"] as const;
+
+export function isExternalCaterLinkRole(icmsRole: string | null | undefined): boolean {
+  return Boolean(icmsRole) && (EXTERNAL_CATERLINK_ICMS_ROLES as readonly string[]).includes(icmsRole as string);
+}
+
+// Edge-gate role from CANONICAL access (plus the ICMS external-identity
+// table for CaterLink vendors/drivers, who hold no Phase 3 assignment).
+// A canonical role with no legacy-page rank yields null: it is not shift
+// staff, not management/admin, and reaches its workspace via Phase 7.
+export function effectiveGateRole(access: CanonicalAccess, icmsRole: string | null | undefined): string | null {
+  if (access.isSuperAdmin) return "super_admin";
+  if (access.primaryCompatRole) return access.primaryCompatRole.toLowerCase();
+  if (access.hasAssignment) return null;
+  return isExternalCaterLinkRole(icmsRole) ? "vendor" : null;
+}
+
+// Only canonical roles whose workspace includes the duty terminal are subject to the
+// duty check-in gate; every other canonical account is exempt.
+export function isShiftBasedAccess(access: CanonicalAccess): boolean {
+  return access.roleCodes.some((c) => DUTY_CODES.has(c));
+}
+
 // Effective role for edge gating. Super Admin comes ONLY from the canonical
 // Phase 3 active-assignment decision; a legacy "super_admin" value in any
 // profile/user column never confers it (it is discarded to null).

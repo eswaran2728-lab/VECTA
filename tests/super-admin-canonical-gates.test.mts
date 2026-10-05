@@ -156,16 +156,18 @@ test("closure: migrated Super Admin gate files contain no legacy SUPER_ADMIN / s
   }
 });
 
-test("closure: middleware decides Super Admin only through the canonical RPC", () => {
-  const mw = read("lib/supabase/middleware.ts");
+test("closure: middleware decides roles only from canonical assignments (never a legacy column, email or metadata)", () => {
+  const mw = read("lib/supabase/middleware.ts").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   assert.ok(!/["']SUPER_ADMIN["']/.test(mw), "middleware must not reference legacy SUPER_ADMIN");
-  assert.ok(!/uRole|profile\?\.role/.test(mw), "middleware must not derive Super Admin from profile/user role columns");
-  assert.equal((mw.match(/rpc\("has_active_role", \{ p_role_code: "super_admin" \}\)/g) ?? []).length, 3, "login redirect, readiness gate and general gate each use the canonical RPC");
-  assert.match(mw, /resolveEffectiveRole\(legacyRole, canonicalSuperAdmin === true\)/);
+  assert.ok(!/unified_role|uRole|profile\?\.role/.test(mw), "middleware must not derive roles from legacy columns");
+  assert.ok(!/userEmail|user_metadata|userMeta/.test(mw), "middleware must not authorize or route from email text or user-editable metadata");
+  assert.equal((mw.match(/rpc\("get_my_active_role_assignments"\)/g) ?? []).length, 2, "login redirect and the general gate each use the canonical assignments RPC");
+  assert.equal((mw.match(/rpc\("has_active_role", \{ p_role_code: "super_admin" \}\)/g) ?? []).length, 1, "readiness gate uses has_active_role");
+  assert.match(mw, /effectiveGateRole\(access, icmsRole\)/);
 });
 
 test("closure: AVSEC requireProfile and user-management guards use the canonical authority", () => {
-  assert.match(read("lib/avsec/auth.ts"), /await hasActiveSuperAdminRole\(\)\) redirect\("\/super-admin"\)/);
+  assert.match(read("lib/avsec/auth.ts"), /access\.isSuperAdmin\) redirect\("\/super-admin"\)/);
   const actionsSrc = read("lib/avsec/admin/actions.ts");
   assert.equal((actionsSrc.match(/await isProfileActiveSuperAdmin\(profileId\)/g) ?? []).length, 3, "deactivate, delete and reassign each protect a canonical Super Admin target");
   assert.ok(!/select\("role, unified_role"\)/.test(actionsSrc));
@@ -177,28 +179,21 @@ test("closure: the Super Admin portal links to the readiness route and every act
   assert.equal((src.match(/await isSuperAdmin\(\)/g) ?? []).length, 3);
 });
 
-// Any file still naming unified_role is a documented legacy-compatibility path
-// (docs/phase13/super-admin-authorization-correction.md). A new file appearing
-// here must be reviewed and added deliberately.
-const LEGACY_UNIFIED_ROLE_ALLOWLIST = new Set([
-  "app/(avsec)/avsec/layout.tsx", "app/(avsec)/avsec/scan/page.tsx", "app/(icms)/icms/layout.tsx",
-  "app/(icms)/icms/transactions/page.tsx", "app/api/auth/register/route.ts", "app/auth/callback/route.ts", "app/page.tsx",
-  "lib/avsec/admin/actions.ts", "lib/avsec/auth.ts", "lib/avsec/types.ts", "lib/icms/actions/auth.ts",
-  "lib/icms/actions/registration.ts", "lib/icms/actions/scan.ts", "lib/icms/actions/users.ts", "lib/icms/constants.ts",
-  "lib/icms/database.types.ts", "lib/icms/shadow-user.ts", "lib/supabase/database.types.ts", "lib/supabase/middleware.ts",
-  "components/layout/AppSidebar.tsx",
-]);
+// `unified_role` no longer exists on the staging baseline and must not decide or
+// be written by any production code. Only the generated database type files
+// (which mirror whatever schema they were generated from) may name it.
+const GENERATED_TYPE_FILES = new Set(["lib/icms/database.types.ts", "lib/supabase/database.types.ts"]);
 
-test("closure: unified_role references outside the allow-list do not exist (legacy-compat inventory is complete)", () => {
+test("closure: no handwritten production code references unified_role (reads, writes or props)", () => {
   const found: string[] = [];
   const walk = (dir: string) => {
     for (const e of fs.readdirSync(path.join(REPO, dir), { withFileTypes: true })) {
       const rel = `${dir}/${e.name}`;
       if (e.isDirectory()) walk(rel);
-      else if (/\.(ts|tsx)$/.test(e.name) && /unified_role/.test(read(rel).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""))) found.push(rel);
+      else if (/\.(ts|tsx)$/.test(e.name) && /unified_role|unifiedRole/.test(read(rel).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""))) found.push(rel);
     }
   };
   for (const d of ["app", "lib", "components"]) walk(d);
-  const unexpected = found.filter((f) => !LEGACY_UNIFIED_ROLE_ALLOWLIST.has(f));
-  assert.deepEqual(unexpected, [], `undocumented unified_role reference(s): ${unexpected.join(", ")}`);
+  const unexpected = found.filter((f) => !GENERATED_TYPE_FILES.has(f));
+  assert.deepEqual(unexpected, [], `unreviewed unified_role reference(s): ${unexpected.join(", ")}`);
 });

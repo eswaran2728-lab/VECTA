@@ -46,12 +46,6 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
   try {
     const supabase = await createClient();
 
-    const mappedUnifiedRole =
-      avsecRole.toLowerCase() === "admin" ? "management" : avsecRole.toLowerCase();
-    const unifiedRole =
-      systemType === "caterlink"
-        ? "vendor"
-        : (mappedUnifiedRole as "management" | "enforcement" | "so" | "aso" | "dse" | "vendor");
 
     const { data: created, error: authError } = await supabase.auth.signUp({
       email,
@@ -64,7 +58,6 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
           phone,
           system_type: systemType,
           role: systemType === "caterlink" ? "vendor" : (avsecRole === "ADMIN" ? "MANAGEMENT" : avsecRole),
-          unified_role: unifiedRole,
           ops_group: opsGroup,
           team,
           station,
@@ -89,7 +82,6 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
           name,
           staff_no: staffId,
           role: safeRole as "ASO" | "SO" | "DSE" | "ENFORCEMENT" | "MANAGEMENT",
-          unified_role: unifiedRole,
           ops_group: opsGroup,
           team,
           station,
@@ -114,7 +106,6 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
           staff_id: staffId,
           email,
           role: "vendor",
-          unified_role: "vendor",
           status: "pending",
         },
         { onConflict: "id" }

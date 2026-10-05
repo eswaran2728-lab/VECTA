@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapAvsecRoleToIcmsRole, mapAvsecRoleToUnifiedRole } from "../lib/icms/shadow-user.ts";
+import { mapAvsecRoleToIcmsRole } from "../lib/icms/shadow-user.ts";
 import { ROLE_LABELS as AVSEC_ROLE_LABELS, USER_ROLES } from "../lib/avsec/reference-data.ts";
 import { ROLE_LABELS as ICMS_ROLE_LABELS } from "../lib/icms/constants.ts";
 
@@ -27,15 +27,6 @@ function formatRoleChip(role: string | null): string | null {
       return role.charAt(0).toUpperCase() + role.slice(1);
   }
 }
-
-test("Legacy ADMIN mappings purge: mapAvsecRoleToUnifiedRole maps ADMIN to management", () => {
-  assert.equal(mapAvsecRoleToUnifiedRole("ADMIN"), "management");
-  assert.equal(mapAvsecRoleToUnifiedRole("MANAGEMENT"), "management");
-  assert.equal(mapAvsecRoleToUnifiedRole("ENFORCEMENT"), "enforcement");
-  assert.equal(mapAvsecRoleToUnifiedRole("SO"), "so");
-  assert.equal(mapAvsecRoleToUnifiedRole("ASO"), "aso");
-  assert.equal(mapAvsecRoleToUnifiedRole("DSE"), "dse");
-});
 
 test("Legacy ADMIN mappings purge: mapAvsecRoleToIcmsRole maps ADMIN to management", () => {
   assert.equal(mapAvsecRoleToIcmsRole("ADMIN"), "management");

@@ -87,11 +87,11 @@ test("phase13 super-admin: readiness page and server helper use the canonical ro
   assert.ok(!/unified_role|SUPER_ADMIN|from\("profiles"\)/.test(fn), "canonical helper must not read legacy profile columns");
 });
 
-test("phase13 super-admin: middleware gates /super-admin/readiness on the canonical RPC before any legacy profile lookup", () => {
+test("phase13 super-admin: middleware gates /super-admin/readiness on the canonical RPC before any legacy table lookup", () => {
   const mw = read("lib/supabase/middleware.ts");
   const readinessIdx = mw.indexOf("isReadinessPath(path)");
-  const legacyLookupIdx = mw.indexOf('.select("unified_role, role, status")');
-  assert.ok(readinessIdx > 0 && legacyLookupIdx > 0 && readinessIdx < legacyLookupIdx, "canonical readiness gate must run before the legacy unified_role lookup");
+  const legacyLookupIdx = mw.indexOf('.from("profiles").select("status")');
+  assert.ok(readinessIdx > 0 && legacyLookupIdx > 0 && readinessIdx < legacyLookupIdx, "canonical readiness gate must run before the legacy status lookup");
   assert.match(mw, /rpc\("has_active_role", \{ p_role_code: "super_admin" \}\)/);
 });
 

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireRole, ENFORCEMENT_SEARCH_ROLES } from "@/lib/avsec/auth";
+import { requireRouteAccess, ENFORCEMENT_SEARCH_ROLES } from "@/lib/avsec/auth";
 import { searchFlightAttendance } from "@/lib/avsec/search/enforcementSearch";
 import { REPORT_META } from "@/lib/avsec/reference-data";
 import { formatDateMY, formatDateTimeMY } from "@/lib/avsec/datetime";
@@ -10,7 +10,7 @@ export default async function EnforcementSearchPage({
   searchParams: Promise<{ flight?: string; date?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  await requireRole(ENFORCEMENT_SEARCH_ROLES);
+  await requireRouteAccess("/avsec/enforcement/search", ENFORCEMENT_SEARCH_ROLES);
   const flight = (searchParams.flight || "").trim();
   const date = searchParams.date || "";
 

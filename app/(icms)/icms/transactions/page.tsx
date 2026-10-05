@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireProfile } from "@/lib/icms/auth";
+import { getActiveRoleAssignments } from "@/lib/dashboard/context";
+import { deriveCanonicalAccess, isOrgWideOperator } from "@/lib/auth/canonical-access";
 import { createClient } from "@/lib/supabase/server";
 import { StatusBadge } from "@/components/icms/status-badge";
 import { DirectionBadge } from "@/components/icms/direction-badge";
@@ -22,7 +24,6 @@ import { formatDateTime } from "@/lib/icms/utils";
 import type { Transaction, TransactionStatus } from "@/lib/icms/database.types";
 import { nextStepFor } from "@/lib/icms/workflow";
 
-const ORG_WIDE_UNIFIED_ROLES = ["admin", "management", "enforcement"];
 
 export const metadata: Metadata = { title: "Transactions" };
 export const dynamic = "force-dynamic";
@@ -88,7 +89,7 @@ export default async function TransactionsPage({
     query = query.lte("created_at", new Date(`${params.to}T23:59:59`).toISOString());
   }
 
-  const orgWide = ORG_WIDE_UNIFIED_ROLES.includes(profile.unified_role ?? "");
+  const orgWide = isOrgWideOperator(deriveCanonicalAccess(await getActiveRoleAssignments()), profile.role);
 
   const { data } = await query;
   const transactions = ((data ?? []) as unknown as (Transaction & {

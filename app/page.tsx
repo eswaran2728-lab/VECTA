@@ -15,19 +15,12 @@ import { NotificationsBell } from "@/components/layout/NotificationsBell";
 import { TransactionStageBar } from "@/components/layout/TransactionStageBar";
 import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries";
 import { getActiveRoleAssignments } from "@/lib/dashboard/context";
+import { deriveCanonicalAccess, isOrgWideOperator, icmsDisplayTier } from "@/lib/auth/canonical-access";
+import { isExternalCaterLinkRole } from "@/lib/supabase/middleware-gate-logic";
 import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
 import type { Direction, OpsGroup, TransactionRoute, TransactionStatus } from "@/lib/icms/database.types";
 import { formatTimeMY } from "@/lib/avsec/datetime";
 
-// Unified role vocabulary (supabase/migrations/unified_role_model):
-// admin, management, enforcement, so, aso, dse. Org-wide roles
-// (admin/management/enforcement) get both apps and see all 3 ops_groups;
-// so/aso/dse get whichever app their account actually lives in
-// (public.profiles for AVSEC-origin, public.users for ICMS-origin) — a
-// bare "aso" mapping doesn't by itself grant ICMS RLS access, since that's
-// keyed off having an actual public.users row, not just the unified_role
-// string.
-const ORG_WIDE_ROLES = ["admin", "management", "enforcement"];
 
 const OPS_GROUPS: OpsGroup[] = ["operation_avsec", "ifc_avsec", "hub_avsec"];
 const OPS_GROUP_LABELS: Record<OpsGroup, string> = {
@@ -80,43 +73,32 @@ export default async function LandingPage({
 
   if (!user) redirect("/login");
 
+  // Canonical access: the caller's own active Phase 3 assignments decide.
+  const activeAssignments = await getActiveRoleAssignments();
+  const access = deriveCanonicalAccess(activeAssignments);
+  if (access.isSuperAdmin) redirect("/super-admin");
+
   const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("unified_role, name, role, ops_group, station, team")
-      .eq("id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("users")
-      .select("unified_role, name, role, ops_group")
-      .eq("id", user.id)
-      .maybeSingle(),
+    supabase.from("profiles").select("name, ops_group, station, team").eq("id", user.id).maybeSingle(),
+    supabase.from("users").select("name, role, ops_group").eq("id", user.id).maybeSingle(),
   ]);
 
   const profile = avsecProfile ?? icmsProfile;
   if (!profile) redirect("/login?error=no-profile");
 
-  const role = profile.unified_role as string | null;
-  const rawRole = (icmsProfile?.role ?? avsecProfile?.role) as string | null;
-  const userEmail = (user.email ?? "").toLowerCase();
-
-  // Single Login Portal: Drivers, Vendors, CaterLink & Warehouse PIC route automatically into CaterLink / ICMS
-  const isCaterLinkUser =
-    role === "vendor" ||
-    rawRole === "vendor" ||
-    rawRole === "driver_ifc" ||
-    rawRole === "driver_vendor" ||
-    rawRole === "warehouse_pic" ||
-    userEmail.includes("caterlink") ||
-    userEmail.includes("driver") ||
-    userEmail.includes("warehouse") ||
-    userEmail.includes("vendor");
-
-  if (isCaterLinkUser) {
+  // External CaterLink identity = the ICMS users-table role (never email/metadata),
+  // and only when the account holds no canonical assignment.
+  if (!access.hasAssignment && isExternalCaterLinkRole(icmsProfile?.role as string | undefined)) {
     redirect("/caterlink/dashboard");
   }
+  // An AVSEC account with no active assignment has no operational workspace.
+  if (!access.hasAssignment && !icmsProfile) redirect("/avsec/pending-approval");
+  // Canonical roles with no legacy-page rank work through the Phase 7 dashboards.
+  if (access.hasAssignment && !access.primaryCompatRole) redirect("/avsec/my-dashboard");
 
-  const orgWide = role ? ORG_WIDE_ROLES.includes(role) : false;
+  const role = (access.hasAssignment ? (access.primaryCompatRole as string).toLowerCase() : icmsDisplayTier(icmsProfile?.role as string | undefined)) as string | null;
+
+  const orgWide = isOrgWideOperator(access, icmsProfile?.role as string | undefined);
 
 
 
@@ -167,11 +149,10 @@ export default async function LandingPage({
     ops_group: profile.ops_group ?? null,
   };
 
-  const [snapshot, activity, announcements, activeAssignments] = await Promise.all([
+  const [snapshot, activity, announcements] = await Promise.all([
     getDashboardSnapshot(scopeGroup),
     getActivityFeed(scopeGroup),
     getActiveAnnouncementsForUser(currentUserProfile),
-    getActiveRoleAssignments(),
   ]);
   // Phase 7: purely a nav-display decision (see lib/dashboard/navigation.ts).
   const hasPhase7Assignment = activeAssignments.length > 0;
@@ -210,7 +191,6 @@ export default async function LandingPage({
         opsGroup={userOpsGroup}
         station={avsecProfile?.station ?? null}
         team={avsecProfile?.team ?? null}
-        unifiedRole={role}
         hasPhase7Assignment={hasPhase7Assignment}
         signOutAction={signOut}
       />

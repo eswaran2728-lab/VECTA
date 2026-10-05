@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { assignmentKey, type RoleAssignmentContext } from "@/lib/dashboard/tiers";
+import { assignmentsFromRpcRows } from "@/lib/auth/canonical-access";
 
 export type { RoleAssignmentContext, DashboardTier } from "@/lib/dashboard/tiers";
 export { assignmentKey, tierForRoleCode } from "@/lib/dashboard/tiers";
@@ -26,19 +27,7 @@ export async function getActiveRoleAssignments(): Promise<RoleAssignmentContext[
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("get_my_active_role_assignments");
   if (error || !data) return [];
-  return (data as unknown as Array<Record<string, unknown>>).map((row) => ({
-    roleCode: row.role_code as string,
-    roleCategory: row.role_category as string,
-    aocCode: (row.aoc_code as string) ?? null,
-    operatingEntityCode: (row.operating_entity_code as string) ?? null,
-    departmentCode: (row.department_code as string) ?? null,
-    unitCode: (row.unit_code as string) ?? null,
-    hubCode: (row.hub_code as string) ?? null,
-    stationCode: (row.station_code as string) ?? null,
-    teamName: (row.team_name as string) ?? null,
-    startsAt: row.starts_at as string,
-    endsAt: (row.ends_at as string) ?? null,
-  }));
+  return assignmentsFromRpcRows(data);
 }
 
 /**

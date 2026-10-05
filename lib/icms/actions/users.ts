@@ -52,7 +52,6 @@ export async function createUser(
   // stay null).
   const dutyPost = DUTY_POST_BY_ROLE[role] ?? null;
   const opsGroup = dutyPost ? OPS_GROUP_BY_DUTY_POST[dutyPost] : null;
-  const unifiedRole = role === "supervisor" || role === "management" ? "management" : role === "enforcement" ? "enforcement" : "aso";
 
   const { error: profileError } = await admin.from("users").insert({
     id: created.user.id,
@@ -62,7 +61,6 @@ export async function createUser(
     role,
     duty_post: dutyPost,
     ops_group: opsGroup,
-    unified_role: unifiedRole,
   });
 
   if (profileError) {
@@ -94,12 +92,11 @@ export async function updateUserRole(
 
   const dutyPost = DUTY_POST_BY_ROLE[role] ?? null;
   const opsGroup = dutyPost ? OPS_GROUP_BY_DUTY_POST[dutyPost] : null;
-  const unifiedRole = role === "supervisor" || role === "management" ? "management" : role === "enforcement" ? "enforcement" : "aso";
 
   const admin = createAdminClient();
   const { error } = await admin
     .from("users")
-    .update({ role, duty_post: dutyPost, ops_group: opsGroup, unified_role: unifiedRole })
+    .update({ role, duty_post: dutyPost, ops_group: opsGroup })
     .eq("id", userId);
 
   if (error) {

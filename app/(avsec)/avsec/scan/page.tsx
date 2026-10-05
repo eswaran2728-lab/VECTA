@@ -3,11 +3,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { UnifiedScanner } from "@/components/scan/UnifiedScanner";
 import type { OpsGroup } from "@/lib/icms/database.types";
+import { resolveOperatorScope } from "@/lib/auth/operator-scope";
 
 export const metadata: Metadata = { title: "Scan — VECTA" };
 export const dynamic = "force-dynamic";
 
-const ORG_WIDE_UNIFIED_ROLES = ["admin", "management", "enforcement"];
 
 // Unified AVSEC scanning model: Operation and IFC branches scan under one
 // label here (they're interchangeable for CaterLink checkpoints — see
@@ -34,17 +34,13 @@ export default async function UnifiedScanPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
-    supabase.from("profiles").select("unified_role, ops_group").eq("id", user.id).maybeSingle(),
-    supabase.from("users").select("unified_role, ops_group").eq("id", user.id).maybeSingle(),
-  ]);
-  const profile = avsecProfile ?? icmsProfile;
-  if (!profile) redirect("/login?error=no-profile");
+  const scope = await resolveOperatorScope(supabase, user.id);
+  if (!scope.source) redirect("/login?error=no-profile");
 
-  const orgWide = ORG_WIDE_UNIFIED_ROLES.includes(profile.unified_role ?? "");
-  if (!orgWide && !profile.ops_group) redirect("/?error=no-ops-group");
+  const orgWide = scope.orgWide;
+  if (!orgWide && !scope.opsGroup) redirect("/?error=no-ops-group");
 
-  const opsGroup = profile.ops_group as OpsGroup | null;
+  const opsGroup = scope.opsGroup as OpsGroup | null;
   const scopeChip = orgWide ? "All Ops Groups" : opsGroup ? OPS_GROUP_LABELS[opsGroup] : null;
 
   return (

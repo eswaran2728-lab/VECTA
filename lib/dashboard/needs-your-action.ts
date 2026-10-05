@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentProfile } from "@/lib/avsec/auth";
 import { getOpenBayBoard } from "@/lib/avsec/reports/queries";
 import { getShiftCompliance } from "@/lib/avsec/dashboard/queries";
 import { ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
@@ -42,13 +43,15 @@ export async function getNeedsYourActionItems(): Promise<ActionItem[]> {
   } = await supabase.auth.getUser();
   if (!user) return [];
 
-  const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
-    supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
+  // AVSEC action items follow the canonical-derived profile (null without an
+  // approved profile and an active assignment); ICMS keeps its own users table.
+  const [avsecProfile, { data: icmsProfile }] = await Promise.all([
+    getCurrentProfile(),
     supabase.from("users").select("*").eq("id", user.id).maybeSingle(),
   ]);
 
   const items: ActionItem[] = [];
-  if (avsecProfile) items.push(...(await getAvsecActionItems(avsecProfile as unknown as Profile)));
+  if (avsecProfile) items.push(...(await getAvsecActionItems(avsecProfile)));
   if (icmsProfile) items.push(...(await getIcmsActionItems(icmsProfile as unknown as UserProfile)));
   return items;
 }

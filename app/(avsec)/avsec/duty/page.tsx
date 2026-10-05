@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { requireRole, DUTY_ROLES } from "@/lib/avsec/auth";
+import { requireRouteAccess, DUTY_ROLES } from "@/lib/avsec/auth";
 import { getTodayRoster, getTodayDutyRecord } from "@/lib/avsec/duty/checkin-queries";
 import { getZonesForStation } from "@/lib/avsec/duty/zone-queries";
 import { getTodayAbsenceNotice } from "@/lib/avsec/duty/absence-queries";
 import { CheckInScreen } from "@/components/avsec/duty/CheckInScreen";
 
 export default async function DutyPage() {
-  const profile = await requireRole(DUTY_ROLES);
+  const profile = await requireRouteAccess("/avsec/duty", DUTY_ROLES);
 
   const roster = profile.station ? await getTodayRoster(profile.station, profile.team ?? "") : null;
   const [allZones, record, todayAbsence] = await Promise.all([

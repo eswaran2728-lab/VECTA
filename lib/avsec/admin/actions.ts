@@ -77,16 +77,6 @@ export async function createStaffAccount(formData: FormData) {
   const data = createUserResult.data;
 
   const safeRole = role === "ADMIN" ? "MANAGEMENT" : role;
-  const unifiedRole =
-    safeRole === "MANAGEMENT"
-      ? "management"
-      : safeRole === "ENFORCEMENT"
-        ? "enforcement"
-        : safeRole === "DSE"
-          ? "dse"
-          : safeRole === "SO"
-            ? "so"
-            : "aso";
 
   const supabase = await createClient();
   const { error: profileError } = await supabase
@@ -97,7 +87,6 @@ export async function createStaffAccount(formData: FormData) {
       station,
       team: isOrgWide ? "" : team,
       role: safeRole as "ASO" | "SO" | "DSE" | "ENFORCEMENT" | "MANAGEMENT",
-      unified_role: unifiedRole,
       ops_group: opsGroup,
       status: "approved",
     })
@@ -219,12 +208,11 @@ export async function approveUserWithAssignment(formData: FormData) {
   // Keep the ICMS shadow row in sync so the newly-approved account can
   // actually use CaterLink/ICMS features immediately, same mapping
   // createStaffAccount() uses.
-  const { mapAvsecRoleToIcmsRole, mapAvsecRoleToUnifiedRole } = await import("@/lib/icms/shadow-user");
+  const { mapAvsecRoleToIcmsRole } = await import("@/lib/icms/shadow-user");
   await createAdminClient()
     .from("users")
     .update({
       role: mapAvsecRoleToIcmsRole(role),
-      unified_role: mapAvsecRoleToUnifiedRole(role),
       ops_group: opsGroup,
       status: "active",
     })
@@ -364,16 +352,6 @@ export async function updateUserAssignment(formData: FormData) {
     needsOpsGroup && (OPS_GROUPS as readonly string[]).includes(opsGroupInput) ? (opsGroupInput as OpsGroup) : null;
 
   const safeRole = role === "ADMIN" ? "MANAGEMENT" : role;
-  const unifiedRole =
-    safeRole === "MANAGEMENT"
-      ? "management"
-      : safeRole === "ENFORCEMENT"
-        ? "enforcement"
-        : safeRole === "DSE"
-          ? "dse"
-          : safeRole === "SO"
-            ? "so"
-            : "aso";
 
   const { data, error } = await supabase
     .from("profiles")
@@ -381,7 +359,6 @@ export async function updateUserAssignment(formData: FormData) {
       station,
       team: isOrgWide ? "" : team,
       role: safeRole as "ASO" | "SO" | "DSE" | "ENFORCEMENT" | "MANAGEMENT",
-      unified_role: unifiedRole,
       ops_group: opsGroup,
     })
     .eq("id", profileId)
@@ -406,7 +383,6 @@ export async function updateUserAssignment(formData: FormData) {
   await createAdminClient()
     .from("users")
     .update({
-      unified_role: unifiedRole,
       ops_group: opsGroup,
     })
     .eq("id", profileId);

@@ -62,27 +62,15 @@ test("staging reconciliation: the Phase 13 storage/admin migration sorts strictl
   assert.ok(a >= 0 && b >= 0 && a < b, "the two Phase 13 migrations must apply in the order the reconciliation plan assumes");
 });
 
-test("staging reconciliation: corrected account-plan arithmetic -- base + additional variants + negative states", () => {
+test("staging reconciliation: final account-plan arithmetic -- base + additional variants + negative states = exactly 36", () => {
   const BASE_ACCOUNTS = ALL_ROLE_CODES.length;
   assert.equal(BASE_ACCOUNTS, 23);
-
-  // KUL + JHB station variants for sso/so/aso (PEN deliberately excluded
-  // -- see provision-test-accounts.mjs's own comment and
-  // docs/dashboard-review/staging-reconciliation.md section 10).
-  const STATION_ROLES_PER_VARIANT = 3; // sso, so, aso
-  const NON_REDUNDANT_STATION_VARIANTS = 2; // kul, jhb
-  const NO_CATERLINK_VARIANT = 1;
-  const ADDITIONAL_STATION_VARIANTS = STATION_ROLES_PER_VARIANT * NON_REDUNDANT_STATION_VARIANTS + NO_CATERLINK_VARIANT;
+  // KUL + JHB station variants for sso/so/aso (PEN excluded: the base accounts already default to PEN)
+  const ADDITIONAL_STATION_VARIANTS = 3 * 2 + 1; // kul x3, jhb x3, one no-CaterLink station (BTU)
   assert.equal(ADDITIONAL_STATION_VARIANTS, 7);
-
-  const NEGATIVE_STATES_PLANNED = 7; // pending, rejected, deactivated, revoked, expired, future_dated, foreign_aoc
-  const NEGATIVE_STATES_CREATABLE_WITHOUT_SECOND_AOC = 6; // foreign_aoc requires a second AOC to exist
-
-  const TOTAL_WITH_SECOND_AOC = BASE_ACCOUNTS + ADDITIONAL_STATION_VARIANTS + NEGATIVE_STATES_PLANNED;
-  const TOTAL_WITHOUT_SECOND_AOC = BASE_ACCOUNTS + ADDITIONAL_STATION_VARIANTS + NEGATIVE_STATES_CREATABLE_WITHOUT_SECOND_AOC;
-
-  assert.equal(TOTAL_WITH_SECOND_AOC, 37, "exact total once Phase 2-13 is applied AND a second AOC is configured");
-  assert.equal(TOTAL_WITHOUT_SECOND_AOC, 36, "exact total creatable in ddlctzbnqewubltcavkh as it stands today (post-migration, no second AOC)");
+  const NEGATIVE_STATES = 6; // pending, rejected, deactivated, revoked, expired, future_dated -- no foreign-AOC (Malaysia AOC only)
+  assert.equal(NEGATIVE_STATES, 6);
+  assert.equal(BASE_ACCOUNTS + ADDITIONAL_STATION_VARIANTS + NEGATIVE_STATES, 36);
 });
 
 test("staging reconciliation: provision-test-accounts.mjs's station variants no longer include a redundant PEN entry", () => {

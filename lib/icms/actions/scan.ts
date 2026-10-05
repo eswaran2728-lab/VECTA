@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { resolveOperatorScope } from "@/lib/auth/operator-scope";
 import { parseCaterLinkQrPayload } from "@/lib/icms/qr-payload";
 import {
   opsGroupForTransaction,
@@ -22,7 +23,6 @@ export interface ScanResult {
   redirectPath?: string;
 }
 
-const ORG_WIDE_UNIFIED_ROLES = ["admin", "management", "enforcement"];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NUMBER_RE = /^(ICMS|CSCS)-\d{4}-\d{6}$/i;
 
@@ -45,28 +45,19 @@ export async function scanTransaction(raw: string): Promise<ScanResult> {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not signed in." };
 
-  const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
-    supabase.from("profiles").select("unified_role, ops_group").eq("id", user.id).maybeSingle(),
-    supabase.from("users").select("unified_role, ops_group").eq("id", user.id).maybeSingle(),
-  ]);
-  const profile = avsecProfile ?? icmsProfile;
-  if (!profile) return { error: "No VECTA profile — contact an admin." };
+  const scope = await resolveOperatorScope(supabase, user.id);
+  if (!scope.source) return { error: "No VECTA profile — contact an admin." };
 
   // Phase 8: Staff Profiling (profiling_so/profiling_aso) is explicitly
-  // excluded from CaterLink scanning by design -- checked against the
-  // caller's actual active Phase 3 role assignment, never against the
-  // legacy unified_role/ops_group columns above, which are independent
-  // of Phase 3 and could otherwise happen to satisfy the org-wide/ops-
-  // group check for a Profiling account that was never meant to scan.
-  for (const roleCode of ["profiling_so", "profiling_aso"]) {
-    const { data: isProfiling } = await supabase.rpc("has_active_role", { p_role_code: roleCode });
-    if (isProfiling === true) {
-      return { error: "Staff Profiling accounts are not authorized to scan CaterLink transactions." };
-    }
+  // excluded from CaterLink scanning by design -- decided from the caller's
+  // own active Phase 3 role assignments (canonical), independent of any
+  // legacy ops_group value that could otherwise satisfy the checks below.
+  if (scope.roleCodes.some((code) => code === "profiling_so" || code === "profiling_aso")) {
+    return { error: "Staff Profiling accounts are not authorized to scan CaterLink transactions." };
   }
 
-  const orgWide = ORG_WIDE_UNIFIED_ROLES.includes(profile.unified_role ?? "");
-  const userOpsGroup = profile.ops_group as OpsGroup | null;
+  const orgWide = scope.orgWide;
+  const userOpsGroup = scope.opsGroup as OpsGroup | null;
 
   // Unified AVSEC scanning model: any approved ASO/SO/DSE in Operation or
   // IFC AVSEC may scan/process non-Hub CaterLink checkpoints — the
@@ -87,7 +78,7 @@ export async function scanTransaction(raw: string): Promise<ScanResult> {
   // encodes this token verbatim, never a bare id/number). Checked before the
   // legacy id/number lookup further below, which stays only for manually
   // typed references on VECTA's own transaction detail pages.
-  const userStation = (profile as { station?: string | null }).station ?? null;
+  const userStation = scope.station;
 
   // Phase 9: Station capability verification
   // CaterLink scanning is allowed only for stations with can_scan capability enabled

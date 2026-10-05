@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireRole, DUTY_ROLES } from "@/lib/avsec/auth";
+import { requireRouteAccess, DUTY_ROLES } from "@/lib/avsec/auth";
 import { getTimesheetRoster, getTimesheetDuty } from "@/lib/avsec/duty/timesheet-queries";
 import { scheduledWindow } from "@/lib/avsec/duty/lateness";
 import { DayTimeline } from "@/components/avsec/duty/DayTimeline";
@@ -35,7 +35,7 @@ export default async function TimesheetPage({
   searchParams: Promise<{ week?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const profile = await requireRole(DUTY_ROLES);
+  const profile = await requireRouteAccess("/avsec/duty", DUTY_ROLES);
   const weekStart = mondayOf(searchParams.week || todayISODateMY());
   const weekEnd = addDays(weekStart, 6);
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));

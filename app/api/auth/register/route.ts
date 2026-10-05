@@ -78,10 +78,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const unifiedRole =
-      systemType === "caterlink"
-        ? "vendor"
-        : (safeAvsecRole.toLowerCase() as "so" | "aso" | "dse" | "vendor");
 
     // email_confirm: true - self-registered accounts are gated by admin
     // approval (status = 'pending' below), not an email confirmation link
@@ -98,7 +94,6 @@ export async function POST(request: Request) {
         phone,
         system_type: systemType,
         role: systemType === "caterlink" ? "vendor" : safeAvsecRole,
-        unified_role: unifiedRole,
         ops_group: opsGroup,
         team,
         station,
@@ -131,7 +126,6 @@ export async function POST(request: Request) {
           name,
           staff_no: staffId,
           role: (safeAvsecRole ?? "ASO") as "ASO" | "SO" | "DSE" | "ENFORCEMENT" | "MANAGEMENT",
-          unified_role: unifiedRole,
           ops_group: opsGroup,
           team,
           station,
@@ -156,7 +150,6 @@ export async function POST(request: Request) {
           staff_id: staffId,
           email,
           role: "vendor",
-          unified_role: "vendor",
           status: "pending",
         },
         { onConflict: "id" }

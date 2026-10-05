@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireRole, MONITOR_ROLES, landingPathForRole } from "@/lib/avsec/auth";
+import { requireRouteAccess, MONITOR_ROLES, landingPathForRole } from "@/lib/avsec/auth";
 import { STATIONS, REPORT_META, REPORT_TYPES, ORG_WIDE_ROLES, type ReportType } from "@/lib/avsec/reference-data";
 import {
   getTodayCounts,
@@ -26,7 +26,7 @@ export default async function DashboardPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const searchParams = await searchParamsPromise;
-  const profile = await requireRole(MONITOR_ROLES);
+  const profile = await requireRouteAccess("/avsec/dashboard", MONITOR_ROLES);
 
   const today = todayISODateMY();
   const filters: DashboardFilters = {

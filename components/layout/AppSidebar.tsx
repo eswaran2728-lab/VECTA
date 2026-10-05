@@ -52,7 +52,6 @@ export function AppSidebar({
   opsGroup,
   station,
   team,
-  unifiedRole,
   hasPhase7Assignment = false,
   signOutAction,
 }: {
@@ -63,16 +62,6 @@ export function AppSidebar({
   opsGroup: OpsGroup | null;
   station?: string | null;
   team?: string | null;
-  /**
-   * Unified role vocabulary (supabase/migrations/unified_role_model.sql) —
-   * the single source of truth for org-tier ("is this account Management-or-
-   * above") across both AVSEC (`profiles.role`) and ICMS (`users.role`),
-   * which otherwise use different legacy strings for the same tier (e.g.
-   * ICMS's admin-equivalent account is `role: "supervisor"`, not "admin").
-   * Falls back to `role` string-matching below when not provided, so older
-   * call sites keep working, but any caller that has it should pass it.
-   */
-  unifiedRole?: string | null;
   /** Phase 7: whether this profile holds at least one active Phase 3 role
    *  assignment (from lib/dashboard/context.ts's getActiveRoleAssignments(),
    *  fetched once in the layout). Purely a display decision -- see
@@ -84,10 +73,7 @@ export function AppSidebar({
   const [woisOpen, setWoisOpen] = useState(false);
 
   const normalizedRole = (role ?? "").toLowerCase();
-  const normalizedUnifiedRole = (unifiedRole ?? "").toLowerCase();
-  const isOrgWide =
-    ["management", "enforcement"].includes(normalizedUnifiedRole) ||
-    ["admin", "management", "enforcement", "supervisor"].includes(normalizedRole);
+  const isOrgWide = ["admin", "management", "enforcement", "supervisor"].includes(normalizedRole);
   const isDse = normalizedRole === "dse";
   const isDriver = ["warehouse_pic", "vendor"].includes(normalizedRole);
   const isVendor = normalizedRole === "vendor";

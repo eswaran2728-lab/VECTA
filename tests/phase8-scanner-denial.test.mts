@@ -3,7 +3,7 @@
 // point -- see its own header comment), that an account holding an
 // active profiling_so/profiling_aso Phase 3 role is denied BEFORE any
 // QR/transaction logic runs, and that this denial cannot be bypassed by
-// legacy unified_role/ops_group values that would otherwise satisfy the
+// legacy ops_group values that would otherwise satisfy the
 // org-wide/ops-group gate. This is the actual authorization path, not a
 // re-derived copy of it -- the only mocked boundary is the Supabase
 // client construction (@/lib/supabase/server), matching every other
@@ -24,42 +24,41 @@ function reset() {
   return currentQueue;
 }
 
-function queueAuthAndProfile(queue: ResultQueue, profile: { unified_role: string; ops_group: string | null }) {
+function queueAuthAndProfile(queue: ResultQueue, caller: { roleCodes: string[]; ops_group: string | null }) {
   queue.push({ data: { user: { id: "user-1" } }, error: null }); // auth.getUser()
-  queue.push({ data: profile, error: null }); // profiles table
+  queue.push({
+    data: caller.roleCodes.map((role_code) => ({ role_code, role_category: "x", station_code: null, starts_at: "2026-01-01T00:00:00Z", ends_at: null })),
+    error: null,
+  }); // get_my_active_role_assignments() -- canonical authority
+  queue.push({ data: { ops_group: caller.ops_group, station: null }, error: null }); // profiles: workflow attribute only
   queue.push({ data: null, error: null }); // users table (icms) -- no row
 }
 
-test("scanner denial: profiling_aso cannot scan, even with an org-wide-satisfying legacy unified_role/ops_group", async () => {
+test("scanner denial: profiling_aso cannot scan, even with an org-wide-satisfying legacy ops_group", async () => {
   const queue = reset();
   // Legacy fields deliberately set to values that WOULD pass the
   // org-wide/ops-group gate below the Phase 8 check -- proving the
   // Phase 8 denial is not merely "reached first by coincidence" but
   // genuinely independent of (and stronger than) the legacy gate.
-  queueAuthAndProfile(queue, { unified_role: "admin", ops_group: "operation_avsec" });
-  queue.push({ data: false, error: null }); // has_active_role('profiling_so') -> false
-  queue.push({ data: true, error: null }); // has_active_role('profiling_aso') -> true
+  queueAuthAndProfile(queue, { roleCodes: ["profiling_aso"], ops_group: "operation_avsec" });
 
   const result = await scanTransaction("AK123-CATERING-0001");
   assert.equal(result.error, "Staff Profiling accounts are not authorized to scan CaterLink transactions.");
   assert.equal(result.transactionId, undefined, "no transaction data is ever returned to a denied Profiling caller");
 });
 
-test("scanner denial: profiling_so cannot scan, even with an org-wide-satisfying legacy unified_role/ops_group", async () => {
+test("scanner denial: profiling_so cannot scan, even with an org-wide-satisfying legacy ops_group", async () => {
   const queue = reset();
-  queueAuthAndProfile(queue, { unified_role: "management", ops_group: "ifc_avsec" });
-  queue.push({ data: true, error: null }); // has_active_role('profiling_so') -> true (stops the loop here)
+  queueAuthAndProfile(queue, { roleCodes: ["profiling_so"], ops_group: "ifc_avsec" });
 
   const result = await scanTransaction("AK123-CATERING-0001");
   assert.equal(result.error, "Staff Profiling accounts are not authorized to scan CaterLink transactions.");
-  assert.equal(queue.callsMatching("rpc").length, 1, "profiling_so denial short-circuits before even probing profiling_aso");
+  assert.equal(queue.callsMatching("rpc").length, 1, "the Profiling denial is decided from the single canonical assignments call -- no per-role probing");
 });
 
 test("scanner denial: a Profiling account with NO legacy ops_group at all (would otherwise be denied by the ops_group gate) still gets the Profiling-specific denial message, proving the Phase 8 check runs strictly first", async () => {
   const queue = reset();
-  queueAuthAndProfile(queue, { unified_role: "aso", ops_group: null });
-  queue.push({ data: false, error: null }); // profiling_so -> false
-  queue.push({ data: true, error: null }); // profiling_aso -> true
+  queueAuthAndProfile(queue, { roleCodes: ["profiling_aso"], ops_group: null });
 
   const result = await scanTransaction("AK123-CATERING-0001");
   assert.equal(result.error, "Staff Profiling accounts are not authorized to scan CaterLink transactions.", "the caller gets the Profiling-specific denial, not the generic 'no ops group' error -- proving the Phase 8 check is checked before, and takes precedence over, the legacy gate");
@@ -67,9 +66,7 @@ test("scanner denial: a Profiling account with NO legacy ops_group at all (would
 
 test("scanner denial: direct invocation of the scan server action fails for profiling_aso -- this test calls the exported function directly, the same object a route handler would call, not a re-implementation", async () => {
   const queue = reset();
-  queueAuthAndProfile(queue, { unified_role: "aso", ops_group: "operation_avsec" });
-  queue.push({ data: false, error: null });
-  queue.push({ data: true, error: null });
+  queueAuthAndProfile(queue, { roleCodes: ["profiling_aso"], ops_group: "operation_avsec" });
 
   const result = await scanTransaction("some-raw-qr-payload");
   assert.ok(result.error, "direct invocation with a Profiling-active caller fails, exactly as a route-handler-mediated call would (scanTransaction is the ONLY scan entry point in this codebase)");
@@ -77,9 +74,7 @@ test("scanner denial: direct invocation of the scan server action fails for prof
 
 test("scanner denial: an unrelated, legitimately valid CaterLink role (ASO, operation_avsec, no Profiling role) is NOT denied by the Profiling check and reaches real QR-parsing logic", async () => {
   const queue = reset();
-  queueAuthAndProfile(queue, { unified_role: "aso", ops_group: "operation_avsec" });
-  queue.push({ data: false, error: null }); // profiling_so -> false
-  queue.push({ data: false, error: null }); // profiling_aso -> false
+  queueAuthAndProfile(queue, { roleCodes: ["aso"], ops_group: "operation_avsec" });
 
   // Deliberately invalid QR content -- if the Profiling check had
   // incorrectly denied everyone, or incorrectly let a Profiling account
@@ -94,8 +89,7 @@ test("scanner denial: an unrelated, legitimately valid CaterLink role (ASO, oper
 
 test("scanner denial: a Profiling account is denied even when the QR payload itself is completely invalid -- the role check runs before payload parsing, so garbage input never masks the correct denial reason", async () => {
   const queue = reset();
-  queueAuthAndProfile(queue, { unified_role: "aso", ops_group: "operation_avsec" });
-  queue.push({ data: true, error: null }); // profiling_so -> true
+  queueAuthAndProfile(queue, { roleCodes: ["profiling_so"], ops_group: "operation_avsec" });
 
   const result = await scanTransaction("this is not a valid qr payload");
   assert.equal(result.error, "Staff Profiling accounts are not authorized to scan CaterLink transactions.", "the Profiling denial is returned, not a QR-parsing error -- proving check ORDER (role gate strictly before payload parsing), not just eventual outcome");

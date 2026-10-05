@@ -26,6 +26,7 @@ const APP_DIR = path.join(REPO_ROOT, "app");
 // counts as "has a server-side gate" for this check.
 const GATE_MARKERS = [
   "requireRole(",
+  "requireRouteAccess(",
   "requireProfile(",
   "requirePhase8Role(",
   "isSuperAdmin(",

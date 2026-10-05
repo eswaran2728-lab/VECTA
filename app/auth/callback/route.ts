@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { isExternalCaterLinkRole } from "@/lib/supabase/middleware-gate-logic";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -46,13 +47,13 @@ export async function GET(request: Request) {
         // lib/supabase/middleware.ts and lib/avsec/auth.ts requireProfile()
         // — never an operational route, not even briefly.
         const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
-          supabase.from("profiles").select("unified_role, status").eq("id", user.id).maybeSingle(),
-          supabase.from("users").select("unified_role, status").eq("id", user.id).maybeSingle(),
+          supabase.from("profiles").select("status").eq("id", user.id).maybeSingle(),
+          supabase.from("users").select("role, status").eq("id", user.id).maybeSingle(),
         ]);
-        const profile = avsecProfile ?? icmsProfile;
 
-        // Segregate access: Vendor / Driver accounts belong strictly in CaterLink
-        if (profile?.unified_role === "vendor") {
+        // Segregate access: external CaterLink identities (ICMS users-table role)
+        // belong strictly in CaterLink. Never decided from email or metadata.
+        if (!avsecProfile && isExternalCaterLinkRole(icmsProfile?.role as string | undefined)) {
           return NextResponse.redirect(`${origin}/login?error=caterlink-only`);
         }
       }

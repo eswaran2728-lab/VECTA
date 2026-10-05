@@ -24,7 +24,7 @@ import { resolveStagingAdminContext, printProjectIdentity } from "./lib/env-guar
 import { ALL_ROLE_CODES, resolveRoleScope } from "./lib/role-matrix.mjs";
 import {
   STATION_VARIANTS, NO_CATERLINK_STATION, NEGATIVE_STATE_STATION,
-  TeamNotEstablishedError, buildAccountPlan, summarizePlan,
+  TeamNotEstablishedError, buildAccountPlan, summarizePlan, legacyProfileFor,
 } from "./lib/team-plan.mjs";
 
 const args = process.argv.slice(2);
@@ -61,21 +61,20 @@ async function findExistingAuthUserByEmail(client, email) {
   }
 }
 
-async function ensureProfile(client, authUserId, name, staffNo, legacyRole, status) {
+// handle_new_user() pre-creates a bare pending profile for every auth user, so the
+// row almost always EXISTS already. Set the identity and compatibility display
+// fields explicitly: without a name, requireProfile() sends the account to
+// /avsec/profile-setup. The legacy role/station/team written here are
+// compatibility/display data only -- access is decided by the assignment.
+async function ensureProfile(client, authUserId, name, staffNo, legacy, status) {
+  const fields = { name, staff_no: staffNo, role: legacy.role, station: legacy.station ?? null, team: legacy.team ?? null, status };
   const { data: existing } = await client.from("profiles").select("id").eq("id", authUserId).maybeSingle();
   if (existing) {
-    const { error } = await client.from("profiles").update({ status }).eq("id", authUserId);
+    const { error } = await client.from("profiles").update(fields).eq("id", authUserId);
     if (error) throw new Error(`Updating existing profile failed: ${error.message}`);
     return;
   }
-  const { error } = await client.from("profiles").insert({
-    id: authUserId,
-    email: null, // profiles.email is a legacy mirror column on some schemas; left null here, auth.users is authoritative
-    name,
-    staff_no: staffNo,
-    role: legacyRole,
-    status,
-  });
+  const { error } = await client.from("profiles").insert({ id: authUserId, email: null, ...fields });
   if (error) throw new Error(`Creating profile failed: ${error.message}`);
 }
 
@@ -137,12 +136,14 @@ async function main() {
   if (isDryRun) {
     const plan = buildAccountPlan();
     const sum = summarizePlan(plan);
-    console.log(`\nExact account inventory: ${sum.base} base + ${sum.stationVariants} station variants + ${sum.negative} negative-state = ${sum.totalPlanned} planned; ${sum.creatableWithCurrentData} creatable with current staging data (${sum.impossibleNoSecondAoc} impossible: no second AOC).`);
-    console.log(`Availability: ready now ${sum.readyNow}; needs KUL team seed ${sum.needsKulTeamSeed}; blocked (team not established) ${sum.blockedTeamNotEstablished}.`);
-    console.log("\n#  label                 role                         aoc entity dept         unit          hub                  station    team     status");
+    console.log(`\nExact account inventory: ${sum.base} base + ${sum.stationVariants} station variants + ${sum.negative} negative-state = ${sum.total} accounts (Malaysia AOC only; no foreign-AOC account).`);
+    console.log(`Availability: ready now ${sum.readyNow}; need the approved team seed first ${sum.needsTeamSeed}.`);
+    console.log("\n#  label                 role                         aoc entity dept         unit          hub                  station    team   membership status");
     plan.forEach((a, i) => {
       const sc = a.scope;
-      console.log(`${String(i + 1).padStart(2)} ${a.label.padEnd(21)} ${a.roleCode.padEnd(28)} ${(sc.aoc ?? "-").padEnd(3)} ${(sc.entity ?? sc.membership ?? "-").padEnd(6)} ${(sc.department ?? "-").padEnd(12)} ${(sc.unit ?? "-").padEnd(13)} ${(sc.hub ?? "-").padEnd(20)} ${(sc.station ?? "-").padEnd(10)} ${(sc.team ?? "-").padEnd(8)} ${a.status}${a.accountStatus !== "approved" ? ` [${a.accountStatus}]` : ""}`);
+      console.log(`${String(i + 1).padStart(2)} ${a.label.padEnd(21)} ${a.roleCode.padEnd(28)} ${(sc.aoc ?? "-").padEnd(3)} ${(sc.entity ?? "-").padEnd(6)} ${(sc.department ?? "-").padEnd(12)} ${(sc.unit ?? "-").padEnd(13)} ${(sc.hub ?? "-").padEnd(20)} ${(sc.station ?? "-").padEnd(10)} ${(sc.team ?? "-").padEnd(6)} ${(sc.membership ?? "none").padEnd(10)} ${a.status}${a.accountStatus !== "approved" ? ` [${a.accountStatus}]` : ""}`);
+      console.log(`      login: ${a.loginState}; workspace: ${a.workspace}`);
+      console.log(`      allowed: ${a.allowed.join("; ") || "-"} | denied: ${a.denied.join("; ")}`);
     });
     console.log("\nNo network call was made. Re-run with --live --email-domain=<operator-approved-domain> after the project identity, mailbox strategy and team seed are explicitly confirmed.");
     return;
@@ -186,7 +187,9 @@ async function main() {
     }
   }
 
-  async function provisionOne(label, roleCode, { scopeOverride, timing, status = "approved", legacyRole = "ASO" } = {}) {
+  const planByLabel = new Map(buildAccountPlan().map((a) => [a.label, a]));
+
+  async function provisionOne(label, roleCode, { scopeOverride, timing, status = "approved" } = {}) {
     const email = buildEmail(emailDomainArg, label, runId);
     try {
       let authUser = await findExistingAuthUserByEmail(client, email);
@@ -205,7 +208,9 @@ async function main() {
         created = true;
       }
 
-      await ensureProfile(client, authUser.id, `UAT ${label}`, `UAT-${label}`.slice(0, 20), legacyRole, status);
+      const planned = planByLabel.get(label);
+      if (!planned) throw new Error(`No planned account named '${label}'.`);
+      await ensureProfile(client, authUser.id, `UAT ${label}`, `UAT-${label}`.slice(0, 20), legacyProfileFor(roleCode, planned.scope), status);
 
       const roleDefId = roleMap.get(roleCode);
       if (!roleDefId) throw new Error(`Unknown role code '${roleCode}' -- not found in role_definitions.`);
@@ -280,16 +285,6 @@ async function main() {
     timing: { starts_at: new Date(now.getTime() - 5 * 86400000).toISOString(), ends_at: new Date(now.getTime() - 86400000).toISOString() },
   });
   await provisionOne("neg-future-dated", "aso", { scopeOverride: asoScope, timing: { starts_at: new Date(now.getTime() + 86400000).toISOString() } });
-
-  const { data: foreignAoc } = await client.from("aocs").select("id, code").neq("code", "MY").eq("is_active", true).limit(1).maybeSingle();
-  if (foreignAoc) {
-    await provisionOne("neg-foreign-aoc", "aso", {
-      scopeOverride: { aoc_id: foreignAoc.id, operating_entity_id: null, department_id: asoScope.department_id, unit_id: null, hub_id: asoScope.hub_id, station_id: asoScope.station_id, team_id: asoScope.team_id, entityMembershipNeeded: true },
-      timing: { starts_at: now.toISOString() },
-    });
-  } else {
-    console.log("  SKIPPED  no active non-Malaysia AOC exists in this project -- the foreign-AOC negative-state account was not created. This is NOT a schema change this script will ever perform; create one yourself first if that scenario is required.");
-  }
 
   }
 

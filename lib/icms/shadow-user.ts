@@ -44,31 +44,6 @@ export function mapAvsecRoleToIcmsRole(avsecRole: string): Role {
   }
 }
 
-/**
- * Mirrors supabase/migrations/unified_role_model.sql's ADMIN/ENFORCEMENT/
- * MANAGEMENT/SO/ASO/DSE -> unified_role mapping. Derived directly from the
- * AVSEC role rather than read back off profiles.unified_role, since
- * createStaffAccount doesn't set that column on the profiles row it
- * inserts — this keeps the shadow row's unified_role correct regardless.
- */
-export function mapAvsecRoleToUnifiedRole(avsecRole: string): string {
-  switch (avsecRole) {
-    case "ADMIN":
-    case "MANAGEMENT":
-      return "management";
-    case "ENFORCEMENT":
-      return "enforcement";
-    case "SO":
-      return "so";
-    case "ASO":
-      return "aso";
-    case "DSE":
-      return "dse";
-    default:
-      return avsecRole.toLowerCase();
-  }
-}
-
 export interface AvsecProfileForShadow {
   id: string;
   name: string;
@@ -88,7 +63,6 @@ export function buildShadowUserRow(profile: AvsecProfileForShadow) {
     role: mapAvsecRoleToIcmsRole(profile.role),
     status: "active",
     preferred_language: "en",
-    unified_role: mapAvsecRoleToUnifiedRole(profile.role),
     ops_group: profile.ops_group,
     duty_post: null,
   };
