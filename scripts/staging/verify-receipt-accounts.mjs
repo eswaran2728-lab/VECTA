@@ -35,7 +35,7 @@ async function main() {
     check(`Auth users total = ${expectTotalAuth}`, (await n("select count(*)::int n from auth.users")) === expectTotalAuth);
     check(`Profiles total = ${expectTotalAuth}`, (await n("select count(*)::int n from public.profiles")) === expectTotalAuth);
     check("Exactly 2 accounts carry this run", (await n("select count(*)::int n from auth.users where $1::text is not null and raw_user_meta_data->>'vecta_staging_run_id' = $2", [runId, runId])) === 2);
-    check("38 dashboard-review accounts in total (36 base + 2 receipt)", (await n("select count(*)::int n from auth.users where raw_user_meta_data->>'vecta_staging_run_id' like 'dashboard-review-20261005%'")) === 38);
+    check("40 dashboard-review accounts in total (36 base + 2 receipt + 2 CaterLink external)", (await n("select count(*)::int n from auth.users where raw_user_meta_data->>'vecta_staging_run_id' like 'dashboard-review-20261005%'")) === 40);
     check("16 original accounts unchanged in count", (await n("select count(*)::int n from auth.users where raw_user_meta_data->>'vecta_staging_run_id' is null")) === 16);
     check("Dashboard-review assignments total 38", (await n("select count(*)::int n from public.user_role_assignments ura join auth.users u on u.id = ura.profile_id where u.raw_user_meta_data->>'vecta_staging_run_id' like 'dashboard-review-20261005%'")) === 38);
     check("Dashboard-review memberships total 26", (await n("select count(*)::int n from public.user_entity_memberships m join auth.users u on u.id = m.profile_id where u.raw_user_meta_data->>'vecta_staging_run_id' like 'dashboard-review-20261005%'")) === 26);
