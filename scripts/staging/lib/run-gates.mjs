@@ -12,8 +12,8 @@ export const APPROVED_REF = "ddlctzbnqewubltcavkh";
 export const FORBIDDEN_REF = "zsxneokqulktgnccxgkz";
 export const EXPECTED_BRANCH = "dashboard/role-workspaces-adjustment";
 export const EXPECTED_REMOTE = "eswaran2728-lab/VECTA";
-export const EXPECTED_MIGRATIONS = 60;
-export const FINAL_MIGRATION = "20261020000001";
+export const EXPECTED_MIGRATIONS = 61;
+export const FINAL_MIGRATION = "20261021000001";
 export const BASELINE = { authUsers: 16, profiles: 16, orgTeams: 16, buckets: 7 };
 export const BACKUP_FILES = [
   "C:\\Users\\eswaranp\\AppData\\Local\\Temp\\vecta-staging-backups\\ddlctzbnqewubltcavkh-2026-10-02T07-59-58-492Z.enc.json",
