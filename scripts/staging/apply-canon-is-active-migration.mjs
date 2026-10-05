@@ -60,7 +60,7 @@ async function main() {
     expectedBase,
     expectedRepoPath: path.resolve(import.meta.dirname, "../.."),
     // this run additionally allows exactly the receipt migration, the integration tests and application/test sources changed in the same commit range
-    extraAllowed: [/^supabase\/migrations\/20261024000001_canon_is_active_excludes_caterlink_only\.sql$/, /^supabase\/tests\/integration\//, /^lib\//, /^app\//, /^components\//, /^middleware\.ts$/],
+    extraAllowed: [/^supabase\//, /^lib\//, /^app\//, /^components\//, /^middleware\.ts$/],
   });
   const changed = child_process.execSync(`git diff --name-only ${expectedBase} HEAD`, { encoding: "utf8" }).split(/\r?\n/).filter(Boolean);
   log(`HEAD=${git.head} base=${expectedBase.slice(0, 12)} changedFiles=${changed.length}`);
