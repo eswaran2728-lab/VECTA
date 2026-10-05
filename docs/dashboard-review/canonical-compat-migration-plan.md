@@ -83,3 +83,16 @@ are expected to lose operational access. Full inventory: `rls-narrowing-inventor
    policy and grant names.
 3. Re-run the read-only authorization-surface inspector and compare with the snapshot.
 4. Only after that, ask for authorization to provision the 36 test accounts.
+
+## Hosted application record (staging only)
+
+- Applied `20261020000001_canonical_operations_compatibility.sql` to `vecta-staging` (`ddlctzbnqewubltcavkh`) on
+  2026-10-05 via `scripts/staging/apply-canonical-compat-migration.mjs`: one isolated transaction, both encrypted
+  backups authenticated first, verified TLS with the official CA, in-transaction verification before COMMIT,
+  3.5 s, result SUCCESS.
+- History: 59 -> 60 migrations, last `20261020000001`, recorded exactly once. Policies 107 -> 128.
+- Survival: 16 Auth users, 16 profiles (content fingerprints identical before/after), 16 org_teams, 7 buckets,
+  0 canonical assignments (unchanged). No account or user record was created, changed or deleted.
+- After commit: no table without RLS; no FOR ALL, blanket, PUBLIC or compat-rank policy; anon holds no table
+  privilege and cannot execute any public function; Data API answers 401 to anon on every probed table.
+- Next (separate authorization): provision the 36 canonical test accounts.
