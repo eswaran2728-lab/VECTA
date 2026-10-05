@@ -1,0 +1,9 @@
+# Keep local test databases, binaries, native projects and any local secrets out of the preview upload
+supabase/tests/integration/pg17
+supabase/tests/integration/node_modules
+supabase/tests/integration/pgdata*
+android
+tests
+docs
+.env*
+*.enc.json
