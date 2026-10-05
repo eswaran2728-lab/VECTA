@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { requireRole } from "@/lib/icms/auth";
+import { requireCheckpointRole } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
 import { SkipPartDForm } from "./skip-part-d-form";
 import type { Transaction } from "@/lib/icms/database.types";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SkipPartDPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await requireRole(["receiver", "supervisor"]);
+  await requireCheckpointRole("receiver");
 
   const supabase = await createClient();
   const { data: tx } = await supabase.from("transactions").select("*").eq("id", id).single();

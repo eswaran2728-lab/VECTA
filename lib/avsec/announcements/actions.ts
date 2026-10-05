@@ -243,7 +243,6 @@ export async function createAnnouncement({
   station,
   photoUrl,
   isPop,
-  branch,
   team,
 }: {
   title: string;
@@ -251,7 +250,6 @@ export async function createAnnouncement({
   station?: string | null;
   photoUrl?: string | null;
   isPop?: boolean;
-  branch?: "operation_avsec" | "ifc_avsec" | "hub_avsec" | null;
   team?: string | null;
 }): Promise<AnnouncementActionResult> {
   const profile = await getCurrentProfile();
@@ -313,13 +311,12 @@ export async function createAnnouncement({
   }
 
   const targetStation = station?.trim() || null;
-  const targetBranch = branch || null;
   const targetTeam = team?.trim() || null;
 
   await supabase.from("announcement_targets").insert({
     announcement_id: announcement.id,
     station: targetStation,
-    branch: targetBranch,
+    branch: null, // historical column; deprecated for audience selection
     team: targetTeam,
   });
 

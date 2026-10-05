@@ -28,7 +28,6 @@ import {
   LogOut,
   User,
 } from "lucide-react";
-import type { OpsGroup } from "@/lib/icms/database.types";
 import { phase7DashboardNavEntry, scannerNavAllowedForRole, caterlinkNavAllowedForRole } from "@/lib/dashboard/navigation";
 
 interface NavItem {
@@ -49,7 +48,7 @@ export function AppSidebar({
   name,
   role,
   roleLabel,
-  opsGroup,
+  canScan = false,
   station,
   team,
   hasPhase7Assignment = false,
@@ -59,7 +58,8 @@ export function AppSidebar({
   name: string;
   role: string | null;
   roleLabel: string | null;
-  opsGroup: OpsGroup | null;
+  /** Canonical decision (station operator at a scan-capable station), computed server-side. Display only. */
+  canScan?: boolean;
   station?: string | null;
   team?: string | null;
   /** Phase 7: whether this profile holds at least one active Phase 3 role
@@ -75,6 +75,7 @@ export function AppSidebar({
   const normalizedRole = (role ?? "").toLowerCase();
   const isOrgWide = ["admin", "management", "enforcement", "supervisor"].includes(normalizedRole);
   const isDse = normalizedRole === "dse";
+  const isStationStaff = ["aso", "so", "dse"].includes(normalizedRole);
   const isDriver = ["warehouse_pic", "vendor"].includes(normalizedRole);
   const isVendor = normalizedRole === "vendor";
 
@@ -129,7 +130,7 @@ export function AppSidebar({
       });
     }
 
-    if (!isOrgWide && scannerNavAllowedForRole(role) && (opsGroup === "operation_avsec" || opsGroup === "ifc_avsec" || opsGroup === "hub_avsec")) {
+    if (!isOrgWide && scannerNavAllowedForRole(role) && canScan) {
       operationsItems.push({
         href: "/avsec/scan",
         label: "Checkpoint Scanner",
@@ -137,7 +138,7 @@ export function AppSidebar({
       });
     }
 
-    if (isOrgWide || opsGroup === "operation_avsec" || opsGroup === "hub_avsec") {
+    if (isOrgWide || isStationStaff) {
       operationsItems.push({
         href: "/avsec/bay-board",
         label: "Bay Board (SEC016)",
@@ -145,7 +146,7 @@ export function AppSidebar({
       });
     }
 
-    if (isOrgWide || opsGroup === "ifc_avsec") {
+    if (isOrgWide || canScan) {
       operationsItems.push({
         href: "/icms/transactions",
         label: "ICMS Catering Stream",
@@ -209,12 +210,8 @@ export function AppSidebar({
         label: "OT Approval Queue",
         icon: Clock,
       });
-      // "Team Duty Roster" was removed: /avsec/admin/roster is
-      // Management/Admin-only (requireRole(ADMIN_ROLES)), so DSE hitting
-      // this link always got rejected. DSE roster writing is deferred —
-      // see lib/avsec/duty/roster-actions.ts resolveRosterOpsGroup() for
-      // the (currently unreachable) auto-derivation logic already in
-      // place for when a DSE-facing roster UI is built.
+      // Roster link is shown on the DSE / Hub SE dashboards and the roster page is
+      // now canonically scoped (see lib/auth/route-access.ts).
     } else {
       // ASO / SO
       attendanceItems.push({
@@ -465,7 +462,6 @@ export function AppSidebar({
         onClose={() => setWoisOpen(false)}
         userContext={{
           role: role ?? undefined,
-          ops_group: opsGroup ?? undefined,
           station: station ?? undefined,
           team: team ?? undefined,
         }}

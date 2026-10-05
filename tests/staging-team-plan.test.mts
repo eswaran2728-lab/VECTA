@@ -200,3 +200,59 @@ test("describeRoleScope: station override is honoured and team follows the stati
   assert.equal(describeRoleScope("so", { stationCode: "JHB" }).team, "ALPHA");
   assert.equal(describeRoleScope("so", { stationCode: "BKI" }).team, null, "an unapproved station has no team");
 });
+
+// ---------------- merged operations model: per-account fields ----------------
+import { COMPAT_ROLE_BY_CANONICAL } from "../lib/auth/compat-role-map.mjs";
+import { deriveCanonicalAccess, assignmentsFromRpcRows } from "../lib/auth/canonical-access.ts";
+import { routeAllows } from "../lib/auth/route-access.ts";
+
+test("account matrix: every one of the 36 accounts documents CaterLink capability, compat rank, ICMS bridge need and positive/negative state", () => {
+  const plan = buildAccountPlan();
+  assert.equal(plan.length, 36);
+  for (const a of plan) {
+    assert.ok(a.caterlinkCapability && typeof a.caterlinkCapability === "string", a.label);
+    assert.ok(a.legacyCompatRank === null || ["ASO", "SO", "DSE", "MANAGEMENT", "ENFORCEMENT"].includes(a.legacyCompatRank), a.label);
+    assert.equal(a.icmsBridgeRowRequired, false, `${a.label}: the ICMS identity is an adapter over the same Auth UUID; no public.users row`);
+    assert.equal(a.positiveOrNegative, a.kind === "negative" ? "negative" : "positive", a.label);
+  }
+  assert.equal(plan.filter((a) => a.positiveOrNegative === "negative").length, 6);
+});
+
+test("account matrix: no account is an IFC account and none depends on ops_group", () => {
+  const dump = JSON.stringify(buildAccountPlan());
+  assert.ok(!/\bifc\b/i.test(dump) && !/ops_group|opsGroup|ifc_avsec|operation_avsec/.test(dump));
+  for (const f of ["scripts/staging/lib/team-plan.mjs", "scripts/staging/lib/role-matrix.mjs", "scripts/staging/provision-test-accounts.mjs"]) {
+    assert.ok(!/\.ops_group|opsGroup|ifc_avsec|operation_avsec/.test(read(f)), f);
+  }
+});
+
+test("account matrix: CaterLink capability follows the approved station model; BTU is the no-CaterLink station; nothing is invented", () => {
+  const byLabel = new Map(buildAccountPlan().map((a) => [a.label, a]));
+  assert.match(byLabel.get("aso-no-caterlink")!.caterlinkCapability, /station has no CaterLink capability/);
+  assert.match(byLabel.get("caterlink_management")!.caterlinkCapability, /never scans/);
+  assert.match(byLabel.get("aso")!.caterlinkCapability, /can_user_scan_caterlink/);
+  assert.match(byLabel.get("hub_se")!.caterlinkCapability, /none/);
+  for (const a of buildAccountPlan().filter((x) => x.kind === "negative")) assert.match(a.caterlinkCapability, /denied/);
+});
+
+test("compat mapping: exactly aso->ASO, so/sso->SO, dse/hub_se->DSE, operation_manager->MANAGEMENT, main_enforcement->ENFORCEMENT; everything else has none", () => {
+  const expected: Record<string, string> = { aso: "ASO", so: "SO", sso: "SO", dse: "DSE", hub_se: "DSE", operation_manager: "MANAGEMENT", main_enforcement: "ENFORCEMENT" };
+  for (const code of ALL_ROLE_CODES) assert.equal(COMPAT_ROLE_BY_CANONICAL[code as keyof typeof COMPAT_ROLE_BY_CANONICAL] ?? null, expected[code] ?? null, code);
+  for (const code of ["ghod", "super_admin", "maa_boss", "maa_admin", "aax_boss", "aax_admin", "compliance", "caterlink_management", "investigation_sso", "sat_aso", "profiling_so", "profiling_aso", "airasia_management", "global_reporting_controller"]) {
+    assert.equal(COMPAT_ROLE_BY_CANONICAL[code as keyof typeof COMPAT_ROLE_BY_CANONICAL] ?? null, null, `${code} must not be mapped`);
+  }
+});
+
+test("compat values are display only: with no canonical assignment every route is denied however the profile's legacy rank is forged", () => {
+  const row = (code: string) => ({ role_code: code, role_category: "x", aoc_code: null, operating_entity_code: null, department_code: null, unit_code: null, hub_code: null, station_code: null, team_name: null, starts_at: "2026-01-01T00:00:00Z", ends_at: null });
+  const none = deriveCanonicalAccess([]);
+  const aso = deriveCanonicalAccess(assignmentsFromRpcRows([row("aso")]));
+  const adminLikeGates = ["ADMIN", "MANAGEMENT", "ENFORCEMENT", "DSE", "SO", "ASO"];
+  for (const href of ["/avsec/admin/roster", "/avsec/admin", "/avsec/team-dashboard", "/icms/admin/archive", "/avsec/duty"]) {
+    assert.equal(routeAllows(href, none, adminLikeGates), false, `${href}: no assignment = no access whatever rank the profile claims`);
+  }
+  // canonical access is derived from assignments alone: the compat rank is not an input at all
+  assert.equal(none.hasAssignment, false);
+  assert.equal(aso.roleCodes.join(), "aso");
+  assert.equal(routeAllows("/avsec/admin", aso, []), false, "an aso is not an admin, regardless of any legacy value");
+});

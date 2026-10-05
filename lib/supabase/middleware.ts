@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   isCheckinGateExempt,
-  isAdminPathForbidden,
+  isAdminPathForbiddenFor,
   isSuperAdminPathForbidden,
   isOperationalPathForbiddenForSuperAdmin,
   isReadinessPath,
@@ -270,7 +270,7 @@ export async function updateSession(request: NextRequest) {
       path.startsWith("/avsec/pending-approval");
 
     // Coarse edge-level defense-in-depth for the admin section:
-    if (isAdminPathForbidden(path, role)) {
+    if (isAdminPathForbiddenFor(path, role, access)) {
       const url = request.nextUrl.clone();
       url.pathname = "/";
       url.search = "";

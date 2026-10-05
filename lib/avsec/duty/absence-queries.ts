@@ -11,7 +11,6 @@ export interface AbsenceNoticeRow {
   role: string;
   station: string | null;
   team: string | null;
-  ops_group: string | null;
   shift_code: string | null;
   duty_date: string;
   leave_type: LeaveType;
@@ -46,7 +45,6 @@ export interface AbsenceSummaryStats {
     role: string;
     team: string | null;
     station: string | null;
-    opsGroup: string | null;
     totalAbsences: number;
     redCount: number;
     greenCount: number;
@@ -81,7 +79,6 @@ export async function getTodayAbsenceNotice(
 export async function getAbsenceNotices(options?: {
   station?: string;
   team?: string;
-  opsGroup?: string;
   leaveType?: LeaveType | "all";
   approvalStatus?: LeaveApprovalStatus | "all";
   status?: "green" | "red" | "all";
@@ -104,9 +101,6 @@ export async function getAbsenceNotices(options?: {
   }
   if (options?.team && options.team !== "all") {
     query = query.eq("team", options.team);
-  }
-  if (options?.opsGroup && options.opsGroup !== "all") {
-    query = query.eq("ops_group", options.opsGroup);
   }
   if (options?.leaveType && options.leaveType !== "all") {
     query = query.eq("leave_type", options.leaveType);
@@ -144,7 +138,6 @@ export async function getAbsenceNotices(options?: {
 export async function getAbsenceSummaryStats(options?: {
   station?: string;
   team?: string;
-  opsGroup?: string;
   leaveType?: LeaveType | "all";
   approvalStatus?: LeaveApprovalStatus | "all";
   dateFrom?: string;
@@ -178,8 +171,7 @@ export async function getAbsenceSummaryStats(options?: {
       role: string;
       team: string | null;
       station: string | null;
-      opsGroup: string | null;
-      totalAbsences: number;
+        totalAbsences: number;
       redCount: number;
       greenCount: number;
       pendingCount: number;
@@ -196,7 +188,6 @@ export async function getAbsenceSummaryStats(options?: {
         role: n.role,
         team: n.team,
         station: n.station,
-        opsGroup: n.ops_group,
         totalAbsences: 0,
         redCount: 0,
         greenCount: 0,

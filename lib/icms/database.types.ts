@@ -157,7 +157,7 @@ export type UserProfile = {
    *  receiver/vendor), kept for history but blocked from sign-in. */
   status: UserStatus;
   /** Unified role vocabulary read layer (supabase/migrations/unified_role_model.sql). */
-  unified_role: string | null;
+  unified_role?: string | null;
   /** Which post/checkpoint this ICMS role maps to (same migration). */
   duty_post: string | null;
   /** supabase/migrations/team_based_ops_groups.sql — see OpsGroup. */

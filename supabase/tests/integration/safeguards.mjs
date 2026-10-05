@@ -26,6 +26,7 @@ export const ALLOWED_DISPOSABLE_DATABASES = new Set([
   'vecta_phase12_wois_run',
   'vecta_phase13_integration_run',
   'vecta_phase13_storage_run',
+  'vecta_canonical_compat_run',
 ]);
 
 export function assertDisposableLocalTarget(config, ...dbNames) {

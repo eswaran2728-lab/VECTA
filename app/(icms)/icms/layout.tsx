@@ -12,6 +12,7 @@ import {
   Archive,
 } from "lucide-react";
 import { requireProfile } from "@/lib/icms/auth";
+import { getCanScanCaterLink } from "@/lib/avsec/auth";
 import { signOut } from "@/lib/icms/actions/auth";
 import { getLang } from "@/lib/icms/actions/language";
 import { LanguageToggle } from "@/components/icms/language-toggle";
@@ -22,7 +23,6 @@ import { InstallPrompt } from "@/components/icms/install-prompt";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { AppSidebar } from "@/components/layout/AppSidebar";
-import type { OpsGroup } from "@/lib/icms/database.types";
 import { getActiveRoleAssignments } from "@/lib/dashboard/context";
 import { deriveCanonicalAccess, isOrgWideOperator } from "@/lib/auth/canonical-access";
 
@@ -35,14 +35,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const isVendor = profile.role === "vendor";
   const isDriver = isPic || isVendor;
 
-  // Drivers do NOT scan checkpoints; only AVSEC officers and receivers scan
-  const canScan = [
-    "post2_avsec",
-    "post6_avsec",
-    "receiver",
-    "hub_avsec",
-    "redq_avsec",
-  ].includes(profile.role);
+  // Scanning is a canonical capability (station operator at a scan-capable
+  // station); external parties never scan. Display decision only.
+  const canScan = profile.canonical ? await getCanScanCaterLink(profile.canonical) : false;
 
   // For drivers, keep desktop navigation completely streamlined:
   // Create New Transaction & My Dispatches only
@@ -80,7 +75,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           icon: FileBarChart,
           show: profile.role === "supervisor" || profile.role === "enforcement" || profile.role === "management",
         },
-        { href: "/icms/admin/users", label: "Users", icon: Users, show: profile.role === "supervisor" },
+        { href: "/icms/admin/users", label: "Users", icon: Users, show: profile.identity !== "canonical" && profile.role === "supervisor" },
         {
           href: "/icms/admin/whitelists",
           label: "Whitelists",
@@ -103,7 +98,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // link or an authorization change.
   const assignments = await getActiveRoleAssignments();
   const hasPhase7Assignment = assignments.length > 0;
-  const orgWide = isOrgWideOperator(deriveCanonicalAccess(assignments), profile.role);
+  const orgWide = isOrgWideOperator(deriveCanonicalAccess(assignments));
 
   return (
     <div className="min-h-screen bg-background text-foreground antialiased">
@@ -112,7 +107,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         name={profile.name}
         role={profile.role}
         roleLabel={ROLE_LABELS[profile.role] ?? null}
-        opsGroup={(profile.ops_group ?? null) as OpsGroup | null}
+        canScan={canScan}
         hasPhase7Assignment={hasPhase7Assignment}
         signOutAction={signOut}
       />
@@ -140,9 +135,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">{children}</main>
 
         <TeamBottomNav
-          opsGroup={(profile.ops_group ?? null) as OpsGroup | null}
           orgWide={orgWide}
-          role={profile.role}
+          canScan={canScan}
+          role={profile.role === "ops_staff" ? "aso" : profile.role}
           hasPhase7Assignment={hasPhase7Assignment}
         />
       </div>

@@ -89,7 +89,7 @@ export default async function TransactionsPage({
     query = query.lte("created_at", new Date(`${params.to}T23:59:59`).toISOString());
   }
 
-  const orgWide = isOrgWideOperator(deriveCanonicalAccess(await getActiveRoleAssignments()), profile.role);
+  const orgWide = isOrgWideOperator(deriveCanonicalAccess(await getActiveRoleAssignments()));
 
   const { data } = await query;
   const transactions = ((data ?? []) as unknown as (Transaction & {

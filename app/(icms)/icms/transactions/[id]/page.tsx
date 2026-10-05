@@ -13,8 +13,9 @@ import { WorkflowStepper } from "@/components/icms/workflow-stepper";
 import { Button } from "@/components/icms/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/icms/ui/card";
 import { getStep, nextStepFor, type CheckpointPart } from "@/lib/icms/workflow";
-import { opsGroupForCheckpointRole, opsGroupCanAccessCheckpoint } from "@/lib/icms/ops-group";
-import type { OpsGroup } from "@/lib/icms/database.types";
+import { decideCheckpointAccess } from "@/lib/icms/canonical";
+import { getActiveRoleAssignments } from "@/lib/dashboard/context";
+import { deriveCanonicalAccess } from "@/lib/auth/canonical-access";
 import { SegmentCountdown } from "@/components/icms/segment-countdown";
 import {
   CARGO_TYPE_LABELS,
@@ -98,8 +99,7 @@ function PendingPartCard({
   part,
   currentPart,
   responsibleRole,
-  viewerRole,
-  viewerOpsGroup,
+  canComplete,
   deadline,
 }: {
   id: string;
@@ -107,20 +107,14 @@ function PendingPartCard({
   part: CheckpointPart;
   currentPart: CheckpointPart | null;
   responsibleRole: Role;
-  viewerRole: Role;
-  /** Any AVSEC team member (aso/so/dse) whose ops_group covers this
-   *  checkpoint can act too, not just the literal checkpoint-role match —
-   *  see requireCheckpointRole() in lib/icms/auth.ts for the write-side
-   *  enforcement this mirrors. */
-  viewerOpsGroup: OpsGroup | null;
+  /** Canonical decision: station operator at a scan-capable station (profiling excluded),
+   *  matching requireCheckpointRole() in lib/icms/auth.ts, which enforces it server-side. */
+  canComplete: boolean;
   /** SLA deadline for this segment (Upgrade 5), null when uncapped. */
   deadline?: string | null;
 }) {
   const isCurrent = currentPart === part;
-  const actionable =
-    isCurrent &&
-    (viewerRole === responsibleRole ||
-      opsGroupCanAccessCheckpoint(viewerOpsGroup, opsGroupForCheckpointRole(responsibleRole)));
+  const actionable = isCurrent && canComplete;
   const slug = part.replace("_", "-");
 
   return (
@@ -169,6 +163,13 @@ export default async function TransactionDetailPage({
   const flags = await searchParams;
   const profile = await requireProfile();
   const supabase = await createClient();
+  const access = deriveCanonicalAccess(await getActiveRoleAssignments());
+  let stationCanScan: boolean | null = null;
+  if (profile.identity === "canonical" && access.stationCode) {
+    const { data: capable } = await supabase.rpc("can_user_scan_caterlink", { p_station_code: access.stationCode });
+    stationCanScan = capable === true;
+  }
+  const canComplete = profile.identity === "canonical" && decideCheckpointAccess(access, stationCanScan).allowed;
 
   const { data: tx } = await supabase
     .from("transactions")
@@ -223,8 +224,7 @@ export default async function TransactionDetailPage({
   const nextStep = nextStepFor(transaction.direction, transaction.status, transaction.route);
   const nextAction =
     nextStep &&
-    (profile.role === nextStep.role ||
-      opsGroupCanAccessCheckpoint(profile.ops_group, opsGroupForCheckpointRole(nextStep.role)))
+    canComplete
       ? {
           href: `/icms/transactions/${id}/${nextStep.slug}`,
           label: `Complete ${nextStep.shortLabel}`,
@@ -565,8 +565,7 @@ export default async function TransactionDetailPage({
             responsibleRole={
               getStep(transaction.direction, "part_b", transaction.route)?.role ?? "post2_avsec"
             }
-            viewerRole={profile.role}
-            viewerOpsGroup={profile.ops_group}
+            canComplete={canComplete}
             deadline={segmentDeadline}
           />
         )}
@@ -600,8 +599,7 @@ export default async function TransactionDetailPage({
               part="part_hub"
               currentPart={currentPart}
               responsibleRole="hub_avsec"
-              viewerRole={profile.role}
-              viewerOpsGroup={profile.ops_group}
+              canComplete={canComplete}
               deadline={segmentDeadline}
             />
           )
@@ -632,8 +630,7 @@ export default async function TransactionDetailPage({
                   part="part_redq"
                   currentPart={currentPart}
                   responsibleRole="redq_avsec"
-                  viewerRole={profile.role}
-                  viewerOpsGroup={profile.ops_group}
+                  canComplete={canComplete}
                   deadline={segmentDeadline}
                 />
               )
@@ -667,8 +664,7 @@ export default async function TransactionDetailPage({
                 responsibleRole={
                   getStep(transaction.direction, "part_c", transaction.route)?.role ?? "post6_avsec"
                 }
-                viewerRole={profile.role}
-                viewerOpsGroup={profile.ops_group}
+                canComplete={canComplete}
                 deadline={segmentDeadline}
               />
             )}
@@ -720,8 +716,7 @@ export default async function TransactionDetailPage({
             part="part_d"
             currentPart={currentPart}
             responsibleRole="receiver"
-            viewerRole={profile.role}
-            viewerOpsGroup={profile.ops_group}
+            canComplete={canComplete}
           />
         ) : profile.role === "supervisor" || profile.role === "enforcement" || profile.role === "management" ? (
           <Card className="border-dashed">

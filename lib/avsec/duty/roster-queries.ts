@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import { DUTY_ROLES } from "@/lib/avsec/auth";
 import type { LeaveType } from "./absence-logic";
 
 export interface Shift {
@@ -15,7 +14,6 @@ export interface RosterOfficer {
   name: string;
   staff_no: string;
   team: string;
-  ops_group: string | null;
 }
 
 export interface StationTeam {
@@ -34,7 +32,6 @@ export interface RosterCell {
   notes: string | null;
   set_by: string;
   updated_at: string;
-  ops_group: string | null;
 }
 
 export interface ApprovedLeaveRosterItem {
@@ -56,37 +53,36 @@ export async function getShifts(): Promise<Shift[]> {
   return (data as Shift[]) ?? [];
 }
 
+// Canonical team list for a station (org_teams via RPC; empty unless the caller may manage this station's roster).
 export async function getStationTeams(station: string): Promise<StationTeam[]> {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("station_teams")
-    .select("station, team, display_order")
-    .eq("station", station)
-    .eq("active", true)
-    .order("display_order");
-  return (data as StationTeam[]) ?? [];
+  const { data } = await supabase.rpc("list_roster_teams_secure", { p_station: station });
+  return ((data ?? []) as Array<{ team: string; display_order: number }>).map((r) => ({ station, team: r.team, display_order: r.display_order }));
 }
 
-// One row per officer, for the grid's row axis — the underlying schedule stays
-// team-level (team_rosters), this is purely a display join.
+// One row per officer, for the grid's row axis -- canonical station-scoped assignments
+// via RPC (never another user's legacy role). The underlying schedule stays team-level.
 export async function getRosterOfficers(station: string, search?: string): Promise<RosterOfficer[]> {
   const supabase = await createClient();
-  let query = supabase
-    .from("profiles")
-    .select("id, name, staff_no, team, ops_group")
-    .eq("station", station)
-    .eq("status", "approved")
-    .in("role", DUTY_ROLES);
-  if (search?.trim()) query = query.ilike("name", `%${search.trim()}%`);
-  const { data } = await query.order("team").order("name");
-  return ((data ?? []) as RosterOfficer[]).map((o) => ({ ...o, team: o.team ?? "" }));
+  const { data } = await supabase.rpc("list_roster_officers_secure", { p_station: station });
+  let rows = ((data ?? []) as Array<{ id: string; name: string; staff_no: string; team: string }>).map((r) => ({
+    id: r.id,
+    name: r.name,
+    staff_no: r.staff_no,
+    team: r.team ?? "",
+  }));
+  if (search?.trim()) {
+    const q = search.trim().toLowerCase();
+    rows = rows.filter((r) => r.name.toLowerCase().includes(q));
+  }
+  return rows;
 }
 
 export async function getRosterWeek(station: string, weekStart: string, weekEnd: string): Promise<RosterCell[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("team_rosters")
-    .select("station, team, roster_date, shift_code, start_time, end_time, notes, set_by, updated_at, ops_group")
+    .select("station, team, roster_date, shift_code, start_time, end_time, notes, set_by, updated_at")
     .eq("station", station)
     .gte("roster_date", weekStart)
     .lte("roster_date", weekEnd);

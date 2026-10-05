@@ -29,7 +29,7 @@ export async function createHandover(
       outgoing_profile_id: profile.id,
       station,
       team: v.team,
-      ops_group: profile.ops_group ?? null,
+      ops_group: null /* historical column; deprecated for authorization */,
       staff_name: v.staff_name,
       staff_id: v.staff_id,
       place_category: v.place_category,

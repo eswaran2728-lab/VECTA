@@ -6,9 +6,6 @@ import {
   REQUESTABLE_ROLES,
   ROLE_LABELS,
   ORG_WIDE_ROLES,
-  OPS_GROUPS,
-  OPS_GROUP_LABELS,
-  OPS_GROUP_REQUIRED_ROLES,
   type UserRole,
 } from "@/lib/avsec/reference-data";
 import { createStaffAccount } from "@/lib/avsec/admin/actions";
@@ -24,7 +21,6 @@ export function CreateAccountForm() {
   const [role, setRole] = useState<UserRole | "">("");
   const [password, setPassword] = useState("");
   const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(role);
-  const needsOpsGroup = (OPS_GROUP_REQUIRED_ROLES as readonly string[]).includes(role);
 
   return (
     <section className="card p-5">
@@ -112,28 +108,6 @@ export function CreateAccountForm() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <label className="field-label" htmlFor="opsGroup">
-              Ops Group
-            </label>
-            <select
-              id="opsGroup"
-              name="opsGroup"
-              required={needsOpsGroup}
-              disabled={!needsOpsGroup}
-              className="input-base"
-              defaultValue=""
-            >
-              <option value="" disabled>
-                {needsOpsGroup ? "Select ops group…" : "Not required"}
-              </option>
-              {OPS_GROUPS.map((g) => (
-                <option key={g} value={g}>
-                  {OPS_GROUP_LABELS[g]}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentProfile } from "@/lib/avsec/auth";
+import { getEligibleSupervisingOfficers } from "@/lib/avsec/reports/queries";
 import { hasOpenDutyCheckIn } from "@/lib/avsec/duty/checkin-queries";
 import { sec016Schema } from "@/lib/avsec/schemas/sec016";
 import { sec014Schema } from "@/lib/avsec/schemas/sec014";
@@ -36,7 +37,6 @@ async function requireProfileId(): Promise<{
   id: string;
   station: string;
   team: string;
-  ops_group?: string | null;
   role: string;
 } | null> {
   const profile = await getCurrentProfile();
@@ -45,7 +45,6 @@ async function requireProfileId(): Promise<{
     id: profile.id,
     station: profile.station,
     team: profile.team,
-    ops_group: profile.ops_group,
     role: profile.role,
   };
 }
@@ -283,13 +282,13 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
     .insert({
       profile_id: profile.id,
       status: "submitted",
+      ops_group: null, // historical column; deprecated for authorization
       flight_type: v.flight_type,
       aircraft_search_completed: v.aircraft_search_completed,
       search_overdue_flag: searchOverdueFlag,
       search_remark: searchRemark,
       station: v.station,
       team: v.team,
-      ops_group: profile.ops_group ?? null,
       staff_name: v.staff_name,
       staff_no: v.staff_no,
       duty_date: v.duty_date,
@@ -326,9 +325,9 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
 
   if (error) return { ok: false, error: error.message };
 
-  // Bay Board auto-linkage (Operation AVSEC only)
-  const isOps = profile.ops_group === "operation_avsec" || !profile.ops_group;
-  if (isOps) {
+  // Bay Board auto-linkage
+  // One operational structure: every SEC016 maintains the Bay Board.
+  {
     if (v.flight_type === "arrival") {
       await supabase.from("bay_board").insert({
         station: v.station,
@@ -401,9 +400,9 @@ export async function submitSec014(input: unknown): Promise<ActionResult> {
     .insert({
       profile_id: profile.id,
       status: "submitted",
+      ops_group: null, // historical column; deprecated for authorization
       station: v.station,
       team: v.team,
-      ops_group: profile.ops_group ?? null,
       staff_name: v.staff_name,
       staff_id: v.staff_id,
       date_time_in: v.date_time_in,
@@ -466,24 +465,13 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
 
   const supabase = await createClient();
 
-  // Re-verify the selected Supervising Officer server-side — the dropdown itself is
-  // just UI, not a security boundary. Must be an SO/DSE on the submitter's own team,
-  // station, and ops_group (see getEligibleSupervisingOfficers). Admin client here for
-  // the same reason as that function: profiles' own RLS only lets the ASO read their
-  // own row, so a plain RLS-bound read would never find the officer to check against.
-  const { data: officer } = await createAdminClient()
-    .from("profiles")
-    .select("id, name, staff_no, role, station, team, ops_group, status")
-    .eq("id", v.supervising_officer_profile_id)
-    .maybeSingle();
-  const officerEligible =
-    officer &&
-    officer.status === "approved" &&
-    (officer.role === "SO" || officer.role === "DSE") &&
-    officer.station === profile.station &&
-    officer.team === profile.team &&
-    (profile.ops_group ? officer.ops_group === profile.ops_group : true);
-  if (!officerEligible) {
+  // Re-verify the selected Supervising Officer server-side -- the dropdown itself is
+  // just UI, not a security boundary. Eligibility is canonical: an active so/sso/dse
+  // assignment on the submitter's own station and team (list_eligible_supervising_officers_secure);
+  // another user's legacy profile rank, station/team text or ops_group is never trusted.
+  const eligibleOfficers = await getEligibleSupervisingOfficers();
+  const officer = eligibleOfficers.find((o) => o.id === v.supervising_officer_profile_id);
+  if (!officer) {
     return {
       ok: false,
       error: "Selected Supervising Officer is not a valid SO/DSE on your team — please re-select.",
@@ -495,9 +483,9 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
     .insert({
       profile_id: profile.id,
       status: "submitted",
+      ops_group: null, // historical column; deprecated for authorization
       station: v.station,
       team: v.team,
-      ops_group: profile.ops_group ?? null,
       supervising_officer_name: officer.name,
       supervising_officer_id: officer.staff_no,
       staff_name: v.staff_name,
@@ -580,9 +568,9 @@ export async function submitSec018(input: unknown): Promise<ActionResult> {
     .insert({
       profile_id: profile.id,
       status: "submitted",
+      ops_group: null, // historical column; deprecated for authorization
       station: v.station,
       team: v.team,
-      ops_group: profile.ops_group ?? null,
       staff_name: v.staff_name,
       date_time: v.date_time,
       acknowledgement: v.acknowledgement,
@@ -645,9 +633,9 @@ export async function submitSec033(input: unknown): Promise<ActionResult> {
     .insert({
       profile_id: profile.id,
       status: "submitted",
+      ops_group: null, // historical column; deprecated for authorization
       station: v.station,
       team: v.team,
-      ops_group: profile.ops_group ?? null,
       staff_name: v.staff_name,
       staff_id: v.staff_id,
       report_date: v.report_date,
@@ -706,9 +694,9 @@ export async function submitSec013(input: unknown): Promise<ActionResult> {
     .insert({
       profile_id: profile.id,
       status: "submitted",
+      ops_group: null, // historical column; deprecated for authorization
       station: v.station,
       team: v.team,
-      ops_group: profile.ops_group ?? null,
       staff_name: v.staff_name,
       staff_id: v.staff_id,
       date_time_in: v.date_time_in,
@@ -774,9 +762,9 @@ export async function submitOffload(input: unknown): Promise<ActionResult> {
     .insert({
       profile_id: profile.id,
       status: "submitted",
+      ops_group: null, // historical column; deprecated for authorization
       station: v.station,
       team: v.team,
-      ops_group: profile.ops_group ?? null,
       staff_name: v.staff_name,
       staff_id: v.staff_id,
       flight_no: v.flight_no,

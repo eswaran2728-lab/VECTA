@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { OpsGroup } from "@/lib/icms/database.types";
 import { phase7DashboardNavEntry, scannerNavAllowedForRole } from "@/lib/dashboard/navigation";
 
 interface NavTab {
@@ -60,14 +59,15 @@ const DRIVER_HOME: NavTab = {
  * For drivers (warehouse_pic, vendor), provides dedicated, minimal dispatch actions.
  */
 export function TeamBottomNav({
-  opsGroup,
   orgWide,
   role,
+  canScan = false,
   hasPhase7Assignment = false,
 }: {
-  opsGroup: OpsGroup | null;
   orgWide: boolean;
   role?: string | null;
+  /** Canonical decision (station operator at a scan-capable station), computed server-side. Display only. */
+  canScan?: boolean;
   /** Phase 7: whether this profile holds at least one active Phase 3 role
    *  assignment. Purely a display decision -- see
    *  lib/dashboard/navigation.ts's own doc comment. Drivers/vendors never
@@ -76,10 +76,7 @@ export function TeamBottomNav({
 }) {
   const pathname = usePathname();
 
-  const isDriver =
-    role === "warehouse_pic" ||
-    role === "vendor" ||
-    (pathname.startsWith("/icms") && !opsGroup && !orgWide);
+  const isDriver = role === "warehouse_pic" || role === "vendor";
 
   const phase7Entry = !isDriver ? phase7DashboardNavEntry(hasPhase7Assignment) : null;
   const phase7Tab: NavTab[] = phase7Entry ? [{ href: phase7Entry.href, label: phase7Entry.label }] : [];
@@ -91,26 +88,13 @@ export function TeamBottomNav({
     tabs = [NEW_TRANSACTION, MY_DISPATCHES, DRIVER_HOME];
   } else if (orgWide) {
     tabs = [DASHBOARD, REPORT_SEARCH, REPORTS, ...phase7Tab, PROFILE];
-  } else if (role === "so" && (opsGroup === "operation_avsec" || opsGroup === "hub_avsec")) {
-    // SO - Operation: Bay Board access, NO Scan/CaterLink clearance
-    tabs = [DASHBOARD, BAY_BOARD, ...phase7Tab, PROFILE];
-  } else if (role === "so" && opsGroup === "ifc_avsec") {
-    // SO - IFC: Scan / Transaction access at Post 2, Transaction History
-    tabs = [DASHBOARD, SCAN, TRANSACTION_HISTORY, ...phase7Tab, PROFILE];
-  } else if (role === "dse" && (opsGroup === "operation_avsec" || opsGroup === "hub_avsec")) {
-    // DSE - Operation: Bay Board access, NO Scan
-    tabs = [DASHBOARD, BAY_BOARD, ...phase7Tab, PROFILE];
-  } else if (role === "dse" && opsGroup === "ifc_avsec") {
-    // DSE - IFC: Team KPIs, Transaction History, NO Bay Board
-    tabs = [DASHBOARD, TRANSACTION_HISTORY, ...phase7Tab, PROFILE];
-  } else if (opsGroup === "ifc_avsec") {
-    // ASO - IFC: Scan at Post 2, Transaction History, NO Bay Board
-    tabs = [DASHBOARD, SCAN, TRANSACTION_HISTORY, ...phase7Tab, PROFILE];
-  } else if (opsGroup === "operation_avsec" || opsGroup === "hub_avsec") {
-    // ASO - Operation: Scan at Post 6 / RedQ, Bay Board
-    tabs = [DASHBOARD, SCAN, BAY_BOARD, ...phase7Tab, PROFILE];
+  } else if (role === "aso" || role === "so" || role === "dse") {
+    // One operational structure: every station-scoped operator gets the Bay Board;
+    // Scan and Transaction History appear only where the station holds the
+    // approved CaterLink scan capability.
+    tabs = canScan ? [DASHBOARD, SCAN, TRANSACTION_HISTORY, BAY_BOARD, ...phase7Tab, PROFILE] : [DASHBOARD, BAY_BOARD, ...phase7Tab, PROFILE];
   } else {
-    tabs = [DASHBOARD, SCAN, ...phase7Tab, PROFILE];
+    tabs = [DASHBOARD, ...phase7Tab, PROFILE];
   }
 
   // Phase 9 / Profiling exclusion: roles without scanner navigation (e.g. profiling_so, profiling_aso)

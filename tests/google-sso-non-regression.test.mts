@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { opsGroupCanAccessCheckpoint, isAvsecScanGroup } from "../lib/icms/ops-group.ts";
 
 /**
  * Explicit non-regression checks for the Google SSO / Management approval
@@ -66,21 +65,9 @@ test("4b. The vendor-account segregation check in app/auth/callback/route.ts is 
 
 // --- 5. Operation AVSEC and IFC AVSEC CaterLink scanning remains unified ---
 
-test("5. The unified AVSEC scanning union (lib/icms/ops-group.ts) is untouched by this migration — re-exercised directly, not merely re-imported", () => {
-  assert.equal(opsGroupCanAccessCheckpoint("operation_avsec", "ifc_avsec"), true);
-  assert.equal(opsGroupCanAccessCheckpoint("ifc_avsec", "operation_avsec"), true);
-  assert.equal(isAvsecScanGroup("operation_avsec"), true);
-  assert.equal(isAvsecScanGroup("ifc_avsec"), true);
-});
-
 // --- 6. Hub AVSEC remains separate ---
 
-test("6. Hub AVSEC remains fully separate from the unified scanning union and from Management/approval changes", () => {
-  assert.equal(opsGroupCanAccessCheckpoint("operation_avsec", "hub_avsec"), false);
-  assert.equal(opsGroupCanAccessCheckpoint("ifc_avsec", "hub_avsec"), false);
-  assert.equal(opsGroupCanAccessCheckpoint("hub_avsec", "hub_avsec"), true);
-  assert.equal(isAvsecScanGroup("hub_avsec"), false);
-});
+// 6. (removed) ops_group-based checkpoint separation is retired; see tests/icms-canonical-authorization.test.mts.
 
 // --- 7. Reporting, acknowledgement, roster, leave, overtime, attendance isolation unchanged ---
 

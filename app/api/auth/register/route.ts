@@ -14,7 +14,6 @@ export async function POST(request: Request) {
 
     // AVSEC Specific fields
     const avsecRole = String(body.avsec_role ?? "SO").toUpperCase();
-    const opsGroup = String(body.ops_group ?? "operation_avsec");
     const team = String(body.team ?? "ALPHA").toUpperCase();
     const station = String(body.station ?? "KUL - MAA");
 
@@ -94,7 +93,6 @@ export async function POST(request: Request) {
         phone,
         system_type: systemType,
         role: systemType === "caterlink" ? "vendor" : safeAvsecRole,
-        ops_group: opsGroup,
         team,
         station,
         driver_type: driverType,
@@ -126,7 +124,6 @@ export async function POST(request: Request) {
           name,
           staff_no: staffId,
           role: (safeAvsecRole ?? "ASO") as "ASO" | "SO" | "DSE" | "ENFORCEMENT" | "MANAGEMENT",
-          ops_group: opsGroup,
           team,
           station,
           status: "pending" as ProfileStatus,

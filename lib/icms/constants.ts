@@ -232,13 +232,6 @@ export const DUTY_POST_BY_ROLE: Partial<Record<Role, string>> = {
   redq_avsec: "REDQ",
 };
 
-export const OPS_GROUP_BY_DUTY_POST: Record<string, "operation_avsec" | "ifc_avsec" | "hub_avsec"> = {
-  "Post 2": "ifc_avsec",
-  "Post 6": "operation_avsec",
-  REDQ: "operation_avsec",
-  Hub: "hub_avsec",
-};
-
 export const VENDOR_STATUS_LABELS: Record<VendorTransactionStatus, string> = {
   CREATED: "Created — awaiting Post 2",
   SECURITY_VERIFIED: "Post 2 approved — awaiting warehouse",

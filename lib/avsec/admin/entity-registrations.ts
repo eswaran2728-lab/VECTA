@@ -51,7 +51,6 @@ export async function approveEntityRegistration(formData: FormData): Promise<Ent
   const hubId = (formData.get("hubId") as string) || null;
   const stationId = (formData.get("stationId") as string) || null;
   const teamId = (formData.get("teamId") as string) || null;
-  const opsGroup = (formData.get("opsGroup") as string) || null;
 
   if (!requestId || !roleCode || !aocId || !operatingEntityCode) {
     return { ok: false, error: "Request, role, AOC, and operating entity are all required." };
@@ -84,7 +83,6 @@ export async function approveEntityRegistration(formData: FormData): Promise<Ent
     p_hub_id: hubId,
     p_station_id: stationId,
     p_team_id: teamId,
-    p_ops_group: opsGroup,
   });
 
   if (error) return { ok: false, error: error.message };

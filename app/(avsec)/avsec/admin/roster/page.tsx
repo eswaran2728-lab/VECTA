@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
-import { STATIONS, OPS_GROUPS, OPS_GROUP_LABELS } from "@/lib/avsec/reference-data";
+import { requireRouteAccess, ADMIN_ROLES } from "@/lib/avsec/auth";
+import { STATIONS } from "@/lib/avsec/reference-data";
 import {
   getShifts,
   getRosterOfficers,
@@ -42,7 +42,7 @@ export default async function AdminRosterPage({
   searchParams: Promise<{ station?: string; week?: string; q?: string; page?: string; error?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const profile = await requireRole(ADMIN_ROLES);
+  const profile = await requireRouteAccess("/avsec/admin/roster", ADMIN_ROLES);
 
   const station = searchParams.station || profile.station || STATIONS[0];
   const weekStart = mondayOf(searchParams.week || todayISODateMY());
@@ -60,11 +60,9 @@ export default async function AdminRosterPage({
     getApprovedLeavesForRoster(station, weekStart, weekEnd),
   ]);
 
-  // Keyed by team + ops_group + date — team names collide across AVSEC
-  // branches (both Operation and IFC AVSEC can have a "Team ALPHA"), so a
-  // key on team+date alone would merge two different branches' cells.
+  // Keyed by team + date (one operational structure; teams are station-scoped).
   const cellMap = new Map<string, RosterCellRow>();
-  for (const row of rosterRows) cellMap.set(`${row.team}|${row.ops_group ?? ""}|${row.roster_date}`, row);
+  for (const row of rosterRows) cellMap.set(`${row.team}|${row.roster_date}`, row);
 
   // Map approved leaves to officer ID and date
   const officerLeaveMap = new Map<string, { leaveType: LeaveType; leaveLabel: string }>();
@@ -92,7 +90,7 @@ export default async function AdminRosterPage({
   for (const o of officers) {
     for (const date of days) {
       const leave = officerLeaveMap.get(`${o.id}|${date}`);
-      const cell = cellMap.get(`${o.team}|${o.ops_group ?? ""}|${date}`);
+      const cell = cellMap.get(`${o.team}|${date}`);
       if (leave && cell && cell.shift_code && cell.shift_code.toUpperCase() !== "OFF") {
         coverageConflicts.push({
           officerName: o.name,
@@ -121,7 +119,7 @@ export default async function AdminRosterPage({
   const teammatesByTeam = new Map<string, string[]>();
   for (const o of officers) {
     if (!o.team) continue;
-    const key = `${o.team}|${o.ops_group ?? ""}`;
+    const key = o.team;
     const list = teammatesByTeam.get(key) ?? [];
     list.push(o.name);
     teammatesByTeam.set(key, list);
@@ -285,11 +283,6 @@ export default async function AdminRosterPage({
                           </p>
                           <p className="font-mono text-[10px] text-muted-foreground">
                             {o.staff_no} · {o.team || "—"}
-                            {o.ops_group && (OPS_GROUPS as readonly string[]).includes(o.ops_group) && (
-                              <span className="ml-1 px-1 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-bold">
-                                {OPS_GROUP_LABELS[o.ops_group as keyof typeof OPS_GROUP_LABELS]}
-                              </span>
-                            )}
                           </p>
                         </div>
                       </div>
@@ -298,17 +291,16 @@ export default async function AdminRosterPage({
                       const leaveInfo = officerLeaveMap.get(`${o.id}|${date}`);
                       return (
                         <td key={date} className="p-1 align-top min-w-[140px]">
-                          {o.team && o.ops_group ? (
+                          {o.team ? (
                             <RosterCell
                               station={station}
                               team={o.team}
-                              opsGroup={o.ops_group as "operation_avsec" | "ifc_avsec" | "hub_avsec"}
                               date={date}
                               week={weekStart}
                               shifts={shifts}
-                              cell={cellMap.get(`${o.team}|${o.ops_group}|${date}`)}
+                              cell={cellMap.get(`${o.team}|${date}`)}
                               leaveInfo={leaveInfo}
-                              teammates={(teammatesByTeam.get(`${o.team}|${o.ops_group}`) ?? []).filter((n) => n !== o.name)}
+                              teammates={(teammatesByTeam.get(o.team) ?? []).filter((n) => n !== o.name)}
                             />
                           ) : (
                             <p className="font-mono text-[10px] p-2 text-muted-foreground/60">
@@ -382,19 +374,7 @@ export default async function AdminRosterPage({
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="field-label">AVSEC Group</label>
-                  <select name="ops_group" required className="input-base" defaultValue="">
-                    <option value="" disabled>
-                      Select a group…
-                    </option>
-                    {OPS_GROUPS.map((g) => (
-                      <option key={g} value={g}>
-                        {OPS_GROUP_LABELS[g]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <div />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

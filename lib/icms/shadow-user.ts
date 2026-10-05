@@ -50,7 +50,6 @@ export interface AvsecProfileForShadow {
   email: string;
   role: string;
   staff_no: string | null;
-  ops_group: string | null;
 }
 
 /** Builds the public.users row to insert for a given AVSEC profile. */
@@ -63,7 +62,6 @@ export function buildShadowUserRow(profile: AvsecProfileForShadow) {
     role: mapAvsecRoleToIcmsRole(profile.role),
     status: "active",
     preferred_language: "en",
-    ops_group: profile.ops_group,
     duty_post: null,
   };
 }

@@ -1,14 +1,10 @@
-import { redirect } from "next/navigation";
-import { requireRouteAccess, landingPathForRole } from "@/lib/avsec/auth";
+import { requireRouteAccess } from "@/lib/avsec/auth";
 import { loadDraft } from "@/lib/avsec/reports/drafts";
 import { Sec013Form } from "@/components/avsec/forms/Sec013Form";
 import { REPORT_META } from "@/lib/avsec/reference-data";
 
 export default async function Sec013Page() {
   const profile = await requireRouteAccess("/avsec/reports/sec013", ["ASO"]);
-  if (profile.ops_group === "ifc_avsec") {
-    redirect(landingPathForRole(profile.role));
-  }
   const serverDraft = await loadDraft("sec013");
 
   return (

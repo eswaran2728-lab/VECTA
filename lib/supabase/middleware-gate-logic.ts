@@ -29,7 +29,7 @@ export function isAdminPathForbidden(path: string, role: string | null): boolean
 }
 
 import type { CanonicalAccess } from "../auth/canonical-access";
-import { canonicalCodesForRoute } from "../auth/route-access.ts";
+import { canonicalCodesForRoute, routeAllows } from "../auth/route-access.ts";
 
 // The canonical roles whose workspace includes the duty terminal / check-in.
 const DUTY_CODES = new Set(canonicalCodesForRoute("/avsec/duty"));
@@ -58,6 +58,16 @@ export function effectiveGateRole(access: CanonicalAccess, icmsRole: string | nu
 // duty check-in gate; every other canonical account is exempt.
 export function isShiftBasedAccess(access: CanonicalAccess): boolean {
   return access.roleCodes.some((c) => DUTY_CODES.has(c));
+}
+
+// /avsec/admin is the management section, EXCEPT the roster, which dashboards link
+// to for dse / hub_se. Roster access is decided by the same canonical route policy
+// the page uses (and the roster RPCs enforce station/team/hub scope in the database).
+export function isAdminPathForbiddenFor(path: string, role: string | null, access: CanonicalAccess): boolean {
+  if (path === "/avsec/admin/roster" || path.startsWith("/avsec/admin/roster/")) {
+    if (routeAllows("/avsec/admin/roster", access, ["MANAGEMENT", "ADMIN"])) return false;
+  }
+  return isAdminPathForbidden(path, role);
 }
 
 // Effective role for edge gating. Super Admin comes ONLY from the canonical

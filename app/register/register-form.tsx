@@ -190,15 +190,6 @@ export function RegisterForm() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label htmlFor="ops_group" className="vecta-label">
-                  Department / Branch
-                </label>
-                <select id="ops_group" name="ops_group" className="vecta-input">
-                  <option value="operation_avsec">OPERATION AVSEC</option>
-                  <option value="ifc_avsec">IFC AVSEC</option>
-                </select>
-              </div>
 
               <div>
                 <label htmlFor="avsec_role" className="vecta-label">

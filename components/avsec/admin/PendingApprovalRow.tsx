@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { approveUserWithAssignment, rejectUser } from "@/lib/avsec/admin/actions";
 import { validateApprovalAssignment } from "@/lib/avsec/admin/validation";
-import { STATIONS, REQUESTABLE_ROLES, ROLE_LABELS, OPS_GROUPS, OPS_GROUP_LABELS, ORG_WIDE_ROLES, OPS_GROUP_REQUIRED_ROLES } from "@/lib/avsec/reference-data";
+import { STATIONS, REQUESTABLE_ROLES, ROLE_LABELS, ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import type { Profile } from "@/lib/avsec/types";
 
 /**
@@ -21,13 +21,11 @@ export function PendingApprovalRow({ profile: p }: { profile: Profile }) {
   const [role, setRole] = useState<string>(p.role);
   const [station, setStation] = useState(p.station ?? "");
   const [team, setTeam] = useState(p.team ?? "");
-  const [opsGroup, setOpsGroup] = useState("");
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
 
   const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(role);
-  const needsOpsGroup = (OPS_GROUP_REQUIRED_ROLES as readonly string[]).includes(role);
-  const validation = validateApprovalAssignment({ role, station, team, opsGroup });
+  const validation = validateApprovalAssignment({ role, station, team });
 
   return (
     <div className="py-3 space-y-3">
@@ -77,24 +75,6 @@ export function PendingApprovalRow({ profile: p }: { profile: Profile }) {
                 className="input-base text-xs"
               />
             </div>
-            <div>
-              <label className="field-label">Ops group{needsOpsGroup ? "" : " (n/a)"}</label>
-              <select
-                value={opsGroup}
-                onChange={(e) => setOpsGroup(e.target.value)}
-                disabled={!needsOpsGroup}
-                className="input-base text-xs"
-              >
-                <option value="" disabled>
-                  Select…
-                </option>
-                {OPS_GROUPS.map((g) => (
-                  <option key={g} value={g}>
-                    {OPS_GROUP_LABELS[g]}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
 
           {!validation.ok && <p className="field-error text-xs">{validation.error}</p>}
@@ -105,7 +85,6 @@ export function PendingApprovalRow({ profile: p }: { profile: Profile }) {
               <input type="hidden" name="role" value={role} />
               <input type="hidden" name="station" value={station} />
               <input type="hidden" name="team" value={team} />
-              <input type="hidden" name="opsGroup" value={opsGroup} />
               <button type="submit" disabled={!validation.ok} className="btn-primary py-2 px-3 text-xs disabled:opacity-40 disabled:cursor-not-allowed">
                 Approve
               </button>

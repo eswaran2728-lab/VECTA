@@ -5597,6 +5597,21 @@ export type Database = {
         }[]
       }
       view_release_readiness_report_secure: { Args: Record<PropertyKey, never>; Returns: Json }
+      can_manage_roster_secure: { Args: { p_station: string; p_team?: string | null }; Returns: boolean }
+      clear_roster_cell_secure: { Args: { p_station: string; p_team: string; p_roster_date: string }; Returns: undefined }
+      list_roster_officers_secure: {
+        Args: { p_station: string }
+        Returns: { id: string; name: string; staff_no: string; team: string }[]
+      }
+      list_roster_teams_secure: {
+        Args: { p_station: string }
+        Returns: { team: string; display_order: number }[]
+      }
+      list_eligible_supervising_officers_secure: {
+        Args: Record<PropertyKey, never>
+        Returns: { id: string; name: string; staff_no: string }[]
+      }
+      is_eligible_supervising_officer_secure: { Args: { p_officer_id: string }; Returns: boolean }
       record_wois_audit_event_secure: {
         Args: { p_event_type: string; p_conversation_id?: string | null; p_details?: Json }
         Returns: string

@@ -152,11 +152,6 @@ test("11. ASO approval fails without team", () => {
   assert.equal(r.ok, false);
 });
 
-test("12. ASO approval fails without ops group", () => {
-  const r = validateApprovalAssignment({ role: "ASO", station: "KUL - MAA", team: "ALPHA", opsGroup: "" });
-  assert.equal(r.ok, false);
-});
-
 test("13. Approval succeeds when all mandatory ASO/SO/DSE assignments exist", () => {
   for (const role of ["ASO", "SO", "DSE"]) {
     const r = validateApprovalAssignment({ role, station: "KUL - MAA", team: "ALPHA", opsGroup: "ifc_avsec" });
@@ -169,11 +164,6 @@ test("Org-wide roles (MANAGEMENT/ENFORCEMENT) do not require team/ops_group", ()
     const r = validateApprovalAssignment({ role, station: "KUL - MAA", team: "", opsGroup: "" });
     assert.equal(r.ok, true, `${role} should validate without team/ops_group`);
   }
-});
-
-test("An invalid ops_group value is rejected even when everything else is present", () => {
-  const r = validateApprovalAssignment({ role: "ASO", station: "KUL - MAA", team: "ALPHA", opsGroup: "not_a_real_group" });
-  assert.equal(r.ok, false);
 });
 
 // --- 14: approval records approver + timestamp (structural) ---

@@ -33,7 +33,6 @@ export interface LogContext {
   severity?: SeverityLevel;
   role?: string | null;
   station?: string | null;
-  opsGroup?: string | null;
   transactionId?: string | null;
   correlationId?: string | null;
   userId?: string | null;

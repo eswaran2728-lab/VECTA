@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ROLE_LABELS, STATIONS, USER_ROLES, OPS_GROUPS, OPS_GROUP_LABELS, OPS_GROUP_REQUIRED_ROLES } from "@/lib/avsec/reference-data";
+import { ROLE_LABELS, STATIONS, USER_ROLES } from "@/lib/avsec/reference-data";
 import { updateUserAssignment, approveUser, deactivateUser, deleteUserAccount } from "@/lib/avsec/admin/actions";
 import { formatDateTimeMY } from "@/lib/avsec/datetime";
 import type { Profile } from "@/lib/avsec/types";
@@ -135,22 +135,6 @@ function UserRow({ profile: p, isProtected }: { profile: Profile; isProtected: b
         </div>
       </td>
       <td className="px-2 py-3">
-        <select
-          form={formId}
-          name="opsGroup"
-          defaultValue={p.ops_group ?? ""}
-          disabled={!(OPS_GROUP_REQUIRED_ROLES as readonly string[]).includes(p.role)}
-          className="input-base py-2 min-h-0 text-sm"
-        >
-          <option value="">
-            {(OPS_GROUP_REQUIRED_ROLES as readonly string[]).includes(p.role) ? "Select…" : "Not required"}
-          </option>
-          {OPS_GROUPS.map((g) => (
-            <option key={g} value={g}>
-              {OPS_GROUP_LABELS[g]}
-            </option>
-          ))}
-        </select>
       </td>
       <td className="px-2 py-3 whitespace-nowrap">
         <span

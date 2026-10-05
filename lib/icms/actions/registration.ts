@@ -24,7 +24,6 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
 
   // AVSEC Specific fields
   const avsecRole = String(formData.get("avsec_role") ?? "SO").toUpperCase();
-  const opsGroup = String(formData.get("ops_group") ?? "operation_avsec");
   const team = String(formData.get("team") ?? "ALPHA").toUpperCase();
   const station = String(formData.get("station") ?? "KUL - MAA");
 
@@ -58,7 +57,6 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
           phone,
           system_type: systemType,
           role: systemType === "caterlink" ? "vendor" : (avsecRole === "ADMIN" ? "MANAGEMENT" : avsecRole),
-          ops_group: opsGroup,
           team,
           station,
           driver_type: driverType,
@@ -82,7 +80,6 @@ export async function registerUser(_prev: RegisterState, formData: FormData): Pr
           name,
           staff_no: staffId,
           role: safeRole as "ASO" | "SO" | "DSE" | "ENFORCEMENT" | "MANAGEMENT",
-          ops_group: opsGroup,
           team,
           station,
           status: "pending" as ProfileStatus,

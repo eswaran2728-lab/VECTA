@@ -9,12 +9,8 @@ import { isProfileActiveSuperAdmin } from "@/lib/super-admin/authority";
 import {
   REQUESTABLE_ROLES,
   ORG_WIDE_ROLES,
-  OPS_GROUPS,
-  OPS_GROUP_REQUIRED_ROLES,
   type UserRole,
-  type OpsGroup,
 } from "@/lib/avsec/reference-data";
-import { buildShadowUserRow } from "@/lib/icms/shadow-user";
 import { validateApprovalAssignment } from "@/lib/avsec/admin/validation";
 
 export async function createStaffAccount(formData: FormData) {
@@ -28,12 +24,10 @@ export async function createStaffAccount(formData: FormData) {
   const role = String(formData.get("role") || "").trim() as UserRole;
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();
-  const opsGroupInput = String(formData.get("opsGroup") || "").trim() as OpsGroup | "";
   const password = String(formData.get("password") || "");
 
   const allRoles: readonly string[] = [...REQUESTABLE_ROLES, "MANAGEMENT"];
   const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(role);
-  const needsOpsGroup = (OPS_GROUP_REQUIRED_ROLES as readonly string[]).includes(role);
 
   if (!name || !email || !allRoles.includes(role) || !station || password.length < 6) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent("Fill in name, email, role, station and a password of at least 6 characters."));
@@ -41,11 +35,6 @@ export async function createStaffAccount(formData: FormData) {
   if (!isOrgWide && (!staffNo || !team)) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent("Staff ID and Team are required for this role."));
   }
-  if (needsOpsGroup && !(OPS_GROUPS as readonly string[]).includes(opsGroupInput)) {
-    redirect("/avsec/admin/users?error=" + encodeURIComponent("Select an ops group for this role (Operation AVSEC / IFC AVSEC / Hub AVSEC)."));
-  }
-  // ORG_WIDE_ROLES (see across all 3 groups) never carry an ops_group.
-  const opsGroup: OpsGroup | null = needsOpsGroup ? (opsGroupInput as OpsGroup) : null;
 
   const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -87,7 +76,6 @@ export async function createStaffAccount(formData: FormData) {
       station,
       team: isOrgWide ? "" : team,
       role: safeRole as "ASO" | "SO" | "DSE" | "ENFORCEMENT" | "MANAGEMENT",
-      ops_group: opsGroup,
       status: "approved",
     })
     .eq("id", data.user!.id);
@@ -96,25 +84,9 @@ export async function createStaffAccount(formData: FormData) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent(profileError.message));
   }
 
-  const { error: shadowUserError } = await createAdminClient()
-    .from("users")
-    .insert(
-      buildShadowUserRow({
-        id: data.user!.id,
-        name,
-        email,
-        role,
-        staff_no: isOrgWide ? null : staffNo,
-        ops_group: opsGroup,
-      })
-    );
-
-  if (shadowUserError) {
-    redirect(
-      "/avsec/admin/users?error=" +
-        encodeURIComponent(`Account created, but its ICMS identity could not be provisioned: ${shadowUserError.message}`),
-    );
-  }
+  // No ICMS identity row is created: ICMS/CaterLink access is decided from the
+  // account's canonical role assignments (granted through the registration
+  // approval workflow), not from a second legacy identity record.
 
   revalidatePath("/avsec/admin/users");
 }
@@ -154,7 +126,6 @@ export async function approveUserWithAssignment(formData: FormData) {
   const role = String(formData.get("role") || "").trim();
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();
-  const opsGroupInput = String(formData.get("opsGroup") || "").trim();
   if (!profileId) return;
 
   // Defense in depth: RLS/the trigger already forbid a self-target write,
@@ -163,14 +134,12 @@ export async function approveUserWithAssignment(formData: FormData) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent("You cannot approve your own account."));
   }
 
-  const validation = validateApprovalAssignment({ role, station, team, opsGroup: opsGroupInput });
+  const validation = validateApprovalAssignment({ role, station, team });
   if (!validation.ok) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent(validation.error));
   }
 
   const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(role);
-  const needsOpsGroup = (OPS_GROUP_REQUIRED_ROLES as readonly string[]).includes(role);
-  const opsGroup: OpsGroup | null = needsOpsGroup ? (opsGroupInput as OpsGroup) : null;
 
   const supabase = await createClient();
   // Atomic: one UPDATE statement sets every final assignment, the
@@ -185,7 +154,6 @@ export async function approveUserWithAssignment(formData: FormData) {
       role: role as "ASO" | "SO" | "DSE" | "ENFORCEMENT" | "MANAGEMENT",
       station,
       team: isOrgWide ? "" : team,
-      ops_group: opsGroup,
       status: "approved",
       approved_by: manager.id,
       approved_at: new Date().toISOString(),
@@ -204,19 +172,6 @@ export async function approveUserWithAssignment(formData: FormData) {
         encodeURIComponent("Approval did not apply — you may not be authorized to approve this account, or it was already reviewed."),
     );
   }
-
-  // Keep the ICMS shadow row in sync so the newly-approved account can
-  // actually use CaterLink/ICMS features immediately, same mapping
-  // createStaffAccount() uses.
-  const { mapAvsecRoleToIcmsRole } = await import("@/lib/icms/shadow-user");
-  await createAdminClient()
-    .from("users")
-    .update({
-      role: mapAvsecRoleToIcmsRole(role),
-      ops_group: opsGroup,
-      status: "active",
-    })
-    .eq("id", profileId);
 
   revalidatePath("/avsec/admin/users");
   redirect("/avsec/admin/users?success=" + encodeURIComponent("Account approved."));
@@ -336,7 +291,6 @@ export async function updateUserAssignment(formData: FormData) {
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();
   const role = String(formData.get("role") || "").trim() as UserRole;
-  const opsGroupInput = String(formData.get("opsGroup") || "").trim() as OpsGroup | "";
   if (!profileId || !station || !role) return;
 
   const supabase = await createClient();
@@ -347,10 +301,6 @@ export async function updateUserAssignment(formData: FormData) {
   const allRoles: readonly string[] = [...REQUESTABLE_ROLES, "MANAGEMENT"];
   if (!allRoles.includes(role)) return;
   const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(role);
-  const needsOpsGroup = (OPS_GROUP_REQUIRED_ROLES as readonly string[]).includes(role);
-  const opsGroup: OpsGroup | null =
-    needsOpsGroup && (OPS_GROUPS as readonly string[]).includes(opsGroupInput) ? (opsGroupInput as OpsGroup) : null;
-
   const safeRole = role === "ADMIN" ? "MANAGEMENT" : role;
 
   const { data, error } = await supabase
@@ -359,7 +309,6 @@ export async function updateUserAssignment(formData: FormData) {
       station,
       team: isOrgWide ? "" : team,
       role: safeRole as "ASO" | "SO" | "DSE" | "ENFORCEMENT" | "MANAGEMENT",
-      ops_group: opsGroup,
     })
     .eq("id", profileId)
     .select("id");
@@ -378,14 +327,6 @@ export async function updateUserAssignment(formData: FormData) {
         encodeURIComponent("Reassignment did not apply — you may not be authorized to modify this account, or the change was rejected."),
     );
   }
-
-  // Sync to ICMS shadow users table if exists
-  await createAdminClient()
-    .from("users")
-    .update({
-      ops_group: opsGroup,
-    })
-    .eq("id", profileId);
 
   revalidatePath("/avsec/admin/users");
   redirect("/avsec/admin/users?success=" + encodeURIComponent("Assignment updated."));

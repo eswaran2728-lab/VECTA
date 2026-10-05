@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/icms/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Role } from "@/lib/icms/database.types";
-import { CREATABLE_ROLES, DUTY_POST_BY_ROLE, OPS_GROUP_BY_DUTY_POST } from "@/lib/icms/constants";
+import { CREATABLE_ROLES, DUTY_POST_BY_ROLE } from "@/lib/icms/constants";
 
 export interface UserActionState {
   error: string | null;
@@ -51,7 +51,6 @@ export async function createUser(
   // team_based_ops_groups.sql. supervisor/enforcement are org-wide (both
   // stay null).
   const dutyPost = DUTY_POST_BY_ROLE[role] ?? null;
-  const opsGroup = dutyPost ? OPS_GROUP_BY_DUTY_POST[dutyPost] : null;
 
   const { error: profileError } = await admin.from("users").insert({
     id: created.user.id,
@@ -60,7 +59,6 @@ export async function createUser(
     email,
     role,
     duty_post: dutyPost,
-    ops_group: opsGroup,
   });
 
   if (profileError) {
@@ -91,12 +89,11 @@ export async function updateUserRole(
   }
 
   const dutyPost = DUTY_POST_BY_ROLE[role] ?? null;
-  const opsGroup = dutyPost ? OPS_GROUP_BY_DUTY_POST[dutyPost] : null;
 
   const admin = createAdminClient();
   const { error } = await admin
     .from("users")
-    .update({ role, duty_post: dutyPost, ops_group: opsGroup })
+    .update({ role, duty_post: dutyPost })
     .eq("id", userId);
 
   if (error) {

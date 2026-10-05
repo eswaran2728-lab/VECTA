@@ -91,7 +91,6 @@ export default async function RootLayout({
   const woisUserContext = profile
     ? {
         role: profile.role,
-        ops_group: profile.ops_group ?? null,
         station: profile.station ?? null,
         team: profile.team ?? null,
       }

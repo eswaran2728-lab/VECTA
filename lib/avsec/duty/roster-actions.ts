@@ -4,43 +4,21 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
-import type { OpsGroup } from "@/lib/avsec/reference-data";
-import { OPS_GROUPS } from "@/lib/avsec/reference-data";
 
 function backTo(station: string, week: string) {
   return `/avsec/admin/roster?station=${encodeURIComponent(station)}&week=${week}`;
 }
 
 /**
- * Roster branch isolation (2026-09-22/23 — see
- * supabase/migrations/20260922000005_team_rosters_ops_group.sql): every
- * roster row must carry an ops_group. A DSE writer's own stored ops_group
- * is used automatically (they can only ever roster their own branch); a
- * Management/Admin writer must explicitly choose one, since they're
- * org-wide and could otherwise silently mis-attribute a row.
- *
- * `ADMIN_ROLES` currently gates these actions to MANAGEMENT/ADMIN only —
- * there's no DSE-facing roster UI in the app yet, so the DSE branch below
- * is ready for that but not yet reachable from any page.
+ * Roster authority is canonical (Phase 8): operation_manager (any station),
+ * hub_se (stations of the assigned hub), dse (own station AND team). The
+ * database RPCs enforce it; nothing here reads ops_group, and the historical
+ * team_rosters.ops_group column is written only by the RPC as a fixed
+ * compatibility value.
  */
-function resolveRosterOpsGroup(
-  writer: { role: string; ops_group?: string | null },
-  requestedOpsGroup: string,
-): { ok: true; opsGroup: OpsGroup } | { ok: false; error: string } {
-  if (writer.role === "DSE") {
-    if (!writer.ops_group || !(OPS_GROUPS as readonly string[]).includes(writer.ops_group)) {
-      return { ok: false, error: "Your account has no ops group assigned — contact an admin." };
-    }
-    return { ok: true, opsGroup: writer.ops_group as OpsGroup };
-  }
-  if (!(OPS_GROUPS as readonly string[]).includes(requestedOpsGroup)) {
-    return { ok: false, error: "Select which AVSEC group (Operation, IFC, or Hub) this roster is for." };
-  }
-  return { ok: true, opsGroup: requestedOpsGroup as OpsGroup };
-}
 
 export async function upsertRosterCell(formData: FormData) {
-  const writer = await requireRole([...ADMIN_ROLES, "DSE"]);
+  await requireRole([...ADMIN_ROLES, "DSE"]);
 
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();
@@ -50,32 +28,21 @@ export async function upsertRosterCell(formData: FormData) {
   const endTime = String(formData.get("end_time") || "").trim();
   const notes = String(formData.get("notes") || "").trim();
   const week = String(formData.get("week") || "").trim();
-  const requestedOpsGroup = String(formData.get("ops_group") || "").trim();
 
   if (!station || !team || !rosterDate || !shiftCode) {
     redirect(backTo(station, week) + "&error=" + encodeURIComponent("Missing required roster fields."));
   }
 
-  const opsGroupResult = resolveRosterOpsGroup(writer, requestedOpsGroup);
-  if (!opsGroupResult.ok) {
-    redirect(backTo(station, week) + "&error=" + encodeURIComponent(opsGroupResult.error));
-  }
-
   const supabase = await createClient();
-  const { error } = await supabase.from("team_rosters").upsert(
-    {
-      station,
-      team,
-      roster_date: rosterDate,
-      shift_code: shiftCode,
-      start_time: startTime || null,
-      end_time: endTime || null,
-      notes: notes || null,
-      set_by: writer.id,
-      ops_group: opsGroupResult.opsGroup,
-    },
-    { onConflict: "station,team,roster_date,ops_group" },
-  );
+  const { error } = await supabase.rpc("upsert_roster_cell_secure", {
+    p_station: station,
+    p_team: team,
+    p_roster_date: rosterDate,
+    p_shift_code: shiftCode,
+    p_start_time: startTime || null,
+    p_end_time: endTime || null,
+    p_notes: notes || null,
+  });
 
   if (error) {
     redirect(backTo(station, week) + "&error=" + encodeURIComponent(error.message));
@@ -85,25 +52,19 @@ export async function upsertRosterCell(formData: FormData) {
 }
 
 export async function clearRosterCell(formData: FormData) {
-  const writer = await requireRole([...ADMIN_ROLES, "DSE"]);
+  await requireRole([...ADMIN_ROLES, "DSE"]);
 
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();
   const rosterDate = String(formData.get("roster_date") || "").trim();
-  const opsGroup = String(formData.get("ops_group") || "").trim();
+  const week = String(formData.get("week") || "").trim();
   if (!station || !team || !rosterDate) return;
 
   const supabase = await createClient();
-  let query = supabase.from("team_rosters").delete().eq("station", station).eq("team", team).eq("roster_date", rosterDate);
-  // Scope by ops_group whenever it's known, so clearing one branch's cell
-  // can never remove the other branch's row for the same team-name/date.
-  // DSE can only ever act within their own branch either way.
-  if (writer.role === "DSE" && writer.ops_group) {
-    query = query.eq("ops_group", writer.ops_group);
-  } else if (opsGroup) {
-    query = query.eq("ops_group", opsGroup);
+  const { error } = await supabase.rpc("clear_roster_cell_secure", { p_station: station, p_team: team, p_roster_date: rosterDate });
+  if (error) {
+    redirect(backTo(station, week) + "&error=" + encodeURIComponent(error.message));
   }
-  await query;
 
   revalidatePath("/avsec/admin/roster");
 }
@@ -112,31 +73,10 @@ export async function clearRosterCell(formData: FormData) {
 // has no teams defined yet, or to add an extra team later.
 export async function addStationTeam(formData: FormData) {
   await requireRole(ADMIN_ROLES);
-
   const station = String(formData.get("station") || "").trim();
-  const team = String(formData.get("team") || "").trim().toUpperCase();
-  if (!station || !team) return;
-
-  const supabase = await createClient();
-  const { data: existing } = await supabase
-    .from("station_teams")
-    .select("display_order")
-    .eq("station", station)
-    .order("display_order", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  await supabase.from("station_teams").upsert(
-    {
-      station,
-      team,
-      display_order: (existing?.display_order ?? 0) + 1,
-      active: true,
-    },
-    { onConflict: "station,team" },
-  );
-
-  revalidatePath("/avsec/admin/roster");
+  // Teams are defined by the organisation structure (org_teams), seeded and
+  // changed through the reviewed seeding tooling -- never created from a page.
+  redirect(backTo(station, "") + "&error=" + encodeURIComponent("Teams come from the organisation structure and cannot be added here."));
 }
 
 const MAX_RANGE_DAYS = 31;
@@ -156,7 +96,7 @@ function isoDatesBetween(from: string, to: string): string[] {
 // team in one action, instead of clicking through an officer's cell per day. Writes the
 // exact same team_rosters rows upsertRosterCell would, just for a whole date range at once.
 export async function setTeamScheduleRange(formData: FormData) {
-  const writer = await requireRole([...ADMIN_ROLES, "DSE"]);
+  await requireRole([...ADMIN_ROLES, "DSE"]);
 
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();
@@ -165,18 +105,12 @@ export async function setTeamScheduleRange(formData: FormData) {
   const dateTo = String(formData.get("date_to") || "").trim();
   const notes = String(formData.get("notes") || "").trim();
   const week = String(formData.get("week") || "").trim();
-  const requestedOpsGroup = String(formData.get("ops_group") || "").trim();
 
   if (!station || !team || !shiftCode || !dateFrom || !dateTo) {
     redirect(backTo(station, week) + "&error=" + encodeURIComponent("Pick a team, a schedule, and a date range."));
   }
   if (dateTo < dateFrom) {
     redirect(backTo(station, week) + "&error=" + encodeURIComponent("End date must be on or after the start date."));
-  }
-
-  const opsGroupResult = resolveRosterOpsGroup(writer, requestedOpsGroup);
-  if (!opsGroupResult.ok) {
-    redirect(backTo(station, week) + "&error=" + encodeURIComponent(opsGroupResult.error));
   }
 
   const dates = isoDatesBetween(dateFrom, dateTo);
@@ -191,22 +125,19 @@ export async function setTeamScheduleRange(formData: FormData) {
     .eq("code", shiftCode)
     .maybeSingle();
 
-  const rows = dates.map((date) => ({
-    station,
-    team,
-    roster_date: date,
-    shift_code: shiftCode,
-    start_time: shift?.default_start ?? null,
-    end_time: shift?.default_end ?? null,
-    notes: notes || null,
-    set_by: writer.id,
-    ops_group: opsGroupResult.opsGroup,
-  }));
-
-  const { error } = await supabase.from("team_rosters").upsert(rows, { onConflict: "station,team,roster_date,ops_group" });
-
-  if (error) {
-    redirect(backTo(station, week) + "&error=" + encodeURIComponent(error.message));
+  for (const date of dates) {
+    const { error } = await supabase.rpc("upsert_roster_cell_secure", {
+      p_station: station,
+      p_team: team,
+      p_roster_date: date,
+      p_shift_code: shiftCode,
+      p_start_time: shift?.default_start ?? null,
+      p_end_time: shift?.default_end ?? null,
+      p_notes: notes || null,
+    });
+    if (error) {
+      redirect(backTo(station, week) + "&error=" + encodeURIComponent(error.message));
+    }
   }
 
   revalidatePath("/avsec/admin/roster");

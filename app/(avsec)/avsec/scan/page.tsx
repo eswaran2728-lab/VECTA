@@ -2,30 +2,17 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { UnifiedScanner } from "@/components/scan/UnifiedScanner";
-import type { OpsGroup } from "@/lib/icms/database.types";
 import { resolveOperatorScope } from "@/lib/auth/operator-scope";
 
 export const metadata: Metadata = { title: "Scan — VECTA" };
 export const dynamic = "force-dynamic";
 
 
-// Unified AVSEC scanning model: Operation and IFC branches scan under one
-// label here (they're interchangeable for CaterLink checkpoints — see
-// lib/icms/ops-group.ts). Hub AVSEC keeps its own distinct label; it
-// remains a separate, unmerged scanning scope.
-const OPS_GROUP_LABELS: Record<OpsGroup, string> = {
-  operation_avsec: "AVSEC",
-  ifc_avsec: "AVSEC",
-  hub_avsec: "Hub AVSEC",
-};
-
 /**
- * Unified scan entry point, linked from the dashboard's Scan section for
- * so/aso/dse of any origin (AVSEC public.profiles or ICMS public.users).
- * The actual ops_group scope enforcement happens server-side in
- * lib/icms/actions/scan.ts's scanTransaction() — this page only makes sure
- * a signed-in user with a real ops_group (or an org-wide role) can reach
- * the scanner at all.
+ * Unified scan entry point, linked from the dashboard's Scan section.
+ * Authority is canonical (active assignments + the approved station
+ * capability model), enforced server-side in lib/icms/actions/scan.ts's
+ * scanTransaction(); this page only keeps clearly ineligible roles out.
  */
 export default async function UnifiedScanPage() {
   const supabase = await createClient();
@@ -34,14 +21,15 @@ export default async function UnifiedScanPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const scope = await resolveOperatorScope(supabase, user.id);
+  const scope = await resolveOperatorScope(supabase);
   if (!scope.source) redirect("/login?error=no-profile");
 
-  const orgWide = scope.orgWide;
-  if (!orgWide && !scope.opsGroup) redirect("/?error=no-ops-group");
-
-  const opsGroup = scope.opsGroup as OpsGroup | null;
-  const scopeChip = orgWide ? "All Ops Groups" : opsGroup ? OPS_GROUP_LABELS[opsGroup] : null;
+  // Merged operations model: only canonical station operators (and management/
+  // enforcement leadership, view-only) reach the scanner. The scan action
+  // additionally enforces the approved station-capability model and duty.
+  const stationOperator = scope.roleCodes.some((c) => ["aso", "so", "sso", "dse"].includes(c));
+  if (!stationOperator && !scope.orgWide) redirect("/?error=no-scan-access");
+  const scopeChip = scope.orgWide ? "All Stations" : scope.station;
 
   return (
     <main className="min-h-screen bg-background pb-28">

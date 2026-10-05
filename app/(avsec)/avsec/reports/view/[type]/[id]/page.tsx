@@ -31,38 +31,19 @@ export default async function ReportViewPage({
   const meta = REPORT_META[type];
   const reportRow = report as unknown as { profile_id: string; station: string; team: string; status: string };
 
-  const [acknowledgement, submitter, attachments] = await Promise.all([
+  const [acknowledgement, attachments] = await Promise.all([
     getAcknowledgement(type, params.id),
-    reportRow.profile_id === profile.id
-      ? Promise.resolve(null)
-      : (await createClient())
-          .from("profiles")
-          .select("role, station, team, ops_group")
-          .eq("id", reportRow.profile_id)
-          .maybeSingle()
-          .then((r) => r.data as { role: UserRole; station: string; team: string; ops_group?: string | null } | null),
     getReportAttachments(type, params.id),
   ]);
 
-  // SEC014 Daily Report: either SO or DSE may acknowledge an ASO's report
-  // directly (both are the ASO's operational supervisors), not only the
-  // immediate next rank up. Every other report type keeps the strict
-  // one-rank-up chain. Mirrors can_acknowledge_report() in the database,
-  // which is the actual server-side enforcement — this only controls
-  // whether the button renders.
-  const rankBasedEligible =
-    type === "sec014" && submitter?.role === "ASO"
-      ? profile.role === "SO" || profile.role === "DSE"
-      : submitter !== null && ROLE_RANK[profile.role] === ROLE_RANK[submitter.role] + 1;
-
-  const canAcknowledge =
-    reportRow.status === "submitted" &&
-    !acknowledgement &&
-    submitter !== null &&
-    rankBasedEligible &&
-    profile.station === submitter.station &&
-    (profile.team ?? "") === (submitter.team ?? "") &&
-    (profile.ops_group ?? "") === (submitter.ops_group ?? "");
+  // Acknowledgement eligibility is decided by the database from CANONICAL
+  // assignments (can_acknowledge_report: chain of command, same station and
+  // team) -- never from another user's legacy profile rank or ops_group.
+  let canAcknowledge = false;
+  if (reportRow.status === "submitted" && !acknowledgement && reportRow.profile_id !== profile.id) {
+    const { data: eligible } = await (await createClient()).rpc("can_acknowledge_report", { p_report_type: type, p_report_id: params.id });
+    canAcknowledge = eligible === true;
+  }
 
   const submittedAt = (report as { submitted_at: string | null }).submitted_at;
 

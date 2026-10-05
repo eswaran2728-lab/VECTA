@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   COMPAT_ROLE_BY_CANONICAL, deriveCanonicalAccess, accessSatisfiesRoles, assignmentsFromRpcRows, deriveOperatorScope,
-  isOrgWideOperator, icmsDisplayTier, NO_CANONICAL_ACCESS,
+  isOrgWideOperator, NO_CANONICAL_ACCESS,
 } from "../lib/auth/canonical-access.ts";
 import { effectiveGateRole, isShiftBasedAccess, isExternalCaterLinkRole, isAdminPathForbidden, isSuperAdminPathForbidden } from "../lib/supabase/middleware-gate-logic.ts";
 import { ALL_ROLE_CODES } from "../scripts/staging/lib/role-matrix.mjs";
@@ -85,18 +85,17 @@ test("external CaterLink identity is recognised only from the ICMS users-table r
   assert.equal(effectiveGateRole(accessFor("aso"), "vendor"), "aso");
 });
 
-test("operator scope: canonical decides; ICMS-origin only when unassigned; nothing otherwise", () => {
+test("operator scope: derived from canonical assignments ONLY (no ops_group, no legacy row, no ICMS source)", () => {
   const station = deriveCanonicalAccess(assignmentsFromRpcRows([asg("aso", { station_code: "KUL - MAA", team_name: "ALPHA" })]));
-  const s = deriveOperatorScope(station, { ops_group: "operation_avsec", station: "OLD" }, null);
-  assert.deepEqual([s.source, s.orgWide, s.opsGroup, s.station], ["canonical", false, "operation_avsec", "KUL - MAA"]);
-  assert.equal(deriveOperatorScope(accessFor("operation_manager"), null, null).orgWide, true);
-  assert.equal(deriveOperatorScope(NO_CANONICAL_ACCESS, { ops_group: "ifc_avsec" }, null).source, null, "an AVSEC profile without an assignment has no scope");
-  const icms = deriveOperatorScope(NO_CANONICAL_ACCESS, null, { role: "supervisor", ops_group: null });
-  assert.deepEqual([icms.source, icms.orgWide], ["icms", true]);
-  assert.equal(deriveOperatorScope(accessFor("super_admin"), null, null).source, null);
-  assert.equal(isOrgWideOperator(accessFor("aso"), "supervisor"), false, "a canonical assignment overrides the ICMS role");
-  assert.equal(isOrgWideOperator(NO_CANONICAL_ACCESS, "enforcement"), true);
-  assert.equal(icmsDisplayTier("supervisor"), "management");
+  const s = deriveOperatorScope(station);
+  assert.deepEqual([s.source, s.orgWide, s.station, s.roleCodes], ["canonical", false, "KUL - MAA", ["aso"]]);
+  assert.equal(deriveOperatorScope(accessFor("operation_manager")).orgWide, true);
+  assert.equal(deriveOperatorScope(NO_CANONICAL_ACCESS).source, null, "no assignment means no scope, whatever legacy rows say");
+  assert.equal(deriveOperatorScope(accessFor("super_admin")).source, null);
+  assert.equal(isOrgWideOperator(accessFor("aso")), false);
+  assert.equal(isOrgWideOperator(accessFor("main_enforcement")), true);
+  assert.equal(isOrgWideOperator(NO_CANONICAL_ACCESS), false);
+  assert.ok(!("opsGroup" in s), "operator scope carries no ops_group");
 });
 
 // ---------- requireProfile / requireRole through a mocked Supabase boundary ----------
@@ -232,6 +231,7 @@ test("closure: AVSEC auth chokepoints decide only from canonical access", () => 
 // ---------- dashboard link reachability ----------
 // Routes gated through requireRouteAccess (canonical role codes derived from LINK_HUB_CONFIG + legacy rank satisfiers).
 const ROUTE_GATED: Record<string, string[]> = {
+  "/avsec/admin/roster": ["MANAGEMENT", "ADMIN"],
   "/avsec/reports/lookup": ["ENFORCEMENT", "MANAGEMENT"],
   "/avsec/enforcement/search": ["ENFORCEMENT", "MANAGEMENT", "ADMIN"],
   "/avsec/duty": ["ASO", "SO", "DSE"],
@@ -241,7 +241,7 @@ const ROUTE_GATED: Record<string, string[]> = {
 // Routes that only require an approved profile with any active assignment.
 const OPEN_TO_ANY_ASSIGNMENT = ["/avsec/bay-board", "/avsec/duty/absences", "/avsec/duty/overtime"];
 // Known gaps, documented in docs/dashboard-review/operational-authorization.md.
-const KNOWN_GAPS = ["/avsec/admin/roster", "/icms/dashboard", "/icms/transactions", "/icms/incidents", "/icms/admin/whitelists", "/icms/admin/archive"];
+const KNOWN_GAPS = ["/icms/dashboard", "/icms/transactions", "/icms/incidents", "/icms/admin/whitelists", "/icms/admin/archive"];
 
 test("every dashboard link is classified: gated, open-to-assignment, or a documented known gap", () => {
   const hrefs = new Set(Object.values(LINK_HUB_CONFIG).flatMap((c) => c.links.map((l) => l.href)));

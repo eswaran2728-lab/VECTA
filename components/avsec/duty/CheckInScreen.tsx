@@ -313,7 +313,6 @@ export function CheckInScreen({
           role: "",
           station: null,
           team: null,
-          ops_group: null,
           shift_code: roster?.shift_code ?? null,
           duty_date: today,
           leave_type: leaveType,

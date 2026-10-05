@@ -103,6 +103,33 @@ async function main() {
       name = excluded.name, staff_no = excluded.staff_no, role = excluded.role,
       station = excluded.station, team = excluded.team, ops_group = excluded.ops_group, status = excluded.status;
   `);
+
+  // Merged operations model: legacy RLS identity is canonical-only, so the fixture users hold
+  // the matching scoped aso assignments (as real provisioning writes alongside the profile).
+  await monitor.query(`
+    do $$
+    declare
+      v_aoc uuid; v_entity uuid; v_dept uuid; v_kul record; v_pen record; v_ta uuid; v_tb uuid; v_m uuid;
+    begin
+      select id into v_aoc from public.aocs where code = 'MY';
+      select id into v_entity from public.operating_entities where aoc_id = v_aoc and code = 'MAA';
+      select id into v_dept from public.departments where aoc_id = v_aoc and code = 'operation';
+      select id, hub_id into v_kul from public.org_stations where code = 'KUL - MAA';
+      select id, hub_id into v_pen from public.org_stations where code = 'PEN';
+      insert into public.org_teams (station_id, name) values (v_kul.id, 'Alpha') on conflict (station_id, name) do nothing;
+      insert into public.org_teams (station_id, name) values (v_pen.id, 'Bravo') on conflict (station_id, name) do nothing;
+      select id into v_ta from public.org_teams where station_id = v_kul.id and name = 'Alpha';
+      select id into v_tb from public.org_teams where station_id = v_pen.id and name = 'Bravo';
+      insert into public.user_entity_memberships (profile_id, aoc_id, operating_entity_id, status, is_primary)
+        values ('${ALPHA_ID}', v_aoc, v_entity, 'active', true) returning id into v_m;
+      insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, department_id, hub_id, station_id, team_id, entity_membership_id)
+        select '${ALPHA_ID}', rd.id, v_aoc, v_dept, v_kul.hub_id, v_kul.id, v_ta, v_m from public.role_definitions rd where rd.code = 'aso';
+      insert into public.user_entity_memberships (profile_id, aoc_id, operating_entity_id, status, is_primary)
+        values ('${BRAVO_ID}', v_aoc, v_entity, 'active', true) returning id into v_m;
+      insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, department_id, hub_id, station_id, team_id, entity_membership_id)
+        select '${BRAVO_ID}', rd.id, v_aoc, v_dept, v_pen.hub_id, v_pen.id, v_tb, v_m from public.role_definitions rd where rd.code = 'aso';
+    end $$;
+  `);
   await clearSimulation(monitor);
 
   // =========================================================================

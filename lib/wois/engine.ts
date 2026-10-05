@@ -14,7 +14,6 @@ import { WOIS_KNOWLEDGE_DOCUMENTS } from "./knowledge/wois-data.ts";
 export interface UserContext {
   userId?: string;
   role?: string | null;
-  ops_group?: string | null;
   station?: string | null;
   team?: string | null;
 }
@@ -457,15 +456,7 @@ function handleAppHelpResponse(
   citations: WoisSourceCitation[],
   userContext: UserContext
 ): WoisEngineResponse {
-  // Branch adaptation for Bay Board or IFC workflows
-  let branchContextNote = "";
-  if (match.chunk.section_title.includes("Bay Board")) {
-    if (userContext.ops_group === "ifc_avsec") {
-      branchContextNote = "\n\n*Note for IFC AVSEC: The Bay Board is configured for Operation & Hub AVSEC aircraft turnaround monitoring. For IFC catering & warehouse flows, use Transaction History.*";
-    }
-  }
-
-  const body = `${match.chunk.content}${branchContextNote}`;
+  const body = match.chunk.content;
   const action = APP_HELP_ACTIONS[match.chunk.section_title];
 
   return {

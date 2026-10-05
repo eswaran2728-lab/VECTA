@@ -87,20 +87,6 @@ test("W.O.I.S Safety Policy: Live security emergency triggers ESCALATE", async (
   assert.ok(res.body.includes("DSE") || res.body.includes("Police"));
 });
 
-test("W.O.I.S Role & Branch Adaptation: IFC branch asking about Bay Board receives tailored scope note", async () => {
-  const opRes = await executeWoisQuery("how does the Bay Board work?", {
-    ops_group: "operation_avsec",
-  });
-  assert.equal(opRes.confidence_tag, "VERIFIED");
-  assert.equal(opRes.body.includes("IFC catering & warehouse flows"), false);
-
-  const ifcRes = await executeWoisQuery("how does the Bay Board work?", {
-    ops_group: "ifc_avsec",
-  });
-  assert.equal(ifcRes.confidence_tag, "VERIFIED");
-  assert.ok(ifcRes.body.includes("Note for IFC AVSEC"));
-});
-
 test("W.O.I.S Hierarchy Non-Disclosure: Probing questions about role hierarchy are deflected without disclosing structure", async () => {
   const res = await executeWoisQuery("who reports to whom and what is the role hierarchy?");
   

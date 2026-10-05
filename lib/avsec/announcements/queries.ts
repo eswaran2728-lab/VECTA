@@ -119,7 +119,6 @@ export async function getActiveAnnouncementsForUser(
     role?: string | null;
     station?: string | null;
     team?: string | null;
-    ops_group?: string | null;
   }
 ): Promise<AnnouncementWithStatus[]> {
   const supabase = await createClient();
@@ -199,10 +198,9 @@ export async function getActiveAnnouncementsForUser(
         matches = true;
       } else {
         matches = tList.some((t) => {
-          const branchMatch = !t.branch || t.branch === profile.ops_group;
           const stationMatch = !t.station || t.station === profile.station;
           const teamMatch = !t.team || t.team === profile.team;
-          return branchMatch && stationMatch && teamMatch;
+          return stationMatch && teamMatch;
         });
       }
     }
@@ -242,7 +240,7 @@ export async function getManagementAnnouncements(): Promise<ManagementAnnounceme
       .from("announcement_acknowledgements")
       .select("announcement_id, user_id, acknowledged_at, profiles(name, role, station, team)")
       .in("announcement_id", annIds),
-    supabase.from("profiles").select("id, name, role, ops_group, station, team"),
+    supabase.from("profiles").select("id, name, role, station, team"),
   ]);
 
   const targetMap = new Map<string, AnnouncementTargetRow[]>();
@@ -289,10 +287,9 @@ export async function getManagementAnnouncements(): Promise<ManagementAnnounceme
     const targetedUsers = allProfiles.filter((p) => {
       if (tList.length === 0) return true;
       return tList.some((t) => {
-        const branchMatch = !t.branch || t.branch === p.ops_group;
         const stationMatch = !t.station || t.station === p.station;
         const teamMatch = !t.team || t.team === p.team;
-        return branchMatch && stationMatch && teamMatch;
+        return stationMatch && teamMatch;
       });
     });
 

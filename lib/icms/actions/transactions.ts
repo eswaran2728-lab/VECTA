@@ -1104,7 +1104,7 @@ export async function completePartRedq(
  * in one step (audited automatically by the existing transactions trigger).
  */
 export async function skipPartD(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const profile = await requireRole(["receiver", "supervisor"]);
+  const profile = await requireCheckpointRole("receiver");
 
   const transactionId = str(formData, "transaction_id");
   const reason = str(formData, "reason");

@@ -27,7 +27,6 @@ export default async function AdminLeaveAuditPage({
     dateTo?: string;
     station?: string;
     team?: string;
-    opsGroup?: string;
     leaveType?: string;
     approvalStatus?: string;
     status?: string;
@@ -41,7 +40,6 @@ export default async function AdminLeaveAuditPage({
   const dateTo = searchParams.dateTo || today;
   const station = searchParams.station || "";
   const team = searchParams.team || "";
-  const opsGroup = searchParams.opsGroup || "";
   const leaveTypeFilter = (searchParams.leaveType as LeaveType | "all") || "all";
   const approvalStatusFilter = (searchParams.approvalStatus as LeaveApprovalStatus | "all") || "all";
   const statusFilter = (searchParams.status as "green" | "red" | "all") || "all";
@@ -50,7 +48,6 @@ export default async function AdminLeaveAuditPage({
     getAbsenceNotices({
       station: station || undefined,
       team: team || undefined,
-      opsGroup: opsGroup || undefined,
       leaveType: leaveTypeFilter,
       approvalStatus: approvalStatusFilter,
       status: statusFilter,
@@ -60,7 +57,6 @@ export default async function AdminLeaveAuditPage({
     getAbsenceSummaryStats({
       station: station || undefined,
       team: team || undefined,
-      opsGroup: opsGroup || undefined,
       leaveType: leaveTypeFilter,
       approvalStatus: approvalStatusFilter,
       dateFrom,
@@ -73,7 +69,6 @@ export default async function AdminLeaveAuditPage({
   if (dateTo) baseQs.set("dateTo", dateTo);
   if (station) baseQs.set("station", station);
   if (team) baseQs.set("team", team);
-  if (opsGroup) baseQs.set("opsGroup", opsGroup);
   if (leaveTypeFilter !== "all") baseQs.set("leaveType", leaveTypeFilter);
   if (approvalStatusFilter !== "all") baseQs.set("approvalStatus", approvalStatusFilter);
 

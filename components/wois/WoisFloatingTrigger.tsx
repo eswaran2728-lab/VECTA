@@ -9,7 +9,6 @@ export function WoisFloatingTrigger({
 }: {
   userContext?: {
     role?: string | null;
-    ops_group?: string | null;
     station?: string | null;
     team?: string | null;
   };

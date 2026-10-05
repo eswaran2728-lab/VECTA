@@ -1,3 +1,26 @@
+# Merged operations model (final decision, 2026-10-05) — supersedes any `ops_group` wording below
+
+- IFC AVSEC and Operation AVSEC are **one** operational structure. No IFC role or IFC account exists.
+- `profiles.ops_group` is **deprecated for authorization**. It stays readable for history only; it must not
+  grant or deny route access, dashboards, CaterLink access, scanning, checkpoint authority, reports, roster,
+  attendance, leave or overtime. Application code writes only `ops_group: null` (the column still exists).
+  Closure test: `tests/no-ops-group-authorization.test.mts`.
+- Authority = canonical Phase 3 assignment + scope. CaterLink scanning/movement additionally requires the
+  approved station capability (`can_user_scan_caterlink`); BTU has none. Staff Profiling never scans.
+- Legacy compatibility mapping (display / legacy-RLS only, never authority): aso→ASO; so, sso→SO;
+  dse, hub_se→DSE; operation_manager→MANAGEMENT; main_enforcement→ENFORCEMENT; all other roles have none.
+  Source: `lib/auth/compat-role-map.mjs`. Only Malaysia-AOC assignments map in the database.
+- ICMS identity: **adapter, not a bridge table.** `lib/icms/auth.ts` builds the ICMS profile from
+  `public.profiles` + active canonical assignments for the same Auth UUID. No second identity, no password
+  material, no `public.users` row is created or read for internal staff (the table is absent on staging).
+  Only external CaterLink parties (`vendor`, `warehouse_pic`) with no canonical assignment use the legacy
+  users row, and only for external-role gates. Clients cannot fabricate anything: there is no bridge row to
+  forge. Tests: `tests/icms-canonical-authorization.test.mts`.
+- Database side: see `canonical-compat-migration-plan.md`.
+- Known limits: legacy ICMS tables are absent on staging (data parity unresolved);
+  `/icms/admin/users` legacy user admin does not apply to canonical identity; `hub_se` has no station and
+  cannot scan.
+
 # Canonical operational authorization
 
 Decision (2026-10-05): operational route gates must not depend on the missing `profiles.unified_role`

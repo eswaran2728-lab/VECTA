@@ -6,7 +6,6 @@ import {
   isSuperAdminPathForbidden,
   isOperationalPathForbiddenForSuperAdmin,
 } from "../lib/supabase/middleware-gate-logic.ts";
-import { opsGroupForCheckpointRole } from "../lib/icms/ops-group.ts";
 import { checkpointOrderError } from "../lib/icms/workflow.ts";
 
 test("Workflow Gate Logic: Check-in gate exemptions adhere to role hierarchy", () => {
@@ -88,10 +87,3 @@ test("ICMS Workflow State Machine: Checkpoint progression error detection", () =
   );
 });
 
-test("ICMS Ops Group Mapping: Correct branch assignment for each checkpoint", () => {
-  assert.equal(opsGroupForCheckpointRole("post2_avsec"), "ifc_avsec");
-  assert.equal(opsGroupForCheckpointRole("post6_avsec"), "operation_avsec");
-  assert.equal(opsGroupForCheckpointRole("redq_avsec"), "operation_avsec");
-  assert.equal(opsGroupForCheckpointRole("hub_avsec"), "hub_avsec");
-  assert.equal(opsGroupForCheckpointRole("receiver"), "ifc_avsec");
-});

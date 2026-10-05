@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { verifyQrToken } from "@/lib/icms/qr-token";
 import { nextStepFor } from "@/lib/icms/workflow";
 import { vendorNextStepFor } from "@/lib/icms/workflow-vendor";
+import { assignmentsFromRpcRows, deriveCanonicalAccess } from "@/lib/auth/canonical-access";
+import { decideCheckpointAccess, hubDestinationError, isExternalIcmsRole, isStationOperator } from "@/lib/icms/canonical";
 import type { Role, Transaction, VendorTransaction } from "@/lib/icms/database.types";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -35,9 +37,17 @@ function rateLimited(ip: string): boolean {
  * against vendor_transactions/workflow-vendor.ts. Only post2_avsec and
  * warehouse_pic participate in this flow (post6_avsec/receiver don't).
  */
+interface ScanActor {
+  /** Canonical station operator at a scan-capable station (decided from assignments + capability). */
+  canonicalCanAct: boolean;
+  /** Only for external CaterLink parties (no canonical role): their legacy ICMS role. */
+  externalRole?: Role;
+  stationCode: string | null;
+}
+
 async function handleVendorLookup(
   supabase: SupabaseClient<Database>,
-  role: Role | undefined,
+  actor: ScanActor,
   by: { transactionId: string | null; transactionNumber: string }
 ): Promise<NextResponse> {
   const { data: tx } = await supabase
@@ -56,19 +66,9 @@ async function handleVendorLookup(
   const t = tx as Pick<VendorTransaction, "id" | "status" | "transaction_number">;
   const next = vendorNextStepFor(t.status);
 
-  const checkpointRoles: Role[] = ["post2_avsec", "warehouse_pic"];
-  if (next && role && checkpointRoles.includes(role) && next.role !== role) {
-    return NextResponse.json(
-      {
-        error:
-          "You are not authorized for this checkpoint — this vendor transaction is waiting on a different step. " +
-          "/ Anda tidak dibenarkan untuk langkah ini — transaksi vendor ini sedang menunggu langkah yang lain.",
-      },
-      { status: 403 }
-    );
-  }
-
-  const actionable = !!next && next.role === role;
+  // Canonical station operators may complete the Post 2 step; the warehouse step belongs to the
+  // external warehouse party (legacy external identity). Nothing here reads ops_group.
+  const actionable = !!next && (actor.externalRole ? next.role === actor.externalRole : actor.canonicalCanAct && next.role === "post2_avsec");
   const redirectPath = actionable
     ? `/vendor-transactions/${t.id}/${next.slug}`
     : `/vendor-transactions/${t.id}`;
@@ -101,8 +101,35 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
 
-  const { data: profile } = await supabase.from("users").select("role").eq("id", user.id).single();
-  const role = profile?.role as Role | undefined;
+  // Canonical authority: the caller's active Phase 3 assignments plus the approved CaterLink
+  // station-capability model. A legacy ICMS users row is consulted ONLY for external
+  // CaterLink parties (vendor / warehouse_pic) who hold no canonical assignment.
+  const { data: assignmentRows } = await supabase.rpc("get_my_active_role_assignments");
+  const access = deriveCanonicalAccess(assignmentsFromRpcRows(assignmentRows));
+  const actor: ScanActor = { canonicalCanAct: false, stationCode: access.stationCode };
+  if (access.hasAssignment) {
+    if (isStationOperator(access)) {
+      let capable: boolean | null = null;
+      if (access.stationCode) {
+        const { data } = await supabase.rpc("can_user_scan_caterlink", { p_station_code: access.stationCode });
+        capable = data === true;
+      }
+      const decision = decideCheckpointAccess(access, capable);
+      if (!decision.allowed) {
+        return NextResponse.json(
+          { error: "CaterLink scanning is not available for your station or role. / Pengimbasan CaterLink tidak tersedia untuk stesen atau peranan anda." },
+          { status: 403 }
+        );
+      }
+      actor.canonicalCanAct = true;
+    }
+  } else {
+    const { data: legacy } = await supabase.from("users").select("role").eq("id", user.id).maybeSingle();
+    if (!isExternalIcmsRole(legacy?.role as string | undefined)) {
+      return NextResponse.json({ error: "Not authorized." }, { status: 403 });
+    }
+    actor.externalRole = legacy?.role as Role;
+  }
 
   const token = request.nextUrl.searchParams.get("token") ?? "";
   const transactionNumber = request.nextUrl.searchParams.get("number")?.trim().toUpperCase() ?? "";
@@ -131,12 +158,12 @@ export async function GET(request: NextRequest) {
   }
 
   if (tokenType === "VENDOR") {
-    return handleVendorLookup(supabase, role, { transactionId, transactionNumber });
+    return handleVendorLookup(supabase, actor, { transactionId, transactionNumber });
   }
 
   const { data: tx } = await supabase
     .from("transactions")
-    .select("id, status, direction, transaction_number, route")
+    .select("id, status, direction, transaction_number, route, hub_destination")
     .eq(transactionId ? "id" : "transaction_number", transactionId ?? transactionNumber)
     .maybeSingle();
 
@@ -150,32 +177,28 @@ export async function GET(request: NextRequest) {
   const t = tx as Pick<Transaction, "id" | "status" | "direction" | "transaction_number" | "route">;
   const next = nextStepFor(t.direction, t.status, t.route);
 
-  // A checkpoint role (AVSEC Post 2/6, Receiver, Hub AVSEC, REDQ AVSEC)
-  // scanning a transaction that is waiting on a DIFFERENT checkpoint is
-  // hard-blocked, not shown the read-only detail view — surfacing "not
-  // your checkpoint" is more useful (and safer) than a silent fallthrough.
-  // PIC/Admin keep read-only access.
-  const checkpointRoles: Role[] = [
-    "post2_avsec",
-    "post6_avsec",
-    "receiver",
-    "hub_avsec",
-    "redq_avsec",
-  ];
-  if (next && role && checkpointRoles.includes(role) && next.role !== role) {
-    return NextResponse.json(
-      {
-        error:
-          "You are not authorized for this checkpoint — this transaction is waiting on a different post. " +
-          "/ Anda tidak dibenarkan untuk pusat pemeriksaan ini — transaksi ini sedang menunggu pos yang lain.",
-      },
-      { status: 403 }
-    );
+  // Merged operations model: there is no per-post identity. A canonical station operator
+  // at a scan-capable station may complete whichever step is next, except that the Part Hub
+  // step belongs to the destination hub station (station codes decide, not a group).
+  let actionable = false;
+  if (next) {
+    if (actor.externalRole) {
+      actionable = next.role === actor.externalRole;
+    } else if (actor.canonicalCanAct) {
+      const hubError = hubDestinationError({
+        nextStepPart: next.part,
+        route: t.route,
+        hubDestination: (tx as { hub_destination?: string | null }).hub_destination,
+        userStation: actor.stationCode,
+      });
+      if (hubError) {
+        return NextResponse.json({ error: hubError }, { status: 403 });
+      }
+      actionable = true;
+    }
   }
-
-  const actionable = !!next && next.role === role;
   const redirectPath = actionable
-    ? `/transactions/${t.id}/${next.slug}`
+    ? `/transactions/${t.id}/${next!.slug}`
     : `/transactions/${t.id}`;
 
   return NextResponse.json({

@@ -89,58 +89,27 @@ export function assignmentsFromRpcRows(rows: unknown): RoleAssignmentContext[] {
   }));
 }
 
-// ICMS-origin (public.users) org-wide viewers, in ICMS's own role vocabulary.
-// Used ONLY when the caller holds no canonical assignment.
-export const ICMS_ORG_WIDE_ROLES = ["supervisor", "management", "enforcement"] as const;
-
-export type OperatorScopeSource = "canonical" | "icms" | null;
+export type OperatorScopeSource = "canonical" | null;
 
 export interface OperatorScope {
   source: OperatorScopeSource;
-  /** Canonical role codes held (empty for ICMS-origin identities). */
+  /** Canonical role codes held. */
   roleCodes: string[];
+  /** Management / enforcement leadership rank (view-level, never a checkpoint). */
   orgWide: boolean;
-  /** Legacy workflow attribute (CaterLink checkpoint ownership); never an access decision on its own. */
-  opsGroup: string | null;
+  /** The caller's single canonical station, when exactly one exists. */
   station: string | null;
 }
 
-/** Pure derivation of operator scope from canonical access plus the legacy rows' non-authorising attributes. */
-export function deriveOperatorScope(
-  access: CanonicalAccess,
-  avsec: { ops_group?: string | null; station?: string | null } | null,
-  icms: { role?: string | null; ops_group?: string | null } | null,
-): OperatorScope {
+/** Pure derivation of operator scope from canonical access ONLY (no ops_group, no legacy row). */
+export function deriveOperatorScope(access: CanonicalAccess): OperatorScope {
   if (access.hasAssignment && !access.isSuperAdmin) {
-    return {
-      source: "canonical",
-      roleCodes: access.roleCodes,
-      orgWide: access.orgWide,
-      opsGroup: avsec?.ops_group ?? icms?.ops_group ?? null,
-      station: access.stationCode ?? avsec?.station ?? null,
-    };
+    return { source: "canonical", roleCodes: access.roleCodes, orgWide: access.orgWide, station: access.stationCode };
   }
-  if (!access.hasAssignment && icms) {
-    return {
-      source: "icms",
-      roleCodes: [],
-      orgWide: (ICMS_ORG_WIDE_ROLES as readonly string[]).includes(icms.role ?? ""),
-      opsGroup: icms.ops_group ?? null,
-      station: null,
-    };
-  }
-  return { source: null, roleCodes: [], orgWide: false, opsGroup: null, station: null };
+  return { source: null, roleCodes: [], orgWide: false, station: null };
 }
 
-/** Org-wide viewer decision for ICMS surfaces: canonical when assigned, else the ICMS users-table role. */
-export function isOrgWideOperator(access: CanonicalAccess, icmsRole: string | null | undefined): boolean {
-  if (access.hasAssignment) return !access.isSuperAdmin && access.orgWide;
-  return (ICMS_ORG_WIDE_ROLES as readonly string[]).includes(icmsRole ?? "");
-}
-
-/** Display tier for an ICMS-origin (no-assignment) account, from the ICMS users-table role. */
-export function icmsDisplayTier(icmsRole: string | null | undefined): "management" | "enforcement" | "aso" {
-  if (icmsRole === "supervisor" || icmsRole === "management") return "management";
-  if (icmsRole === "enforcement") return "enforcement";
-  return "aso";
+/** Org-wide viewer decision: canonical leadership rank only. */
+export function isOrgWideOperator(access: CanonicalAccess): boolean {
+  return access.hasAssignment && !access.isSuperAdmin && access.orgWide;
 }

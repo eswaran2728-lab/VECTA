@@ -4,7 +4,7 @@ import { OfflineStatusBadge } from "@/components/avsec/offline/OfflineStatusBadg
 import { ServiceWorkerRegister } from "@/components/avsec/offline/ServiceWorkerRegister";
 import { InstallPrompt } from "@/components/avsec/offline/InstallPrompt";
 import { APP_NAME, APP_DESCRIPTION } from "@/lib/avsec/branding";
-import { getRawProfile, getCanonicalAccess } from "@/lib/avsec/auth";
+import { getRawProfile, getCanonicalAccess, getCanScanCaterLink } from "@/lib/avsec/auth";
 import { signOut as authSignOut } from "@/lib/avsec/profile-actions";
 import { ROLE_LABELS } from "@/lib/avsec/reference-data";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
@@ -29,6 +29,7 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
   const isOrgWide = access?.orgWide ?? false;
   const showChrome = Boolean(profile && profile.status === "approved" && profile.name && access?.hasAssignment && !access.isSuperAdmin);
   const displayRole = access?.primaryCompatRole ?? "ASO";
+  const canScan = showChrome && access ? await getCanScanCaterLink(access) : false;
   // Phase 7: purely a nav-display decision (see lib/dashboard/navigation.ts)
   // -- skipped entirely when chrome isn't shown anyway (profile-setup/
   // pending-approval), and an empty result just means no "My Dashboard"
@@ -46,7 +47,7 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
             name={profile.name}
             role={displayRole}
             roleLabel={access?.primaryCompatRole ? (ROLE_LABELS[access.primaryCompatRole] ?? null) : (access?.roleCodes[0] ?? null)}
-            opsGroup={profile.ops_group}
+            canScan={canScan}
             station={profile.station}
             team={profile.team}
             hasPhase7Assignment={hasPhase7Assignment}
@@ -68,7 +69,7 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
         </div>
         <InstallPrompt />
         {showChrome && profile ? (
-          <TeamBottomNav opsGroup={profile.ops_group} orgWide={isOrgWide} hasPhase7Assignment={hasPhase7Assignment} />
+          <TeamBottomNav orgWide={isOrgWide} role={displayRole.toLowerCase()} canScan={canScan} hasPhase7Assignment={hasPhase7Assignment} />
         ) : null}
       </OfflineSyncProvider>
     </div>

@@ -2,12 +2,34 @@ import "server-only";
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { Role, UserProfile, OpsGroup } from "@/lib/icms/database.types";
-import { opsGroupForCheckpointRole, opsGroupCanAccessCheckpoint, isAvsecScanGroup } from "@/lib/icms/ops-group";
+import type { Role, UserProfile } from "@/lib/icms/database.types";
+import { getActiveRoleAssignments } from "@/lib/dashboard/context";
+import { deriveCanonicalAccess, type CanonicalAccess } from "@/lib/auth/canonical-access";
+import { decideCheckpointAccess, icmsDisplayRole, isExternalIcmsRole, isExternalOnlyRoleList, satisfiesIcmsRoles } from "@/lib/icms/canonical";
 import { ensureOnDutyForCheckpoint } from "@/lib/icms/checkpoint-duty";
 
-/** Returns the signed-in user's profile or redirects to /login. */
-export async function requireProfile(): Promise<UserProfile> {
+/**
+ * ICMS/CaterLink identity and authorization (merged operations model).
+ *
+ * Internal staff are identified by their Supabase Auth user and authorised
+ * ONLY by their active Phase 3 assignments (lib/icms/canonical.ts). The
+ * ICMS profile returned here is an ADAPTER built from public.profiles plus
+ * those assignments -- the same Auth user UUID, no second identity, no
+ * password material, and no public.users row is read or required. Its `role`
+ * is a display value derived from the canonical roles; it never grants
+ * anything. ops_group is not populated and decides nothing.
+ *
+ * The only legacy-row path left is for EXTERNAL CaterLink parties (vendor,
+ * warehouse_pic), who have no canonical role: they are recognised from the
+ * legacy ICMS users table only when the caller holds no canonical
+ * assignment, and only for the external-role gates.
+ */
+export type IcmsProfile = UserProfile & {
+  identity: "canonical" | "external";
+  canonical?: CanonicalAccess;
+};
+
+export async function requireProfile(): Promise<IcmsProfile> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -15,78 +37,91 @@ export async function requireProfile(): Promise<UserProfile> {
 
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("users")
-    .select("*")
-    .eq("id", user.id)
-    .single();
+  const access = deriveCanonicalAccess(await getActiveRoleAssignments());
+  if (access.isSuperAdmin) redirect("/super-admin");
 
-  if (!profile) {
-    // Authenticated in Supabase but no ICMS profile: force sign-out path.
+  if (access.hasAssignment) {
+    const { data: base } = await supabase
+      .from("profiles")
+      .select("id, name, staff_no, email, status, created_at")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (!base) redirect("/login?error=no-profile");
+    if (base.status !== "approved") {
+      await supabase.auth.signOut();
+      redirect(`/login?error=${base.status}`);
+    }
+    return {
+      id: base.id as string,
+      name: (base.name as string) ?? "",
+      staff_id: (base.staff_no as string) ?? "",
+      email: (base.email as string) ?? user.email ?? "",
+      role: icmsDisplayRole(access),
+      preferred_language: "en",
+      status: "active",
+      duty_post: null,
+      ops_group: null,
+      created_at: (base.created_at as string) ?? new Date().toISOString(),
+      identity: "canonical",
+      canonical: access,
+    } as IcmsProfile;
+  }
+
+  // No canonical assignment: only an external CaterLink party may continue.
+  const { data: legacy } = await supabase.from("users").select("*").eq("id", user.id).maybeSingle();
+  if (!legacy || !isExternalIcmsRole((legacy as { role?: string }).role)) {
     redirect("/login?error=no-profile");
   }
-
-  if (profile.status !== "active") {
-    // Defense in depth: signIn() already blocks pending/rejected accounts,
-    // this catches a status change during an already-open session.
+  if ((legacy as { status?: string }).status !== "active") {
     await supabase.auth.signOut();
-    redirect(`/login?error=${profile.status}`);
+    redirect(`/login?error=${(legacy as { status?: string }).status}`);
   }
-
-  return profile as UserProfile;
+  return { ...(legacy as UserProfile), identity: "external" };
 }
 
-/** Requires one of the given roles; otherwise sends the user to the dashboard. */
-export async function requireRole(roles: Role[]): Promise<UserProfile> {
+/**
+ * Requires one of the given (legacy-named) ICMS roles. Internal staff are
+ * decided canonically (lib/icms/canonical.ts); external parties (vendor,
+ * warehouse_pic) use the external identity path.
+ */
+export async function requireRole(roles: Role[]): Promise<IcmsProfile> {
   const profile = await requireProfile();
-  if (!roles.includes(profile.role)) redirect("/icms/dashboard?error=forbidden");
+  if (profile.identity === "external") {
+    if (!isExternalOnlyRoleList(roles) || !roles.includes(profile.role)) redirect("/icms/dashboard?error=forbidden");
+    return profile;
+  }
+  if (!satisfiesIcmsRoles(profile.canonical as CanonicalAccess, roles)) redirect("/icms/dashboard?error=forbidden");
   return profile;
 }
 
 /**
- * Requires access to complete a specific checkpoint (post2_avsec/
- * post6_avsec/hub_avsec/redq_avsec/receiver) — either the exact ICMS role
- * (existing single-purpose demo/checkpoint accounts), or any AVSEC team
- * member whose ops_group covers that checkpoint (supabase/migrations/
- * team_based_ops_groups.sql's mapping, same one opsGroupForCheckpointRole
- * already uses for the Scan feature's read-side ops_group check).
- *
- * Without this, every ordinary ASO/SO/DSE account — which gets the
- * deliberately generic 'ops_staff' ICMS role (see
- * backfill_icms_shadow_users.sql), not a checkpoint-specific one — could
- * see a transaction via Scan but never actually complete any part of it:
- * requireRole([checkpointRole]) rejects 'ops_staff' outright. This is the
- * write-side counterpart to that read-side ops_group access, restoring
- * "every team member scans and does their part" for the actual checkpoint
- * actions, not just visibility.
- *
- * On-duty gate (2026-09-23): "Approved ASO/SO/DSE users from both AVSEC
- * groups may complete non-Hub checkpoints only while checked in." Applies
- * ONLY when access is granted via the unified operation_avsec/ifc_avsec
- * scanning union (isAvsecScanGroup) — i.e. exactly the ASO/SO/DSE grant
- * this task scopes the requirement to. It does NOT apply to: the literal
- * single-purpose checkpoint-role accounts (`profile.role === role` above,
- * no duty/roster concept of their own), or Hub AVSEC's own exact-match
- * grant (out of scope here — task explicitly says "non-Hub checkpoints";
- * Hub AVSEC's access is untouched, preserving Hub separation as-is).
- * Reuses ensureOnDutyForCheckpoint / hasOpenDutyCheckIn — the SAME source
- * of truth report submission already uses (lib/avsec/reports/actions.ts's
- * ensureCheckedIn) — no new duty/attendance table or schema.
+ * Requires access to complete a CaterLink checkpoint (post2_avsec/post6_avsec/
+ * hub_avsec/redq_avsec/receiver). Authority is canonical:
+ *   - an active station-scoped operational assignment (aso/so/sso/dse) with a
+ *     single assigned station;
+ *   - that station must hold the approved CaterLink SCAN capability
+ *     (can_user_scan_caterlink -- stations without it, e.g. BTU, are denied);
+ *   - Staff Profiling is always excluded;
+ *   - the caller must be checked in for duty.
+ * The checkpoint role argument names the step being completed; it is not an
+ * identity and nothing about ops_group or a legacy users.role is consulted.
  */
-export async function requireCheckpointRole(role: Role): Promise<UserProfile> {
+export async function requireCheckpointRole(_role: Role): Promise<IcmsProfile> {
+  void _role;
   const profile = await requireProfile();
-  if (profile.role === role) return profile;
-  const checkpointOpsGroup = opsGroupForCheckpointRole(role);
-  const viewerOpsGroup = profile.ops_group as OpsGroup | null;
-  // Unified AVSEC scanning model: Operation and IFC ops_groups are
-  // interchangeable for any non-Hub checkpoint (opsGroupCanAccessCheckpoint
-  // enforces the exact-match rule for Hub either way).
-  if (opsGroupCanAccessCheckpoint(viewerOpsGroup, checkpointOpsGroup)) {
-    if (isAvsecScanGroup(viewerOpsGroup)) {
-      const dutyError = await ensureOnDutyForCheckpoint(profile.id);
-      if (dutyError) redirect("/icms/dashboard?error=not-on-duty");
-    }
-    return profile;
+  if (profile.identity !== "canonical") redirect("/icms/dashboard?error=forbidden");
+  const access = profile.canonical as CanonicalAccess;
+
+  let stationCanScan: boolean | null = null;
+  if (access.stationCode) {
+    const supabase = await createClient();
+    const { data } = await supabase.rpc("can_user_scan_caterlink", { p_station_code: access.stationCode });
+    stationCanScan = data === true;
   }
-  redirect("/icms/dashboard?error=forbidden");
+  const decision = decideCheckpointAccess(access, stationCanScan);
+  if (!decision.allowed) redirect("/icms/dashboard?error=forbidden");
+
+  const dutyError = await ensureOnDutyForCheckpoint(profile.id);
+  if (dutyError) redirect("/icms/dashboard?error=not-on-duty");
+  return profile;
 }

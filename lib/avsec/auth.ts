@@ -59,6 +59,17 @@ export async function getCurrentProfile(): Promise<Profile | null> {
   return { ...raw, role: access.primaryCompatRole ?? "ASO", canonical: access };
 }
 
+/** Canonical CaterLink scan capability for display (nav/tiles): a station operator whose
+ *  single assigned station holds the approved SCAN capability. Enforcement happens in the
+ *  scan action and ICMS checkpoint gates; this only decides what to SHOW. */
+export async function getCanScanCaterLink(access: CanonicalAccess): Promise<boolean> {
+  if (!access.hasAssignment || access.isSuperAdmin || !access.stationCode) return false;
+  if (!access.roleCodes.some((c) => c === "aso" || c === "so" || c === "sso" || c === "dse")) return false;
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("can_user_scan_caterlink", { p_station_code: access.stationCode });
+  return data === true;
+}
+
 /** Where a user with this canonical access should land. */
 export function landingPathForAccess(access: CanonicalAccess): string {
   if (!access.hasAssignment) return "/avsec/pending-approval";

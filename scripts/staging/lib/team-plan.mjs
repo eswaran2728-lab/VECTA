@@ -82,7 +82,7 @@ export const ROLE_EXPERIENCE = {
   operation_manager: { workspace: "/avsec/my-dashboard (Operation Manager) + legacy management pages", allowed: ["Operation department overview", "management pages (MANAGEMENT rank)", "/avsec/admin"], denied: ["Enforcement-only content", "/super-admin"] },
   main_enforcement: { workspace: "/avsec/my-dashboard (Main Enforcement)", allowed: ["Report Search", "Enforcement Search", "SEC013", "hub breakdown"], denied: ["/avsec/admin", "Operation-only management"] },
   compliance: { workspace: "/avsec/my-dashboard (Compliance, read-only)", allowed: ["Report Search"], denied: ["any write", "enforcement search", "duty"] },
-  caterlink_management: { workspace: "/avsec/my-dashboard (CaterLink Management)", allowed: ["CaterLink overview, transactions, incidents, whitelist, archive (ICMS bridge pending)"], denied: ["unrelated AVSEC report content"] },
+  caterlink_management: { workspace: "/avsec/my-dashboard (CaterLink Management)", allowed: ["CaterLink overview, transactions, incidents, whitelist, archive (canonical ICMS identity adapter)"], denied: ["unrelated AVSEC report content"] },
   investigation_sso: { workspace: "/avsec/my-dashboard (Investigation SSO)", allowed: ["Report Search", "Enforcement Search"], denied: ["checkpoint scanner", "duty"] },
   investigation_so: { workspace: "/avsec/my-dashboard (Investigation SO)", allowed: ["Report Search", "Enforcement Search"], denied: ["checkpoint scanner", "duty"] },
   investigation_aso: { workspace: "/avsec/my-dashboard (Investigation ASO)", allowed: ["Report Search", "Enforcement Search"], denied: ["checkpoint scanner", "duty"] },
@@ -120,8 +120,29 @@ export function legacyProfileFor(roleCode, scope) {
   return { role: COMPAT_ROLE_BY_CANONICAL[roleCode] ?? "ASO", station: scope.station, team: scope.team };
 }
 
+// CaterLink capability for the account, per the approved station-capability model
+// (can_user_scan_caterlink). No capability is invented here: scanning is decided at run time by the
+// station row in caterlink_station_capabilities; BTU is the established no-CaterLink test station.
+const SCAN_ROLES = ["aso", "so", "sso", "dse"];
+export function caterlinkCapabilityFor(roleCode, accountStatus, scope) {
+  if (accountStatus !== "approved") return "denied: account state fails closed";
+  if (roleCode === "caterlink_management") return "administration dashboards and archive only; never scans";
+  if (!SCAN_ROLES.includes(roleCode)) return "none (no CaterLink checkpoint authority)";
+  if (scope.station === NO_CATERLINK_STATION) return "denied: station has no CaterLink capability";
+  return "scan/movement allowed only where the station holds the capability (can_user_scan_caterlink)";
+}
+
 function entry(kind, label, roleCode, accountStatus, scope) {
-  return { kind, label, roleCode, accountStatus, scope, membershipRequired: Boolean(scope.membership), ...statusFor(roleCode), ...experienceFor(roleCode, accountStatus) };
+  return {
+    kind, label, roleCode, accountStatus, scope, membershipRequired: Boolean(scope.membership),
+    positiveOrNegative: accountStatus === "approved" ? "positive" : "negative",
+    caterlinkCapability: caterlinkCapabilityFor(roleCode, accountStatus, scope),
+    legacyCompatRank: COMPAT_ROLE_BY_CANONICAL[roleCode] ?? null, // display / legacy-RLS compat only; never authority
+    // The ICMS identity is an adapter over the same Auth UUID (profile + canonical assignments);
+    // no public.users row is created or required for any of the 36 accounts.
+    icmsBridgeRowRequired: false,
+    ...statusFor(roleCode), ...experienceFor(roleCode, accountStatus),
+  };
 }
 
 export function buildAccountPlan() {

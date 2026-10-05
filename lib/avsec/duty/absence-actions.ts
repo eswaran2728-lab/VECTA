@@ -117,7 +117,7 @@ export async function submitLeaveApplication(
     role: profile.role,
     station: profile.station,
     team: profile.team,
-    ops_group: profile.ops_group,
+    ops_group: null /* historical column; deprecated for authorization */,
     shift_code: shiftCode,
     duty_date: today,
     leave_type: leaveType,

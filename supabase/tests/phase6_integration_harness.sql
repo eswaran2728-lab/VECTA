@@ -321,6 +321,47 @@ select '00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-00000000
 from public.role_definitions rd where rd.code = 'airasia_management'
 on conflict (id) do nothing;
 
+-- Merged operations model: legacy RLS helpers (current_role_name/current_status/
+-- current_station/current_team) now derive ONLY from active canonical assignments.
+-- The legacy profile columns above are retained as historical-compatibility values; the
+-- fixtures therefore also hold the matching canonical assignments, exactly as real
+-- provisioning does (profile approval writes both).
+do $$
+declare
+  v_aoc uuid; v_entity uuid; v_dept uuid;
+  v_kul record; v_pen record;
+  v_kul_alpha uuid; v_pen_bravo uuid;
+  v_m uuid;
+  r record;
+begin
+  select id into v_aoc from public.aocs where code = 'MY';
+  select id into v_entity from public.operating_entities where aoc_id = v_aoc and code = 'MAA';
+  select id into v_dept from public.departments where aoc_id = v_aoc and code = 'operation';
+  select id, hub_id into v_kul from public.org_stations where code = 'KUL - MAA';
+  select id, hub_id into v_pen from public.org_stations where code = 'PEN';
+  insert into public.org_teams (station_id, name) values (v_kul.id, 'Alpha') on conflict (station_id, name) do nothing;
+  insert into public.org_teams (station_id, name) values (v_pen.id, 'Bravo') on conflict (station_id, name) do nothing;
+  select id into v_kul_alpha from public.org_teams where station_id = v_kul.id and name = 'Alpha';
+  select id into v_pen_bravo from public.org_teams where station_id = v_pen.id and name = 'Bravo';
+
+  for r in
+    select * from (values
+      ('00000000-0000-0000-0000-0000000000a1'::uuid, 'aso', 'KUL', v_kul_alpha, 'd1'),
+      ('00000000-0000-0000-0000-0000000000a2'::uuid, 'aso', 'PEN', v_pen_bravo, 'd2'),
+      ('00000000-0000-0000-0000-0000000000a5'::uuid, 'so',  'KUL', v_kul_alpha, 'd5')
+    ) as t(pid, code, st, team_id, sfx)
+  loop
+    insert into public.user_entity_memberships (profile_id, aoc_id, operating_entity_id, status, is_primary)
+    values (r.pid, v_aoc, v_entity, 'active', true) returning id into v_m;
+    insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, department_id, hub_id, station_id, team_id, entity_membership_id, granted_by)
+    select r.pid, rd.id, v_aoc, v_dept,
+           case when r.st = 'KUL' then v_kul.hub_id else v_pen.hub_id end,
+           case when r.st = 'KUL' then v_kul.id else v_pen.id end,
+           r.team_id, v_m, '00000000-0000-0000-0000-0000000000a3'
+    from public.role_definitions rd where rd.code = r.code;
+  end loop;
+end $$;
+
 select pg_temp.clear_simulation();
 
 -- =======================================================================
@@ -1395,9 +1436,12 @@ begin
 
   select status, last_error into v_queue_status, v_last_error
   from public.report_index_queue where source_table = 'report_sec033' and source_id = v_report_id;
+  -- Merged operations model: a1 now holds a full scoped canonical aso assignment (fixture above),
+  -- so Phase 2's classification trigger classifies the report and the real queue processor
+  -- completes it. (Previously a1 had no assignment, which exercised the retryable-failed branch.)
   perform pg_temp.assert(
-    v_queue_status = 'failed' and v_last_error like '%not yet classified%',
-    format('SCENARIO 27b: the real queue processor correctly leaves an unclassified report as retryable-failed with an accurate reason, never silently drops it or marks it completed -- got status=%s, error=%s', v_queue_status, v_last_error)
+    v_queue_status = 'completed' and v_last_error is null,
+    format('SCENARIO 27b: the real queue processor completes a queued report whose submitter holds a full scoped canonical assignment -- got status=%s, error=%s', v_queue_status, v_last_error)
   );
 end;
 $$;

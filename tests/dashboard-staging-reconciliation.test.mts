@@ -31,6 +31,7 @@ const EXPECTED_PHASE_ORDER = [
   "20261010000001_phase12_wois_ai_2.sql",
   "20261015000001_phase13_integration_rollout_readiness.sql",
   "20261016000001_phase13_storage_and_admin_workflows.sql",
+  "20261020000001_canonical_operations_compatibility.sql",
 ];
 
 test("staging reconciliation: every Phase 2-13 migration file in the proposed execution order actually exists in the repository", () => {

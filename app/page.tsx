@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/lib/avsec/profile-actions";
-import { opsGroupForTransaction } from "@/lib/icms/ops-group";
 import { getFilteredSubmissions } from "@/lib/avsec/dashboard/queries";
 import { getOpenBayBoard } from "@/lib/avsec/reports/queries";
 import { REPORT_TYPES as AVSEC_REPORT_TYPES, REPORT_META } from "@/lib/avsec/reference-data";
@@ -15,19 +14,13 @@ import { NotificationsBell } from "@/components/layout/NotificationsBell";
 import { TransactionStageBar } from "@/components/layout/TransactionStageBar";
 import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries";
 import { getActiveRoleAssignments } from "@/lib/dashboard/context";
-import { deriveCanonicalAccess, isOrgWideOperator, icmsDisplayTier } from "@/lib/auth/canonical-access";
+import { deriveCanonicalAccess, isOrgWideOperator } from "@/lib/auth/canonical-access";
+import { isStationOperator } from "@/lib/icms/canonical";
 import { isExternalCaterLinkRole } from "@/lib/supabase/middleware-gate-logic";
 import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
-import type { Direction, OpsGroup, TransactionRoute, TransactionStatus } from "@/lib/icms/database.types";
+import type { Direction, TransactionRoute, TransactionStatus } from "@/lib/icms/database.types";
 import { formatTimeMY } from "@/lib/avsec/datetime";
 
-
-const OPS_GROUPS: OpsGroup[] = ["operation_avsec", "ifc_avsec", "hub_avsec"];
-const OPS_GROUP_LABELS: Record<OpsGroup, string> = {
-  operation_avsec: "Operation AVSEC",
-  ifc_avsec: "IFC AVSEC",
-  hub_avsec: "Hub AVSEC",
-};
 
 function formatRoleChip(role: string | null): string | null {
   if (!role) return null;
@@ -60,12 +53,7 @@ function todayISODateMY(): string {
 }
 
 
-export default async function LandingPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ ops?: string }>;
-}) {
-  const { ops } = await searchParams;
+export default async function LandingPage() {
   const supabase = await createClient();
   const {
     data: { user },
@@ -78,80 +66,61 @@ export default async function LandingPage({
   const access = deriveCanonicalAccess(activeAssignments);
   if (access.isSuperAdmin) redirect("/super-admin");
 
-  const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
-    supabase.from("profiles").select("name, ops_group, station, team").eq("id", user.id).maybeSingle(),
-    supabase.from("users").select("name, role, ops_group").eq("id", user.id).maybeSingle(),
-  ]);
-
-  const profile = avsecProfile ?? icmsProfile;
-  if (!profile) redirect("/login?error=no-profile");
-
   // External CaterLink identity = the ICMS users-table role (never email/metadata),
   // and only when the account holds no canonical assignment.
-  if (!access.hasAssignment && isExternalCaterLinkRole(icmsProfile?.role as string | undefined)) {
-    redirect("/caterlink/dashboard");
+  if (!access.hasAssignment) {
+    const { data: icmsRow } = await supabase.from("users").select("role").eq("id", user.id).maybeSingle();
+    if (isExternalCaterLinkRole(icmsRow?.role as string | undefined)) redirect("/caterlink/dashboard");
+    redirect("/avsec/pending-approval");
   }
-  // An AVSEC account with no active assignment has no operational workspace.
-  if (!access.hasAssignment && !icmsProfile) redirect("/avsec/pending-approval");
   // Canonical roles with no legacy-page rank work through the Phase 7 dashboards.
-  if (access.hasAssignment && !access.primaryCompatRole) redirect("/avsec/my-dashboard");
+  if (!access.primaryCompatRole) redirect("/avsec/my-dashboard");
 
-  const role = (access.hasAssignment ? (access.primaryCompatRole as string).toLowerCase() : icmsDisplayTier(icmsProfile?.role as string | undefined)) as string | null;
+  const { data: avsecProfile } = await supabase.from("profiles").select("name").eq("id", user.id).maybeSingle();
+  if (!avsecProfile) redirect("/login?error=no-profile");
+  const profile = { name: avsecProfile.name as string };
 
-  const orgWide = isOrgWideOperator(access, icmsProfile?.role as string | undefined);
+  const role = (access.primaryCompatRole as string).toLowerCase();
+  const orgWide = isOrgWideOperator(access);
+  const station = access.stationCode;
+  const team = access.teamName;
 
+  // Reports = the existing AVSEC reports app.
+  const showReports = true;
 
+  // Scan = the unified checkpoint scan entry point. Canonical station operators
+  // (aso/so/sso/dse) whose single assigned station holds the approved CaterLink
+  // SCAN capability; leadership never works a checkpoint.
+  let canScanHere = false;
+  if (isStationOperator(access) && station) {
+    const { data: capable } = await supabase.rpc("can_user_scan_caterlink", { p_station_code: station });
+    canScanHere = capable === true;
+  }
+  const showScan = canScanHere && !orgWide;
 
-  // Reports = the existing (unchanged) AVSEC reports app — only reachable
-  // by accounts that actually have an AVSEC profile row, or org-wide roles
-  // (who see every team's reports regardless of origin).
-  const showReports = Boolean(avsecProfile) || orgWide;
+  const showAdmin = role === "management";
+  const showIcmsReports = orgWide;
 
-  // Scan = the unified checkpoint scan entry point — not applicable to
-  // org-wide roles (Management/Enforcement/Admin never work a checkpoint
-  // Scan: ASO (Operation & IFC) and SO (IFC). SO (Operation) and DSE do NOT get scan access.
-  const userOpsGroup = (profile.ops_group ?? null) as OpsGroup | null;
-  const isOpsSO = role === "so" && (userOpsGroup === "operation_avsec" || userOpsGroup === "hub_avsec");
-  const isDSE = role === "dse";
-  const showScan = Boolean(userOpsGroup) && !orgWide && !isOpsSO && !isDSE;
-
-  const showAdmin = role === "management" || role === "admin";
-  const showIcmsReports = Boolean(
-    icmsProfile && ["supervisor", "enforcement", "management"].includes(icmsProfile.role ?? "")
-  ) || orgWide;
-
-  // Daily Report (SEC014) filing is ASO-only — SO/DSE are supervisory roles
-  // that acknowledge an ASO's Daily Report instead of filing one, so they get
-  // no AVSEC report-filing cards here (see lib/avsec/auth.ts#requiresDailyReport).
+  // Daily Report (SEC014) filing is ASO-only -- SO/DSE are supervisory roles
+  // that acknowledge an ASO's Daily Report instead of filing one.
   const permittedAvsecReports = orgWide
     ? AVSEC_REPORT_TYPES
     : requiresDailyReport(role)
-      ? (userOpsGroup === "operation_avsec" || userOpsGroup === "hub_avsec")
-        ? AVSEC_REPORT_TYPES
-        : (["sec014"] as readonly (typeof AVSEC_REPORT_TYPES)[number][])
+      ? AVSEC_REPORT_TYPES
       : ([] as readonly (typeof AVSEC_REPORT_TYPES)[number][]);
 
-  const activeTab: OpsGroup | "all" = orgWide && ops && OPS_GROUPS.includes(ops as OpsGroup) ? (ops as OpsGroup) : "all";
-  // Effective ops_group scope for header counts / activity feed: the
-  // org-wide filter tab when present, otherwise the signed-in user's own
-  // ops_group (or "all" for an org-wide viewer who hasn't picked a tab).
-  const scopeGroup: OpsGroup | "all" = orgWide ? activeTab : (userOpsGroup ?? "all");
-
-  const opsSummary = orgWide ? await getOpsGroupSummary(activeTab) : null;
   const roleChip = formatRoleChip(role);
-  const maxCount = opsSummary && opsSummary.length > 0 ? Math.max(1, ...opsSummary.map((r) => r.count)) : 1;
 
   const currentUserProfile = {
     id: user.id,
     role: role,
-    station: avsecProfile?.station ?? null,
-    team: avsecProfile?.team ?? null,
-    ops_group: profile.ops_group ?? null,
+    station,
+    team,
   };
 
   const [snapshot, activity, announcements] = await Promise.all([
-    getDashboardSnapshot(scopeGroup),
-    getActivityFeed(scopeGroup),
+    getDashboardSnapshot(),
+    getActivityFeed(),
     getActiveAnnouncementsForUser(currentUserProfile),
   ]);
   // Phase 7: purely a nav-display decision (see lib/dashboard/navigation.ts).
@@ -160,24 +129,12 @@ export default async function LandingPage({
   const overallStatus: OpsStatus =
     snapshot.alerts > 0 ? "critical" : snapshot.activeTransactions > 0 ? "operational" : "standby";
 
-  // Quick-access tile: Bay Board for operation_avsec/hub_avsec, Transaction
-  // History for ifc_avsec — an in-addition-to-the-bottom-nav shortcut card.
-  // Only shown for team-scoped (non-org-wide) viewers with a real station
-  // (Bay Board is station-scoped; org-wide viewers already get the full ops
-  // summary panel below instead).
+  // Quick-access tile: Bay Board for any canonical station-scoped operator
+  // (one operational structure; station decides, not a group).
   let quickAccess: { href: string; label: string; count: number; unit: string } | null = null;
-  if (!orgWide && avsecProfile?.station) {
-    if (userOpsGroup === "operation_avsec" || userOpsGroup === "hub_avsec") {
-      const bay = await getOpenBayBoard(avsecProfile.station);
-      quickAccess = { href: "/avsec/bay-board", label: "Bay Board", count: bay.length, unit: "aircraft on ground" };
-    } else if (userOpsGroup === "ifc_avsec") {
-      quickAccess = {
-        href: "/icms/transactions",
-        label: "Transaction History",
-        count: snapshot.activeTransactions,
-        unit: "active transactions",
-      };
-    }
+  if (!orgWide && station && isStationOperator(access)) {
+    const bay = await getOpenBayBoard(station);
+    quickAccess = { href: "/avsec/bay-board", label: "Bay Board", count: bay.length, unit: "aircraft on ground" };
   }
 
   return (
@@ -188,9 +145,9 @@ export default async function LandingPage({
         name={profile.name}
         role={role}
         roleLabel={roleChip}
-        opsGroup={userOpsGroup}
-        station={avsecProfile?.station ?? null}
-        team={avsecProfile?.team ?? null}
+        canScan={showScan}
+        station={station}
+        team={team}
         hasPhase7Assignment={hasPhase7Assignment}
         signOutAction={signOut}
       />
@@ -218,11 +175,11 @@ export default async function LandingPage({
               <div className="vecta-panel flex flex-wrap items-center justify-between gap-4 px-6 py-5">
                 <div className="flex flex-col gap-1.5">
                   <span className="font-display text-lg font-bold tracking-[0.02em]">
-                    {avsecProfile?.station ?? (orgWide ? "All Stations" : OPS_GROUP_LABELS[userOpsGroup ?? "ifc_avsec"])}
-                    {avsecProfile?.team ? ` · Team ${avsecProfile.team}` : ""}
+                    {station ?? (orgWide ? "All Stations" : "My Workspace")}
+                    {team ? ` · Team ${team}` : ""}
                   </span>
                   <StatusDot status={overallStatus} />
-                  {!orgWide && avsecProfile ? (
+                  {!orgWide ? (
                     <Link
                       href="/avsec/duty"
                       className="mt-2 inline-flex items-center justify-between gap-3 rounded-xl bg-primary px-4 py-2.5 font-sans text-xs font-bold tracking-[0.04em] text-primary-foreground shadow-sm transition-all hover:opacity-95 active:scale-[0.98] group"
@@ -245,59 +202,10 @@ export default async function LandingPage({
                     label="Alerts"
                     value={snapshot.alerts}
                     alert={snapshot.alerts > 0}
-                    href={`/avsec/admin/alerts${activeTab !== "all" ? `?ops=${activeTab}` : ""}`}
+                    href="/avsec/admin/alerts"
                   />
                 </div>
               </div>
-
-              {orgWide ? (
-                <div className="vecta-pill-tabs w-fit">
-                  <TabPill label="All Ops Groups" active={activeTab === "all"} href="/" />
-                  {OPS_GROUPS.map((g) => (
-                    <TabPill key={g} label={OPS_GROUP_LABELS[g]} active={activeTab === g} href={`/?ops=${g}`} />
-                  ))}
-                </div>
-              ) : null}
-
-              {orgWide && opsSummary ? (
-                <div className="vecta-panel px-6 py-[22px]">
-                  <p className="vecta-eyebrow mb-4">
-                    {activeTab === "all"
-                      ? "Open Transactions — All Ops Groups"
-                      : `Open Transactions — ${OPS_GROUP_LABELS[activeTab]}`}
-                  </p>
-                  {opsSummary.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No open transactions right now.</p>
-                  ) : (
-                    <div className="flex flex-col gap-3">
-                      {opsSummary.map((row) => {
-                        const clear = row.count === 0;
-                        return (
-                          <div key={row.group} className="flex items-center gap-3.5">
-                            <span
-                              className="h-[6px] w-[6px] shrink-0 rounded-full"
-                              style={{ background: clear ? "var(--green)" : "var(--cyan)" }}
-                            />
-                            <span className="w-[150px] shrink-0 text-sm">{OPS_GROUP_LABELS[row.group]}</span>
-                            <div className="h-[6px] flex-1 rounded-full bg-input">
-                              <div
-                                className="h-full rounded-full"
-                                style={{
-                                  width: `${Math.max(clear ? 4 : 0, (row.count / maxCount) * 100)}%`,
-                                  background: clear ? "var(--green)" : "var(--cyan)",
-                                }}
-                              />
-                            </div>
-                            <span className="w-[34px] shrink-0 text-right font-mono text-[15px] font-medium">
-                              {String(row.count).padStart(2, "0")}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ) : null}
 
               {/* Recent activity feed — read-only merge of duty check-in/out,
                   transaction, and report-submission events. */}
@@ -353,7 +261,7 @@ export default async function LandingPage({
                       <rect x="9" y="9" width="6" height="6" stroke="var(--violet)" strokeWidth="1.6" />
                     </svg>
                     <h2 className="font-display text-lg font-bold tracking-[0.03em]">Scan Checkpoint</h2>
-                    <p className="vecta-eyebrow mt-0.5">Scan a transaction in your ops group</p>
+                    <p className="vecta-eyebrow mt-0.5">Scan a transaction at your station</p>
                   </Link>
                 ) : orgWide ? (
                   <Link href="/avsec/reports/lookup" className="vecta-tile group">
@@ -459,7 +367,7 @@ export default async function LandingPage({
         </div>
       </div>
 
-      <TeamBottomNav opsGroup={userOpsGroup} orgWide={orgWide} role={role} hasPhase7Assignment={hasPhase7Assignment} />
+      <TeamBottomNav orgWide={orgWide} role={role} canScan={showScan} hasPhase7Assignment={hasPhase7Assignment} />
     </main>
   );
 }
@@ -497,14 +405,6 @@ function Metric({
   );
 }
 
-function TabPill({ label, active, href }: { label: string; active: boolean; href: string }) {
-  return (
-    <Link href={href} className={`vecta-pill${active ? " is-active" : ""}`}>
-      {label}
-    </Link>
-  );
-}
-
 function formatClock(iso: string): string {
   // Was `.toLocaleTimeString()` with no timezone — on Vercel's UTC server that
   // rendered raw UTC (e.g. 04:57) while every other view (formatTimeMY) already
@@ -512,38 +412,6 @@ function formatClock(iso: string): string {
   // discrepancy for the exact same check-in event. Use the same MY-local
   // formatter everywhere, with an explicit "MYT" label so it's unambiguous.
   return formatTimeMY(iso);
-}
-
-/**
- * Lightweight scan-activity summary for the admin/management/enforcement
- * dashboard — a proportionate stand-in for a real analytics view, not a
- * reimplementation of Reports (those stay on the unchanged /avsec/dashboard
- * page). Counts in-progress ICMS transactions, bucketed by the ops_group
- * their current checkpoint maps to (lib/icms/ops-group.ts) — the same
- * mapping the Scan feature's server-side check enforces.
- */
-async function getOpsGroupSummary(
-  filter: OpsGroup | "all"
-): Promise<{ group: OpsGroup; count: number }[]> {
-  const supabase = await createClient();
-  const { data: rows } = await supabase
-    .from("transactions")
-    .select("status, direction, route")
-    .not("status", "in", "(COMPLETED,ESCALATED)")
-    .limit(500);
-
-  const counts: Record<OpsGroup, number> = { operation_avsec: 0, ifc_avsec: 0, hub_avsec: 0 };
-  for (const row of rows ?? []) {
-    const group = opsGroupForTransaction(
-      row.direction as Direction,
-      row.status as TransactionStatus,
-      row.route as TransactionRoute
-    );
-    if (group) counts[group] += 1;
-  }
-
-  const groups = filter === "all" ? OPS_GROUPS : [filter];
-  return groups.map((g) => ({ group: g, count: counts[g] }));
 }
 
 interface DashboardSnapshot {
@@ -559,14 +427,14 @@ interface DashboardSnapshot {
  * incidents) and AVSEC's dashboard (duty_records, the report_sec0xx
  * tables) — no new tables, no write paths touched.
  */
-async function getDashboardSnapshot(scopeGroup: OpsGroup | "all"): Promise<DashboardSnapshot> {
+async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const supabase = await createClient();
   const todayMY = todayISODateMY();
 
   const [dutyRes, txRes, incidentsRes, bayRes, ...reportCounts] = await Promise.all([
     supabase
       .from("duty_records")
-      .select("profile_id, profiles(ops_group)")
+      .select("profile_id")
       .eq("duty_date", todayMY)
       .not("check_in_at", "is", null)
       .is("check_out_at", null)
@@ -576,12 +444,9 @@ async function getDashboardSnapshot(scopeGroup: OpsGroup | "all"): Promise<Dashb
       .select("status, direction, route")
       .not("status", "in", "(COMPLETED,ESCALATED)")
       .limit(500),
-    // Joined to transactions so incidents can be scoped by ops_group the
-    // same way transactions are (incidents have no ops_group of their own —
-    // they hang off a transaction_id).
     supabase
       .from("incidents")
-      .select("id, transactions(status, direction, route)")
+      .select("id")
       .is("resolved_at", null)
       .limit(500),
     getOpenBayBoard(),
@@ -595,43 +460,13 @@ async function getDashboardSnapshot(scopeGroup: OpsGroup | "all"): Promise<Dashb
     ),
   ]);
 
-  const dutyRows = (dutyRes.data ?? []) as { profile_id: string; profiles: { ops_group: OpsGroup | null } | null }[];
-  const staffOnDuty =
-    scopeGroup === "all" ? dutyRows.length : dutyRows.filter((r) => r.profiles?.ops_group === scopeGroup).length;
-
-  const txRows = (txRes.data ?? []) as { status: TransactionStatus; direction: Direction; route: TransactionRoute }[];
-  const activeTransactions =
-    scopeGroup === "all"
-      ? txRows.length
-      : txRows.filter((r) => opsGroupForTransaction(r.direction, r.status, r.route) === scopeGroup).length;
-
-  // Bay board is a Hub AVSEC-only concept (aircraft on ground) — only count
-  // overdue bays toward a scoped group's alerts when that group IS hub_avsec
-  // (or when viewing the unscoped org-wide "all" total). This is what fixes
-  // the "01 ALERTS on the Hub AVSEC dashboard, empty activity feed" report:
-  // previously `alerts` counted overdue bays/incidents completely unscoped
-  // (identical regardless of scopeGroup), while the feed below never
-  // surfaced bay/incident events for ANY group — so the two could never
-  // agree for a scoped view. Both are now scoped consistently.
-  const overdueBays =
-    scopeGroup === "all" || scopeGroup === "hub_avsec"
-      ? (bayRes ?? []).filter((b) => b.hoursOnGround >= 4).length
-      : 0;
-  const incidentRows = (incidentsRes.data ?? []) as {
-    id: string;
-    transactions: { status: TransactionStatus; direction: Direction; route: TransactionRoute } | null;
-  }[];
-  const openIncidents =
-    scopeGroup === "all"
-      ? incidentRows.length
-      : incidentRows.filter(
-          (r) => r.transactions && opsGroupForTransaction(r.transactions.direction, r.transactions.status, r.transactions.route) === scopeGroup
-        ).length;
+  const staffOnDuty = (dutyRes.data ?? []).length;
+  const activeTransactions = (txRes.data ?? []).length;
+  const overdueBays = (bayRes ?? []).filter((b) => b.hoursOnGround >= 4).length;
+  const openIncidents = (incidentsRes.data ?? []).length;
   const alerts = overdueBays + openIncidents;
 
-  // Report submissions aren't tagged by ops_group (only station/team), so
-  // this count is org-wide regardless of `scopeGroup` — a documented
-  // limitation, not an oversight (see final report).
+  // Visibility of every count below is enforced by RLS / canonical scope, not by a group filter.
   const reportsToday = reportCounts.reduce((sum, r) => sum + (r.count ?? 0), 0);
 
   return { staffOnDuty, activeTransactions, reportsToday, alerts };
@@ -650,14 +485,14 @@ interface ActivityRow {
  * Read-only merge-sort of three existing event sources into one feed — new
  * query composition, but no mutation logic. Capped to the 20 most recent.
  */
-async function getActivityFeed(scopeGroup: OpsGroup | "all"): Promise<ActivityRow[]> {
+async function getActivityFeed(): Promise<ActivityRow[]> {
   const supabase = await createClient();
   const todayMY = todayISODateMY();
 
   const [dutyRes, txRes, submissions, incidentsRes] = await Promise.all([
     supabase
       .from("duty_records")
-      .select("check_in_at, check_out_at, profiles(name, station, ops_group)")
+      .select("check_in_at, check_out_at, profiles(name, station)")
       .eq("duty_date", todayMY)
       .order("check_in_at", { ascending: false })
       .limit(20),
@@ -673,7 +508,7 @@ async function getActivityFeed(scopeGroup: OpsGroup | "all"): Promise<ActivityRo
     // which is what let a scoped dashboard show alerts with an empty feed.
     supabase
       .from("incidents")
-      .select("id, incident_type, created_at, transactions(status, direction, route, transaction_number)")
+      .select("id, incident_type, created_at, transactions(transaction_number)")
       .is("resolved_at", null)
       .order("created_at", { ascending: false })
       .limit(20),
@@ -684,10 +519,9 @@ async function getActivityFeed(scopeGroup: OpsGroup | "all"): Promise<ActivityRo
   const dutyRows = (dutyRes.data ?? []) as {
     check_in_at: string | null;
     check_out_at: string | null;
-    profiles: { name: string; station: string | null; ops_group: OpsGroup | null } | null;
+    profiles: { name: string; station: string | null } | null;
   }[];
   for (const d of dutyRows) {
-    if (scopeGroup !== "all" && d.profiles?.ops_group !== scopeGroup) continue;
     if (d.check_out_at) {
       rows.push({
         key: `duty-out-${d.check_out_at}-${d.profiles?.name}`,
@@ -716,14 +550,12 @@ async function getActivityFeed(scopeGroup: OpsGroup | "all"): Promise<ActivityRo
     completed_at: string | null;
   }[];
   for (const t of txRows) {
-    const group = opsGroupForTransaction(t.direction, t.status, t.route);
-    if (scopeGroup !== "all" && group !== scopeGroup) continue;
     const time = t.completed_at ?? t.created_at;
     rows.push({
       key: `tx-${t.transaction_number}-${time}`,
       time,
       activity: `${t.transaction_number} · ${t.direction === "OUTBOUND" ? "Outbound" : "Inbound"} movement`,
-      location: group ? OPS_GROUP_LABELS[group] : t.route,
+      location: t.route,
       status: t.status,
       transactionStatus: t.status,
     });
@@ -744,18 +576,14 @@ async function getActivityFeed(scopeGroup: OpsGroup | "all"): Promise<ActivityRo
     id: string;
     incident_type: string;
     created_at: string;
-    transactions: { status: TransactionStatus; direction: Direction; route: TransactionRoute; transaction_number: string } | null;
+    transactions: { transaction_number: string } | null;
   }[];
   for (const inc of incidentRows) {
-    const group = inc.transactions
-      ? opsGroupForTransaction(inc.transactions.direction, inc.transactions.status, inc.transactions.route)
-      : null;
-    if (scopeGroup !== "all" && group !== scopeGroup) continue;
     rows.push({
       key: `incident-${inc.id}`,
       time: inc.created_at,
       activity: `Incident — ${inc.incident_type}${inc.transactions ? ` (${inc.transactions.transaction_number})` : ""}`,
-      location: group ? OPS_GROUP_LABELS[group] : "—",
+      location: "—",
       status: "OPEN",
     });
   }
