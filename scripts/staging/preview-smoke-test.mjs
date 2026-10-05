@@ -10,6 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
 import { defaultCredentialsDir } from "./lib/run-gates.mjs";
+import { loadCurrentCredentials } from "./lib/review-accounts.mjs";
 
 const args = process.argv.slice(2);
 const argVal = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split("=").slice(1).join("=");
@@ -23,7 +24,7 @@ const baseRun = "dashboard-review-20261005";
 const credDir = defaultCredentialsDir(baseRun);
 const bypass = fs.readFileSync(path.join(credDir, "vercel-bypass.txt"), "utf8").trim();
 const loadCreds = (run) => JSON.parse(fs.readFileSync(path.join(defaultCredentialsDir(run), `credentials-${run}.json`), "utf8")).accounts;
-const accounts = [...loadCreds(baseRun), ...loadCreds(`${baseRun}-receipt`)];
+const accounts = loadCurrentCredentials();
 const REPS = [
   "super_admin", "airasia_management", "maa_boss", "maa_admin", "aax_admin", "operation_manager", "main_enforcement",
   "caterlink_management", "hub_se", "dse", "sso", "aso-jhb", "aso-kul", "aso-no-caterlink", "aso-kch-receipt", "aso-bki-receipt",

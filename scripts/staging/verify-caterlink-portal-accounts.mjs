@@ -8,7 +8,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
-import { environmentGates, connectVerified, defaultCredentialsDir } from "./lib/run-gates.mjs";
+import { environmentGates, connectVerified } from "./lib/run-gates.mjs";
+import { loadCurrentCredentials, loadCurrentManifest, signInWithRetry } from "./lib/review-accounts.mjs";
 import { assignmentsFromRpcRows, deriveCanonicalAccess } from "../../lib/auth/canonical-access.ts";
 import { classifyPortalAccess, decidePortalRequest } from "../../lib/auth/caterlink-access.ts";
 
@@ -19,7 +20,6 @@ const BASE = "dashboard-review-20261005";
 const EXT = `${BASE}-caterlink`;
 let failures = 0;
 const check = (label, ok, note = "") => { if (!ok) failures += 1; console.log(`${ok ? "PASS" : "FAIL"}: ${label}${note ? " -- " + note : ""}`); return ok; };
-const creds = (run) => JSON.parse(fs.readFileSync(path.join(defaultCredentialsDir(run), `credentials-${run}.json`), "utf8")).accounts;
 
 const FORBIDDEN_PAGES = ["/", "/avsec/home", "/avsec/dashboard", "/avsec/my-dashboard", "/avsec/admin/users", "/avsec/reports/sec014", "/super-admin"];
 const VECTA_TABLES = ["report_sec014", "report_sec016", "team_rosters", "duty_records", "overtime_requests", "absence_notices", "bay_board", "stations", "shifts", "duty_zones", "user_role_assignments"];
@@ -28,9 +28,9 @@ async function main() {
   environmentGates();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const all = [...creds(BASE), ...creds(`${BASE}-receipt`), ...creds(EXT)];
+  const all = loadCurrentCredentials();
   const byLabel = (l) => all.find((a) => a.label === l);
-  const manifestExt = JSON.parse(fs.readFileSync(path.join(defaultCredentialsDir(EXT), `manifest-${EXT}.json`), "utf8")).accounts;
+  const manifestExt = loadCurrentManifest().filter((m) => m.run === EXT);
 
   console.log("=== DATABASE VERIFICATION ===");
   const { client: pg } = await connectVerified();
@@ -39,13 +39,13 @@ async function main() {
     const n = async (sql, p) => parseInt((await pg.query(sql, p)).rows[0].n, 10);
     check(`Auth users total = ${expectTotalAuth}`, (await n("select count(*)::int n from auth.users")) === expectTotalAuth);
     check(`Profiles total = ${expectTotalAuth}`, (await n("select count(*)::int n from public.profiles")) === expectTotalAuth);
-    check("Exactly 2 accounts carry the CaterLink external run", (await n("select count(*)::int n from auth.users where email like $1 and raw_user_meta_data->>'vecta_staging_run_id' = $2", [`vecta.uat.${EXT}.%`, EXT])) === 2);
+    check("Exactly 2 accounts carry the CaterLink external run", (await n("select count(*)::int n from auth.users where $1::text is not null and raw_user_meta_data->>'vecta_staging_run_id' = $2", [EXT, EXT])) === 2);
     check("Exactly 2 trusted account rows exist (driver, vendor)", (await n("select count(*)::int n from public.users")) === 2);
     const rows = (await pg.query("select role, status from public.users order by role")).rows;
     check("Account rows: warehouse_pic (Driver) and vendor (Third-Party Vendor), both active", rows.length === 2 && rows[0].role === "vendor" && rows[1].role === "warehouse_pic" && rows.every((r) => r.status === "active"));
-    check("The external accounts hold NO role assignment and NO entity membership", (await n("select count(*)::int n from public.user_role_assignments ura join auth.users u on u.id = ura.profile_id where u.email like $1", [`vecta.uat.${EXT}.%`])) === 0 && (await n("select count(*)::int n from public.user_entity_memberships m join auth.users u on u.id = m.profile_id where u.email like $1", [`vecta.uat.${EXT}.%`])) === 0);
-    check("38 dashboard-review accounts still carry their 38 assignments / 26 memberships", (await n("select count(*)::int n from public.user_role_assignments ura join auth.users u on u.id = ura.profile_id where u.email like 'vecta.uat.dashboard-review-20261005%' and u.email not like $1", [`vecta.uat.${EXT}.%`])) === 38 && (await n("select count(*)::int n from public.user_entity_memberships m join auth.users u on u.id = m.profile_id where u.email like 'vecta.uat.dashboard-review-20261005%'")) === 26);
-    check("16 original accounts unchanged in count; 18 org_teams; 7 buckets", (await n("select count(*)::int n from auth.users where email not like 'vecta.uat.%'")) === 16 && (await n("select count(*)::int n from public.org_teams")) === 18 && (await n("select count(*)::int n from storage.buckets")) === 7);
+    check("The external accounts hold NO role assignment and NO entity membership", (await n("select count(*)::int n from public.user_role_assignments ura join auth.users u on u.id = ura.profile_id where u.raw_user_meta_data->>'vecta_staging_run_id' = $1", [EXT])) === 0 && (await n("select count(*)::int n from public.user_entity_memberships m join auth.users u on u.id = m.profile_id where u.raw_user_meta_data->>'vecta_staging_run_id' = $1", [EXT])) === 0);
+    check("38 dashboard-review accounts still carry their 38 assignments / 26 memberships", (await n("select count(*)::int n from public.user_role_assignments ura join auth.users u on u.id = ura.profile_id where u.raw_user_meta_data->>'vecta_staging_run_id' like 'dashboard-review-20261005%' and u.raw_user_meta_data->>'vecta_staging_run_id' <> $1", [EXT])) === 38 && (await n("select count(*)::int n from public.user_entity_memberships m join auth.users u on u.id = m.profile_id where u.raw_user_meta_data->>'vecta_staging_run_id' like 'dashboard-review-20261005%'")) === 26);
+    check("16 original accounts unchanged in count; 18 org_teams; 7 buckets", (await n("select count(*)::int n from auth.users where raw_user_meta_data->>'vecta_staging_run_id' is null")) === 16 && (await n("select count(*)::int n from public.org_teams")) === 18 && (await n("select count(*)::int n from storage.buckets")) === 7);
     const cap = (await pg.query("select s.code from public.caterlink_station_capabilities c join public.org_stations s on s.id = c.station_id where c.can_scan order by 1")).rows.map((r) => r.code).join();
     check("Scanning remains enabled at exactly JHB and PEN", cap === "JHB,PEN");
     const rcpt = (await pg.query("select s.code from public.caterlink_station_capabilities c join public.org_stations s on s.id = c.station_id where c.can_confirm_hub_receipt and s.code in ('KCH','BKI') order by 1")).rows.map((r) => r.code).join();
@@ -57,7 +57,7 @@ async function main() {
   async function session(label) {
     const c = byLabel(label);
     const sb = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
-    const { data, error } = await sb.auth.signInWithPassword({ email: c.email, password: c.password });
+    const { data, error } = await signInWithRetry(sb, c.email, c.password);
     if (error || !data.session) throw new Error(`sign-in failed for ${label}`);
     return { sb, uid: data.user.id };
   }

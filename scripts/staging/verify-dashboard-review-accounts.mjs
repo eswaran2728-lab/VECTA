@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { environmentGates, connectVerified, defaultCredentialsDir } from "./lib/run-gates.mjs";
+import { loadCurrentCredentials, loadCurrentManifest, signInWithRetry } from "./lib/review-accounts.mjs";
 import { COMPAT_ROLE_BY_CANONICAL } from "../../lib/auth/compat-role-map.mjs";
 
 const args = process.argv.slice(2);
@@ -40,10 +41,10 @@ function landing(profileStatus, assignments) {
 async function main() {
   if (!runId) throw new Error("--run-id is required");
   environmentGates();
-  const credPath = path.join(dir, `credentials-${runId}.json`);
+  void defaultCredentialsDir; const credPath = path.join(dir, `credentials-${runId}.json`);
   const manifestPath = path.join(dir, `manifest-${runId}.json`);
-  const creds = JSON.parse(fs.readFileSync(credPath, "utf8")).accounts;
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")).accounts;
+  const creds = loadCurrentCredentials();
+  const manifest = loadCurrentManifest().filter((m) => m.run === runId);
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!anon) throw new Error("Publishable key not configured");
@@ -56,17 +57,17 @@ async function main() {
   try {
     await pg.query("BEGIN READ ONLY");
     const n = async (sql, p) => parseInt((await pg.query(sql, p)).rows[0].n, 10);
-    const prefix = `vecta.uat.${runId}.%`;
+    const prefix = runId; // accounts are identified by the run id in their immutable Auth metadata (the logins were renamed)
     check(`Auth users total = ${expectTotalAuth}`, (await n("select count(*)::int n from auth.users")) === expectTotalAuth);
     check(`Profiles total = ${expectTotalAuth}`, (await n("select count(*)::int n from public.profiles")) === expectTotalAuth);
-    check("Exactly 36 Auth users carry this run (email prefix AND metadata)", (await n("select count(*)::int n from auth.users where email like $1 and raw_user_meta_data->>'vecta_staging_run_id' = $2", [prefix, runId])) === 36);
-    check("Exactly 36 profiles belong to this run", (await n("select count(*)::int n from public.profiles p join auth.users u on u.id = p.id where u.email like $1", [prefix])) === 36);
+    check("Exactly 36 Auth users carry this run (run id in immutable Auth metadata)", (await n("select count(*)::int n from auth.users where $1::text is not null and raw_user_meta_data->>'vecta_staging_run_id' = $2", [prefix, runId])) === 36);
+    check("Exactly 36 profiles belong to this run", (await n("select count(*)::int n from public.profiles p join auth.users u on u.id = p.id where u.raw_user_meta_data->>'vecta_staging_run_id' = $1", [prefix])) === 36);
     check("No duplicate email among Auth users", (await n("select count(*)::int n from (select lower(email) e from auth.users group by 1 having count(*) > 1) d")) === 0);
-    check("16 original Auth users unchanged in count", (await n("select count(*)::int n from auth.users where email not like 'vecta.uat.%'")) === 16);
+    check("16 original Auth users unchanged in count", (await n("select count(*)::int n from auth.users where raw_user_meta_data->>'vecta_staging_run_id' is null")) === 16);
     check(`${expectOrgTeams} org_teams, 7 Storage buckets`, (await n("select count(*)::int n from public.org_teams")) === expectOrgTeams && (await n("select count(*)::int n from storage.buckets")) === 7);
     const hasOpsGroup = (await n("select count(*)::int n from information_schema.columns where table_schema='public' and table_name='profiles' and column_name='ops_group'")) > 0;
     check(hasOpsGroup ? "Run accounts keep ops_group NULL (no authority metadata)" : "profiles.ops_group column is absent on staging (no authority metadata possible)",
-      !hasOpsGroup || (await n("select count(*)::int n from public.profiles p join auth.users u on u.id = p.id where u.email like $1 and p.ops_group is not null", [prefix])) === 0);
+      !hasOpsGroup || (await n("select count(*)::int n from public.profiles p join auth.users u on u.id = p.id where u.raw_user_meta_data->>'vecta_staging_run_id' = $1 and p.ops_group is not null", [prefix])) === 0);
     check("No IFC role/assignment exists", (await n("select count(*)::int n from public.role_definitions where code ilike '%ifc%'")) === 0 && (await n("select count(*)::int n from public.user_role_assignments ura join public.role_definitions rd on rd.id = ura.role_definition_id where rd.code ilike '%ifc%'")) === 0);
     check("No run profile uses an IFC compatibility value", !hasOpsGroup || (await n("select count(*)::int n from public.profiles where coalesce(ops_group,'') ilike '%ifc%'")) === 0);
 
@@ -85,11 +86,11 @@ async function main() {
       left join public.org_teams t on t.id = ura.team_id
       left join public.user_entity_memberships m on m.id = ura.entity_membership_id
       left join public.operating_entities moe on moe.id = m.operating_entity_id
-      where u.email like $1`, [prefix])).rows;
+      where u.raw_user_meta_data->>'vecta_staging_run_id' = $1`, [prefix])).rows;
     for (const r of rows) (dbRows[r.email] ??= []).push(r);
 
     check("Exactly one assignment per account (36)", Object.keys(dbRows).length === 36 && Object.values(dbRows).every((v) => v.length === 1));
-    const dupMem = await n("select count(*)::int n from (select profile_id from public.user_entity_memberships m join auth.users u on u.id = m.profile_id where u.email like $1 and is_primary and status='active' group by 1 having count(*) > 1) d", [prefix]);
+    const dupMem = await n("select count(*)::int n from (select profile_id from public.user_entity_memberships m join auth.users u on u.id = m.profile_id where u.raw_user_meta_data->>'vecta_staging_run_id' = $1 and is_primary and status='active' group by 1 having count(*) > 1) d", [prefix]);
     check("No duplicate primary membership", dupMem === 0);
     const catByKind = { base: 0, station_variant: 0, negative: 0 };
     let positive = 0, negative = 0;
@@ -144,7 +145,7 @@ async function main() {
     const sb = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
     try {
       if (!cred || !cred.password || cred.password.startsWith("(")) throw new Error("no stored password");
-      const { data: signIn, error: signErr } = await sb.auth.signInWithPassword({ email: m.email, password: cred.password });
+      const { data: signIn, error: signErr } = await signInWithRetry(sb, m.email, cred.password);
       rec.checks.signIn = !signErr && !!signIn?.session;
       if (!rec.checks.signIn) throw new Error("sign-in failed");
       const uid = signIn.user.id;

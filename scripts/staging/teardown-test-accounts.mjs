@@ -12,6 +12,7 @@
 import fs from "node:fs";
 import { resolveStagingAdminContext, printProjectIdentity } from "./lib/env-guard.mjs";
 import { defaultCredentialsDir, connectVerified } from "./lib/run-gates.mjs";
+import { CURRENT_REVIEW_DIR } from "./lib/review-accounts.mjs";
 import path from "node:path";
 
 const args = process.argv.slice(2);
@@ -19,7 +20,9 @@ const argVal = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split("=").slic
 const runId = argVal("run-id");
 const isLive = args.includes("--live");
 const expected = argVal("expect") ? parseInt(argVal("expect"), 10) : null;
-const manifestPath = argVal("manifest") || (runId ? path.join(defaultCredentialsDir(runId), `manifest-${runId}.json`) : null);
+// default: the CURRENT manifest (logins were renamed; older per-run manifests are superseded)
+const manifestPath = argVal("manifest") || (runId ? path.join(CURRENT_REVIEW_DIR, "manifest.json") : null);
+void defaultCredentialsDir;
 
 async function main() {
   if (!runId) throw new Error("Refusing to run: --run-id=<id> is required (teardown is always scoped to one run).");
@@ -27,7 +30,7 @@ async function main() {
   if (isLive && argVal("confirm-destructive") !== runId) throw new Error("Refusing --live without --confirm-destructive=<exact run id>.");
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  if (manifest.runId !== runId) throw new Error("Manifest run id does not match --run-id.");
+  if (manifest.runId !== undefined && manifest.runId !== runId) throw new Error("Manifest run id does not match --run-id.");
   console.log(`=== VECTA staging teardown (${isLive ? "LIVE" : "DRY RUN"}) run id: ${runId} ===`);
   const ctx = resolveStagingAdminContext();
   printProjectIdentity(ctx);
@@ -42,8 +45,9 @@ async function main() {
     const { data, error } = await client.auth.admin.getUserById(a.authUserId);
     const u = data?.user;
     if (error || !u) { refusals.push(`${a.label}: Auth user not found`); continue; }
-    if (!(u.email ?? "").toLowerCase().startsWith(prefix)) refusals.push(`${a.label}: email does not carry the run prefix`);
-    else if (u.user_metadata?.vecta_staging_run_id !== runId) refusals.push(`${a.label}: user_metadata run id mismatch`);
+    const emailOk = (u.email ?? "").toLowerCase() === String(a.email ?? "").toLowerCase() || (u.email ?? "").toLowerCase().startsWith(prefix);
+    if (!emailOk) refusals.push(`${a.label}: email does not match the manifest`);
+    else if (!String(u.user_metadata?.vecta_staging_run_id ?? "").startsWith(runId)) refusals.push(`${a.label}: user_metadata run id mismatch`);
     else targets.push({ ...a });
   }
 

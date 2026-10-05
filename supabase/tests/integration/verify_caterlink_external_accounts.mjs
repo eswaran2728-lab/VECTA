@@ -183,6 +183,34 @@ async function main() {
   }
 
 
+  console.log('\n--- SECTION 4: a CaterLink-only canonical identity holds no VECTA reference or own-record access ---');
+  {
+    const roleId = async (code) => (await one('select id from public.role_definitions where code = $1;', [code])).id;
+    const myAoc = (await one("select id from public.aocs where code = 'MY';")).id;
+    const clDept = (await one("select id from public.departments where aoc_id = $1 and code = 'caterlink';", [myAoc])).id;
+    const opsDept = (await one("select id from public.departments where aoc_id = $1 and code = 'operation';", [myAoc])).id;
+    async function profile(label) {
+      const id = await authUser(label);
+      await db.query("insert into public.profiles (id, email, name, staff_no, role, status) values ($1,$2,$3,$4,'ASO','approved') on conflict (id) do update set status = 'approved', name = excluded.name;", [id, `ext-${label}@example.test`, `Ext ${label}`, `EX-${label}`.slice(0, 20)]);
+      return id;
+    }
+    const cl = await profile('cl-mgmt');
+    await db.query("insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, department_id, starts_at) values ($1,$2,$3,$4, now() - interval '1 day');", [cl, await roleId('caterlink_management'), myAoc, clDept]);
+    const op = await profile('ops-op');
+    await db.query("insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, department_id, starts_at) values ($1,$2,$3,$4, now() - interval '1 day');", [op, await roleId('operation_manager'), myAoc, opsDept]);
+    const active = async (id) => { await simulateUser(id); try { return (await one('select public.canon_is_active() as ok;')).ok; } finally { await simulateService(); } };
+    assert((await active(cl)) === false, 'caterlink_management (CaterLink-only): canon_is_active() is false');
+    assert((await active(op)) === true, 'operation_manager: canon_is_active() stays true');
+    const seen = async (id, t) => { await simulateUser(id); try { return (await one(`select count(*)::int n from public.${t};`)).n; } finally { await simulateService(); } };
+    for (const t of ['stations', 'shifts', 'teams', 'station_teams', 'aircraft_types']) {
+      const base = (await one(`select count(*)::int n from public.${t};`)).n;
+      if (base === 0) continue;
+      assert((await seen(cl, t)) === 0, `${t}: CaterLink Management reads no VECTA reference rows`);
+      assert((await seen(op, t)) === base, `${t}: operation_manager still reads them`);
+    }
+    assert((await one("select count(*)::int n from pg_policies where tablename = 'caterlink_archives' and qual like '%caterlink_management%';")).n >= 1, 'the CaterLink archive policy for caterlink_management is intact');
+  }
+
   console.log(`\nCaterLink external-account verification completed. Total failures: ${failures}`);
 
   await db.exec('rollback;');

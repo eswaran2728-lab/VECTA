@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { environmentGates, connectVerified, defaultCredentialsDir } from "./lib/run-gates.mjs";
+import { loadCurrentCredentials, loadCurrentManifest, signInWithRetry } from "./lib/review-accounts.mjs";
 
 const args = process.argv.slice(2);
 const argVal = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split("=").slice(1).join("=");
@@ -21,8 +22,8 @@ async function main() {
   if (!runId) throw new Error("--run-id is required");
   environmentGates();
   const dir = defaultCredentialsDir(runId);
-  const creds = JSON.parse(fs.readFileSync(path.join(dir, `credentials-${runId}.json`), "utf8")).accounts;
-  const manifest = JSON.parse(fs.readFileSync(path.join(dir, `manifest-${runId}.json`), "utf8")).accounts;
+  const creds = loadCurrentCredentials();
+  const manifest = loadCurrentManifest().filter((m) => m.run === runId);
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -33,11 +34,11 @@ async function main() {
     const n = async (sql, p) => parseInt((await pg.query(sql, p)).rows[0].n, 10);
     check(`Auth users total = ${expectTotalAuth}`, (await n("select count(*)::int n from auth.users")) === expectTotalAuth);
     check(`Profiles total = ${expectTotalAuth}`, (await n("select count(*)::int n from public.profiles")) === expectTotalAuth);
-    check("Exactly 2 accounts carry this run", (await n("select count(*)::int n from auth.users where email like $1 and raw_user_meta_data->>'vecta_staging_run_id' = $2", [`vecta.uat.${runId}.%`, runId])) === 2);
-    check("38 dashboard-review accounts in total (36 base + 2 receipt)", (await n("select count(*)::int n from auth.users where email like 'vecta.uat.dashboard-review-20261005%'")) === 38);
-    check("16 original accounts unchanged in count", (await n("select count(*)::int n from auth.users where email not like 'vecta.uat.%'")) === 16);
-    check("Dashboard-review assignments total 38", (await n("select count(*)::int n from public.user_role_assignments ura join auth.users u on u.id = ura.profile_id where u.email like 'vecta.uat.dashboard-review-20261005%'")) === 38);
-    check("Dashboard-review memberships total 26", (await n("select count(*)::int n from public.user_entity_memberships m join auth.users u on u.id = m.profile_id where u.email like 'vecta.uat.dashboard-review-20261005%'")) === 26);
+    check("Exactly 2 accounts carry this run", (await n("select count(*)::int n from auth.users where $1::text is not null and raw_user_meta_data->>'vecta_staging_run_id' = $2", [runId, runId])) === 2);
+    check("38 dashboard-review accounts in total (36 base + 2 receipt)", (await n("select count(*)::int n from auth.users where raw_user_meta_data->>'vecta_staging_run_id' like 'dashboard-review-20261005%'")) === 38);
+    check("16 original accounts unchanged in count", (await n("select count(*)::int n from auth.users where raw_user_meta_data->>'vecta_staging_run_id' is null")) === 16);
+    check("Dashboard-review assignments total 38", (await n("select count(*)::int n from public.user_role_assignments ura join auth.users u on u.id = ura.profile_id where u.raw_user_meta_data->>'vecta_staging_run_id' like 'dashboard-review-20261005%'")) === 38);
+    check("Dashboard-review memberships total 26", (await n("select count(*)::int n from public.user_entity_memberships m join auth.users u on u.id = m.profile_id where u.raw_user_meta_data->>'vecta_staging_run_id' like 'dashboard-review-20261005%'")) === 26);
     for (const m of manifest) {
       const r = (await pg.query(`
         select p.status::text status, rd.code role, ura.revoked_at, ura.starts_at, ura.ends_at, a.code aoc, d.code dept, h.code hub, s.code station, t.name team, moe.code mentity, mm.status mstatus
@@ -64,7 +65,7 @@ async function main() {
     const rec = { label: m.label, checks: {} };
     const sb = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
     try {
-      const { data, error } = await sb.auth.signInWithPassword({ email: m.email, password: cred.password });
+      const { data, error } = await signInWithRetry(sb, m.email, cred.password);
       rec.checks.signIn = !error && !!data?.session && data.user.id === m.authUserId;
       const { data: rows } = await sb.rpc("get_my_active_role_assignments");
       rec.checks.assignment = (rows ?? []).length === 1 && rows[0].role_code === "aso" && rows[0].station_code === own && rows[0].team_name === "ALPHA";
