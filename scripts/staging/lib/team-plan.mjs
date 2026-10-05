@@ -13,6 +13,8 @@ export const STATION_HUB = {
   PEN: "northern",
   JHB: "southern_east_coast",
   BTU: "sarawak",
+  KCH: "sarawak",
+  BKI: "sabah",
 };
 
 // Deterministic "station with no CaterLink scanning": the alphabetically
@@ -155,6 +157,20 @@ function entry(kind, label, roleCode, accountStatus, scope) {
     icmsBridgeRowRequired: false,
     ...statusFor(roleCode), ...experienceFor(roleCode, accountStatus),
   };
+}
+
+// Two additional positive accounts for the final-receipt stations (run id <base>-receipt). They are NOT part of
+// the 36-account base plan.
+export const RECEIPT_ACCOUNT_LABELS = ["aso-kch-receipt", "aso-bki-receipt"];
+export function buildReceiptPlan() {
+  return [["aso-kch-receipt", "KCH"], ["aso-bki-receipt", "BKI"]].map(([label, stationCode]) => {
+    const e = entry("receipt_station", label, "aso", "approved", describeRoleScope("aso", { stationCode }));
+    return {
+      ...e,
+      caterlinkCapability: `scan denied (${stationCode} is not a scan-enabled station); final hub receipt allowed at ${stationCode} only`,
+      finalReceiptStation: stationCode,
+    };
+  });
 }
 
 export function buildAccountPlan() {

@@ -133,17 +133,18 @@ export async function baselineCounts(client, runId) {
   };
 }
 
-export function assertPreWriteBaseline(c, { allowExistingRun }) {
+export function assertPreWriteBaseline(c, { allowExistingRun, expected = {} }) {
+  const exp = { migrations: EXPECTED_MIGRATIONS, finalMigration: FINAL_MIGRATION, authUsers: BASELINE.authUsers, profiles: BASELINE.profiles, orgTeams: BASELINE.orgTeams, buckets: BASELINE.buckets, ...expected };
   const problems = [];
-  if (c.migrations !== EXPECTED_MIGRATIONS) problems.push(`migrations=${c.migrations} (expected ${EXPECTED_MIGRATIONS})`);
-  if (c.lastMigration !== FINAL_MIGRATION || c.finalMigrationCount !== 1) problems.push(`final migration ${c.lastMigration} x${c.finalMigrationCount}`);
+  if (c.migrations !== exp.migrations) problems.push(`migrations=${c.migrations} (expected ${exp.migrations})`);
+  if (c.lastMigration !== exp.finalMigration || c.finalMigrationCount !== 1) problems.push(`final migration ${c.lastMigration} x${c.finalMigrationCount}`);
   if (c.prodInHistory) problems.push("production reference in migration history");
   if (!allowExistingRun) {
-    if (c.authUsers !== BASELINE.authUsers) problems.push(`authUsers=${c.authUsers}`);
-    if (c.profiles !== BASELINE.profiles) problems.push(`profiles=${c.profiles}`);
+    if (c.authUsers !== exp.authUsers) problems.push(`authUsers=${c.authUsers}`);
+    if (c.profiles !== exp.profiles) problems.push(`profiles=${c.profiles}`);
     if (c.runAuthUsers !== 0 || c.runMetadataUsers !== 0) problems.push(`run accounts already exist (${c.runAuthUsers}/${c.runMetadataUsers})`);
   }
-  if (c.orgTeams !== BASELINE.orgTeams) problems.push(`orgTeams=${c.orgTeams}`);
-  if (c.buckets !== BASELINE.buckets) problems.push(`buckets=${c.buckets}`);
+  if (c.orgTeams !== exp.orgTeams) problems.push(`orgTeams=${c.orgTeams}`);
+  if (c.buckets !== exp.buckets) problems.push(`buckets=${c.buckets}`);
   if (problems.length) throw new Error(`Baseline gate failed: ${problems.join("; ")}`);
 }

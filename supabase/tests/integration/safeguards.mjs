@@ -28,6 +28,7 @@ export const ALLOWED_DISPOSABLE_DATABASES = new Set([
   'vecta_phase13_storage_run',
   'vecta_canonical_compat_run',
   'vecta_scan_authz_run',
+  'vecta_receipt_authz_run',
 ]);
 
 export function assertDisposableLocalTarget(config, ...dbNames) {

@@ -143,6 +143,7 @@ function fakeClient(opts: { teamRows: Array<{ station_id: string; name: string; 
     "KUL - MAA": { id: "s-kul", code: "KUL - MAA", hub_id: "h-kul", hubs: { code: "kul" } },
     PEN: { id: "s-pen", code: "PEN", hub_id: "h-north", hubs: { code: "northern" } },
     BKI: { id: "s-bki", code: "BKI", hub_id: "h-sabah", hubs: { code: "sabah" } },
+    LBU: { id: "s-lbu", code: "LBU", hub_id: "h-sabah", hubs: { code: "sabah" } },
   };
   const client = {
     from(table: string) {
@@ -174,9 +175,9 @@ test("resolveRoleScope: missing team row throws TeamNotEstablishedError and writ
   assert.deepEqual(calls, []);
 });
 
-test("resolveRoleScope: a station outside the approved four is refused, not invented", async () => {
+test("resolveRoleScope: a station outside the approved stations is refused, not invented", async () => {
   const { client, calls } = fakeClient({ teamRows: [] });
-  await assert.rejects(() => resolveRoleScope(client, "aso", { stationCode: "BKI" }), (e: Error) => e instanceof TeamNotEstablishedError && /No team is approved/.test(e.message));
+  await assert.rejects(() => resolveRoleScope(client, "aso", { stationCode: "LBU" }), (e: Error) => e instanceof TeamNotEstablishedError && /No team is approved/.test(e.message));
   assert.deepEqual(calls, []);
 });
 
@@ -198,7 +199,7 @@ test("resolveRoleScope: an existing established team resolves to its own station
 test("describeRoleScope: station override is honoured and team follows the station", () => {
   assert.equal(describeRoleScope("so", { stationCode: "KUL - MAA" }).team, "ALPHA");
   assert.equal(describeRoleScope("so", { stationCode: "JHB" }).team, "ALPHA");
-  assert.equal(describeRoleScope("so", { stationCode: "BKI" }).team, null, "an unapproved station has no team");
+  assert.equal(describeRoleScope("so", { stationCode: "LBU" }).team, null, "an unapproved station has no team");
 });
 
 // ---------------- merged operations model: per-account fields ----------------

@@ -17,6 +17,10 @@ export const ESTABLISHED_TEAMS = APPROVED_TEAMS;
 // The single team each test account is placed in at a station (a role
 // assignment carries exactly one team_id).
 export const DEFAULT_TEAM_BY_STATION = Object.fromEntries(SEEDED_STATIONS.map((s) => [s, "ALPHA"]));
+// Final-receipt stations (migration 20261022000001 seeds exactly one ALPHA team at each). They are NOT part of the
+// 16-row APPROVED_TEAMS seed; the two rows are created by that reviewed migration.
+export const RECEIPT_STATIONS = ["KCH", "BKI"];
+for (const st of RECEIPT_STATIONS) DEFAULT_TEAM_BY_STATION[st] = "ALPHA";
 
 export class TeamNotEstablishedError extends Error {
   constructor(roleCode, stationCode, teamName) {

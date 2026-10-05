@@ -19,7 +19,7 @@ import { resolveStagingAdminContext, printProjectIdentity } from "./lib/env-guar
 import { ALL_ROLE_CODES, resolveRoleScope } from "./lib/role-matrix.mjs";
 import {
   STATION_VARIANTS, NO_CATERLINK_STATION, NEGATIVE_STATE_STATION, NEGATIVE_LABELS,
-  TeamNotEstablishedError, buildAccountPlan, summarizePlan, legacyProfileFor,
+  TeamNotEstablishedError, buildAccountPlan, buildReceiptPlan, summarizePlan, legacyProfileFor,
 } from "./lib/team-plan.mjs";
 import {
   gitGates, environmentGates, backupGates, connectVerified, baselineCounts, assertPreWriteBaseline,
@@ -35,6 +35,8 @@ const runId = argVal("run-id");
 const emailDomain = argVal("email-domain");
 const expectedBase = argVal("expected-base");
 const credentialsDirArg = argVal("credentials-dir");
+const planName = argVal("plan") ?? "base"; // "base" = the 36-account matrix, "receipt" = the two KCH/BKI final-receipt accounts
+const expectedBackups = argVal("expect-baseline"); // JSON overriding the baseline counts for this run (never secrets)
 const REPO_PATH = path.resolve(import.meta.dirname, "../..");
 
 const randomStrongPassword = () => crypto.randomBytes(24).toString("base64url");
@@ -105,10 +107,10 @@ function writeJson(p, obj) {
 
 async function main() {
   console.log(`=== VECTA staging provisioning (${isDryRun ? "DRY RUN" : preflightOnly ? "LIVE PREFLIGHT" : "LIVE"}) run id: ${runId ?? "(none)"} ===`);
-  const plan = buildAccountPlan();
+  const plan = planName === "receipt" ? buildReceiptPlan() : buildAccountPlan();
 
   if (isDryRun) {
-    const sum = summarizePlan(plan);
+    const sum = planName === "receipt" ? { base: 0, stationVariants: plan.length, negative: 0, total: plan.length } : summarizePlan(plan);
     console.log(`Inventory: ${sum.base} base + ${sum.stationVariants} station variants + ${sum.negative} negative = ${sum.total}`);
     plan.forEach((a, i) => console.log(`${String(i + 1).padStart(2)} ${a.label.padEnd(26)} ${a.roleCode.padEnd(28)} ${a.accountStatus.padEnd(12)} st=${a.scope.station ?? "-"} hub=${a.scope.hub ?? "-"} team=${a.scope.team ?? "-"}`));
     console.log("No network call was made.");
@@ -118,7 +120,12 @@ async function main() {
   if (!expectedBase) throw new Error("--expected-base=<sha> is required for --live.");
 
   // ---------------- pre-write gates ----------------
-  const git = gitGates({ expectedBase, expectedRepoPath: REPO_PATH });
+  const git = gitGates({
+    expectedBase,
+    expectedRepoPath: REPO_PATH,
+    // the receipt run follows the reviewed receipt migration, its integration tests and generated types
+    extraAllowed: planName === "receipt" ? [/^supabase\/migrations\/20261022000001_phase9_caterlink_kch_bki_final_receipt\.sql$/, /^supabase\/tests\/integration\//, /^lib\//, /^app\//, /^components\//] : [],
+  });
   console.log(`GATE ok: repo path/branch ok, HEAD ${git.head.slice(0, 12)} (authorized base ${expectedBase.slice(0, 12)}; only tooling/tests/docs changed since), clean tree, origin ${git.remote}`);
   const envInfo = environmentGates();
   const ctx = resolveStagingAdminContext();
@@ -137,8 +144,8 @@ async function main() {
     console.log(`GATE ok: verified TLS (explicit CA: ${explicitCa ? "yes" : "no"})`);
     pre = await baselineCounts(pgc, runId);
     const firstRun = pre.runAuthUsers === 0;
-    assertPreWriteBaseline(pre, { allowExistingRun: !firstRun });
-    if (!firstRun && (pre.runAuthUsers > 36 || pre.runAuthUsers !== pre.runMetadataUsers)) throw new Error("Existing run accounts are inconsistent; refusing.");
+    assertPreWriteBaseline(pre, { allowExistingRun: !firstRun, expected: expectedBackups ? JSON.parse(expectedBackups) : {} });
+    if (!firstRun && (pre.runAuthUsers > plan.length || pre.runAuthUsers !== pre.runMetadataUsers)) throw new Error("Existing run accounts are inconsistent; refusing.");
     console.log(`GATE ok: ${JSON.stringify({ ...pre })}`);
   } finally {
     await pgc.end();
