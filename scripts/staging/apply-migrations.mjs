@@ -18,6 +18,7 @@ import os from "node:os";
 import child_process from "node:child_process";
 import { createRequire } from "node:module";
 import { decryptBackupPayload } from "./lib/backup-crypto.mjs";
+import { buildVerifiedClientConfig, describeTlsError } from "./lib/db-tls.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -290,13 +291,15 @@ async function main() {
 
   // 4. Connect to database and verify live migration baseline
   const { Client } = loadPgClient();
-  const client = new Client({
-    connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false }
-  });
+  const tlsConfig = buildVerifiedClientConfig(dbUrl);
+  const client = new Client({ connectionString: tlsConfig.connectionString, ssl: tlsConfig.ssl });
 
-  await client.connect();
-  logger.log("Connected to staging PostgreSQL instance.");
+  try {
+    await client.connect();
+  } catch (err) {
+    throw new Error(`Verified-TLS connection failed; refusing to fall back to insecure TLS. ${describeTlsError(err)}`);
+  }
+  logger.log(`Connected to staging PostgreSQL instance with verified TLS (certificate + hostname verification ON, explicit CA file: ${tlsConfig.usedExplicitCa ? "yes" : "no, system trust store"}).`);
 
   try {
     // 4.1 Check live migration history

@@ -15,6 +15,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { buildVerifiedClientConfig } from "./lib/db-tls.mjs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -304,10 +305,9 @@ async function main() {
   }
 
   const { Client } = await loadPgClient();
-  const client = new Client({
-    connectionString: dbUrl,
-    ssl: dbUrl.includes("localhost") || dbUrl.includes("127.0.0.1") ? false : { rejectUnauthorized: false }
-  });
+  const isLocal = dbUrl.includes("localhost") || dbUrl.includes("127.0.0.1");
+  const tlsConfig = isLocal ? { connectionString: dbUrl, ssl: false } : buildVerifiedClientConfig(dbUrl);
+  const client = new Client({ connectionString: tlsConfig.connectionString, ssl: tlsConfig.ssl });
 
   try {
     console.log(`Connecting securely to verified target: ${validation.safeTarget} ...`);
