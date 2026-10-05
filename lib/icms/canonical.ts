@@ -8,6 +8,7 @@
 // model (can_user_scan_caterlink / caterlink_station_capabilities).
 import type { CanonicalAccess } from "../auth/canonical-access.ts";
 import type { Role } from "./database.types";
+import { isExternalCaterLinkRole } from "../auth/caterlink-access.ts";
 import { ICMS_ADMIN_CODES, ICMS_REVIEW_CODES, ICMS_ARCHIVE_CODES } from "../auth/icms-admin-access.ts";
 
 /** Canonical station-scoped operational roles that may scan / complete checkpoints. */
@@ -21,7 +22,8 @@ export const EXTERNAL_ICMS_ROLES: readonly Role[] = ["vendor", "warehouse_pic"];
 export const CHECKPOINT_ROLES: readonly Role[] = ["post2_avsec", "post6_avsec", "redq_avsec", "receiver", "hub_avsec"];
 
 export function isExternalIcmsRole(role: string | null | undefined): boolean {
-  return Boolean(role) && (EXTERNAL_ICMS_ROLES as readonly string[]).includes(role as string);
+  // single definition shared with the middleware and every other gate (lib/auth/caterlink-access.ts)
+  return isExternalCaterLinkRole(role);
 }
 
 function has(access: CanonicalAccess, codes: readonly string[]): boolean {

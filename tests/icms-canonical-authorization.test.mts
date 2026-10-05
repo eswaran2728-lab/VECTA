@@ -150,14 +150,14 @@ async function redirectOf(fn: () => Promise<unknown>): Promise<string | null> {
   try { await fn(); return null; } catch (e) { const m = /REDIRECT:(.*)/.exec((e as Error).message); if (m) return m[1]; throw e; }
 }
 
-test("ICMS requireProfile: canonical staff get an adapter profile built from profiles + assignments (same UUID, no users row read)", async () => {
+test("ICMS requireProfile: canonical staff get an adapter profile built from profiles + assignments (same UUID; the users row is never authority)", async () => {
   setup({ rows: [asg("aso", "KUL - MAA")] });
   const p = await auth.requireProfile();
   assert.equal(p.id, "u1");
   assert.equal(p.identity, "canonical");
   assert.equal(p.role, "ops_staff");
   assert.equal(p.ops_group, null);
-  assert.equal(st.legacyUsersQueried, 0, "the legacy public.users table is never read for a canonical account");
+  assert.ok(st.legacyUsersQueried <= 1, "the users-table row is read at most once, only to detect a mixed VECTA/CaterLink conflict -- never for authority");
 });
 
 test("ICMS requireProfile: anonymous, super admin and unassigned/unknown accounts are redirected", async () => {

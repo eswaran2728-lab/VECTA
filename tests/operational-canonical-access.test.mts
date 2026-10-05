@@ -176,7 +176,7 @@ test("requireRole: a legacy ASO row with a canonical operation_manager assignmen
   assert.equal(p.canonical?.orgWide, true);
 });
 test("requireRole: roles with no legacy-page rank land on the Phase 7 dashboard, never loop", async () => {
-  for (const code of ["ghod", "airasia_management", "maa_admin", "caterlink_management", "sat_aso", "profiling_so", "investigation_so", "compliance"]) {
+  for (const code of ["ghod", "airasia_management", "maa_admin", "sat_aso", "profiling_so", "investigation_so", "compliance"]) {
     setup({ profile: profileRow({ role: "MANAGEMENT" }), rows: [asg(code)] });
     assert.equal(await redirectOf(() => auth.requireRole(["ASO"])), "/avsec/my-dashboard", code);
     assert.equal(await redirectOf(() => auth.requireRole(["MANAGEMENT", "ADMIN"])), "/avsec/my-dashboard", code);
@@ -184,6 +184,11 @@ test("requireRole: roles with no legacy-page rank land on the Phase 7 dashboard,
     const p = (await auth.requireProfile()) as { role: string };
     assert.equal(p.role, "ASO", "least-privilege placeholder, not the raw legacy MANAGEMENT");
   }
+});
+test("requireProfile: CaterLink Management is CaterLink-only and never works a VECTA/AVSEC page", async () => {
+  setup({ profile: profileRow({ role: "MANAGEMENT" }), rows: [asg("caterlink_management")] });
+  assert.equal(await redirectOf(() => auth.requireProfile()), "/caterlink/dashboard");
+  assert.equal(await redirectOf(() => auth.requireRole(["MANAGEMENT", "ADMIN"])), "/caterlink/dashboard");
 });
 test("requireProfile: station/team display scope is filled from the canonical assignment, not required in the legacy columns", async () => {
   setup({ profile: profileRow({ station: null, team: null }), rows: [asg("aso", { station_code: "KUL - MAA", team_name: "ALPHA" })] });

@@ -5,6 +5,7 @@ import type { UserRole } from "./reference-data";
 import { getActiveRoleAssignments } from "@/lib/dashboard/context";
 import { deriveCanonicalAccess, accessSatisfiesRoles, type CanonicalAccess } from "@/lib/auth/canonical-access";
 import { routeAllows } from "@/lib/auth/route-access";
+import { classifyPortalAccess, isCaterLinkOnly, type PortalIdentity } from "@/lib/auth/caterlink-access";
 
 export async function getCurrentUser() {
   const supabase = await createClient();
@@ -56,6 +57,9 @@ export async function getCurrentProfile(): Promise<Profile | null> {
   if (!raw || raw.status !== "approved") return null;
   const access = await getCanonicalAccess();
   if (!access.hasAssignment || access.isSuperAdmin) return null;
+  // A CaterLink-only (or conflicting) identity is never a VECTA actor, even if it reaches an action directly.
+  const identity = await getPortalIdentity(access);
+  if (isCaterLinkOnly(identity.kind) || identity.kind === "conflict" || identity.kind === "blocked") return null;
   return { ...raw, role: access.primaryCompatRole ?? "ASO", canonical: access };
 }
 
@@ -82,10 +86,30 @@ export function landingPathForRole(role: UserRole): string {
   return role === "ASO" ? "/avsec/home" : "/avsec/dashboard";
 }
 
+/** The caller's portal identity (canonical assignments + the trusted users-table account row). Never email/metadata. */
+export async function getPortalIdentity(access?: CanonicalAccess): Promise<PortalIdentity> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { kind: "none" };
+  const resolved = access ?? (await getCanonicalAccess());
+  const { data } = await supabase.from("users").select("role, status").eq("id", user.id).maybeSingle();
+  return classifyPortalAccess(resolved, data);
+}
+
+/** CaterLink-only identities never work a VECTA / AVSEC page or action: send them to CaterLink; mixed or non-active identities fail closed. */
+function redirectIfNotVecta(identity: PortalIdentity): void {
+  if (isCaterLinkOnly(identity.kind)) redirect("/caterlink/dashboard");
+  if (identity.kind === "conflict") redirect("/login?error=conflicting-access");
+  if (identity.kind === "blocked") redirect(`/login?error=${encodeURIComponent(identity.status ?? "pending")}`);
+}
+
 export async function requireProfile(): Promise<Profile> {
   const profile = await getRawProfile();
   if (!profile) redirect("/login");
   const access = await getCanonicalAccess();
+  redirectIfNotVecta(await getPortalIdentity(access));
   // Canonical Super Admin (active Phase 3 assignment) never works operational routes.
   if (access.isSuperAdmin) redirect("/super-admin");
   if (!profile.name) redirect("/avsec/profile-setup");

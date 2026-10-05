@@ -29,6 +29,7 @@ const PHASE2_13_CHAIN = [
   "20261020000001_canonical_operations_compatibility.sql",
   "20261021000001_phase9_caterlink_scan_authorization_correction.sql",
   "20261022000001_phase9_caterlink_kch_bki_final_receipt.sql",
+  "20261023000001_caterlink_external_account_table.sql",
 ];
 
 const LEGACY_ROLES = ["ASO", "SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"];

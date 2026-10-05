@@ -161,7 +161,7 @@ test("closure: middleware decides roles only from canonical assignments (never a
   assert.ok(!/["']SUPER_ADMIN["']/.test(mw), "middleware must not reference legacy SUPER_ADMIN");
   assert.ok(!/unified_role|uRole|profile\?\.role/.test(mw), "middleware must not derive roles from legacy columns");
   assert.ok(!/userEmail|user_metadata|userMeta/.test(mw), "middleware must not authorize or route from email text or user-editable metadata");
-  assert.equal((mw.match(/rpc\("get_my_active_role_assignments"\)/g) ?? []).length, 2, "login redirect and the general gate each use the canonical assignments RPC");
+  assert.equal((mw.match(/rpc\("get_my_active_role_assignments"\)/g) ?? []).length, 3, "login redirect, the API gate and the general gate each use the canonical assignments RPC");
   assert.equal((mw.match(/rpc\("has_active_role", \{ p_role_code: "super_admin" \}\)/g) ?? []).length, 1, "readiness gate uses has_active_role");
   assert.match(mw, /effectiveGateRole\(access, icmsRole\)/);
 });

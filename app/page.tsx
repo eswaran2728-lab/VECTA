@@ -16,7 +16,7 @@ import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries
 import { getActiveRoleAssignments } from "@/lib/dashboard/context";
 import { deriveCanonicalAccess, isOrgWideOperator } from "@/lib/auth/canonical-access";
 import { isStationOperator } from "@/lib/icms/canonical";
-import { isExternalCaterLinkRole } from "@/lib/supabase/middleware-gate-logic";
+import { classifyPortalAccess, isCaterLinkOnly } from "@/lib/auth/caterlink-access";
 import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
 import type { Direction, TransactionRoute, TransactionStatus } from "@/lib/icms/database.types";
 import { formatTimeMY } from "@/lib/avsec/datetime";
@@ -64,15 +64,16 @@ export default async function LandingPage() {
   // Canonical access: the caller's own active Phase 3 assignments decide.
   const activeAssignments = await getActiveRoleAssignments();
   const access = deriveCanonicalAccess(activeAssignments);
+  // One portal decision (lib/auth/caterlink-access.ts): trusted assignments + the trusted account row; never
+  // email or metadata. CaterLink Management / Driver / Vendor see only CaterLink; mixed or non-active
+  // identities fail closed.
+  const { data: portalRow } = await supabase.from("users").select("role, status").eq("id", user.id).maybeSingle();
+  const portal = classifyPortalAccess(access, portalRow);
+  if (portal.kind === "conflict") redirect("/login?error=conflicting-access");
+  if (portal.kind === "blocked") redirect(`/login?error=${encodeURIComponent(portal.status ?? "pending")}`);
+  if (isCaterLinkOnly(portal.kind)) redirect("/caterlink/dashboard");
   if (access.isSuperAdmin) redirect("/super-admin");
-
-  // External CaterLink identity = the ICMS users-table role (never email/metadata),
-  // and only when the account holds no canonical assignment.
-  if (!access.hasAssignment) {
-    const { data: icmsRow } = await supabase.from("users").select("role").eq("id", user.id).maybeSingle();
-    if (isExternalCaterLinkRole(icmsRow?.role as string | undefined)) redirect("/caterlink/dashboard");
-    redirect("/avsec/pending-approval");
-  }
+  if (!access.hasAssignment) redirect("/avsec/pending-approval");
   // Canonical roles with no legacy-page rank work through the Phase 7 dashboards.
   if (!access.primaryCompatRole) redirect("/avsec/my-dashboard");
 

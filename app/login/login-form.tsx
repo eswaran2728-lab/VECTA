@@ -102,26 +102,10 @@ export function LoginForm() {
       const urlParams = new URLSearchParams(window.location.search);
       const safeNext = sanitizeNext(urlParams.get("next"));
 
-      // Check user role for routing
-      const userEmail = (data.user.email ?? "").toLowerCase();
-      const meta = (data.user.user_metadata ?? {}) as Record<string, unknown>;
-      const isCaterLinkUser =
-        meta.system_type === "caterlink" ||
-        meta.role === "vendor" ||
-        meta.driver_type !== undefined ||
-        userEmail.endsWith("@caterlink.internal") ||
-        userEmail.includes("caterlink") ||
-        userEmail.includes("driver") ||
-        userEmail.includes("warehouse") ||
-        userEmail.includes("vendor");
-
-      if (safeNext) {
-        window.location.href = safeNext;
-      } else if (isCaterLinkUser) {
-        window.location.href = "/caterlink/dashboard";
-      } else {
-        window.location.href = "/";
-      }
+      // Landing is decided server-side from the authenticated session (canonical assignments and the trusted
+      // account row) by the middleware and the root page. Nothing here inspects the email address or any
+      // user-editable metadata.
+      window.location.href = safeNext ?? "/";
     } catch {
       setErrorMsg("Invalid email or password.");
       setIsLoading(false);

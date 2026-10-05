@@ -7,6 +7,7 @@ import { getActiveRoleAssignments } from "@/lib/dashboard/context";
 import { deriveCanonicalAccess, type CanonicalAccess } from "@/lib/auth/canonical-access";
 import { decideCheckpointAccess, icmsDisplayRole, isExternalIcmsRole, isExternalOnlyRoleList, satisfiesIcmsRoles } from "@/lib/icms/canonical";
 import { ensureOnDutyForCheckpoint } from "@/lib/icms/checkpoint-duty";
+import { classifyPortalAccess } from "@/lib/auth/caterlink-access";
 
 /**
  * ICMS/CaterLink identity and authorization (merged operations model).
@@ -39,6 +40,12 @@ export async function requireProfile(): Promise<IcmsProfile> {
 
   const access = deriveCanonicalAccess(await getActiveRoleAssignments());
   if (access.isSuperAdmin) redirect("/super-admin");
+
+  // Mixed VECTA / CaterLink identities and non-active external accounts fail closed before anything else.
+  const { data: portalRow } = await supabase.from("users").select("role, status").eq("id", user.id).maybeSingle();
+  const portal = classifyPortalAccess(access, portalRow);
+  if (portal.kind === "conflict") redirect("/login?error=conflicting-access");
+  if (portal.kind === "blocked") redirect(`/login?error=${encodeURIComponent(portal.status ?? "pending")}`);
 
   if (access.hasAssignment) {
     const { data: base } = await supabase

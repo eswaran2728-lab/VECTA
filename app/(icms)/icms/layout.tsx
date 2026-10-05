@@ -10,6 +10,7 @@ import {
   Users,
   ScrollText,
   Archive,
+  type LucideIcon,
 } from "lucide-react";
 import { requireProfile } from "@/lib/icms/auth";
 import { getCanScanCaterLink } from "@/lib/avsec/auth";
@@ -25,11 +26,40 @@ import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { getActiveRoleAssignments } from "@/lib/dashboard/context";
 import { deriveCanonicalAccess, isOrgWideOperator } from "@/lib/auth/canonical-access";
+import { classifyPortalAccess, isCaterLinkOnly, type PortalKind } from "@/lib/auth/caterlink-access";
+import { caterLinkNavFor, CATERLINK_ROLE_LABELS, type CaterLinkIconKey } from "@/lib/caterlink/portal-nav";
+import { CaterLinkShell } from "@/components/caterlink/CaterLinkShell";
 
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const profile = await requireProfile();
   const lang = await getLang();
+
+  // CaterLink-only identities (Management / Driver / Third-Party Vendor) get the CaterLink portal chrome: CaterLink
+  // branding and CaterLink navigation only. AVSEC officers who legitimately use ICMS pages keep the VECTA shell.
+  const portalKind: PortalKind =
+    profile.identity === "external"
+      ? (profile.role === "vendor" ? "caterlink_vendor" : "caterlink_driver")
+      : profile.canonical
+        ? classifyPortalAccess(profile.canonical, null).kind
+        : "none";
+  if (isCaterLinkOnly(portalKind)) {
+    const ICONS: Record<CaterLinkIconKey, LucideIcon> = {
+      dashboard: LayoutDashboard, new: PlusCircle, transactions: ClipboardList, incidents: ShieldAlert,
+      reports: FileBarChart, whitelists: ListChecks, archive: Archive, audit: ScrollText,
+    };
+    return (
+      <CaterLinkShell
+        name={profile.name}
+        roleLabel={CATERLINK_ROLE_LABELS[portalKind] ?? "CaterLink"}
+        nav={caterLinkNavFor(portalKind).map((n) => ({ href: n.href, label: n.label, icon: ICONS[n.icon] }))}
+        signOutAction={signOut}
+        languageToggle={<LanguageToggle lang={lang} />}
+      >
+        {children}
+      </CaterLinkShell>
+    );
+  }
 
   const isPic = profile.role === "warehouse_pic";
   const isVendor = profile.role === "vendor";

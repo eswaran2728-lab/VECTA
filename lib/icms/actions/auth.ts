@@ -2,7 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { isExternalCaterLinkRole } from "@/lib/supabase/middleware-gate-logic";
+import { classifyPortalAccess, isCaterLinkOnly } from "@/lib/auth/caterlink-access";
+import { deriveCanonicalAccess, assignmentsFromRpcRows } from "@/lib/auth/canonical-access";
 import { createClient } from "@/lib/supabase/server";
 
 export interface AuthState {
@@ -31,6 +32,18 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
     supabase.from("users").select("role, status").eq("id", data.user.id).maybeSingle(),
   ]);
 
+  // One portal decision from the trusted sources only (canonical assignments + the users-table account row).
+  const { data: assignmentRows } = await supabase.rpc("get_my_active_role_assignments");
+  const portal = classifyPortalAccess(deriveCanonicalAccess(assignmentsFromRpcRows(assignmentRows)), icmsProfile);
+  if (portal.kind === "conflict" || portal.kind === "blocked") {
+    await supabase.auth.signOut();
+    redirect(`/login?error=${portal.kind === "conflict" ? "conflicting-access" : encodeURIComponent(portal.status ?? "pending")}`);
+  }
+  if (isCaterLinkOnly(portal.kind)) {
+    revalidatePath("/", "layout");
+    redirect("/caterlink/dashboard");
+  }
+
   const profile = avsecProfile ?? icmsProfile;
 
   if (profile?.status === "pending" || profile?.status === "rejected") {
@@ -39,15 +52,6 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
   }
 
   revalidatePath("/", "layout");
-
-  // Single Login Page Router: external CaterLink identities are recognised
-  // ONLY by the ICMS users-table role (never by email text or metadata),
-  // and only when the account holds no canonical assignment.
-  const { data: assignmentRows } = await supabase.rpc("get_my_active_role_assignments");
-  const hasAssignment = Array.isArray(assignmentRows) && assignmentRows.length > 0;
-  if (!hasAssignment && isExternalCaterLinkRole(icmsProfile?.role as string | undefined)) {
-    redirect("/icms/transactions");
-  }
 
   redirect("/");
 }

@@ -34,14 +34,11 @@ import { canonicalCodesForRoute, routeAllows } from "../auth/route-access.ts";
 // The canonical roles whose workspace includes the duty terminal / check-in.
 const DUTY_CODES = new Set(canonicalCodesForRoute("/avsec/duty"));
 
-// ICMS-origin external identities (public.users.role) routed to CaterLink.
-// Recognised ONLY from that table's role -- never from an email string or
-// user-editable metadata.
-export const EXTERNAL_CATERLINK_ICMS_ROLES = ["vendor", "warehouse_pic", "driver_ifc", "driver_vendor"] as const;
-
-export function isExternalCaterLinkRole(icmsRole: string | null | undefined): boolean {
-  return Boolean(icmsRole) && (EXTERNAL_CATERLINK_ICMS_ROLES as readonly string[]).includes(icmsRole as string);
-}
+// ICMS-origin external identities (public.users.role) routed to CaterLink. The single definition lives in
+// lib/auth/caterlink-access.ts; recognised ONLY from that table's role -- never from an email or metadata.
+import { isExternalCaterLinkRole, EXTERNAL_CATERLINK_ROLES } from "../auth/caterlink-access.ts";
+export { isExternalCaterLinkRole };
+export const EXTERNAL_CATERLINK_ICMS_ROLES = EXTERNAL_CATERLINK_ROLES;
 
 // Edge-gate role from CANONICAL access (plus the ICMS external-identity
 // table for CaterLink vendors/drivers, who hold no Phase 3 assignment).

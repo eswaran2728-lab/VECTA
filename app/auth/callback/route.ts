@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { isExternalCaterLinkRole } from "@/lib/supabase/middleware-gate-logic";
+import { classifyPortalAccess, isCaterLinkOnly } from "@/lib/auth/caterlink-access";
+import { deriveCanonicalAccess, assignmentsFromRpcRows } from "@/lib/auth/canonical-access";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -46,16 +47,16 @@ export async function GET(request: Request) {
         // then routed to profile setup / awaiting-approval by
         // lib/supabase/middleware.ts and lib/avsec/auth.ts requireProfile()
         // — never an operational route, not even briefly.
-        const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
-          supabase.from("profiles").select("status").eq("id", user.id).maybeSingle(),
-          supabase.from("users").select("role, status").eq("id", user.id).maybeSingle(),
-        ]);
+        const { data: icmsProfile } = await supabase.from("users").select("role, status").eq("id", user.id).maybeSingle();
 
-        // Segregate access: external CaterLink identities (ICMS users-table role)
-        // belong strictly in CaterLink. Never decided from email or metadata.
-        if (!avsecProfile && isExternalCaterLinkRole(icmsProfile?.role as string | undefined)) {
-          return NextResponse.redirect(`${origin}/login?error=caterlink-only`);
-        }
+        // One portal decision from the trusted sources only (canonical assignments + the users-table account
+        // row) -- never email or metadata. CaterLink-only identities land in CaterLink; mixed or non-active
+        // identities fail closed.
+        const { data: cbRows } = await supabase.rpc("get_my_active_role_assignments");
+        const portal = classifyPortalAccess(deriveCanonicalAccess(assignmentsFromRpcRows(cbRows)), icmsProfile);
+        if (portal.kind === "conflict") return NextResponse.redirect(`${origin}/login?error=conflicting-access`);
+        if (portal.kind === "blocked") return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(portal.status ?? "pending")}`);
+        if (isCaterLinkOnly(portal.kind)) return NextResponse.redirect(`${origin}/caterlink/dashboard`);
       }
 
       const forwardedHost = request.headers.get("x-forwarded-host");

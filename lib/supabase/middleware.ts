@@ -7,10 +7,16 @@ import {
   isOperationalPathForbiddenForSuperAdmin,
   isReadinessPath,
   effectiveGateRole,
-  isExternalCaterLinkRole,
   isShiftBasedAccess,
 } from "./middleware-gate-logic";
 import { deriveCanonicalAccess, assignmentsFromRpcRows } from "../auth/canonical-access";
+import {
+  classifyPortalAccess,
+  decidePortalRequest,
+  isCaterLinkApiPath,
+  isCaterLinkOnly,
+  landingForIdentity,
+} from "../auth/caterlink-access";
 
 
 // Unified role vocabulary (see supabase/migrations/unified_role_model and
@@ -142,17 +148,34 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // External CaterLink identity = the ICMS users-table role, never an email/metadata string.
-    let landing = "/";
-    if (!loginAccess.hasAssignment) {
-      const { data: loginIcms } = await supabase.from("users").select("role").eq("id", user.id).maybeSingle();
-      if (isExternalCaterLinkRole(loginIcms?.role as string | undefined)) landing = "/caterlink/dashboard";
+    // Portal identity = canonical assignments + the trusted users-table account row. Never an email string or
+    // user-editable metadata. Conflicting / non-active external identities fail closed.
+    const { data: loginUsers } = await supabase.from("users").select("role, status").eq("id", user.id).maybeSingle();
+    const loginIdentity = classifyPortalAccess(loginAccess, loginUsers);
+    if (loginIdentity.kind === "conflict" || loginIdentity.kind === "blocked") {
+      const denied = request.nextUrl.clone();
+      denied.pathname = "/login";
+      denied.search = "";
+      denied.searchParams.set("error", loginIdentity.kind === "conflict" ? "conflicting-access" : String(loginIdentity.status ?? "pending"));
+      return NextResponse.redirect(denied);
     }
+    const landing = landingForIdentity(loginIdentity);
 
     const url = request.nextUrl.clone();
     url.pathname = landing;
     url.search = "";
     return NextResponse.redirect(url);
+  }
+
+  // CaterLink-only identities (and conflicting / blocked ones) may call only the CaterLink, auth and health APIs.
+  // Every other API (AVSEC, WOIS, ...) answers 403 without touching data.
+  if (user && isApi && !isCaterLinkApiPath(path)) {
+    const { data: apiRows } = await supabase.rpc("get_my_active_role_assignments");
+    const { data: apiUsers } = await supabase.from("users").select("role, status").eq("id", user.id).maybeSingle();
+    const apiIdentity = classifyPortalAccess(deriveCanonicalAccess(assignmentsFromRpcRows(apiRows)), apiUsers);
+    if (decidePortalRequest(apiIdentity, path, true).action === "deny_api") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
   }
 
   // Phase 13 readiness portal: canonical Phase 3 role-assignment gate only.
@@ -185,26 +208,27 @@ export async function updateSession(request: NextRequest) {
       supabase.from("users").select("role, status").eq("id", user.id).maybeSingle(),
     ]);
     const icmsRole = (icmsProfile?.role ?? null) as string | null;
-    const isCaterLinkUser = !access.hasAssignment && isExternalCaterLinkRole(icmsRole);
-
-    // Seamless URL remapping: redirect drivers visiting /icms to /caterlink --
-    // but only for the paths next.config.ts actually rewrites back
-    // (dashboard, transactions, vendor-transactions). A driver hitting an
-    // unmapped ICMS path must NOT be remapped to a /caterlink/* URL with no
-    // matching rewrite; falling through lets the page's own requireRole()
-    // check redirect to /icms/dashboard?error=forbidden.
-    const CATERLINK_REMAPPED_PREFIXES = ["/icms/dashboard", "/icms/transactions", "/icms/vendor-transactions"];
-    if (isCaterLinkUser && CATERLINK_REMAPPED_PREFIXES.some((p) => path === p || path.startsWith(p + "/"))) {
-      const url = request.nextUrl.clone();
-      url.pathname = path.replace(/^\/icms/, "/caterlink");
-      return NextResponse.redirect(url);
+    // One server-side portal decision for every gated page: CaterLink-only identities (Management, Driver,
+    // Vendor) reach ONLY the CaterLink portal; mixed or non-active identities fail closed.
+    const portalIdentity = classifyPortalAccess(access, icmsProfile);
+    const portal = decidePortalRequest(portalIdentity, path, false);
+    if (portal.action === "redirect") {
+      const denied = request.nextUrl.clone();
+      denied.pathname = portal.to;
+      denied.search = "";
+      if (portal.error) denied.searchParams.set("error", portal.error);
+      return NextResponse.redirect(denied);
     }
-
-    // Boundary Gate: external CaterLink accounts trying to access AVSEC go to CaterLink
-    if (isCaterLinkUser && path.startsWith("/avsec")) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/caterlink/dashboard";
-      return NextResponse.redirect(url);
+    if (isCaterLinkOnly(portalIdentity.kind)) {
+      // Seamless URL remapping for the paths next.config.ts rewrites back (dashboard, transactions, vendor-transactions).
+      const CATERLINK_REMAPPED_PREFIXES = ["/icms/dashboard", "/icms/transactions", "/icms/vendor-transactions"];
+      if (CATERLINK_REMAPPED_PREFIXES.some((p) => path === p || path.startsWith(p + "/"))) {
+        const remap = request.nextUrl.clone();
+        remap.pathname = path.replace(/^\/icms/, "/caterlink");
+        return NextResponse.redirect(remap);
+      }
+      // No AVSEC profile-status, duty check-in or admin gate applies inside the CaterLink portal.
+      return supabaseResponse;
     }
 
     // Pending/rejected/deactivated users are routed to profile setup / the
