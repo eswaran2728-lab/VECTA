@@ -66,6 +66,14 @@ approved station capability (`can_user_scan_caterlink`).
 - Legacy ICMS tables (`public.users`, `incidents`, `part_*`, `vendor_*`) do not exist on staging; some ICMS
   page data parity remains unresolved and is not addressed by this migration.
 
+## Update 2026-10-05 (RLS narrowing)
+
+The migration now rewrites every legacy-rank policy to canonical `canon_*` predicates, removes blanket reads,
+narrows grants (anon none; authenticated only where a policy exists; column grants on the CaterLink whitelist
+tables) and makes internal helpers non-callable by clients. The earlier note that the 16 staging profiles
+must hold active assignments is superseded: they are disposable legacy accounts expected to hold none and
+are expected to lose operational access. Full inventory: `rls-narrowing-inventory.md`.
+
 ## Required hosted action (separate authorization)
 
 1. Read-only (verified TLS, `BEGIN READ ONLY`): confirm each of the 16 staging profiles holds an active

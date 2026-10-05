@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { isModuleMissing } from "@/lib/icms/module-state";
+import { ModuleNotActivated } from "@/components/icms/ModuleNotActivated";
 import Link from "next/link";
 import { requireProfile } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -29,11 +31,15 @@ export default async function VendorTransactionsPage() {
   // roles see everything (vendor_transactions: checkpoint roles read all) —
   // see supabase/migrations/icms/20260813000002_vendor_movement.sql and
   // management_icms_parity.sql.
-  const { data } = await supabase
+  const { data, error: vendorError } = await supabase
     .from("vendor_transactions")
     .select("*, vendor_part_a(driver_name, seal_number)")
     .order("created_at", { ascending: false })
     .limit(200);
+
+  if (isModuleMissing(vendorError)) {
+    return <ModuleNotActivated title="Vendor transactions" detail="The vendor movement module is not activated on this environment, so there is no data available." />;
+  }
 
   const transactions = (data ?? []) as unknown as (VendorTransaction & {
     vendor_part_a: { driver_name: string; seal_number: string }[];

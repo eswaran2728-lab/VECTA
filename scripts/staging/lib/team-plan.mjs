@@ -79,8 +79,8 @@ export const ROLE_EXPERIENCE = {
   maa_admin: { workspace: "/avsec/my-dashboard (Entity Admin, MAA)", allowed: ["MAA registration approvals"], denied: ["AAX registrations", "protected-role grants"] },
   aax_boss: { workspace: "/avsec/my-dashboard (Entity Dashboard, AAX)", allowed: ["AAX entity overview"], denied: ["MAA entity data", "operational pages"] },
   aax_admin: { workspace: "/avsec/my-dashboard (Entity Admin, AAX)", allowed: ["AAX registration approvals"], denied: ["MAA registrations", "protected-role grants"] },
-  operation_manager: { workspace: "/avsec/my-dashboard (Operation Manager) + legacy management pages", allowed: ["Operation department overview", "management pages (MANAGEMENT rank)", "/avsec/admin"], denied: ["Enforcement-only content", "/super-admin"] },
-  main_enforcement: { workspace: "/avsec/my-dashboard (Main Enforcement)", allowed: ["Report Search", "Enforcement Search", "SEC013", "hub breakdown"], denied: ["/avsec/admin", "Operation-only management"] },
+  operation_manager: { workspace: "/avsec/dashboard (Operation Manager) + legacy management pages", allowed: ["Operation department overview", "management pages (MANAGEMENT rank)", "/avsec/admin"], denied: ["Enforcement-only content", "/super-admin"] },
+  main_enforcement: { workspace: "/avsec/dashboard (Main Enforcement)", allowed: ["Report Search", "Enforcement Search", "SEC013", "hub breakdown"], denied: ["/avsec/admin", "Operation-only management"] },
   compliance: { workspace: "/avsec/my-dashboard (Compliance, read-only)", allowed: ["Report Search"], denied: ["any write", "enforcement search", "duty"] },
   caterlink_management: { workspace: "/avsec/my-dashboard (CaterLink Management)", allowed: ["CaterLink overview, transactions, incidents, whitelist, archive (canonical ICMS identity adapter)"], denied: ["unrelated AVSEC report content"] },
   investigation_sso: { workspace: "/avsec/my-dashboard (Investigation SSO)", allowed: ["Report Search", "Enforcement Search"], denied: ["checkpoint scanner", "duty"] },
@@ -89,11 +89,11 @@ export const ROLE_EXPERIENCE = {
   sat_aso: { workspace: "/avsec/my-dashboard (SAT ASO, KUL)", allowed: ["Duty Terminal & Check-In", "Bay Board", "Report Search"], denied: ["other hubs", "enforcement search"] },
   profiling_so: { workspace: "/avsec/my-dashboard (Profiling SO)", allowed: ["SEC013", "Duty", "Report Search"], denied: ["CaterLink checkpoint scanner"] },
   profiling_aso: { workspace: "/avsec/my-dashboard (Profiling ASO)", allowed: ["SEC013", "Duty", "Report Search"], denied: ["CaterLink checkpoint scanner"] },
-  hub_se: { workspace: "/avsec/my-dashboard (Hub SE)", allowed: ["Leave", "OT", "Bay Board", "Report Search", "hub breakdown"], denied: ["other hubs", "duty check-in (not shift staff)"] },
-  dse: { workspace: "/avsec/my-dashboard (KUL DSE)", allowed: ["Roster", "Leave", "OT", "Bay Board", "Duty"], denied: ["other teams", "report search"] },
-  sso: { workspace: "/avsec/my-dashboard (SSO)", allowed: ["Duty", "Bay Board", "Report Search", "scanner (CaterLink-capable station)"], denied: ["other stations/teams", "management pages"] },
-  so: { workspace: "/avsec/my-dashboard (SO)", allowed: ["Duty", "Bay Board", "Report Search", "scanner (CaterLink-capable station)"], denied: ["other stations/teams", "management pages"] },
-  aso: { workspace: "/avsec/my-dashboard (ASO)", allowed: ["Duty", "Bay Board", "scanner (CaterLink-capable station)"], denied: ["report search", "management pages", "other stations/teams"] },
+  hub_se: { workspace: "/avsec/dashboard (Hub SE)", allowed: ["Leave", "OT", "Bay Board", "Report Search", "hub breakdown"], denied: ["other hubs", "duty check-in (not shift staff)"] },
+  dse: { workspace: "/avsec/dashboard (KUL DSE)", allowed: ["Roster", "Leave", "OT", "Bay Board", "Duty"], denied: ["other teams", "report search"] },
+  sso: { workspace: "/avsec/dashboard (SSO)", allowed: ["Duty", "Bay Board", "Report Search", "scanner (CaterLink-capable station)"], denied: ["other stations/teams", "management pages"] },
+  so: { workspace: "/avsec/dashboard (SO)", allowed: ["Duty", "Bay Board", "Report Search", "scanner (CaterLink-capable station)"], denied: ["other stations/teams", "management pages"] },
+  aso: { workspace: "/avsec/home (ASO)", allowed: ["Duty", "Bay Board", "scanner (CaterLink-capable station)"], denied: ["report search", "management pages", "other stations/teams"] },
 };
 
 const NEGATIVE_EXPERIENCE = {

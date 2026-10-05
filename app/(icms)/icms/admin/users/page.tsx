@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { isModuleMissing } from "@/lib/icms/module-state";
+import { ModuleNotActivated } from "@/components/icms/ModuleNotActivated";
 import { requireRole } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/icms/ui/card";
@@ -24,10 +26,14 @@ export default async function UsersPage() {
   const supervisor = await requireRole(["supervisor"]);
   const supabase = await createClient();
 
-  const { data } = await supabase
+  const { data, error: usersError } = await supabase
     .from("users")
     .select("*")
     .order("created_at", { ascending: false });
+
+  if (isModuleMissing(usersError)) {
+    return <ModuleNotActivated title="User management" detail="Legacy ICMS user records are not used on this environment: staff identity and access come from canonical role assignments." />;
+  }
 
   const allUsers = (data ?? []) as UserProfile[];
   const pending = allUsers.filter((u) => u.status === "pending");

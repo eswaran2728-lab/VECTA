@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { isModuleMissing } from "@/lib/icms/module-state";
+import { ModuleNotActivated } from "@/components/icms/ModuleNotActivated";
 import Link from "next/link";
 import { requireRole } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -49,7 +51,10 @@ export default async function AuditPage({
       "00000000-0000-0000-0000-000000000000",
     ]);
   }
-  const { data } = await query;
+  const { data, error: auditError } = await query;
+  if (isModuleMissing(auditError)) {
+    return <ModuleNotActivated title="Audit log" detail="The legacy ICMS audit log is not activated on this environment, so there is no data available." />;
+  }
 
   const logs = (data ?? []) as AuditLog[];
 

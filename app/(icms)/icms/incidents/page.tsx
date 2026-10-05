@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { isModuleMissing } from "@/lib/icms/module-state";
+import { ModuleNotActivated } from "@/components/icms/ModuleNotActivated";
 import Link from "next/link";
 import { requireProfile } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -39,12 +41,16 @@ export default async function IncidentsPage({
   const canResolve = profile.role === "supervisor" || profile.role === "enforcement" || profile.role === "management";
   const supabase = await createClient();
 
-  const { data } = await supabase
+  const { data, error: incidentsError } = await supabase
     .from("incidents")
     .select("*, transactions!inner(transaction_number, vehicle_number, archived)")
     .eq("transactions.archived", false)
     .order("created_at", { ascending: false })
     .limit(200);
+
+  if (isModuleMissing(incidentsError)) {
+    return <ModuleNotActivated title="Incidents" detail="The legacy incident module is not activated on this environment, so there is no incident data to show." />;
+  }
 
   const incidents = (data ?? []) as unknown as IncidentRow[];
 

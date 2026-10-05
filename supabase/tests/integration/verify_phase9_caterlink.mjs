@@ -126,6 +126,16 @@ async function main() {
   function simulateUser(id) { return db.query('select pg_temp.simulate_user($1);', [id]); }
   function simulateServiceRole() { return db.exec('select pg_temp.simulate_service_role();'); }
   async function clearSim() { await db.exec('select pg_temp.clear_simulation();'); }
+  // Direct table verification: clients hold no direct grant on these tables, so read as service_role
+  // and then restore the caller's previous session.
+  async function asService(sql, params) {
+    const prev = (await db.query("select coalesce(current_setting('request.jwt.claims', true), '') as c, current_user::text as u")).rows[0];
+    await simulateServiceRole();
+    const r = await db.query(sql, params);
+    await db.query("select set_config('request.jwt.claims', $1, true), set_config('role', $2, true)", [prev.c, prev.u]);
+    return r;
+  }
+
 
   // A Postgres error inside the outer transaction aborts it until ROLLBACK/ROLLBACK TO
   // SAVEPOINT -- every expected-failure probe below must run inside its own savepoint so the
@@ -497,7 +507,7 @@ async function main() {
 
   // Verify caterlink_checkpoint_hub record was written (renamed from the colliding
   // legacy-named public.part_hub -- see the migration's collision-inventory note)
-  const hubRec = (await db.query("select confirmed_destination, hub_avsec_staff_id from public.caterlink_checkpoint_hub where transaction_id = $1;", [txId])).rows[0];
+  const hubRec = (await asService("select confirmed_destination, hub_avsec_staff_id from public.caterlink_checkpoint_hub where transaction_id = $1;", [txId])).rows[0];
   assert(hubRec.confirmed_destination === 'PEN' && hubRec.hub_avsec_staff_id === 'PEN-AV-01', 'caterlink_checkpoint_hub recorded destination and confirming officer details');
 
   // Test 4.6: Repeated confirmation safely rejected
@@ -638,7 +648,7 @@ async function main() {
   const vendorId = createVendorRes.rows[0].id;
   assert(createVendorRes.rows[0].status === 'pending', 'New vendor entry created with status=pending, not immediately active');
 
-  const vendorRawRow = (await db.query('select is_active from public.catering_companies where id = $1;', [vendorId])).rows[0];
+  const vendorRawRow = (await asService('select is_active from public.catering_companies where id = $1;', [vendorId])).rows[0];
   assert(vendorRawRow.is_active === false, 'Pending vendor is_active=false at the data layer the scanner/trigger path actually reads');
 
   const createVehicleRes = await db.query(
@@ -671,7 +681,7 @@ async function main() {
 
   // Test 6.4: pending entry is invisible to the scanner gate until approved
   await simulateServiceRole();
-  const pendingScanCheck = (await db.query(
+  const pendingScanCheck = (await asService(
     "select public.check_station_caterlink_capability($1, 'KUL - MAA', 'scan') as station_can, v.is_active from public.vehicles v where v.id = $2;",
     [myAocId, vehicleId],
   )).rows[0];
@@ -692,7 +702,7 @@ async function main() {
     [vehicleId],
   );
   assert(approveVehicleRes.rows[0].status === 'active', 'Approved vehicle entry transitions to status=active');
-  const vehicleActiveRow = (await db.query('select is_active from public.vehicles where id = $1;', [vehicleId])).rows[0];
+  const vehicleActiveRow = (await asService('select is_active from public.vehicles where id = $1;', [vehicleId])).rows[0];
   assert(vehicleActiveRow.is_active === true, 'Approved vehicle is_active=true -- now usable at the real scanner/checkpoint gate');
 
   const wlApprovalNotif = (await db.query(
@@ -721,7 +731,7 @@ async function main() {
     [vendorId],
   );
   assert(rejectVendorRes.rows[0].status === 'rejected', 'Rejected vendor entry transitions to status=rejected (never approved -- distinct from revoked)');
-  const vendorRejectedRow = (await db.query('select is_active, revoked_at, approved_at, deactivated_at from public.catering_companies where id = $1;', [vendorId])).rows[0];
+  const vendorRejectedRow = (await asService('select is_active, revoked_at, approved_at, deactivated_at from public.catering_companies where id = $1;', [vendorId])).rows[0];
   assert(vendorRejectedRow.is_active === false && vendorRejectedRow.revoked_at !== null && vendorRejectedRow.approved_at === null && vendorRejectedRow.deactivated_at === null,
     'Rejected vendor: is_active=false, revoked_at set, approved_at NEVER set, deactivated_at untouched -- unambiguous at the schema level');
 
@@ -744,7 +754,7 @@ async function main() {
     [vehicleId],
   );
   assert(deactivateVehicleRes.rows[0].status === 'deactivated', 'Deactivated vehicle entry transitions to status=deactivated (reversible -- distinct from revoked/rejected)');
-  const vehicleInactiveRow = (await db.query('select is_active, revoked_at, deactivated_at, deactivated_by from public.vehicles where id = $1;', [vehicleId])).rows[0];
+  const vehicleInactiveRow = (await asService('select is_active, revoked_at, deactivated_at, deactivated_by from public.vehicles where id = $1;', [vehicleId])).rows[0];
   assert(vehicleInactiveRow.is_active === false, 'Deactivated vehicle is_active=false again at the real scanner/checkpoint gate');
   assert(vehicleInactiveRow.revoked_at === null && vehicleInactiveRow.deactivated_at !== null && vehicleInactiveRow.deactivated_by === caterlinkMgmtId,
     'Deactivation uses its own deactivated_by/deactivated_at columns -- revoked_at stays null, unambiguous from reject()/revoke()');
@@ -754,7 +764,7 @@ async function main() {
   // checkWhitelistAtCheckpoint()/enforce_whitelist_on_create() actually run against public.vehicles
   // (lib/icms/actions/transactions.ts) -- proving denial happens at the real scanner-consulted gate,
   // not merely in a status label.
-  const deactivatedScanLookup = await db.query(
+  const deactivatedScanLookup = await asService(
     "select id from public.vehicles where vehicle_number = 'WYY 9999' and is_active = true;",
   );
   assert(deactivatedScanLookup.rows.length === 0,
@@ -775,7 +785,7 @@ async function main() {
     [vehicleId],
   );
   assert(reactivateRes.rows[0].status === 'active', 'Reactivated vehicle entry transitions back to status=active');
-  const reactivatedRow = (await db.query('select deactivated_by, deactivated_at, is_active from public.vehicles where id = $1;', [vehicleId])).rows[0];
+  const reactivatedRow = (await asService('select deactivated_by, deactivated_at, is_active from public.vehicles where id = $1;', [vehicleId])).rows[0];
   assert(reactivatedRow.deactivated_by === null && reactivatedRow.deactivated_at === null && reactivatedRow.is_active === true,
     'Reactivation clears deactivated_by/deactivated_at and restores is_active=true');
 
@@ -785,7 +795,7 @@ async function main() {
     [vehicleId],
   );
   assert(revokeRes.rows[0].status === 'revoked', 'Revoked (previously-approved) vehicle entry transitions to status=revoked, distinct from deactivated/rejected');
-  const revokedRow = (await db.query('select is_active, revoked_at, deactivated_at, approved_at from public.vehicles where id = $1;', [vehicleId])).rows[0];
+  const revokedRow = (await asService('select is_active, revoked_at, deactivated_at, approved_at from public.vehicles where id = $1;', [vehicleId])).rows[0];
   assert(revokedRow.is_active === false && revokedRow.revoked_at !== null && revokedRow.approved_at !== null,
     'Revoked entry: is_active=false, revoked_at set, and approved_at WAS set (distinguishing it from a rejected-before-approval entry)');
 
@@ -852,10 +862,10 @@ async function main() {
   );
   const futureVehicleId = futureVehicleRes.rows[0].id;
   await db.query("select * from public.approve_caterlink_whitelist_entry_secure('vehicle', $1);", [futureVehicleId]);
-  const futureVehicleRow = (await db.query('select status, is_active from public.vehicles where id = $1;', [futureVehicleId])).rows[0];
+  const futureVehicleRow = (await asService('select status, is_active from public.vehicles where id = $1;', [futureVehicleId])).rows[0];
   assert(futureVehicleRow.status === 'future', 'Approved-but-not-yet-effective vehicle entry has status=future, distinct from active');
   assert(futureVehicleRow.is_active === false, 'Future-dated entry is_active=false despite being approved -- denied at the real scanner gate');
-  const futureScanLookup = await db.query("select id from public.vehicles where vehicle_number = 'WYY FUT1' and is_active = true;");
+  const futureScanLookup = await asService("select id from public.vehicles where vehicle_number = 'WYY FUT1' and is_active = true;");
   assert(futureScanLookup.rows.length === 0, 'Future-dated entry invisible to the real checkpoint whitelist lookup');
 
   // Test 6.15: comprehensive denial matrix -- every non-active lifecycle stage must fail the

@@ -12,7 +12,7 @@ export default async function NewTransactionPage() {
 
   const supabase = await createClient();
   const [companies, vehicles, drivers] = await Promise.all([
-    supabase.from("catering_companies").select("*").eq("is_active", true).order("name"),
+    supabase.from("catering_companies").select("id, name, code, is_active, pass_expiry_date, aoc_id, status").eq("is_active", true).order("name"),
     supabase
       .from("vehicles")
       .select("vehicle_number, pass_expiry_date")
@@ -43,7 +43,7 @@ export default async function NewTransactionPage() {
       <PartAForm
         picName={profile.name}
         picStaffId={profile.staff_id}
-        companies={(companies.data ?? []) as CateringCompany[]}
+        companies={(companies.data ?? []) as unknown as CateringCompany[]}
         vehicles={(vehicles.data ?? []) as Pick<VehicleRecord, "vehicle_number" | "pass_expiry_date">[]}
         drivers={
           (drivers.data ?? []) as Pick<

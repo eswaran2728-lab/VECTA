@@ -180,6 +180,7 @@ async function main() {
 
   const helperView = async (id) => {
     await simulateUser(id);
+    await db.exec("select set_config('role', 'service_role', true);"); // helpers are internal: not client-callable
     const r = await one('select public.current_role_name()::text as role, public.current_status()::text as status, public.current_station() as station, public.current_team() as team, public.is_monitor_or_above() as monitor;');
     await simulateService();
     return r;
@@ -367,8 +368,8 @@ async function main() {
     assert(noRls.length === 0, `every public table has RLS enabled${noRls.length ? ' (missing: ' + noRls.map((r) => r.relname).join(',') + ')' : ''}`);
     const allPolicies = (await db.query("select tablename, policyname from pg_policies where schemaname='public' and cmd='ALL';")).rows;
     assert(allPolicies.length === 0, `no FOR ALL policy remains in public${allPolicies.length ? ' (' + allPolicies.map((p) => p.policyname).join(', ') + ')' : ''}`);
-    const split = (await db.query("select count(*)::int as n from pg_policies where schemaname='public' and tablename='duty_zones' and policyname like 'duty_zones admin write (%';")).rows[0].n;
-    assert(split === 4, 'the former duty_zones FOR ALL policy is split into 4 operation-specific policies');
+    const zones = (await db.query("select cmd from pg_policies where schemaname='public' and tablename='duty_zones' order by cmd;")).rows.map((r) => r.cmd);
+    assert(zones.join() === 'DELETE,INSERT,SELECT,UPDATE', 'duty_zones has one canonical operation-specific policy per operation (no FOR ALL, no legacy ADMIN policy)');
     const anonTables = (await db.query("select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and has_table_privilege('anon', c.oid, 'select,insert,update,delete,truncate,references,trigger');")).rows;
     assert(anonTables.length === 0, `anon holds no privilege on any public table${anonTables.length ? ' (' + anonTables.map((r) => r.relname).join(',') + ')' : ''}`);
     const anonFns = (await db.query("select p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind='f' and has_function_privilege('anon', p.oid, 'execute') and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype='e');")).rows;
@@ -434,7 +435,7 @@ async function main() {
 
     // SEC014 acknowledgement special case is canonical (SO or DSE of the ASO's own station/team)
     const ackDef = (await one("select pg_get_functiondef('public.can_acknowledge_report(text,uuid)'::regprocedure) as d;")).d;
-    assert(/p_report_type = 'sec014'/.test(ackDef) && /in \('SO', 'DSE'\)/.test(ackDef), 'can_acknowledge_report keeps the SEC014 SO-or-DSE rule, expressed on canonical ranks');
+    assert(/p_report_type = 'sec014'/.test(ackDef) && /'so', 'sso', 'dse'/.test(ackDef) && /canon_/.test(ackDef), 'can_acknowledge_report keeps the SEC014 SO/SSO/DSE rule on canonical levels');
     assert(!/ops_group/.test(ackDef.replace(/--[^\n]*/g, '')), 'can_acknowledge_report does not reference ops_group');
     await simulateUser(ids.so);
     const none = (await db.query("select public.can_acknowledge_report('sec014', gen_random_uuid()) as ok;")).rows[0].ok;
@@ -470,6 +471,116 @@ async function main() {
     const forgedAdmin = await createUser('guard-forged-admin', { legacyRole: 'ADMIN' });
     const a2 = await tryUpdate(forgedAdmin);
     assert(a2.changed === 0 && a2.st === 'approved', 'a forged legacy ADMIN profile (no assignment) cannot modify another profile');
+  }
+
+  console.log('\n--- SECTION 8d: narrowed policies, grants, scope, states, anon, forged ranks ---');
+  {
+    // (a) no policy and no authorization function depends on the compatibility rank
+    const compatNames = ['current_role_name', 'current_role_rank', 'is_monitor_or_above', 'is_approved_management', 'submitter_role_rank', 'canonical_compat_role_for'];
+    const polRefs = (await db.query(
+      "select tablename, policyname from pg_policies where schemaname='public' and exists (select 1 from unnest($1::text[]) h where position(h in coalesce(qual,'') || coalesce(with_check,'')) > 0);",
+      [compatNames],
+    )).rows;
+    assert(polRefs.length === 0, `no RLS policy references the compatibility rank or a legacy role${polRefs.length ? ' (' + polRefs.map((r) => r.tablename + '.' + r.policyname).join(', ') + ')' : ''}`);
+    const fnRefs = (await db.query(
+      "select p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind in ('f','p') and not (p.proname = any($1)) and p.proname <> 'apply_compatibility_profile_fields' and exists (select 1 from unnest($1::text[]) h where position(h in p.prosrc) > 0);",
+      [compatNames],
+    )).rows;
+    assert(fnRefs.length === 0, `no function authorizes from the compatibility rank${fnRefs.length ? ' (' + fnRefs.map((r) => r.proname).join(', ') + ')' : ''}`);
+    const profRoleRefs = (await db.query("select tablename, policyname from pg_policies where schemaname='public' and (coalesce(qual,'') || coalesce(with_check,'')) ~ '(profiles|p)[.](role|ops_group|unified_role)';")).rows;
+    assert(profRoleRefs.length === 0, 'no policy reads profiles.role / unified_role / ops_group');
+
+    // (b) no blanket policies
+    const blanket = (await db.query("select tablename, policyname from pg_policies where schemaname='public' and (coalesce(qual,'')='true' or coalesce(with_check,'')='true');")).rows;
+    assert(blanket.length === 0, `no using(true)/with check(true) policy remains${blanket.length ? ' (' + blanket.map((r) => r.tablename + '.' + r.policyname).join(', ') + ')' : ''}`);
+    const updNoCheck = (await db.query("select tablename, policyname from pg_policies where schemaname='public' and cmd='UPDATE' and (qual is null or with_check is null);")).rows;
+    assert(updNoCheck.length === 0, `every UPDATE policy has both USING and WITH CHECK${updNoCheck.length ? ' (' + updNoCheck.map((r) => r.tablename + '.' + r.policyname).join(', ') + ')' : ''}`);
+    const publicRole = (await db.query("select tablename, policyname from pg_policies where schemaname='public' and 'public' = any(roles);")).rows;
+    assert(publicRole.length === 0, `no policy is granted to PUBLIC${publicRole.length ? ' (' + publicRole.map((r) => r.tablename + '.' + r.policyname).join(', ') + ')' : ''}`);
+
+    // (c) sensitive columns are not selectable
+    const colPriv = (await db.query("select has_column_privilege('authenticated','public.drivers','staff_ic_number','select') as ic, has_column_privilege('authenticated','public.drivers','airport_pass_number','select') as pass, has_column_privilege('authenticated','public.drivers','name','select') as nm, has_column_privilege('authenticated','public.vehicles','approved_by','select') as va;")).rows[0];
+    assert(colPriv.ic === false && colPriv.pass === false && colPriv.va === false && colPriv.nm === true, 'drivers/vehicles: IC numbers, pass numbers and audit fields are not selectable; minimal columns are');
+
+    // (d) reference reads need approved profile + active assignment; states fail closed
+    const refAso = await createUser('ref-aso');
+    await assign(refAso, 'aso', stationScope(kul, kulAlpha));
+    const refNone = await createUser('ref-unassigned');
+    const refPending = await createUser('ref-pending', { status: 'pending' });
+    await assign(refPending, 'aso', stationScope(kul, kulAlpha));
+    const refForged = await createUser('ref-forged-mgmt', { legacyRole: 'MANAGEMENT', opsGroup: 'operation_avsec', station: 'KUL - MAA', team: 'ALPHA' });
+    const stateUsers = {};
+    for (const [label, timing] of [['revoked', { revoked: new Date(Date.now() - 3600_000).toISOString() }], ['expired', { starts: new Date(Date.now() - 5 * 86400_000).toISOString(), ends: new Date(Date.now() - 86400_000).toISOString() }], ['future', { starts: new Date(Date.now() + 86400_000).toISOString() }]]) {
+      const id = await createUser(`ref-${label}`);
+      await assign(id, 'aso', stationScope(kul, kulAlpha), timing);
+      stateUsers[label] = id;
+    }
+    const rejected = await createUser('ref-rejected', { status: 'rejected' });
+    await assign(rejected, 'aso', stationScope(kul, kulAlpha));
+    const inactiveRole = await createUser('ref-inactive-role');
+    await assign(inactiveRole, 'aso', stationScope(kul, kulAlpha));
+    await db.query("update public.role_definitions set is_active = false where code = 'aso';");
+    const inactiveCanon = await (async () => { await simulateUser(inactiveRole); try { return (await one('select public.canon_is_active() as ok;')).ok; } finally { await simulateService(); } })();
+    await db.query("update public.role_definitions set is_active = true where code = 'aso';");
+    assert(inactiveCanon === false, 'an inactive role definition fails closed for canonical reference reads');
+    const readCount = async (id, table) => { await simulateUser(id); try { return (await one(`select count(*)::int as n from public.${table};`)).n; } finally { await simulateService(); } };
+    for (const table of ['stations', 'teams', 'shifts', 'aircraft_types', 'station_teams']) {
+      const base = (await one(`select count(*)::int as n from public.${table};`)).n;
+      if (base === 0) continue;
+      assert((await readCount(refAso, table)) === base, `${table}: an approved, actively assigned user reads the reference rows`);
+      for (const [label, id] of [['unassigned', refNone], ['pending profile', refPending], ['forged MANAGEMENT/ops_group legacy profile', refForged], ['revoked', stateUsers.revoked], ['expired', stateUsers.expired], ['future', stateUsers.future], ['rejected', rejected]]) {
+        assert((await readCount(id, table)) === 0, `${table}: ${label} reads nothing`);
+      }
+    }
+    await db.exec('set role anon;');
+    const anonRef = await expectFail(() => db.query('select count(*) from public.stations;'));
+    await simulateService();
+    assert(anonRef.failed, 'anon cannot read reference tables');
+
+    // (e) scope: station / team / hub visibility
+    const kulDse = await createUser('scope-dse-kul'); await assign(kulDse, 'dse', stationScope(kul, kulAlpha));
+    const penDse = await createUser('scope-so-pen'); await assign(penDse, 'so', stationScope(pen, penAlpha));
+    const hubUser = await createUser('scope-hub'); await assign(hubUser, 'hub_se', { aoc: myAoc, dept: opsDept, hub: kul.hub_id });
+    const opMgr = await createUser('scope-opmgr'); await assign(opMgr, 'operation_manager', { aoc: myAoc, dept: opsDept });
+    const probe = async (id, sql, params) => { await simulateUser(id); try { return (await one(sql, params)).ok; } finally { await simulateService(); } };
+    const vis = (id, st, tm) => probe(id, 'select public.canon_team_visible($1,$2) as ok;', [st, tm]);
+    const sv = (id, st) => probe(id, 'select public.canon_station_visible($1) as ok;', [st]);
+    assert((await sv(kulDse, 'KUL - MAA')) === true && (await sv(kulDse, 'PEN')) === false, 'cross-station: a KUL dse sees KUL but not PEN');
+    assert((await vis(kulDse, 'KUL - MAA', 'ALPHA')) === true && (await vis(kulDse, 'KUL - MAA', 'BRAVO')) === false, 'cross-team: a dse sees its own team only');
+    assert((await sv(hubUser, 'KUL - MAA')) === true, 'a hub_se sees stations of its own hub (hub-wide oversight)');
+    const otherHub = await one('select s.code from public.org_stations s where s.hub_id is distinct from $1 limit 1;', [kul.hub_id]);
+    if (otherHub) assert((await sv(hubUser, otherHub.code)) === false, 'cross-hub: a hub_se cannot see a station of another hub');
+    assert((await sv(opMgr, 'PEN')) === true, 'operation_manager sees every station through its CANONICAL role code');
+    assert((await sv(refForged, 'KUL - MAA')) === false && (await sv(refNone, 'KUL - MAA')) === false, 'forged MANAGEMENT/ops_group profile and unassigned users see no station');
+
+    // operation_manager held only in another AOC must not reach MY legacy data
+    const zzAoc = (await one("select id from public.aocs where code <> 'MY' limit 1;"))?.id;
+    if (zzAoc) {
+      const zzDept = (await one("select id from public.departments where aoc_id = $1 limit 1;", [zzAoc]))?.id ?? null;
+      const zzMgr = await createUser('scope-zz-opmgr');
+      const ins = await expectFail(() => db.query("insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, department_id, starts_at) values ($1,$2,$3,$4, now() - interval '1 day');", [zzMgr, roleMap.get('operation_manager'), zzAoc, zzDept]));
+      if (!ins.failed) {
+        assert((await sv(zzMgr, 'KUL - MAA')) === false && (await readCount(zzMgr, 'stations')) === 0, 'an operation_manager in another AOC reaches no MY legacy data (compat mapping cannot bypass canonical scope)');
+      }
+    }
+
+    // profiles: others' rows need scope
+    await simulateUser(kulDse);
+    const seen = (await db.query('select id from public.profiles;')).rows.map((r) => r.id);
+    await simulateService();
+    assert(seen.includes(kulDse) && !seen.includes(penDse), 'profiles: a dse reads itself and its own scope, not another station');
+    await simulateUser(refForged);
+    const forgedSeen = (await db.query('select id from public.profiles;')).rows.map((r) => r.id);
+    await simulateService();
+    assert(forgedSeen.length === 1 && forgedSeen[0] === refForged, 'a forged MANAGEMENT profile reads only its own profile row');
+
+    // (f) security-definer functions executable by clients: identity-gating inventory
+    const definers = (await db.query(
+      "select p.proname, p.prorettype::regtype::text as ret, p.prosrc from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prosecdef and p.prokind='f' and has_function_privilege('authenticated', p.oid, 'execute');",
+    )).rows;
+    const gate = /auth[.]uid\(\)|auth[.]role\(\)|canon_|has_active_role|has_role_in_scope|has_any_active|is_entity_admin|can_user_|can_acknowledge|can_view_report|my_aoc_id|current_status|current_station|current_team|is_announcement_visible|is_super_admin|has_active_entity/i;
+    const ungated = definers.filter((f) => f.ret !== 'trigger' && !gate.test(f.prosrc)).map((f) => f.proname);
+    console.log('INFO: security-definer functions executable by authenticated with no inline identity reference:', ungated.length, ungated.join(','));
   }
 
   console.log('\n--- SECTION 9: migration is idempotent ---');
