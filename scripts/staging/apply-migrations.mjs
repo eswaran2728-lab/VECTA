@@ -24,6 +24,21 @@ const require = createRequire(import.meta.url);
 const APPROVED_STAGING_REF = "ddlctzbnqewubltcavkh";
 const FORBIDDEN_PROD_REF = "zsxneokqulktgnccxgkz";
 const EXPECTED_BRANCH = "dashboard/role-workspaces-adjustment";
+const EXPECTED_PRE_COUNT = 57;
+const EXPECTED_POST_COUNT = 59;
+const PREFLIGHT_ONLY = process.argv.includes("--preflight-only");
+const PHASE13_VERSIONS = ["20261015000001", "20261016000001"];
+const PHASE13_ABSENT_TABLES = ["phase13_readiness_access_log", "caterlink_transaction_pdfs"];
+const PHASE13_ABSENT_FUNCTIONS = [
+  "get_release_readiness_report_secure", "get_legacy_role_mapping_report_secure",
+  "view_release_readiness_report_secure", "view_legacy_role_mapping_report_secure",
+  "record_caterlink_transaction_pdf_secure", "list_entity_registration_requests_secure",
+  "resolve_operating_entity_id_secure"
+];
+const CANONICAL_BUCKETS = [
+  "report-attachments", "signatures", "incident-photos", "completed-forms",
+  "sat-combined-reports", "caterlink-final-pdfs", "announcement-attachments"
+];
 
 const MIGRATIONS_DIR = path.resolve(import.meta.dirname, "../../supabase/migrations");
 
@@ -215,6 +230,11 @@ async function main() {
   if (currentBranch !== EXPECTED_BRANCH) {
     throw new Error(`Branch mismatch: expected ${EXPECTED_BRANCH}, got ${currentBranch}`);
   }
+  const dirty = child_process.execSync("git status --porcelain", { encoding: "utf8" }).trim();
+  if (dirty) {
+    throw new Error("Working tree is not clean; refusing to apply migrations from uncommitted files.");
+  }
+  logger.log("Working tree verified clean.");
 
   // 2. Environment & Project Ref Verification
   if (!process.env.STAGING_DATABASE_URL && fs.existsSync(path.join(repoRoot, ".env.local"))) {
@@ -282,8 +302,8 @@ async function main() {
     // 4.1 Check live migration history
     const liveMigs = await client.query("SELECT version, name FROM supabase_migrations.schema_migrations ORDER BY version ASC;");
     logger.log(`Live migrations count: ${liveMigs.rows.length}`);
-    if (liveMigs.rows.length < 51 || liveMigs.rows.length > 59) {
-      throw new Error(`Unexpected live migrations count: ${liveMigs.rows.length} (expected between 51 and 59)`);
+    if (liveMigs.rows.length !== EXPECTED_PRE_COUNT) {
+      throw new Error(`Unexpected live migrations count: ${liveMigs.rows.length} (expected exactly ${EXPECTED_PRE_COUNT})`);
     }
 
     const versions = liveMigs.rows.map(r => r.version);
@@ -315,6 +335,25 @@ async function main() {
       throw new Error(`Pre-migration account counts unexpected: expected 16 users/profiles, found ${preAuthCount} users and ${preProfileCount} profiles`);
     }
 
+    // 4.25 Both Phase 13 migrations and all Phase 13 target objects must be absent.
+    for (const v of PHASE13_VERSIONS) {
+      if (liveVersions.has(v)) throw new Error(`Phase 13 migration ${v} is already recorded; refusing to proceed.`);
+    }
+    const p13Tables = await client.query(
+      "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = ANY($1::text[]);",
+      [PHASE13_ABSENT_TABLES]
+    );
+    const p13Funcs = await client.query(
+      "SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = ANY($1::text[]);",
+      [PHASE13_ABSENT_FUNCTIONS]
+    );
+    if (p13Tables.rows.length > 0 || p13Funcs.rows.length > 0) {
+      throw new Error(`Phase 13 objects already present (tables=${p13Tables.rows.length}, functions=${p13Funcs.rows.length}); refusing to proceed.`);
+    }
+    const preBuckets = await client.query("SELECT id FROM storage.buckets ORDER BY id;");
+    const preCron = await client.query("SELECT count(*) FROM cron.job;");
+    logger.log(`Phase 13 absence verified. Pre-state: buckets=[${preBuckets.rows.map((b) => b.id).join(", ")}], cron jobs=${preCron.rows[0].count}`);
+
     // 4.3 Confirm all remaining migration files exist locally
     for (const m of REMAINING_MIGRATIONS) {
       const fullPath = path.join(MIGRATIONS_DIR, m.filename);
@@ -323,6 +362,11 @@ async function main() {
       }
     }
     logger.log(`All ${REMAINING_MIGRATIONS.length} remaining migration files exist locally and are ready.`);
+
+    if (PREFLIGHT_ONLY) {
+      logger.log("PREFLIGHT ONLY: all pre-application gates passed. No migration was applied; nothing was written.");
+      return;
+    }
 
     // =========================================================================
     // EXECUTION: Apply migrations sequentially, one transaction per file
@@ -415,24 +459,18 @@ async function main() {
 
         // Record in supabase_migrations.schema_migrations
         await client.query(
-          `INSERT INTO supabase_migrations.schema_migrations (version, name, statements) 
-           VALUES ($1, $2, $3) 
+          `INSERT INTO supabase_migrations.schema_migrations (version, name, statements)
+           VALUES ($1, $2, $3)
            ON CONFLICT (version) DO NOTHING;`,
           [version, name, [sqlContent]]
         );
 
-        await client.query("COMMIT;");
-        const elapsedMs = Date.now() - startTime;
-        logger.log(`[${i + 1}/${REMAINING_MIGRATIONS.length}] COMMITTED: ${filename} in ${elapsedMs}ms`);
-
-        // Post-migration check for this file
-        // 1. Check history entry
+        // ---- VERIFY INSIDE THE TRANSACTION, BEFORE COMMIT ----
         const historyCheck = await client.query("SELECT version, name FROM supabase_migrations.schema_migrations WHERE version = $1;", [version]);
         if (historyCheck.rows.length !== 1) {
           throw new Error(`History verification failed for ${version}`);
         }
 
-        // 2. Check expected objects if specified
         if (item.expectedObjects && item.expectedObjects.length > 0) {
           const objCheck = await client.query(`
             SELECT c.relname FROM pg_class c
@@ -447,47 +485,75 @@ async function main() {
           }
         }
 
-        // 3. Row counts
         const rowCounts = {};
         for (const cq of (item.countQueries || [])) {
           const res = await client.query(cq.query);
           rowCounts[cq.label] = res.rows[0].count;
         }
 
-        // If Phase 2, perform specific Phase 2 verification:
+        const uCheck = await client.query("SELECT count(*) FROM auth.users;");
+        const pCheck = await client.query("SELECT count(*) FROM public.profiles;");
+        if (parseInt(uCheck.rows[0].count, 10) !== 16 || parseInt(pCheck.rows[0].count, 10) !== 16) {
+          throw new Error(`User/profile survival failed after ${filename}: users=${uCheck.rows[0].count}, profiles=${pCheck.rows[0].count}`);
+        }
+        const trigCheck = await client.query(`
+          SELECT tgenabled FROM pg_trigger
+          WHERE tgname = 'profiles_enforce_self_update' AND tgrelid = 'public.profiles'::regclass;
+        `);
+        if (trigCheck.rows.length === 0 || trigCheck.rows[0].tgenabled !== "O") {
+          throw new Error(`Trigger profiles_enforce_self_update not enabled after ${filename}`);
+        }
+
         if (version === "20260928000001") {
-          // Verify trigger profiles_enforce_self_update is ENABLED
-          const trigCheck = await client.query(`
-            SELECT tgname, tgenabled FROM pg_trigger
-            WHERE tgname = 'profiles_enforce_self_update'
-              AND tgrelid = 'public.profiles'::regclass;
-          `);
-          if (trigCheck.rows.length === 0) {
-            throw new Error("Trigger profiles_enforce_self_update not found on public.profiles!");
-          }
-          const tgenabled = trigCheck.rows[0].tgenabled;
-          logger.log(`Phase 2 verification: trigger profiles_enforce_self_update tgenabled='${tgenabled}' (expected 'O')`);
-          if (tgenabled !== "O") {
-            throw new Error(`Trigger profiles_enforce_self_update not properly re-enabled! tgenabled='${tgenabled}'`);
-          }
-
-          // Verify 16 users and profiles still exist
-          const uCheck = await client.query("SELECT count(*) FROM auth.users;");
-          const pCheck = await client.query("SELECT count(*) FROM public.profiles;");
-          if (parseInt(uCheck.rows[0].count, 10) !== 16 || parseInt(pCheck.rows[0].count, 10) !== 16) {
-            throw new Error(`User/profile survival failed in Phase 2: users=${uCheck.rows[0].count}, profiles=${pCheck.rows[0].count}`);
-          }
-          logger.log("Phase 2 verification: 16 Auth users and 16 profiles verified intact.");
-
-          // Check hierarchy references backfilled
           const backfillCheck = await client.query(`
             SELECT count(*) FROM public.profiles
             WHERE station IN ('KUL - MAA', 'KUL - AAX') AND (aoc_id IS NULL OR operating_entity_id IS NULL);
           `);
-          logger.log(`Phase 2 verification: unbackfilled KUL profiles = ${backfillCheck.rows[0].count}`);
           if (parseInt(backfillCheck.rows[0].count, 10) > 0) {
             throw new Error(`Phase 2 backfill incomplete: ${backfillCheck.rows[0].count} KUL profiles have NULL hierarchy references`);
           }
+        }
+
+        if (version === "20261015000001") {
+          const fns = await client.query(
+            "SELECT p.proname, pg_get_functiondef(p.oid) AS def FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = ANY($1::text[]);",
+            [["get_legacy_role_mapping_report_secure", "get_release_readiness_report_secure", "view_legacy_role_mapping_report_secure", "view_release_readiness_report_secure"]]
+          );
+          if (fns.rows.length !== 4) throw new Error(`Expected 4 readiness functions, found ${fns.rows.length}`);
+          for (const f of fns.rows) {
+            if (/unified_role|'SUPER_ADMIN'/.test(f.def)) throw new Error(`${f.proname} still references a legacy Super Admin column/role`);
+          }
+          const gated = fns.rows.filter((f) => f.def.includes("has_active_role('super_admin')"));
+          if (gated.length !== 2) throw new Error(`Expected 2 readiness reports gated on has_active_role('super_admin'), found ${gated.length}`);
+          const pol = await client.query("SELECT qual FROM pg_policies WHERE schemaname = 'public' AND tablename = 'phase13_readiness_access_log';");
+          if (pol.rows.length !== 1 || !String(pol.rows[0].qual).includes("has_active_role") || /unified_role|SUPER_ADMIN/.test(String(pol.rows[0].qual))) {
+            throw new Error("phase13_readiness_access_log RLS policy is not the canonical has_active_role gate");
+          }
+        }
+
+        if (version === "20261016000001") {
+          const bk = await client.query("SELECT id, public FROM storage.buckets;");
+          const ids = new Set(bk.rows.map((b) => b.id));
+          for (const b of CANONICAL_BUCKETS) if (!ids.has(b)) throw new Error(`Missing canonical bucket '${b}' after ${filename}`);
+          for (const b of ["announcement-photos", "caterlink-documents"]) if (ids.has(b)) throw new Error(`Forbidden alias bucket '${b}' present after ${filename}`);
+          if (bk.rows.some((b) => CANONICAL_BUCKETS.includes(b.id) && b.public)) throw new Error("A canonical bucket is public; all must be private");
+          const rr = await client.query(
+            "SELECT pg_get_functiondef(p.oid) AS def FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'get_release_readiness_report_secure';"
+          );
+          if (rr.rows.length !== 1 || /unified_role|'SUPER_ADMIN'/.test(rr.rows[0].def) || !rr.rows[0].def.includes("has_active_role('super_admin')")) {
+            throw new Error("Redefined readiness report is not gated on the canonical super_admin assignment");
+          }
+          const cron = await client.query("SELECT command, count(*) FROM cron.job GROUP BY command HAVING count(*) > 1;");
+          if (cron.rows.length > 0) throw new Error("Duplicate cron jobs detected");
+        }
+
+        await client.query("COMMIT;");
+        const elapsedMs = Date.now() - startTime;
+        logger.log(`[${i + 1}/${REMAINING_MIGRATIONS.length}] COMMITTED (verified before commit): ${filename} in ${elapsedMs}ms`);
+
+        const postCommit = await client.query("SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = $1;", [version]);
+        if (postCommit.rows.length !== 1) {
+          throw new Error(`Post-commit history confirmation failed for ${version}`);
         }
 
         const logEntry = {
@@ -534,6 +600,12 @@ async function main() {
     const lastMigration = postMigs.rows[postMigs.rows.length - 1];
     logger.log(`Final migration count: ${finalCount}`);
     logger.log(`Last recorded migration: ${lastMigration.version} (${lastMigration.name})`);
+    if (finalCount !== EXPECTED_POST_COUNT) {
+      throw new Error(`Expected exactly ${EXPECTED_POST_COUNT} recorded migrations, found ${finalCount}`);
+    }
+    if (lastMigration.version !== "20261016000001" || lastMigration.name !== "phase13_storage_and_admin_workflows") {
+      throw new Error(`Unexpected last migration ${lastMigration.version} (${lastMigration.name})`);
+    }
 
     // 2. Auth users and profiles survival
     const finalUsers = await client.query("SELECT count(*) FROM auth.users;");
