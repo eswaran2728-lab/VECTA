@@ -69,3 +69,16 @@ role_definition_id, revoked_at)` for role assignments) and skips with
 - It does not delete the bootstrap Super Admin account under any
   circumstance — it isn't in the `vecta.uat.` prefix, so `teardown-test-accounts.mjs`
   structurally cannot touch it.
+
+## Dashboard-review run (2026-10-05)
+
+`provision-test-accounts.mjs --live` now runs hard pre-write gates (`lib/run-gates.mjs`): exact repository
+path/branch, HEAD descending from the authorized base with only tooling/tests/docs changed, clean tree,
+origin check, approved-staging-only environment, verified TLS, both encrypted backups authenticating, exactly
+60 migrations ending at `20261020000001`, and the 16/16/16/7 baseline with zero run accounts. Account emails are
+`vecta.uat.<run-id>.<slug>@example.invalid`; passwords are written only to
+`%TEMP%\vecta-staging-credentials\<run-id>\credentials-<run-id>.json` (mode 0600) and a manifest of every
+object ID to `manifest-<run-id>.json`. Re-running reconciles by email/profile/assignment and never rotates a
+password. `verify-dashboard-review-accounts.mjs` performs the database checks and one real publishable-key
+sign-in per account. `teardown-test-accounts.mjs` is manifest-driven, dry-run by default and needs
+`--live --confirm-destructive=<run-id>` to delete anything.

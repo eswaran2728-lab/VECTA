@@ -34,6 +34,15 @@ export const STATION_VARIANTS = [
 ];
 // foreign_aoc is excluded by user decision (Malaysia AOC only).
 export const NEGATIVE_STATES = ["pending", "rejected", "deactivated", "revoked", "expired", "future_dated"];
+// Account slugs fixed by the owner for the dashboard-review run.
+export const NEGATIVE_LABELS = {
+  pending: "neg-pending-profile",
+  rejected: "neg-rejected-profile",
+  deactivated: "neg-deactivated-profile",
+  revoked: "neg-revoked-assignment",
+  expired: "neg-expired-assignment",
+  future_dated: "neg-future-assignment",
+};
 
 export function needsTeam(roleCode) {
   return [...SAT_ROLES, ...PROFILING_ROLES, ...DSE_ROLES, ...STATION_ROLES].includes(roleCode);
@@ -153,7 +162,7 @@ export function buildAccountPlan() {
   }
   plan.push(entry("station_variant", "aso-no-caterlink", "aso", "approved", describeRoleScope("aso", { stationCode: NO_CATERLINK_STATION })));
   for (const state of NEGATIVE_STATES) {
-    plan.push(entry("negative", `neg-${state.replace("_", "-")}`, "aso", state, describeRoleScope("aso", { stationCode: NEGATIVE_STATE_STATION })));
+    plan.push(entry("negative", NEGATIVE_LABELS[state], "aso", state, describeRoleScope("aso", { stationCode: NEGATIVE_STATE_STATION })));
   }
   return plan;
 }
