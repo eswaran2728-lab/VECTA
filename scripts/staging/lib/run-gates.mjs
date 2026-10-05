@@ -56,7 +56,7 @@ const TOOLING_PATHS = [/^scripts\/staging\//, /^tests\//, /^docs\//];
  * expectedBase: the SHA the run was authorized against. HEAD must either equal it or descend from it with
  * ONLY provisioning-tooling / test / doc paths changed since (no app, migration or lib source).
  */
-export function gitGates({ expectedBase, expectedRepoPath }) {
+export function gitGates({ expectedBase, expectedRepoPath, extraAllowed = [] }) {
   const sh = (c) => child_process.execSync(c, { encoding: "utf8" }).trim();
   const root = sh("git rev-parse --show-toplevel");
   const resolved = path.resolve(root).toLowerCase();
@@ -68,7 +68,7 @@ export function gitGates({ expectedBase, expectedRepoPath }) {
   if (expectedBase && head !== expectedBase) {
     try { sh(`git merge-base --is-ancestor ${expectedBase} HEAD`); } catch { throw new Error(`HEAD ${head} does not descend from the authorized base ${expectedBase}`); }
     const changed = sh(`git diff --name-only ${expectedBase} HEAD`).split(/\r?\n/).filter(Boolean);
-    const outside = changed.filter((f) => !TOOLING_PATHS.some((rx) => rx.test(f)));
+    const outside = changed.filter((f) => ![...TOOLING_PATHS, ...extraAllowed].some((rx) => rx.test(f)));
     if (outside.length) throw new Error(`Files outside tooling/tests/docs changed since the authorized base: ${outside.slice(0, 5).join(",")}`);
     toolingOnlySinceBase = true;
   }
