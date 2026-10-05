@@ -750,7 +750,7 @@ test("MANDATORY 18b / caller change: notifyOvertimeApproval.ts resolves admin em
 test("MANDATORY 18c/19 / import-boundary: lib/supabase/admin.ts (the service-role client) is guarded with \"server-only\" and its callers are \"use server\" files, so it can never be pulled into a client bundle", () => {
   const adminSrc = fs.readFileSync(new URL("../lib/supabase/admin.ts", import.meta.url), "utf8");
   assert.match(adminSrc, /^import "server-only";/m);
-  assert.match(adminSrc, /process\.env\.SUPABASE_SERVICE_ROLE_KEY!/);
+  assert.match(adminSrc, /process\.env\.SUPABASE_SECRET_KEY \|\| process\.env\.SUPABASE_SERVICE_ROLE_KEY\)!/);
 
   // The two server actions that trigger notification (report submission,
   // overtime approval) must be "use server" -- that's what makes them

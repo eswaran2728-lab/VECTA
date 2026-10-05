@@ -51,8 +51,6 @@ function formatRoleChip(role: string | null): string | null {
       return "SO";
     case "aso":
       return "ASO";
-    case "super_admin":
-      return "Super Admin";
     case "vendor":
       return "Vendor";
     default:

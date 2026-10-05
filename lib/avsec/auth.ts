@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Profile } from "./types";
 import { ORG_WIDE_ROLES, type UserRole } from "./reference-data";
+import { hasActiveSuperAdminRole } from "@/lib/super-admin/authority";
 
 export async function getCurrentUser() {
   const supabase = await createClient();
@@ -30,7 +31,8 @@ export function landingPathForRole(role: UserRole): string {
 export async function requireProfile(): Promise<Profile> {
   const profile = await getCurrentProfile();
   if (!profile) redirect("/login");
-  if (profile.role === "SUPER_ADMIN") redirect("/super-admin");
+  // Canonical Super Admin (active Phase 3 assignment) never works operational routes.
+  if (await hasActiveSuperAdminRole()) redirect("/super-admin");
   // Org-wide roles (Enforcement/Management) aren't tied to a station or team, so
   // both are expected blank for them — only the team-scoped roles (ASO/SO/DSE) must
   // have station+team set.

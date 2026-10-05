@@ -28,6 +28,14 @@ export function isAdminPathForbidden(path: string, role: string | null): boolean
   return path.startsWith("/avsec/admin") && role !== "management" && role !== "admin";
 }
 
+// Effective role for edge gating. Super Admin comes ONLY from the canonical
+// Phase 3 active-assignment decision; a legacy "super_admin" value in any
+// profile/user column never confers it (it is discarded to null).
+export function resolveEffectiveRole(legacyRole: string | null, canonicalSuperAdmin: boolean): string | null {
+  if (canonicalSuperAdmin) return "super_admin";
+  return legacyRole === "super_admin" ? null : legacyRole;
+}
+
 // Super Admin platform portal: strictly for super_admin
 export function isSuperAdminPathForbidden(path: string, role: string | null): boolean {
   return path.startsWith("/super-admin") && role !== "super_admin";

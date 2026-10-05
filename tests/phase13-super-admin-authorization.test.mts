@@ -79,10 +79,10 @@ test("phase13 super-admin: client-facing readiness functions keep the audited-wr
 test("phase13 super-admin: readiness page and server helper use the canonical role-assignment check", () => {
   const page = read("app/super-admin/readiness/page.tsx");
   assert.match(page, /hasActiveSuperAdminRole/);
-  assert.ok(!/\bisSuperAdmin\b/.test(page), "readiness page must not use the legacy isSuperAdmin() gate");
+  assert.ok(!/isSuperAdmin/.test(page), "readiness page must not use the legacy isSuperAdmin() name");
 
-  const actions = read("lib/super-admin/actions.ts");
-  const fn = actions.slice(actions.indexOf("export async function hasActiveSuperAdminRole"), actions.indexOf("export async function getOrganizations"));
+  const authority = read("lib/super-admin/authority.ts");
+  const fn = authority.slice(authority.indexOf("export async function hasActiveSuperAdminRole"), authority.indexOf("export async function isProfileActiveSuperAdmin"));
   assert.match(fn, /rpc\("has_active_role", \{ p_role_code: "super_admin" \}\)/);
   assert.ok(!/unified_role|SUPER_ADMIN|from\("profiles"\)/.test(fn), "canonical helper must not read legacy profile columns");
 });

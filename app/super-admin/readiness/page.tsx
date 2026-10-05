@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { hasActiveSuperAdminRole } from "@/lib/super-admin/actions";
+import { hasActiveSuperAdminRole } from "@/lib/super-admin/authority";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { signOut } from "@/lib/avsec/profile-actions";
 

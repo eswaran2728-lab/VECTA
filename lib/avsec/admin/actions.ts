@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireRole, MANAGEMENT_ROLES } from "@/lib/avsec/auth";
+import { isProfileActiveSuperAdmin } from "@/lib/super-admin/authority";
 import {
   REQUESTABLE_ROLES,
   ORG_WIDE_ROLES,
@@ -272,8 +273,7 @@ export async function deactivateUser(formData: FormData) {
   }
 
   const supabase = await createClient();
-  const { data: target } = await supabase.from("profiles").select("role, unified_role").eq("id", profileId).maybeSingle();
-  if ((target?.role as string) === "SUPER_ADMIN" || target?.unified_role === "super_admin") {
+  if (await isProfileActiveSuperAdmin(profileId)) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent("Cannot deactivate a Super Admin account."));
   }
 
@@ -300,8 +300,7 @@ export async function deleteUserAccount(formData: FormData) {
   }
 
   const supabase = await createClient();
-  const { data: target } = await supabase.from("profiles").select("role, unified_role").eq("id", profileId).maybeSingle();
-  if ((target?.role as string) === "SUPER_ADMIN" || target?.unified_role === "super_admin") {
+  if (await isProfileActiveSuperAdmin(profileId)) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent("Cannot delete a Super Admin account."));
   }
 
@@ -353,8 +352,7 @@ export async function updateUserAssignment(formData: FormData) {
   if (!profileId || !station || !role) return;
 
   const supabase = await createClient();
-  const { data: target } = await supabase.from("profiles").select("role, unified_role").eq("id", profileId).maybeSingle();
-  if ((target?.role as string) === "SUPER_ADMIN" || target?.unified_role === "super_admin") {
+  if (await isProfileActiveSuperAdmin(profileId)) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent("Cannot reassign a Super Admin account."));
   }
 

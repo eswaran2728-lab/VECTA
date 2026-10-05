@@ -6,6 +6,7 @@ import {
   isSuperAdminPathForbidden,
   isOperationalPathForbiddenForSuperAdmin,
   isReadinessPath,
+  resolveEffectiveRole,
 } from "./middleware-gate-logic";
 
 
@@ -128,12 +129,9 @@ export async function updateSession(request: NextRequest) {
       return supabaseResponse;
     }
 
-    const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
-      supabase.from("profiles").select("unified_role, role").eq("id", user.id).maybeSingle(),
-      supabase.from("users").select("unified_role, role").eq("id", user.id).maybeSingle(),
-    ]);
-    const uRole = avsecProfile?.unified_role ?? icmsProfile?.unified_role ?? avsecProfile?.role ?? icmsProfile?.role;
-    if (uRole === "super_admin" || uRole === "SUPER_ADMIN") {
+    // Canonical Super Admin decision (active Phase 3 assignment) only.
+    const { data: loginIsSuperAdmin } = await supabase.rpc("has_active_role", { p_role_code: "super_admin" });
+    if (loginIsSuperAdmin === true) {
       const url = request.nextUrl.clone();
       url.pathname = "/super-admin";
       url.search = "";
@@ -251,7 +249,12 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    const role = (profile?.unified_role ?? (profile?.role === "SUPER_ADMIN" ? "super_admin" : isCaterLinkUser ? "vendor" : null)) as string | null;
+    // Super Admin is decided by the canonical active-assignment RPC, never by
+    // a legacy profile/user column; every other role keeps the legacy
+    // unified_role compatibility value.
+    const { data: canonicalSuperAdmin } = await supabase.rpc("has_active_role", { p_role_code: "super_admin" });
+    const legacyRole = (profile?.unified_role ?? (isCaterLinkUser ? "vendor" : null)) as string | null;
+    const role = resolveEffectiveRole(legacyRole, canonicalSuperAdmin === true);
 
     // Super Admin: platform portal only. Forbidden from operational routes.
     if (isOperationalPathForbiddenForSuperAdmin(path, role) || (path === "/" && role === "super_admin")) {

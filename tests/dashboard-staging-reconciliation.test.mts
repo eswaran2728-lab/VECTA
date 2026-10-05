@@ -86,7 +86,7 @@ test("staging reconciliation: corrected account-plan arithmetic -- base + additi
 });
 
 test("staging reconciliation: provision-test-accounts.mjs's station variants no longer include a redundant PEN entry", () => {
-  const source = fs.readFileSync(path.join(REPO_ROOT, "scripts", "staging", "provision-test-accounts.mjs"), "utf8");
+  const source = fs.readFileSync(path.join(REPO_ROOT, "scripts", "staging", "lib", "team-plan.mjs"), "utf8");
   const stationVariantsBlock = source.slice(source.indexOf("const STATION_VARIANTS"), source.indexOf("];", source.indexOf("const STATION_VARIANTS")));
   assert.ok(!/label:\s*["']pen["']/i.test(stationVariantsBlock), "PEN must not appear as a station variant -- it duplicates the base sso/so/aso accounts' own default station");
   assert.ok(/label:\s*["']kul["']/i.test(stationVariantsBlock));

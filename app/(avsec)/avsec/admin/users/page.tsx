@@ -5,6 +5,7 @@ import { CreateAccountForm } from "@/components/avsec/admin/CreateAccountForm";
 import { UsersTable } from "@/components/avsec/admin/UsersTable";
 import { PendingApprovalRow } from "@/components/avsec/admin/PendingApprovalRow";
 import type { Profile } from "@/lib/avsec/types";
+import { getActiveSuperAdminProfileIds } from "@/lib/super-admin/authority";
 
 export default async function AdminUsersPage({
   searchParams: searchParamsPromise,
@@ -17,6 +18,8 @@ export default async function AdminUsersPage({
   const supabase = await createClient();
   const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
   const profiles = (data as unknown as Profile[]) ?? [];
+
+  const protectedIds = [...(await getActiveSuperAdminProfileIds(profiles.map((p) => p.id)))];
 
   const pending = profiles.filter((p) => p.status === "pending");
   const reviewed = profiles.filter((p) => p.status !== "pending");
@@ -69,7 +72,7 @@ export default async function AdminUsersPage({
           </section>
         )}
 
-        <UsersTable users={reviewed} />
+        <UsersTable users={reviewed} protectedProfileIds={protectedIds} />
       </div>
     </main>
   );

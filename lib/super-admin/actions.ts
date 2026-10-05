@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hasActiveSuperAdminRole } from "./authority";
 
 export interface OrganizationRow {
   id: string;
@@ -13,35 +14,10 @@ export interface OrganizationRow {
   created_at: string;
 }
 
+// Canonical authority only (active Phase 3 super_admin assignment) -- see
+// lib/super-admin/authority.ts. Legacy profile/user role columns are never read.
 export async function isSuperAdmin(): Promise<boolean> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return false;
-
-  const [{ data: avsecProfile }, { data: icmsProfile }] = await Promise.all([
-    supabase.from("profiles").select("role, unified_role").eq("id", user.id).maybeSingle(),
-    supabase.from("users").select("role, unified_role").eq("id", user.id).maybeSingle(),
-  ]);
-
-  const p = avsecProfile ?? icmsProfile;
-  if (!p) return false;
-  return p.role === "SUPER_ADMIN" || p.unified_role === "super_admin";
-}
-
-// Canonical Super Admin authority: an active, non-revoked, currently
-// effective Phase 3 super_admin role assignment on an approved profile,
-// evaluated by the database from auth.uid(). Used by the Phase 13 readiness
-// portal; independent of profiles.unified_role / legacy profiles.role.
-export async function hasActiveSuperAdminRole(): Promise<boolean> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return false;
-  const { data, error } = await supabase.rpc("has_active_role", { p_role_code: "super_admin" });
-  return !error && data === true;
+  return hasActiveSuperAdminRole();
 }
 
 export async function getOrganizations(): Promise<OrganizationRow[]> {

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/lib/avsec/profile-actions";
@@ -36,6 +37,11 @@ export default async function SuperAdminPage() {
       />
 
       <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+        <div className="mb-4 flex justify-end">
+          <Link href="/super-admin/readiness" className="btn-secondary">
+            Release Readiness
+          </Link>
+        </div>
         <OrgManager initialOrgs={orgs} userName={name} />
       </div>
     </main>

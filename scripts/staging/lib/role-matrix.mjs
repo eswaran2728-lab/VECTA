@@ -13,6 +13,8 @@
 // resolve them by CODE (never a hardcoded id) against whatever Malaysia
 // AOC data already exists in the target project.
 
+import { TeamNotEstablishedError, teamNameForStation } from "./team-constants.mjs";
+
 export const INTERNATIONAL_ROLES = ["airasia_management", "ghod", "global_reporting_controller", "super_admin"];
 export const ENTITY_LEADERSHIP_ROLES = ["maa_boss", "maa_admin", "aax_boss", "aax_admin"];
 export const DEPARTMENT_LEADERSHIP_ROLES = ["operation_manager", "main_enforcement", "compliance", "caterlink_management"];
@@ -128,14 +130,18 @@ export async function resolveRoleScope(client, roleCode, opts = {}) {
     return { aoc_id: myAoc.id, operating_entity_id: null, department_id: dept.id, unit_id: null, hub_id: station.hub_id, station_id: null, team_id: null, entityMembershipNeeded: true, membershipEntityCode: entityCode };
   }
 
-  const teamName = opts.teamName ?? `UAT-${roleCode}`;
+  // Teams are NEVER created or invented here. The team must already exist in
+  // org_teams (seeded from the established plan by seed-org-teams.mjs).
+  const teamName = opts.teamName ?? teamNameForStation(station.code);
+  if (!teamName) throw new TeamNotEstablishedError(roleCode, station.code, null);
   const { data: team, error: teamError } = await client
     .from("org_teams")
-    .upsert({ station_id: station.id, name: teamName }, { onConflict: "station_id,name" })
     .select("id")
-    .single();
-  if (teamError || !team) throw new Error(`Could not resolve/create team '${teamName}' at station '${station.code}' for role ${roleCode}: ${teamError?.message}`);
-
+    .eq("station_id", station.id)
+    .eq("name", teamName)
+    .maybeSingle();
+  if (teamError) throw new Error(`Could not look up team '${teamName}' at station '${station.code}' for role ${roleCode}: ${teamError.message}`);
+  if (!team) throw new TeamNotEstablishedError(roleCode, station.code, teamName);
   return {
     aoc_id: myAoc.id,
     operating_entity_id: null,

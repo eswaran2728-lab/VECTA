@@ -7,7 +7,7 @@ import { formatDateTimeMY } from "@/lib/avsec/datetime";
 import type { Profile } from "@/lib/avsec/types";
 import { cn } from "@/lib/avsec/utils";
 
-export function UsersTable({ users }: { users: Profile[] }) {
+export function UsersTable({ users, protectedProfileIds = [] }: { users: Profile[]; protectedProfileIds?: string[] }) {
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -63,7 +63,7 @@ export function UsersTable({ users }: { users: Profile[] }) {
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
             {filtered.map((p) => (
-              <UserRow key={p.id} profile={p} />
+              <UserRow key={p.id} profile={p}  isProtected={protectedProfileIds.includes(p.id)} />
             ))}
           </tbody>
         </table>
@@ -91,7 +91,7 @@ export function UsersTable({ users }: { users: Profile[] }) {
   );
 }
 
-function UserRow({ profile: p }: { profile: Profile }) {
+function UserRow({ profile: p, isProtected }: { profile: Profile; isProtected: boolean }) {
   const formId = `edit-user-${p.id}`;
 
   return (
@@ -170,7 +170,7 @@ function UserRow({ profile: p }: { profile: Profile }) {
         {formatDateTimeMY(p.created_at, "dd MMM yyyy")}
       </td>
       <td className="px-5 py-3">
-        {p.role === "SUPER_ADMIN" ? (
+        {isProtected ? (
           <span className="font-mono text-[11px] text-muted-foreground italic">Protected</span>
         ) : (
           <div className="flex items-center justify-end gap-1 flex-wrap">

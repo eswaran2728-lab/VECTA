@@ -86,8 +86,8 @@ export function AppSidebar({
   const normalizedRole = (role ?? "").toLowerCase();
   const normalizedUnifiedRole = (unifiedRole ?? "").toLowerCase();
   const isOrgWide =
-    ["management", "super_admin", "enforcement"].includes(normalizedUnifiedRole) ||
-    ["admin", "management", "enforcement", "super_admin", "supervisor"].includes(normalizedRole);
+    ["management", "enforcement"].includes(normalizedUnifiedRole) ||
+    ["admin", "management", "enforcement", "supervisor"].includes(normalizedRole);
   const isDse = normalizedRole === "dse";
   const isDriver = ["warehouse_pic", "vendor"].includes(normalizedRole);
   const isVendor = normalizedRole === "vendor";

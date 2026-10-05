@@ -22,6 +22,10 @@ import path from "node:path";
 import os from "node:os";
 import { resolveStagingAdminContext, printProjectIdentity } from "./lib/env-guard.mjs";
 import { ALL_ROLE_CODES, resolveRoleScope } from "./lib/role-matrix.mjs";
+import {
+  STATION_VARIANTS, NO_CATERLINK_STATION, NEGATIVE_STATE_STATION,
+  TeamNotEstablishedError, buildAccountPlan, summarizePlan,
+} from "./lib/team-plan.mjs";
 
 const args = process.argv.slice(2);
 const isLive = args.includes("--live");
@@ -35,24 +39,8 @@ function randomStrongPassword() {
   return crypto.randomBytes(24).toString("base64url");
 }
 
-// Station-role variants, labeled as ADDITIONAL accounts beyond the base
-// 23 -- deliberately excludes PEN. resolveRoleScope()'s own default
-// station for sso/so/aso (lib/role-matrix.mjs) is already 'PEN', so the
-// base positive-role accounts for sso/so/aso are already PEN-scoped; a
-// separate "pen" variant would be a redundant, not-truly-additional
-// account covering the same station the base accounts already cover
-// (confirmed and corrected during the staging reconciliation round --
-// see docs/dashboard-review/README.md "Corrected account-plan
-// arithmetic"). KUL and JHB remain genuinely additional: the base
-// accounts never resolve to either of those stations for sso/so/aso.
-const STATION_VARIANTS = [
-  { label: "kul", stationCode: "KUL - MAA" },
-  { label: "jhb", stationCode: "JHB" },
-];
-
-// Negative-state accounts: each is its OWN dedicated test account, never a
-// positive account reused in a bad state.
-const NEGATIVE_STATES = ["pending", "rejected", "deactivated", "revoked", "expired", "future_dated", "foreign_aoc"];
+// Station variants, negative states and the no-CaterLink station live in
+// lib/team-plan.mjs (single source of truth, unit-tested).
 
 function buildEmail(domain, label, runIdValue) {
   return `vecta.uat.${label}.${runIdValue}@${domain}`.toLowerCase();
@@ -147,16 +135,16 @@ async function main() {
   console.log(`=== VECTA staging test-account provisioning (${isDryRun ? "DRY RUN" : "LIVE"}) -- run id: ${runId} ===`);
 
   if (isDryRun) {
-    console.log("\nPlanned positive-role accounts:");
-    for (const role of ALL_ROLE_CODES) {
-      console.log(`  - ${role}`);
-    }
-    console.log("\nPlanned station-role variants (kul/jhb/no-CaterLink-station -- PEN excluded, already covered by the base accounts' own default station):");
-    for (const v of STATION_VARIANTS) console.log(`  - sso/so/aso @ ${v.label}`);
-    console.log("  - sso/so/aso @ a station with no caterlink_station_capabilities row (resolved at run time, --live only)");
-    console.log("\nPlanned negative-state accounts (each its own dedicated account):");
-    for (const s of NEGATIVE_STATES) console.log(`  - ${s}`);
-    console.log("\nNo network call was made. Re-run with --live --email-domain=<operator-approved-domain> after the project identity and mailbox strategy are both explicitly confirmed.");
+    const plan = buildAccountPlan();
+    const sum = summarizePlan(plan);
+    console.log(`\nExact account inventory: ${sum.base} base + ${sum.stationVariants} station variants + ${sum.negative} negative-state = ${sum.totalPlanned} planned; ${sum.creatableWithCurrentData} creatable with current staging data (${sum.impossibleNoSecondAoc} impossible: no second AOC).`);
+    console.log(`Availability: ready now ${sum.readyNow}; needs KUL team seed ${sum.needsKulTeamSeed}; blocked (team not established) ${sum.blockedTeamNotEstablished}.`);
+    console.log("\n#  label                 role                         aoc entity dept         unit          hub                  station    team     status");
+    plan.forEach((a, i) => {
+      const sc = a.scope;
+      console.log(`${String(i + 1).padStart(2)} ${a.label.padEnd(21)} ${a.roleCode.padEnd(28)} ${(sc.aoc ?? "-").padEnd(3)} ${(sc.entity ?? sc.membership ?? "-").padEnd(6)} ${(sc.department ?? "-").padEnd(12)} ${(sc.unit ?? "-").padEnd(13)} ${(sc.hub ?? "-").padEnd(20)} ${(sc.station ?? "-").padEnd(10)} ${(sc.team ?? "-").padEnd(8)} ${a.status}${a.accountStatus !== "approved" ? ` [${a.accountStatus}]` : ""}`);
+    });
+    console.log("\nNo network call was made. Re-run with --live --email-domain=<operator-approved-domain> after the project identity, mailbox strategy and team seed are explicitly confirmed.");
     return;
   }
 
@@ -182,6 +170,21 @@ async function main() {
   let createdCount = 0;
   let skippedCount = 0;
   let failedCount = 0;
+  let blockedCount = 0;
+
+  async function resolveOrBlock(label, roleCode, opts) {
+    try {
+      return await resolveRoleScope(client, roleCode, opts);
+    } catch (err) {
+      if (err instanceof TeamNotEstablishedError) {
+        blockedCount += 1;
+        appendManifest(manifestPath, { label, roleCode, status: "blocked", error: err.message });
+        console.log(`  BLOCKED  ${label.padEnd(28)} ${roleCode} -- ${err.message}`);
+        return null;
+      }
+      throw err;
+    }
+  }
 
   async function provisionOne(label, roleCode, { scopeOverride, timing, status = "approved", legacyRole = "ASO" } = {}) {
     const email = buildEmail(emailDomainArg, label, runId);
@@ -209,7 +212,8 @@ async function main() {
 
       let scope = scopeOverride;
       if (!scope) {
-        scope = await resolveRoleScope(client, roleCode);
+        scope = await resolveOrBlock(label, roleCode, {});
+        if (!scope) return;
       }
 
       let entityMembershipId = null;
@@ -243,27 +247,27 @@ async function main() {
   console.log("\n--- Station-role variants ---");
   for (const variant of STATION_VARIANTS) {
     for (const stationRole of ["sso", "so", "aso"]) {
-      const scope = await resolveRoleScope(client, stationRole, { stationCode: variant.stationCode, teamName: `UAT-${variant.label}` });
+      const scope = await resolveOrBlock(`${stationRole}-${variant.label}`, stationRole, { stationCode: variant.stationCode });
+      if (!scope) continue;
       await provisionOne(`${stationRole}-${variant.label}`, stationRole, { scopeOverride: scope, timing: { starts_at: now.toISOString() } });
     }
   }
 
   console.log("\n--- Station variant with no CaterLink scanning ---");
-  const { data: noCaterlinkStation } = await client
-    .from("org_stations")
-    .select("code")
-    .not("id", "in", `(select station_id from caterlink_station_capabilities where station_id is not null)`)
-    .limit(1)
-    .maybeSingle();
-  if (noCaterlinkStation) {
-    const scope = await resolveRoleScope(client, "aso", { stationCode: noCaterlinkStation.code, teamName: "UAT-no-caterlink" });
-    await provisionOne("aso-no-caterlink", "aso", { scopeOverride: scope, timing: { starts_at: now.toISOString() } });
+  const { data: ncRow } = await client.from("org_stations").select("id").eq("code", NO_CATERLINK_STATION).maybeSingle();
+  const { data: ncCap } = ncRow ? await client.from("caterlink_station_capabilities").select("id").eq("station_id", ncRow.id).limit(1) : { data: null };
+  if (!ncRow || (ncCap && ncCap.length > 0)) {
+    console.log(`  SKIPPED  configured no-CaterLink station '${NO_CATERLINK_STATION}' is missing or now has a capability row -- nothing created for this variant.`);
   } else {
-    console.log("  SKIPPED  no station without CaterLink capability was found -- nothing created for this variant.");
+    const scope = await resolveOrBlock("aso-no-caterlink", "aso", { stationCode: NO_CATERLINK_STATION });
+    if (scope) await provisionOne("aso-no-caterlink", "aso", { scopeOverride: scope, timing: { starts_at: now.toISOString() } });
   }
 
   console.log("\n--- Negative-state accounts (each a separate, dedicated test account) ---");
-  const asoScope = await resolveRoleScope(client, "aso", { teamName: "UAT-negative" });
+  const asoScope = await resolveOrBlock("negative-states", "aso", { stationCode: NEGATIVE_STATE_STATION });
+  if (!asoScope) {
+    console.log("  SKIPPED  negative-state accounts need the established team at the negative-state station.");
+  } else {
   await provisionOne("neg-pending", "aso", { scopeOverride: asoScope, status: "pending", timing: { starts_at: now.toISOString() } });
   await provisionOne("neg-rejected", "aso", { scopeOverride: asoScope, status: "rejected", timing: { starts_at: now.toISOString() } });
   await provisionOne("neg-deactivated", "aso", { scopeOverride: asoScope, status: "deactivated", timing: { starts_at: now.toISOString() } });
@@ -275,7 +279,7 @@ async function main() {
     scopeOverride: asoScope,
     timing: { starts_at: new Date(now.getTime() - 5 * 86400000).toISOString(), ends_at: new Date(now.getTime() - 86400000).toISOString() },
   });
-  await provisionOne("neg-future", "aso", { scopeOverride: asoScope, timing: { starts_at: new Date(now.getTime() + 86400000).toISOString() } });
+  await provisionOne("neg-future-dated", "aso", { scopeOverride: asoScope, timing: { starts_at: new Date(now.getTime() + 86400000).toISOString() } });
 
   const { data: foreignAoc } = await client.from("aocs").select("id, code").neq("code", "MY").eq("is_active", true).limit(1).maybeSingle();
   if (foreignAoc) {
@@ -287,9 +291,11 @@ async function main() {
     console.log("  SKIPPED  no active non-Malaysia AOC exists in this project -- the foreign-AOC negative-state account was not created. This is NOT a schema change this script will ever perform; create one yourself first if that scenario is required.");
   }
 
+  }
+
   fs.writeFileSync(credentialsPath, JSON.stringify({ runId, generatedAt: new Date().toISOString(), accounts: credentials }, null, 2), { mode: 0o600 });
 
-  console.log(`\n=== Provisioning complete: ${createdCount} created, ${skippedCount} already existed, ${failedCount} failed ===`);
+  console.log(`\n=== Provisioning complete: ${createdCount} created, ${skippedCount} already existed, ${blockedCount} blocked (team not established), ${failedCount} failed ===`);
   console.log(`Credentials file (passwords included -- never displayed here): ${credentialsPath}`);
   console.log(`Recovery manifest: ${manifestPath}`);
 }

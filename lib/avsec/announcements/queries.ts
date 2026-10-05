@@ -185,7 +185,6 @@ export async function getActiveAnnouncementsForUser(
   const isManagement =
     normalizedRole === "MANAGEMENT" ||
     normalizedRole === "ADMIN" ||
-    normalizedRole === "SUPER_ADMIN" ||
     profile.role === "management" ||
     profile.role === "admin";
 
