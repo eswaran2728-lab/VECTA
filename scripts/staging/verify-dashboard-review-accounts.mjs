@@ -14,6 +14,7 @@ const args = process.argv.slice(2);
 const argVal = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split("=").slice(1).join("=");
 const runId = argVal("run-id");
 const expectTotalAuth = parseInt(argVal("expect-total-auth") ?? "52", 10);
+const expectOrgTeams = parseInt(argVal("expect-org-teams") ?? "16", 10);
 const dir = runId ? defaultCredentialsDir(runId) : null;
 
 let failures = 0;
@@ -62,7 +63,7 @@ async function main() {
     check("Exactly 36 profiles belong to this run", (await n("select count(*)::int n from public.profiles p join auth.users u on u.id = p.id where u.email like $1", [prefix])) === 36);
     check("No duplicate email among Auth users", (await n("select count(*)::int n from (select lower(email) e from auth.users group by 1 having count(*) > 1) d")) === 0);
     check("16 original Auth users unchanged in count", (await n("select count(*)::int n from auth.users where email not like 'vecta.uat.%'")) === 16);
-    check("16 org_teams, 7 Storage buckets", (await n("select count(*)::int n from public.org_teams")) === 16 && (await n("select count(*)::int n from storage.buckets")) === 7);
+    check(`${expectOrgTeams} org_teams, 7 Storage buckets`, (await n("select count(*)::int n from public.org_teams")) === expectOrgTeams && (await n("select count(*)::int n from storage.buckets")) === 7);
     const hasOpsGroup = (await n("select count(*)::int n from information_schema.columns where table_schema='public' and table_name='profiles' and column_name='ops_group'")) > 0;
     check(hasOpsGroup ? "Run accounts keep ops_group NULL (no authority metadata)" : "profiles.ops_group column is absent on staging (no authority metadata possible)",
       !hasOpsGroup || (await n("select count(*)::int n from public.profiles p join auth.users u on u.id = p.id where u.email like $1 and p.ops_group is not null", [prefix])) === 0);
