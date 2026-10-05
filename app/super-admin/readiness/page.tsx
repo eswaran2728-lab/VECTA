@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { isSuperAdmin } from "@/lib/super-admin/actions";
+import { hasActiveSuperAdminRole } from "@/lib/super-admin/actions";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { signOut } from "@/lib/avsec/profile-actions";
 
@@ -29,7 +29,7 @@ export default async function ReadinessPage() {
 
   if (!user) redirect("/login");
 
-  const isSuper = await isSuperAdmin();
+  const isSuper = await hasActiveSuperAdminRole();
   if (!isSuper) {
     redirect("/?error=unauthorized-super-admin");
   }

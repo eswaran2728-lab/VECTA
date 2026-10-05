@@ -30,6 +30,20 @@ export async function isSuperAdmin(): Promise<boolean> {
   return p.role === "SUPER_ADMIN" || p.unified_role === "super_admin";
 }
 
+// Canonical Super Admin authority: an active, non-revoked, currently
+// effective Phase 3 super_admin role assignment on an approved profile,
+// evaluated by the database from auth.uid(). Used by the Phase 13 readiness
+// portal; independent of profiles.unified_role / legacy profiles.role.
+export async function hasActiveSuperAdminRole(): Promise<boolean> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return false;
+  const { data, error } = await supabase.rpc("has_active_role", { p_role_code: "super_admin" });
+  return !error && data === true;
+}
+
 export async function getOrganizations(): Promise<OrganizationRow[]> {
   const isSuper = await isSuperAdmin();
   if (!isSuper) return [];

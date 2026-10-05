@@ -103,6 +103,12 @@ test("REAL-BASELINE-VALIDATION: Phase 1 through 13 with Phase 8 reconciliation a
     const preCount = await db.query("SELECT count(*) FROM public.profiles;");
     assert.equal(parseInt(preCount.rows[0].count, 10), 16);
 
+    // Real staging has no profiles.unified_role column; reproduce that so the
+    // chain is proven not to depend on it.
+    await db.exec(`alter table public.profiles drop column if exists unified_role;`);
+    const unifiedRoleCol = await db.query("select 1 from information_schema.columns where table_schema = 'public' and table_name = 'profiles' and column_name = 'unified_role';");
+    assert.equal(unifiedRoleCol.rows.length, 0, "baseline must reproduce staging: profiles.unified_role absent");
+
     // 2. Apply all 16 migrations sequentially
     await db.exec(`set role postgres; set request.jwt.claims = '{"role": "service_role"}';`);
     for (const f of FULL_CHAIN) {
@@ -171,6 +177,54 @@ test("REAL-BASELINE-VALIDATION: Phase 1 through 13 with Phase 8 reconciliation a
     const trigCheck = await db.query("SELECT tgname, tgenabled FROM pg_trigger WHERE tgname = 'profiles_enforce_self_update' AND tgrelid = 'public.profiles'::regclass;");
     assert.equal(trigCheck.rows.length, 1);
     assert.equal(trigCheck.rows[0].tgenabled, "O");
+
+    // Canonical Super Admin authorization over the full real-baseline chain,
+    // with profiles.unified_role absent.
+    const saId = "00000000-0000-0000-0000-0000000000a1";
+    const legacyAdminId = "00000000-0000-0000-0000-0000000000a2";
+    await db.exec(`set role postgres; alter table public.profiles disable trigger profiles_enforce_self_update;`);
+    for (const [id, email, staffNo, legacyRole] of [
+      [saId, "canonical.superadmin@example.test", "SA1", "ASO"],
+      [legacyAdminId, "legacy.admin@example.test", "LA1", "ADMIN"],
+    ]) {
+      await db.query("insert into auth.users (id, email) values ($1, $2);", [id, email]);
+      await db.query(
+        "insert into public.profiles (id, email, name, staff_no, role, status) values ($1, $2, $3, $4, $5, 'approved') on conflict (id) do update set email = excluded.email, name = excluded.name, staff_no = excluded.staff_no, role = excluded.role, status = 'approved';",
+        [id, email, staffNo, staffNo, legacyRole],
+      );
+    }
+    await db.exec(`alter table public.profiles enable trigger profiles_enforce_self_update;`);
+    await db.query(
+      "insert into public.user_role_assignments (profile_id, role_definition_id, starts_at) values ($1, (select id from public.role_definitions where code = 'super_admin'), now() - interval '1 day');",
+      [saId],
+    );
+
+    async function asUser(id: string) {
+      await db.exec(`set role postgres; select set_config('request.jwt.claims', '{"sub":"${id}","role":"authenticated"}', false); set role authenticated;`);
+    }
+    await asUser(saId);
+    const readinessOk = await db.query("select public.view_release_readiness_report_secure() as r;");
+    assert.equal(typeof (readinessOk.rows[0] as { r: Record<string, unknown> }).r.generated_at, "string", "active super_admin can read the readiness report on the real baseline");
+    const mappingOk = await db.query("select count(*)::int as n from public.view_legacy_role_mapping_report_secure();");
+    await db.exec(`set role postgres;`);
+    const expectedLegacy = await db.query("select count(*)::int as n from public.profiles where role::text in ('MANAGEMENT', 'ADMIN', 'ENFORCEMENT');");
+    assert.equal((mappingOk.rows[0] as { n: number }).n, (expectedLegacy.rows[0] as { n: number }).n, "mapping report lists exactly the legacy MANAGEMENT/ADMIN/ENFORCEMENT profiles");
+    assert.ok((mappingOk.rows[0] as { n: number }).n > 0, "mapping report is non-empty on the real baseline");
+
+    await asUser(legacyAdminId);
+    await assert.rejects(() => db.query("select public.view_release_readiness_report_secure();"), /Only Super Admin/, "legacy ADMIN without a super_admin assignment is denied");
+    await db.exec(`set role postgres; select set_config('request.jwt.claims', '{"role": "service_role"}', false);`);
+
+    // Phase 13's approval path calls apply_compatibility_profile_fields(); it
+    // must succeed for a KUL dse approval with profiles.unified_role absent.
+    const kul = await db.query("select h.id as hub_id, s.id as station_id from public.hubs h join public.org_stations s on s.hub_id = h.id where h.code = 'kul' limit 1;");
+    assert.equal(kul.rows.length, 1, "seeded KUL hub/station must exist");
+    const kulRow = kul.rows[0] as { hub_id: string; station_id: string };
+    await db.exec(`alter table public.profiles disable trigger profiles_enforce_self_update;`);
+    await db.query("select public.apply_compatibility_profile_fields($1, 'dse', $2, $3, $4, 'operation_avsec', $5);", [legacyAdminId, kulRow.hub_id, kulRow.station_id, null, saId]);
+    await db.exec(`alter table public.profiles enable trigger profiles_enforce_self_update;`);
+    const mapped = await db.query("select role::text as role, ops_group, approval_state from public.profiles where id = $1;", [legacyAdminId]);
+    assert.deepEqual(mapped.rows[0], { role: "DSE", ops_group: "operation_avsec", approval_state: "active" }, "KUL dse compatibility mapping succeeds without profiles.unified_role");
 
     // Check Storage Buckets
     const bucketsRes = await db.query("SELECT id FROM storage.buckets;");

@@ -77,10 +77,10 @@ begin
     raise exception 'Must be signed in.';
   end if;
 
-  select exists (
-    select 1 from public.profiles p
-    where p.id = v_caller and (p.role::text = 'SUPER_ADMIN' or p.unified_role = 'super_admin') and p.status = 'approved'
-  ) into v_is_super_admin;
+  -- Canonical Phase 3 authority: an active, non-revoked, currently-effective
+  -- super_admin role assignment for the caller's own approved profile.
+  -- No dependency on any legacy profile-role column.
+  v_is_super_admin := public.has_active_role('super_admin');
 
   if not v_is_super_admin then
     raise exception 'Only Super Admin may view the legacy-role mapping report.';
@@ -142,10 +142,7 @@ begin
     raise exception 'Must be signed in.';
   end if;
 
-  select exists (
-    select 1 from public.profiles p
-    where p.id = v_caller and (p.role::text = 'SUPER_ADMIN' or p.unified_role = 'super_admin') and p.status = 'approved'
-  ) into v_is_super_admin;
+  v_is_super_admin := public.has_active_role('super_admin');
 
   if not v_is_super_admin then
     raise exception 'Only Super Admin may view the release-readiness report.';
@@ -213,12 +210,7 @@ alter table public.phase13_readiness_access_log enable row level security;
 drop policy if exists phase13_readiness_access_log_super_admin_read on public.phase13_readiness_access_log;
 create policy phase13_readiness_access_log_super_admin_read on public.phase13_readiness_access_log
   for select to authenticated
-  using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid() and (p.role::text = 'SUPER_ADMIN' or p.unified_role = 'super_admin') and p.status = 'approved'
-    )
-  );
+  using (public.has_active_role('super_admin'));
 
 revoke insert, update, delete on public.phase13_readiness_access_log from authenticated, anon, public;
 grant select on public.phase13_readiness_access_log to authenticated;

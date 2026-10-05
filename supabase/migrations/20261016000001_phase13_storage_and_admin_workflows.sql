@@ -451,6 +451,84 @@ $function$;
 revoke execute on function public.resolve_operating_entity_id_secure(text) from public, anon;
 grant execute on function public.resolve_operating_entity_id_secure(text) to authenticated, service_role;
 
+-- Corrected re-declaration of the Phase 4 compatibility helper that
+-- approve_registration_request (below) calls. The Phase 4 version writes a
+-- legacy profile column that the real staging baseline does not have, which
+-- would fail every KUL dse/so/aso approval at runtime. Behavior is otherwise
+-- identical; the legacy column is written ONLY where it exists, so
+-- environments that still carry it keep their legacy routing value.
+-- Signature, grants and audit row are unchanged (service_role-only).
+create or replace function public.apply_compatibility_profile_fields(
+  p_profile_id uuid,
+  p_role_code text,
+  p_hub_id uuid,
+  p_station_id uuid,
+  p_team_id uuid,
+  p_ops_group text,
+  p_actor_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_hub_code text;
+  v_station_code text;
+  v_team_name text;
+  v_legacy_role text;
+  v_mapped boolean := false;
+begin
+  select h.code into v_hub_code from public.hubs h where h.id = p_hub_id;
+  select s.code into v_station_code from public.org_stations s where s.id = p_station_id;
+  select t.name into v_team_name from public.org_teams t where t.id = p_team_id;
+
+  if p_role_code in ('dse', 'so', 'aso') and v_hub_code = 'kul' then
+    if p_ops_group not in ('operation_avsec', 'ifc_avsec') then
+      raise exception 'A KUL dse/so/aso approval requires an explicit ops_group of operation_avsec or ifc_avsec.';
+    end if;
+    v_legacy_role := case p_role_code when 'dse' then 'DSE' when 'so' then 'SO' when 'aso' then 'ASO' end;
+    update public.profiles
+    set role = v_legacy_role::user_role,
+        ops_group = p_ops_group,
+        station = v_station_code,
+        team = v_team_name,
+        status = 'approved',
+        approval_state = 'active'
+    where id = p_profile_id;
+
+    -- Optional legacy approval-metadata columns: written only where present.
+    if (
+      select count(*) from information_schema.columns
+      where table_schema = 'public' and table_name = 'profiles'
+        and column_name in ('approved_by', 'approved_at', 'rejection_reason')
+    ) = 3 then
+      execute 'update public.profiles set approved_by = $1, approved_at = now(), rejection_reason = null where id = $2'
+        using p_actor_id, p_profile_id;
+    end if;
+
+    if exists (
+      select 1 from information_schema.columns
+      where table_schema = 'public' and table_name = 'profiles' and column_name = 'unified_role'
+    ) then
+      execute 'update public.profiles set unified_role = $1 where id = $2'
+        using lower(p_role_code), p_profile_id;
+    end if;
+    v_mapped := true;
+  else
+    update public.profiles
+    set approval_state = 'approved_pending_activation'
+    where id = p_profile_id;
+  end if;
+
+  insert into public.user_admin_audit_log (actor_id, target_profile_id, action, new_state)
+  values (p_actor_id, p_profile_id, 'compatibility_sync', jsonb_build_object('role_code', p_role_code, 'mapped', v_mapped, 'ops_group', p_ops_group));
+end;
+$function$;
+
+revoke execute on function public.apply_compatibility_profile_fields(uuid, text, uuid, uuid, uuid, text, uuid) from public, anon, authenticated;
+grant execute on function public.apply_compatibility_profile_fields(uuid, text, uuid, uuid, uuid, text, uuid) to service_role;
+
 -- Re-declare approve_registration_request to align assignment operational scope
 -- with Phase 3 scope-shape rules and Phase 4 entity-membership architecture:
 -- operating_entity_id on user_role_assignments is populated ONLY for entity-scoped
@@ -624,10 +702,7 @@ begin
     raise exception 'Must be signed in.';
   end if;
 
-  select exists (
-    select 1 from public.profiles p
-    where p.id = v_caller and (p.role::text = 'SUPER_ADMIN' or p.unified_role = 'super_admin') and p.status = 'approved'
-  ) into v_is_super_admin;
+  v_is_super_admin := public.has_active_role('super_admin');
 
   if not v_is_super_admin then
     raise exception 'Only Super Admin may view the release-readiness report.';

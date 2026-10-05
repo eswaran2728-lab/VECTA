@@ -5,6 +5,7 @@ import {
   isAdminPathForbidden,
   isSuperAdminPathForbidden,
   isOperationalPathForbiddenForSuperAdmin,
+  isReadinessPath,
 } from "./middleware-gate-logic";
 
 
@@ -155,6 +156,21 @@ export async function updateSession(request: NextRequest) {
     url.pathname = isCaterLinkEmail ? "/caterlink/dashboard" : "/";
     url.search = "";
     return NextResponse.redirect(url);
+  }
+
+  // Phase 13 readiness portal: canonical Phase 3 role-assignment gate only.
+  // Runs before the legacy profile lookup below, which selects
+  // profiles.unified_role (absent on the staging baseline).
+  if (user && isReadinessPath(path)) {
+    const { data: isActiveSuperAdmin } = await supabase.rpc("has_active_role", { p_role_code: "super_admin" });
+    if (isActiveSuperAdmin !== true) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/";
+      url.search = "";
+      url.searchParams.set("error", "forbidden");
+      return NextResponse.redirect(url);
+    }
+    return supabaseResponse;
   }
 
   // --- Role + check-in gate ---

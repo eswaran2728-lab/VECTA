@@ -432,7 +432,12 @@ async function main() {
   await simulateServiceRole();
   const superAdminId = nextId();
   await createUser(superAdminId, 'p13b-super@example.test', 'Sam SuperAdmin2', 'P13B-SA');
-  await db.query("update public.profiles set unified_role = 'super_admin' where id = $1;", [superAdminId]);
+  // Canonical Super Admin: an active Phase 3 super_admin role assignment
+  // (no scope, no entity membership), never a legacy profile column.
+  await db.query(
+    "insert into public.user_role_assignments (profile_id, role_definition_id, starts_at) values ($1, (select id from public.role_definitions where code = 'super_admin'), now() - interval '1 day');",
+    [superAdminId],
+  );
 
   await simulateUser(superAdminId);
   const readiness = (await db.query('select public.view_release_readiness_report_secure() as report;')).rows[0].report;

@@ -152,13 +152,15 @@ async function main() {
   console.log('\n--- SECTION 1: Over-granted cron-only functions are now locked down ---');
 
   const superAdminId = nextId();
-  // profiles.role is a Postgres enum that never gained a 'SUPER_ADMIN'
-  // value -- real Super Admin accounts are 'ADMIN' (a valid enum value)
-  // plus unified_role = 'super_admin' (lib/super-admin/actions.ts:isSuperAdmin
-  // checks exactly this OR), so the test fixture must match that, not an
-  // enum value that was never actually added.
-  await createUser(superAdminId, 'p13-super@example.test', 'Sam SuperAdmin', 'P13-SA', 'ADMIN');
-  await db.query("update public.profiles set unified_role = 'super_admin' where id = $1;", [superAdminId]);
+  // Canonical Super Admin: an approved profile holding an active Phase 3
+  // super_admin role assignment (no scope, no entity membership). The
+  // legacy profile role is deliberately an ordinary one -- authority must
+  // come from the assignment alone.
+  await createUser(superAdminId, 'p13-super@example.test', 'Sam SuperAdmin', 'P13-SA', 'ASO');
+  await db.query(
+    "insert into public.user_role_assignments (profile_id, role_definition_id, starts_at) values ($1, $2, now() - interval '1 day');",
+    [superAdminId, roleMap.get('super_admin')],
+  );
 
   const ordinaryStaffId = nextId();
   await createUser(ordinaryStaffId, 'p13-staff@example.test', 'Ally Staff', 'P13-ST', 'ASO');
@@ -230,6 +232,126 @@ async function main() {
   await simulateUser(ordinaryStaffId);
   const crossUserAuditRead = (await db.query('select * from public.phase13_readiness_access_log where actor_profile_id = $1;', [superAdminId])).rows;
   assert(crossUserAuditRead.length === 0, "An ordinary staff member cannot read the Super Admin's readiness-access audit rows (RLS Super-Admin-only read)");
+
+  console.log('\n--- SECTION 5: Canonical super_admin authorization matrix (readiness reports + audit log) ---');
+
+  const superRoleId = roleMap.get('super_admin');
+  const opMgrRoleId = roleMap.get('operation_manager');
+
+  async function tryAccess(id) {
+    await simulateUser(id);
+    const report = await expectFail(() => db.query('select public.view_release_readiness_report_secure();'));
+    const mapping = await expectFail(() => db.query('select * from public.view_legacy_role_mapping_report_secure();'));
+    const audit = (await db.query('select count(*)::int as n from public.phase13_readiness_access_log;')).rows[0].n;
+    await simulateServiceRole();
+    return { reportAllowed: !report.failed, mappingAllowed: !mapping.failed, auditVisible: audit };
+  }
+
+  async function newUser(label, legacyRole = 'ASO', status = 'approved') {
+    const id = nextId();
+    await createUser(id, `p13-${label}@example.test`, `P13 ${label}`, `P13-${label}`.slice(0, 20), legacyRole, status);
+    return id;
+  }
+  async function grantSuper(id, startsSql, endsSql) {
+    await db.query(
+      `insert into public.user_role_assignments (profile_id, role_definition_id, starts_at, ends_at) values ($1, $2, ${startsSql}, ${endsSql});`,
+      [id, superRoleId],
+    );
+  }
+
+  // 5a. Active super_admin assignment: allowed everywhere.
+  const activeRes = await tryAccess(superAdminId);
+  assert(activeRes.reportAllowed && activeRes.mappingAllowed, 'Active super_admin assignment: both readiness reports allowed');
+  assert(activeRes.auditVisible > 0, 'Active super_admin assignment: readiness audit log readable');
+
+  // 5b. Revoked assignment: denied.
+  const revokedId = await newUser('revoked');
+  await grantSuper(revokedId, "now() - interval '2 day'", 'null');
+  await db.query("update public.user_role_assignments set revoked_at = now() where profile_id = $1;", [revokedId]);
+  const revokedRes = await tryAccess(revokedId);
+  assert(!revokedRes.reportAllowed && !revokedRes.mappingAllowed && revokedRes.auditVisible === 0, 'Revoked super_admin assignment is denied (reports + audit log)');
+
+  // 5c. Expired assignment: denied.
+  const expiredId = await newUser('expired');
+  await grantSuper(expiredId, "now() - interval '3 day'", "now() - interval '1 day'");
+  const expiredRes = await tryAccess(expiredId);
+  assert(!expiredRes.reportAllowed && !expiredRes.mappingAllowed && expiredRes.auditVisible === 0, 'Expired super_admin assignment is denied (reports + audit log)');
+
+  // 5d. Future-dated assignment: denied.
+  const futureId = await newUser('future');
+  await grantSuper(futureId, "now() + interval '1 day'", 'null');
+  const futureRes = await tryAccess(futureId);
+  assert(!futureRes.reportAllowed && !futureRes.mappingAllowed && futureRes.auditVisible === 0, 'Future-dated super_admin assignment is denied (reports + audit log)');
+
+  // 5e. Inactive role definition: denied (temporarily deactivate, then restore).
+  const inactiveRoleId = await newUser('inactiverole');
+  await grantSuper(inactiveRoleId, "now() - interval '1 day'", 'null');
+  await db.query("update public.role_definitions set is_active = false where code = 'super_admin';");
+  const inactiveRes = await tryAccess(inactiveRoleId);
+  const inactiveActiveHolder = await tryAccess(superAdminId);
+  await db.query("update public.role_definitions set is_active = true where code = 'super_admin';");
+  assert(!inactiveRes.reportAllowed && !inactiveRes.mappingAllowed && inactiveRes.auditVisible === 0, 'Inactive super_admin role definition is denied (reports + audit log)');
+  assert(!inactiveActiveHolder.reportAllowed, 'Inactive super_admin role definition denies even a holder of an otherwise-active assignment');
+
+  // 5f/5g. Pending / rejected profile holding an otherwise-active assignment: denied.
+  const pendingId = await newUser('pendingsa');
+  await grantSuper(pendingId, "now() - interval '1 day'", 'null');
+  await db.query("update public.profiles set status = 'pending' where id = $1;", [pendingId]);
+  const pendingRes = await tryAccess(pendingId);
+  assert(!pendingRes.reportAllowed && !pendingRes.mappingAllowed && pendingRes.auditVisible === 0, 'Pending profile with an active super_admin assignment is denied');
+
+  const rejectedId = await newUser('rejectedsa');
+  await grantSuper(rejectedId, "now() - interval '1 day'", 'null');
+  await db.query("update public.profiles set status = 'rejected' where id = $1;", [rejectedId]);
+  const rejectedRes = await tryAccess(rejectedId);
+  assert(!rejectedRes.reportAllowed && !rejectedRes.mappingAllowed && rejectedRes.auditVisible === 0, 'Rejected profile with an active super_admin assignment is denied');
+
+  // 5h/5i. Legacy ADMIN / MANAGEMENT without a super_admin assignment: denied.
+  const legacyAdminNoSuper = await newUser('legacyadmin2', 'ADMIN');
+  const adminRes = await tryAccess(legacyAdminNoSuper);
+  assert(!adminRes.reportAllowed && !adminRes.mappingAllowed && adminRes.auditVisible === 0, 'Legacy ADMIN profile without an active super_admin assignment is denied');
+
+  const legacyMgmtNoSuper = await newUser('legacymgmt2', 'MANAGEMENT');
+  const mgmtRes = await tryAccess(legacyMgmtNoSuper);
+  assert(!mgmtRes.reportAllowed && !mgmtRes.mappingAllowed && mgmtRes.auditVisible === 0, 'Legacy MANAGEMENT profile without an active super_admin assignment is denied');
+
+  // 5j. Ordinary operational role (operation_manager, department-scoped): denied.
+  const opMgrId = await newUser('opmgr');
+  await db.query(
+    "insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, department_id, starts_at) values ($1, $2, $3, $4, now() - interval '1 day');",
+    [opMgrId, opMgrRoleId, myAocId, opsDeptId],
+  );
+  const opMgrRes = await tryAccess(opMgrId);
+  assert(!opMgrRes.reportAllowed && !opMgrRes.mappingAllowed && opMgrRes.auditVisible === 0, 'Ordinary operational role (operation_manager) is denied');
+
+  // 5k. Anonymous caller: denied (reports + audit log).
+  await simulateServiceRole();
+  await db.exec('set role anon;');
+  const anonReport = await expectFail(() => db.query('select public.view_release_readiness_report_secure();'));
+  const anonMapping = await expectFail(() => db.query('select * from public.view_legacy_role_mapping_report_secure();'));
+  let anonAuditRows = 0;
+  const anonAudit = await expectFail(async () => {
+    anonAuditRows = (await db.query('select count(*)::int as n from public.phase13_readiness_access_log;')).rows[0].n;
+  });
+  assert(anonReport.failed && anonMapping.failed, 'Anonymous caller is denied both readiness reports');
+  assert(anonAudit.failed || anonAuditRows === 0, 'Anonymous caller can read no readiness audit-log rows');
+  await simulateServiceRole();
+
+  // 5l. service_role has no direct execute path to the client-facing wrappers' authorization bypass:
+  // with no auth.uid() the canonical check fails, so even service_role cannot read the reports.
+  const svcReport = await expectFail(() => db.query('select public.view_release_readiness_report_secure();'));
+  const svcInner = await expectFail(() => db.query('select public.get_release_readiness_report_secure();'));
+  assert(svcReport.failed && svcInner.failed, 'service_role (no auth.uid()) gets no bypass of the Super Admin authorization');
+
+  // 5m. The authorization is entirely canonical: dropping the legacy
+  // profiles.unified_role column (absent on the real staging baseline)
+  // must not break either report for an active super_admin.
+  await db.exec('reset role;');
+  await db.exec('alter table public.profiles drop column if exists unified_role cascade;');
+  const noColRes = await tryAccess(superAdminId);
+  assert(noColRes.reportAllowed && noColRes.mappingAllowed && noColRes.auditVisible > 0, 'Readiness reports and audit log work for an active super_admin with profiles.unified_role absent');
+  const noColDenied = await tryAccess(legacyAdminNoSuper);
+  assert(!noColDenied.reportAllowed && !noColDenied.mappingAllowed, 'Legacy ADMIN remains denied with profiles.unified_role absent');
 
   console.log(`\nPhase 13 integration verification completed. Total failures: ${failures}`);
 
