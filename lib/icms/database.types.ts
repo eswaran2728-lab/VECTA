@@ -859,7 +859,7 @@ export type Database = {
         Returns: { archive_id: string; transaction_number: string }[];
       };
       can_user_scan_caterlink: {
-        Args: { p_station_code: string; p_aoc_id?: string | null; p_profile_id?: string | null };
+        Args: { p_station_code: string; p_aoc_id?: string | null };
         Returns: boolean;
       };
       check_station_caterlink_capability: {

@@ -128,6 +128,7 @@ async function main() {
     check("Account states stored as designed (status, revoked/expired/future timing)", stateOk);
     const cap = await pg.query("select s.code, c.can_scan from public.caterlink_station_capabilities c join public.org_stations s on s.id = c.station_id where c.is_active");
     capability = Object.fromEntries(cap.rows.map((r) => [r.code, r.can_scan]));
+    check("Scan capability is enabled at exactly PEN and JHB", Object.entries(capability).filter(([, v]) => v).map(([k]) => k).sort().join() === "JHB,PEN");
     await pg.query("ROLLBACK");
   } finally {
     await pg.end();
@@ -136,7 +137,6 @@ async function main() {
   // ---------------- authenticated sign-in verification ----------------
   console.log("\n=== AUTHENTICATED SIGN-IN VERIFICATION (publishable key) ===");
   const SCAN_ROLES = new Set(["aso", "so", "sso", "dse"]);
-  const ROSTER_STATION_SCOPE = { PEN: "PEN" };
   for (const m of manifest) {
     const cred = creds.find((c) => c.label === m.label);
     const rec = { label: m.label, role: m.roleCode, state: m.accountState, checks: {} };
@@ -202,21 +202,24 @@ async function main() {
         }
       }
 
-      // CaterLink capability (authenticated)
-      if (station) {
-        const { data: scan, error: scanErr } = await sb.rpc("can_user_scan_caterlink", { p_station_code: station });
-        const expected = !isNegative && SCAN_ROLES.has(m.roleCode) && capability[station] === true;
-        rec.caterlink = { station, stationCanScan: capability[station] === true, scanAllowed: scan === true, expected };
-        rec.checks.caterlinkScan = !scanErr && (scan === true) === expected;
-      } else if (m.roleCode === "caterlink_management") {
+      // CaterLink scan decision (authenticated). Authoritative rule (migration 20261021000001): only station
+      // operators (sso/so/aso/dse) at the scan-enabled stations PEN and JHB, with an approved profile and an
+      // active assignment AT that station. Everyone else, at every station, must be denied.
+      const SCAN_STATIONS = ["PEN", "JHB"];
+      const scanAt = async (st) => (await sb.rpc("can_user_scan_caterlink", { p_station_code: st })).data === true;
+      const scanResults = {};
+      for (const st of ["PEN", "JHB", "KUL - MAA", "KCH", "BKI", "BTU"]) scanResults[st] = await scanAt(st);
+      const eligible = !isNegative && SCAN_ROLES.has(m.roleCode) && SCAN_STATIONS.includes(station);
+      const expectedAt = (st) => eligible && st === station;
+      rec.caterlink = { station: station ?? null, results: scanResults };
+      rec.checks.caterlinkScan = Object.entries(scanResults).every(([st, v]) => v === expectedAt(st));
+      if (m.roleCode === "caterlink_management") {
         const [arch, inc, tx] = await Promise.all([
           sb.from("caterlink_archives").select("id").limit(1),
           sb.from("caterlink_incidents").select("id").limit(1),
           sb.from("transactions").select("id").limit(1),
         ]);
         rec.checks.caterlinkManagementReads = !arch.error && !inc.error && !tx.error;
-        const { data: scan } = await sb.rpc("can_user_scan_caterlink", { p_station_code: "KUL - MAA" });
-        rec.checks.caterlinkNoScan = scan !== true;
       }
     } catch (e) {
       rec.error = String(e.message).slice(0, 120);
@@ -227,7 +230,7 @@ async function main() {
     rec.ok = !rec.error && failed.length === 0;
     if (!rec.ok) failures += 1;
     results.push(rec);
-    console.log(`${rec.ok ? "PASS" : "FAIL"}: ${m.label.padEnd(26)} ${String(rec.landing ?? "-").padEnd(24)} ${rec.caterlink ? `scan(${rec.caterlink.station})=${rec.caterlink.scanAllowed}` : ""}${failed.length ? " failed=" + failed.join(",") : ""}${rec.error ? " error=" + rec.error : ""}`);
+    console.log(`${rec.ok ? "PASS" : "FAIL"}: ${m.label.padEnd(26)} ${String(rec.landing ?? "-").padEnd(24)} ${rec.caterlink ? "scan=" + Object.entries(rec.caterlink.results).filter(([, v]) => v).map(([k]) => k).join("|") : ""}${failed.length ? " failed=" + failed.join(",") : ""}${rec.error ? " error=" + rec.error : ""}`);
   }
 
   const reportPath = path.join(dir, `verification-${runId}.json`);

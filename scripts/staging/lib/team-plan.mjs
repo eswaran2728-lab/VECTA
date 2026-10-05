@@ -133,12 +133,15 @@ export function legacyProfileFor(roleCode, scope) {
 // (can_user_scan_caterlink). No capability is invented here: scanning is decided at run time by the
 // station row in caterlink_station_capabilities; BTU is the established no-CaterLink test station.
 const SCAN_ROLES = ["aso", "so", "sso", "dse"];
+// Scan-enabled stations (reviewed migration 20261021000001): PEN and JHB only. KUL, KCH, BKI, BTU and every
+// other station are disabled until separately authorized. Receipt confirmation is a separate permission.
+export const SCAN_ENABLED_STATIONS = ["PEN", "JHB"];
 export function caterlinkCapabilityFor(roleCode, accountStatus, scope) {
   if (accountStatus !== "approved") return "denied: account state fails closed";
   if (roleCode === "caterlink_management") return "administration dashboards and archive only; never scans";
-  if (!SCAN_ROLES.includes(roleCode)) return "none (no CaterLink checkpoint authority)";
-  if (scope.station === NO_CATERLINK_STATION) return "denied: station has no CaterLink capability";
-  return "scan/movement allowed only where the station holds the capability (can_user_scan_caterlink)";
+  if (!SCAN_ROLES.includes(roleCode)) return "none (no CaterLink scan authority)";
+  if (!SCAN_ENABLED_STATIONS.includes(scope.station)) return `denied: ${scope.station} is not a scan-enabled station (only PEN and JHB)`;
+  return "scan/movement allowed (can_user_scan_caterlink: station operator at a scan-enabled station)";
 }
 
 function entry(kind, label, roleCode, accountStatus, scope) {

@@ -96,3 +96,14 @@ are expected to lose operational access. Full inventory: `rls-narrowing-inventor
 - After commit: no table without RLS; no FOR ALL, blanket, PUBLIC or compat-rank policy; anon holds no table
   privilege and cannot execute any public function; Data API answers 401 to anon on every probed table.
 - Next (separate authorization): provision the 36 canonical test accounts.
+
+## Phase 9 scan authorization correction (20261021000001)
+
+Found during verification of the 36 staging accounts: `can_user_scan_caterlink()` ignored profile status and
+listed hub_se / operation_manager / main_enforcement as scan-eligible. The additive migration
+`20261021000001_phase9_caterlink_scan_authorization_correction.sql` replaces it: identity from `auth.uid()`
+only; approved profile; active role definition and assignment; role strictly sso/so/aso/dse; assignment station
+exactly equal to the requested station; no profiling assignment; active explicit scan capability; station on
+the reviewed allowlist (PEN, JHB). Scan capability is switched off at every other station (KUL, KCH, BKI, BTU,
+...). Receipt confirmation capabilities are separate and untouched (KCH/BKI currently have none configured; granting
+them needs a separate reviewed configuration). Only one function signature remains.

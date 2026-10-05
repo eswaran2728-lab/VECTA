@@ -228,7 +228,7 @@ test("account matrix: no account is an IFC account and none depends on ops_group
 
 test("account matrix: CaterLink capability follows the approved station model; BTU is the no-CaterLink station; nothing is invented", () => {
   const byLabel = new Map(buildAccountPlan().map((a) => [a.label, a]));
-  assert.match(byLabel.get("aso-no-caterlink")!.caterlinkCapability, /station has no CaterLink capability/);
+  assert.match(byLabel.get("aso-no-caterlink")!.caterlinkCapability, /not a scan-enabled station/);
   assert.match(byLabel.get("caterlink_management")!.caterlinkCapability, /never scans/);
   assert.match(byLabel.get("aso")!.caterlinkCapability, /can_user_scan_caterlink/);
   assert.match(byLabel.get("hub_se")!.caterlinkCapability, /none/);

@@ -128,6 +128,15 @@ async function main() {
   async function clearSim() { await db.exec('select pg_temp.clear_simulation();'); }
   // Direct table verification: clients hold no direct grant on these tables, so read as service_role
   // and then restore the caller's previous session.
+  // can_user_scan_caterlink derives identity from auth.uid() only: call it AS the user, then restore service_role.
+  async function scanAs(userId, aocId, station) {
+    await simulateUser(userId);
+    try {
+      return (await db.query('select public.can_user_scan_caterlink($1, $2) as r;', [station, aocId])).rows[0].r;
+    } finally {
+      await simulateServiceRole();
+    }
+  }
   async function asService(sql, params) {
     const prev = (await db.query("select coalesce(current_setting('request.jwt.claims', true), '') as c, current_user::text as u")).rows[0];
     await simulateServiceRole();
@@ -312,7 +321,7 @@ async function main() {
   const kulAaxScan = (await db.query("select public.check_station_caterlink_capability($1, 'KUL - AAX', 'scan') as r;", [myAocId])).rows[0].r;
   const kulAliasScan = (await db.query("select public.check_station_caterlink_capability($1, 'KUL', 'scan') as r;", [myAocId])).rows[0].r;
   const kulCreate = (await db.query("select public.check_station_caterlink_capability($1, 'KUL - MAA', 'create') as r;", [myAocId])).rows[0].r;
-  assert(kulMaaScan === true && kulAaxScan === true && kulAliasScan === true, 'KUL (MAA, AAX, alias) has scanning enabled');
+  assert(kulMaaScan === false && kulAaxScan === false && kulAliasScan === false, 'KUL (MAA, AAX, alias) has scanning DISABLED (20261021000001: only PEN and JHB scan)');
   assert(kulCreate === true, 'KUL has movement creation capability enabled');
 
   // Test 1.2: PEN & JHB capabilities (scan=true, receipt=true, create=false)
@@ -349,31 +358,31 @@ async function main() {
   console.log('\n--- SECTION 2: Role Denial & Profiling Exclusion ---');
 
   // Test 2.1: Profiling SO and ASO unconditionally denied scanning
-  const profSoScan = (await db.query("select public.can_user_scan_caterlink($1, $2, 'KUL - MAA') as r;", [profilingSoId, myAocId])).rows[0].r;
-  const profAsoScan = (await db.query("select public.can_user_scan_caterlink($1, $2, 'PEN') as r;", [profilingAsoId, myAocId])).rows[0].r;
+  const profSoScan = (await scanAs(profilingSoId, myAocId, 'KUL - MAA'));
+  const profAsoScan = (await scanAs(profilingAsoId, myAocId, 'PEN'));
   assert(profSoScan === false, 'PROFILING EXCLUSION: profiling_so cannot scan even at KUL');
   assert(profAsoScan === false, 'PROFILING EXCLUSION: profiling_aso cannot scan even at PEN');
 
   // Test 2.2: Active operational staff positive verification
-  const kulAvsecScan = (await db.query("select public.can_user_scan_caterlink($1, $2, 'KUL - MAA') as r;", [kulAvsecId, myAocId])).rows[0].r;
-  const penAvsecScan = (await db.query("select public.can_user_scan_caterlink($1, $2, 'PEN') as r;", [penAvsecId, myAocId])).rows[0].r;
-  assert(kulAvsecScan === true, 'KUL operational AVSEC officer can scan at KUL');
+  const kulAvsecScan = (await scanAs(kulAvsecId, myAocId, 'KUL - MAA'));
+  const penAvsecScan = (await scanAs(penAvsecId, myAocId, 'PEN'));
+  assert(kulAvsecScan === false, 'KUL operational AVSEC officer cannot scan at KUL (scanning disabled there)');
   assert(penAvsecScan === true, 'PEN operational AVSEC officer can scan at PEN');
 
   // Test 2.3: Disabled station denial for operational staff
-  const aorScan = (await db.query("select public.can_user_scan_caterlink($1, $2, 'AOR') as r;", [aorStaffId, myAocId])).rows[0].r;
+  const aorScan = (await scanAs(aorStaffId, myAocId, 'AOR'));
   assert(aorScan === false, 'Operational staff at disabled station (AOR) denied scanning');
 
   // Test 2.4: Assignment lifecycle checks (revoked, expired, future)
-  const revokedScan = (await db.query("select public.can_user_scan_caterlink($1, $2, 'KUL - MAA') as r;", [revokedUserId, myAocId])).rows[0].r;
-  const expiredScan = (await db.query("select public.can_user_scan_caterlink($1, $2, 'KUL - MAA') as r;", [expiredUserId, myAocId])).rows[0].r;
-  const futureScan = (await db.query("select public.can_user_scan_caterlink($1, $2, 'KUL - MAA') as r;", [futureUserId, myAocId])).rows[0].r;
+  const revokedScan = (await scanAs(revokedUserId, myAocId, 'KUL - MAA'));
+  const expiredScan = (await scanAs(expiredUserId, myAocId, 'KUL - MAA'));
+  const futureScan = (await scanAs(futureUserId, myAocId, 'KUL - MAA'));
   assert(revokedScan === false, 'Revoked role assignment denied scanning');
   assert(expiredScan === false, 'Expired role assignment denied scanning');
   assert(futureScan === false, 'Future role assignment denied scanning');
 
   // Test 2.5: Cross-AOC scanning denial
-  const crossAocScan = (await db.query("select public.can_user_scan_caterlink($1, $2, 'KUL - MAA') as r;", [penAvsecId, zzAocId])).rows[0].r;
+  const crossAocScan = (await scanAs(penAvsecId, zzAocId, 'KUL - MAA'));
   assert(crossAocScan === false, 'Cross-AOC scanning denied (MY officer cannot scan in foreign AOC)');
 
   console.log('\n--- SECTION 3: Transaction Creation & Station Policy ---');
