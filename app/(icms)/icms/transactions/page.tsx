@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { requireProfile } from "@/lib/icms/auth";
 import { getActiveRoleAssignments } from "@/lib/dashboard/context";
@@ -43,6 +44,8 @@ export default async function TransactionsPage({
 }) {
   const params = await searchParams;
   const profile = await requireProfile();
+  // CaterLink Driver and Vendor are separate parties: this workflow belongs to the other one (and to Management/officers).
+  if (profile.identity === "external" && profile.role === "vendor") redirect("/icms/dashboard?error=forbidden");
   const supabase = await createClient();
 
   let query = supabase

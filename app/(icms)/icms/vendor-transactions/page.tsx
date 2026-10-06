@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { isModuleMissing } from "@/lib/icms/module-state";
 import { ModuleNotActivated } from "@/components/icms/ModuleNotActivated";
@@ -20,6 +21,8 @@ export const dynamic = "force-dynamic";
 
 export default async function VendorTransactionsPage() {
   const profile = await requireProfile();
+  // CaterLink Driver and Vendor are separate parties: this workflow belongs to the other one (and to Management/officers).
+  if (profile.identity === "external" && profile.role === "warehouse_pic") redirect("/icms/dashboard?error=forbidden");
   const supabase = await createClient();
 
   // Row-level security scopes this: a Vendor sees only its own deliveries, CaterLink Management sees

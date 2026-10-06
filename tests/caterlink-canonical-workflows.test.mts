@@ -150,3 +150,23 @@ test("the gated staging runner verifies exactly what the migration adds", () => 
   assert.match(runner, /--preflight-only/);
   assert.ok(!/postgres(ql)?:\/\/[^\[\s"']+:[^@\s"']+@/.test(runner), "no connection string with credentials in the runner");
 });
+
+test("Driver and Vendor are denied each other's pages (not only each other's rows)", () => {
+  for (const f of ["app/(icms)/icms/vendor-transactions/page.tsx", "app/(icms)/icms/vendor-transactions/[id]/page.tsx"]) {
+    assert.match(read(f), /role === "warehouse_pic"\) redirect\("\/icms\/dashboard\?error=forbidden"\)/, f);
+  }
+  assert.match(read("app/(icms)/icms/vendor-transactions/[id]/part-b/page.tsx"), /identity === "external"\) redirect\("\/icms\/dashboard\?error=forbidden"\)/);
+  for (const f of ["app/(icms)/icms/transactions/page.tsx", "app/(icms)/icms/transactions/[id]/page.tsx"]) {
+    assert.match(read(f), /role === "vendor"\) redirect\("\/icms\/dashboard\?error=forbidden"\)/, f);
+  }
+  assert.match(read("app/(icms)/icms/incidents/page.tsx"), /identity === "external"\) redirect\("\/icms\/dashboard\?error=forbidden"\)/);
+});
+
+test("the proposed storage repairs stay outside the live migrations folder until approved", () => {
+  const live = fs.readdirSync(path.join(REPO, "supabase/migrations"));
+  assert.ok(!live.some((f) => /^2026102[6-9]/.test(f)), "a storage repair was moved into supabase/migrations without approval");
+  const proposed = fs.readdirSync(path.join(REPO, "supabase/proposed-migrations")).sort();
+  assert.deepEqual(proposed, ["20261026000001_storage_upload_policy_repair.sql", "20261026000002_signature_read_scoping.sql"]);
+  assert.match(read("supabase/proposed-migrations/20261026000001_storage_upload_policy_repair.sql"), /can_upload_report_attachment/);
+  assert.ok(!/get_report_submitter\(\s*\n?\s*\(storage/.test(read("supabase/proposed-migrations/20261026000002_signature_read_scoping.sql")));
+});

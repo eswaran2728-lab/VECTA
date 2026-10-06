@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireProfile } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
 import { signedUrl } from "@/lib/icms/storage";
@@ -39,6 +39,8 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 export default async function VendorTransactionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const profile = await requireProfile();
+  // CaterLink Driver and Vendor are separate parties: this workflow belongs to the other one (and to Management/officers).
+  if (profile.identity === "external" && profile.role === "warehouse_pic") redirect("/icms/dashboard?error=forbidden");
 
   const supabase = await createClient();
   const { delivery, checkpoints } = await loadVendorDelivery(supabase, id);

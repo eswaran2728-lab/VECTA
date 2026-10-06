@@ -12,6 +12,8 @@ export const dynamic = "force-dynamic";
 export default async function VendorPartBPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const profile = await requireProfile();
+  // CaterLink Driver and Vendor are separate parties: this workflow belongs to the other one (and to Management/officers).
+  if (profile.identity === "external") redirect("/icms/dashboard?error=forbidden");
 
   const supabase = await createClient();
   const { delivery } = await loadVendorDelivery(supabase, id);

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { requireProfile } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -154,7 +154,9 @@ export default async function TransactionDetailPage({
 }) {
   const { id } = await params;
   const flags = await searchParams;
-  await requireProfile();
+  const profile = await requireProfile();
+  // CaterLink Driver and Vendor are separate parties: this workflow belongs to the other one (and to Management/officers).
+  if (profile.identity === "external" && profile.role === "vendor") redirect("/icms/dashboard?error=forbidden");
   const supabase = await createClient();
 
   // Row-level security decides visibility: the creating Driver, CaterLink Management / Operation Manager /

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { isModuleMissing } from "@/lib/icms/module-state";
 import { ModuleNotActivated } from "@/components/icms/ModuleNotActivated";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireProfile } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/icms/ui/card";
@@ -36,6 +37,8 @@ export default async function IncidentsPage({
 }) {
   const searchParams = await searchParamsPromise;
   const profile = await requireProfile();
+  // external CaterLink parties (Driver, Vendor) have no incident functions
+  if (profile.identity === "external") redirect("/icms/dashboard?error=forbidden");
   const canResolve = profile.role === "supervisor" || profile.role === "enforcement" || profile.role === "management";
   const supabase = await createClient();
 

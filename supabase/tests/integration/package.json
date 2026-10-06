@@ -42,6 +42,7 @@
     "verify-caterlink-receipt-authz:native": "node verify_caterlink_receipt_authorization.mjs --native",
     "verify-caterlink-external:native": "node verify_caterlink_external_accounts.mjs --native",
     "verify-caterlink-workflows:native": "node verify_caterlink_external_workflows.mjs",
+    "verify-storage-policies:native": "node verify_storage_policies.mjs",
     "verify-phase8-leave-concurrency:native": "node verify_phase8_leave_concurrency_native.mjs",
     "verify-phase8-duty-draw-concurrency:native": "node verify_phase8_duty_draw_concurrency_native.mjs",
     "verify-phase8-concurrency-round2:native": "node verify_phase8_concurrency_round2_native.mjs",
