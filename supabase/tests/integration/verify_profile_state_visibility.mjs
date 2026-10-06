@@ -120,7 +120,7 @@ async function main() {
   const policyBefore = (await one("select md5(string_agg(policyname || coalesce(qual,''), ',' order by policyname)) h from pg_policies where tablename in ('transactions','seals','caterlink_checkpoint_part_a','part_b_c','caterlink_checkpoint_part_d','caterlink_checkpoint_hub','caterlink_checkpoint_redq');")).h;
   const scanBefore = (await one("select md5(pg_get_functiondef('public.can_user_scan_caterlink(text, uuid)'::regprocedure)) h;")).h;
   await db.query('reset role;');
-  await db.query(read('proposed-migrations', '20261027000001_station_visibility_requires_approved_profile.sql'));
+  await db.query(read('migrations', '20261027000001_station_visibility_requires_approved_profile.sql'));
   await simulateService();
   {
     const v = {}; for (const [k, id] of Object.entries(who)) v[k] = await view(id);
@@ -145,7 +145,7 @@ async function main() {
     await simulateService();
     assert(none(await view(approved)), 'deactivating an approved officer removes access immediately');
     await db.query('reset role;');
-    await db.query(read('proposed-migrations', '20261027000001_station_visibility_requires_approved_profile.sql'));
+    await db.query(read('migrations', '20261027000001_station_visibility_requires_approved_profile.sql'));
     await simulateService();
     assert(none(await view(approved)) && all(await view(pending)), 're-applying the repair is a no-op');
   }

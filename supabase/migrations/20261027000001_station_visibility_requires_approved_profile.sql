@@ -1,4 +1,4 @@
--- PROPOSED (NOT APPLIED, NOT APPROVED): a movement is readable through the station-assignment path only by an APPROVED profile.
+-- PROFILE-STATUS REPAIR (approved for staging): a movement is readable through the station-assignment path only by an APPROVED profile.
 --
 -- Defect: public.has_station_assignment_for_transaction() (used only by transactions_read_policy) checks the assignment's
 -- station, AOC, revocation and dates, but never the holder's profile status. has_role_in_scope() / has_active_role_for_aoc()

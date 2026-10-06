@@ -34,6 +34,7 @@ const PHASE2_13_CHAIN = [
   "20261025000001_caterlink_external_workflows.sql",
   "20261026000001_storage_upload_policy_repair.sql",
   "20261026000002_signature_read_scoping.sql",
+  "20261027000001_station_visibility_requires_approved_profile.sql",
 ];
 
 const LEGACY_ROLES = ["ASO", "SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"];
