@@ -24,8 +24,8 @@ export const VENDOR_WORKFLOW: VendorCheckpointStep[] = [
   {
     part: "part_b",
     slug: "part-b",
-    label: "Part B — AirAsia Security (Post 2)",
-    shortLabel: "B · Post 2",
+    label: "Part B — Security check",
+    shortLabel: "B · Security",
     role: "post2_avsec",
     requiredStatus: ["CREATED"],
     finalizes: false,
@@ -33,10 +33,10 @@ export const VENDOR_WORKFLOW: VendorCheckpointStep[] = [
   {
     part: "part_c",
     slug: "part-c",
-    label: "Part C — Warehouse (In-Flight)",
-    shortLabel: "C · Warehouse",
-    role: "warehouse_pic",
-    requiredStatus: ["SECURITY_VERIFIED", "PART_C_PARTIAL"],
+    label: "Part C — Vendor confirmation",
+    shortLabel: "C · Vendor",
+    role: "vendor",
+    requiredStatus: ["SECURITY_VERIFIED"],
     finalizes: true,
   },
 ];

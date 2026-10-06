@@ -51,9 +51,9 @@ async function handleVendorLookup(
   by: { transactionId: string | null; transactionNumber: string }
 ): Promise<NextResponse> {
   const { data: tx } = await supabase
-    .from("vendor_transactions")
-    .select("id, status, transaction_number")
-    .eq(by.transactionId ? "id" : "transaction_number", by.transactionId ?? by.transactionNumber)
+    .from("caterlink_vendor_deliveries" as never)
+    .select("id, status, delivery_number")
+    .eq(by.transactionId ? "id" : "delivery_number", by.transactionId ?? by.transactionNumber)
     .maybeSingle();
 
   if (!tx) {
@@ -63,7 +63,8 @@ async function handleVendorLookup(
     );
   }
 
-  const t = tx as Pick<VendorTransaction, "id" | "status" | "transaction_number">;
+  const row = tx as unknown as { id: string; status: VendorTransaction["status"]; delivery_number: string };
+  const t = { id: row.id, status: row.status, transaction_number: row.delivery_number };
   const next = vendorNextStepFor(t.status);
 
   // Canonical station operators may complete the Post 2 step; the warehouse step belongs to the

@@ -52,6 +52,7 @@ type DriverOption = Pick<DriverRecord, "name" | "staff_id" | "pass_expiry_date" 
 interface PartAFormProps {
   picName: string;
   picStaffId: string;
+  stations: string[];
   companies: CateringCompany[];
   vehicles: Pick<VehicleRecord, "vehicle_number" | "pass_expiry_date">[];
   drivers: DriverOption[];
@@ -114,6 +115,7 @@ const HUB_DESTINATIONS: HubDestination[] = ["PEN", "JHB", "NILAI"];
 export function PartAForm({
   picName,
   picStaffId,
+  stations,
   companies,
   vehicles,
   drivers,
@@ -324,15 +326,20 @@ export function PartAForm({
             </div>
             <div className="space-y-2">
               <Label htmlFor="station">Station</Label>
-              <Input
+              <Select
                 id="station"
                 name="station"
-                placeholder="e.g. KUL"
-                autoCapitalize="characters"
                 required
                 value={station}
                 onChange={(e) => setStation(e.target.value)}
-              />
+              >
+                <option value="">Select station</option>
+                {stations.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="vehicle_number">Vehicle Number</Label>

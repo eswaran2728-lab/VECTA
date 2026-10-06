@@ -1,23 +1,17 @@
 import type { Metadata } from "next";
-import { isModuleMissing } from "@/lib/icms/module-state";
-import { ModuleNotActivated } from "@/components/icms/ModuleNotActivated";
 import Link from "next/link";
 import { requireProfile } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/icms/ui/badge";
 import { Button } from "@/components/icms/ui/button";
 import { Card } from "@/components/icms/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/icms/ui/table";
-import { VENDOR_STATUS_COLORS, VENDOR_STATUS_LABELS } from "@/lib/icms/constants";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/icms/ui/table";
 import { formatDateTime } from "@/lib/icms/utils";
-import type { VendorTransaction } from "@/lib/icms/database.types";
+import {
+  VENDOR_DELIVERY_STATUS_COLORS,
+  VENDOR_DELIVERY_STATUS_LABELS,
+  type VendorDelivery,
+} from "@/lib/caterlink/vendor";
 
 export const metadata: Metadata = { title: "Vendor Deliveries" };
 export const dynamic = "force-dynamic";
@@ -26,38 +20,23 @@ export default async function VendorTransactionsPage() {
   const profile = await requireProfile();
   const supabase = await createClient();
 
-  // RLS already scopes this: a vendor sees only their own rows
-  // (vendor_transactions: vendor reads own), while checkpoint/management
-  // roles see everything (vendor_transactions: checkpoint roles read all) —
-  // see supabase/migrations/icms/20260813000002_vendor_movement.sql and
-  // management_icms_parity.sql.
-  const { data, error: vendorError } = await supabase
-    .from("vendor_transactions")
-    .select("*, vendor_part_a(driver_name, seal_number)")
+  // Row-level security scopes this: a Vendor sees only its own deliveries, CaterLink Management sees
+  // those in its AOC, and a scan-authorised officer sees those at its station.
+  const { data } = await supabase
+    .from("caterlink_vendor_deliveries" as never)
+    .select("*")
     .order("created_at", { ascending: false })
     .limit(200);
-
-  if (isModuleMissing(vendorError)) {
-    return <ModuleNotActivated title="Vendor transactions" detail="The vendor movement module is not activated on this environment, so there is no data available." />;
-  }
-
-  const transactions = (data ?? []) as unknown as (VendorTransaction & {
-    vendor_part_a: { driver_name: string; seal_number: string }[];
-  })[];
-
+  const deliveries = (data ?? []) as unknown as VendorDelivery[];
   const isVendor = profile.role === "vendor";
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            {isVendor ? "My Deliveries" : "Vendor Deliveries"}
-          </h1>
+          <h1 className="text-2xl font-bold tracking-tight">{isVendor ? "My Deliveries" : "Vendor Deliveries"}</h1>
           <p className="text-sm text-muted-foreground">
-            {isVendor
-              ? "Vendor movement transactions you've created."
-              : "All vendor-supplied movement transactions (AA/SEC/F/019)."}
+            {isVendor ? "Deliveries you have created." : "Third-party vendor deliveries."}
           </p>
         </div>
         {isVendor ? (
@@ -71,7 +50,7 @@ export default async function VendorTransactionsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Transaction</TableHead>
+              <TableHead>Delivery</TableHead>
               <TableHead>Driver</TableHead>
               <TableHead>Seal</TableHead>
               <TableHead>Status</TableHead>
@@ -79,38 +58,26 @@ export default async function VendorTransactionsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {transactions.length === 0 ? (
+            {deliveries.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                  {isVendor
-                    ? "You haven't created any deliveries yet."
-                    : "No vendor deliveries yet."}
+                  {isVendor ? "You haven't created any deliveries yet." : "No vendor deliveries yet."}
                 </TableCell>
               </TableRow>
             ) : (
-              transactions.map((t) => (
-                <TableRow key={t.id}>
+              deliveries.map((d) => (
+                <TableRow key={d.id}>
                   <TableCell>
-                    <Link
-                      href={`/icms/vendor-transactions/${t.id}`}
-                      prefetch={false}
-                      className="font-mono font-medium text-primary hover:underline"
-                    >
-                      {t.transaction_number}
+                    <Link href={`/icms/vendor-transactions/${d.id}`} prefetch={false} className="font-mono font-medium text-primary hover:underline">
+                      {d.delivery_number}
                     </Link>
                   </TableCell>
-                  <TableCell>{t.vendor_part_a[0]?.driver_name ?? "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {t.vendor_part_a[0]?.seal_number ?? "—"}
-                  </TableCell>
+                  <TableCell>{d.driver_name}</TableCell>
+                  <TableCell className="font-mono text-xs">{d.seal_number}</TableCell>
                   <TableCell>
-                    <Badge className={VENDOR_STATUS_COLORS[t.status]}>
-                      {VENDOR_STATUS_LABELS[t.status]}
-                    </Badge>
+                    <Badge className={VENDOR_DELIVERY_STATUS_COLORS[d.status]}>{VENDOR_DELIVERY_STATUS_LABELS[d.status]}</Badge>
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                    {formatDateTime(t.created_at)}
-                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDateTime(d.created_at)}</TableCell>
                 </TableRow>
               ))
             )}

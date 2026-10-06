@@ -6,7 +6,7 @@ import { Card, CardContent, CardTitle } from "@/components/icms/ui/card";
 import { DashboardCharts, type DashTx } from "./dashboard-charts";
 import { ExportResetButton } from "./export-reset-button";
 import { CountUp } from "@/components/icms/count-up";
-import type { Direction, Incident, SegmentTimeout, TransactionStatus } from "@/lib/icms/database.types";
+import type { Direction, Incident, TransactionStatus } from "@/lib/icms/database.types";
 import {
   QrCode,
   TrendingUp,
@@ -50,8 +50,8 @@ export default async function DashboardPage({
 
     const query = isVendor
       ? supabase
-          .from("vendor_transactions")
-          .select("*")
+          .from("caterlink_vendor_deliveries" as never)
+          .select("id, delivery_number, status, vehicle_registration_no, created_at")
           .order("created_at", { ascending: false })
           .limit(15)
       : supabase
@@ -72,7 +72,19 @@ export default async function DashboardPage({
       flight_number?: string | null;
     }
 
-    const activeList = ((userTx ?? []) as unknown as DriverTxItem[]).filter(
+    const activeList = (
+      isVendor
+        ? ((userTx ?? []) as unknown as { id: string; delivery_number: string; status: string; vehicle_registration_no: string }[]).map(
+            (d) =>
+              ({
+                id: d.id,
+                transaction_number: d.delivery_number,
+                status: d.status,
+                vehicle_number: d.vehicle_registration_no,
+              }) as unknown as DriverTxItem
+          )
+        : ((userTx ?? []) as unknown as DriverTxItem[])
+    ).filter(
       (t) => (t.status as string) !== "COMPLETED" && (t.status as string) !== "ESCALATED"
     );
 
@@ -273,14 +285,14 @@ export default async function DashboardPage({
     supabase
       .from("transactions")
       .select(
-        "created_at, completed_at, status, direction, part_a(completed_at), part_b(completed_at), part_c(completed_at), part_d(completed_at)"
+        "created_at, completed_at, status, direction, caterlink_checkpoint_part_a(completed_at), part_b_c(completed_at, checkpoint_stage), caterlink_checkpoint_part_d(completed_at)"
       )
       .eq("archived", false)
       .gte("created_at", chartWindow.toISOString())
       .order("created_at", { ascending: false })
       .limit(2000),
     supabase
-      .from("incidents")
+      .from("caterlink_incidents" as never)
       .select("incident_type, created_at")
       .gte("created_at", chartWindow.toISOString())
       .limit(1000),
@@ -291,40 +303,10 @@ export default async function DashboardPage({
 
   // Amber SLA warning: once a pending transaction crosses ~80% of its
   // segment's time limit, flag its queue before the hard escalation hits.
-  const [pendingForSla, segmentLimits] = await Promise.all([
-    supabase
-      .from("transactions")
-      .select("direction, status, status_entered_at")
-      .eq("archived", false)
-      .in("status", ["CREATED", "INFLIGHT_POST_APPROVED", "AIRPORT_POST_APPROVED"]),
-    supabase.from("segment_timeouts").select("direction, from_status, limit_minutes"),
-  ]);
-  const limitMap = new Map<string, number>();
-  for (const row of (segmentLimits.data ?? []) as Pick<
-    SegmentTimeout,
-    "direction" | "from_status" | "limit_minutes"
-  >[]) {
-    if (row.limit_minutes !== null) limitMap.set(`${row.direction}:${row.from_status}`, row.limit_minutes);
-  }
-  const nowMs = Date.now();
-  let nearingInflightPost = 0;
-  let nearingAirportPost = 0;
-  for (const row of (pendingForSla.data ?? []) as {
-    direction: Direction;
-    status: TransactionStatus;
-    status_entered_at: string;
-  }[]) {
-    const limit = limitMap.get(`${row.direction}:${row.status}`);
-    if (!limit) continue;
-    const elapsedMinutes = (nowMs - new Date(row.status_entered_at).getTime()) / 60000;
-    if (elapsedMinutes < 0.8 * limit) continue;
-    // Same queue mapping as pendingInflightPost/pendingAirportPost above.
-    const isInflightPostQueue =
-      (row.direction === "OUTBOUND" && row.status === "CREATED") ||
-      (row.direction === "INBOUND" && row.status === "AIRPORT_POST_APPROVED");
-    if (isInflightPostQueue) nearingInflightPost += 1;
-    else nearingAirportPost += 1;
-  }
+  // Segment time limits (segment_timeouts / status_entered_at) are not part of the canonical model, so
+  // no queue is flagged as nearing its limit.
+  const nearingInflightPost = 0;
+  const nearingAirportPost = 0;
 
   const cards = [
     {
@@ -480,7 +462,28 @@ export default async function DashboardPage({
 
       <div className="animate-fade-in-up" style={{ animationDelay: "400ms" }}>
         <DashboardCharts
-          transactions={(recentTransactions.data ?? []) as unknown as DashTx[]}
+          transactions={(
+            (recentTransactions.data ?? []) as unknown as {
+              created_at: string;
+              completed_at: string | null;
+              status: string;
+              direction: Direction;
+              caterlink_checkpoint_part_a: { completed_at: string } | { completed_at: string }[] | null;
+              part_b_c: { completed_at: string; checkpoint_stage: "B" | "C" }[] | null;
+              caterlink_checkpoint_part_d: { completed_at: string } | { completed_at: string }[] | null;
+            }[]
+          ).map(
+            (t): DashTx => ({
+              created_at: t.created_at,
+              completed_at: t.completed_at,
+              status: t.status,
+              direction: t.direction,
+              part_a: t.caterlink_checkpoint_part_a,
+              part_b: (t.part_b_c ?? []).find((r) => r.checkpoint_stage === "B") ?? null,
+              part_c: (t.part_b_c ?? []).find((r) => r.checkpoint_stage === "C") ?? null,
+              part_d: t.caterlink_checkpoint_part_d,
+            })
+          )}
           incidents={(recentIncidents.data ?? []) as Pick<Incident, "incident_type" | "created_at">[]}
         />
       </div>

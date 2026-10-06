@@ -164,6 +164,13 @@ begin
   if v_vehicle_id is null or v_driver_id is null then
     raise exception 'Vehicle or driver is not an active, approved, currently-effective whitelist entry for this AOC.';
   end if;
+  -- a whitelisted driver id must not wave through a different person: the name must match the entry
+  if not exists (
+    select 1 from public.drivers d
+    where d.id = v_driver_id and upper(btrim(d.name)) = upper(btrim(p_driver_name))
+  ) then
+    raise exception 'The driver name does not match the whitelisted name on file for this driver ID.';
+  end if;
 
   if p_route = 'HUB' then
     if p_hub_destination is null then
@@ -214,6 +221,55 @@ $function$;
 revoke execute on function public.create_caterlink_driver_transaction_secure(text, text, text, text, text, text, text, text, text, boolean, text, text, text, text, integer, text[]) from public, anon;
 grant execute on function public.create_caterlink_driver_transaction_secure(text, text, text, text, text, text, text, text, text, boolean, text, text, text, text, integer, text[]) to authenticated, service_role;
 
+-- The Driver cannot read the whitelist tables (their RLS is role-based), so the creation form is fed
+-- by this narrow RPC: only currently usable entries in the creating station's AOC, minimal fields.
+create or replace function public.list_caterlink_driver_options_secure()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_aocs uuid[];
+begin
+  if public.caterlink_external_role() is distinct from 'warehouse_pic' then
+    raise exception 'Only an active CaterLink Driver account may list creation options.';
+  end if;
+  select coalesce(array_agg(distinct cap.aoc_id), '{}') into v_aocs
+  from public.caterlink_station_capabilities cap
+  where cap.is_active and cap.can_create;
+
+  return jsonb_build_object(
+    'stations', (
+      select coalesce(jsonb_agg(s.code order by s.code), '[]'::jsonb)
+      from public.caterlink_station_capabilities cap
+      join public.org_stations s on s.id = cap.station_id and s.is_active
+      where cap.is_active and cap.can_create
+    ),
+    'companies', (
+      select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'code', c.code) order by c.name), '[]'::jsonb)
+      from public.catering_companies c
+      where c.aoc_id = any(v_aocs) and c.status = 'active'
+    ),
+    'vehicles', (
+      select coalesce(jsonb_agg(jsonb_build_object('vehicle_number', v.vehicle_number, 'pass_expiry_date', v.pass_expiry_date) order by v.vehicle_number), '[]'::jsonb)
+      from public.vehicles v
+      where v.aoc_id = any(v_aocs)
+        and public.caterlink_identity_is_usable(v.is_active, v.revoked_at, v.deactivated_at, v.created_by, v.approved_at, v.effective_from, v.pass_expiry_date)
+    ),
+    'drivers', (
+      select coalesce(jsonb_agg(jsonb_build_object('name', d.name, 'staff_id', d.staff_id, 'pass_expiry_date', d.pass_expiry_date, 'catering_company_id', d.catering_company_id) order by d.name), '[]'::jsonb)
+      from public.drivers d
+      where d.aoc_id = any(v_aocs)
+        and public.caterlink_identity_is_usable(d.is_active, d.revoked_at, d.deactivated_at, d.created_by, d.approved_at, d.effective_from, d.pass_expiry_date)
+    )
+  );
+end;
+$function$;
+revoke execute on function public.list_caterlink_driver_options_secure() from public, anon;
+grant execute on function public.list_caterlink_driver_options_secure() to authenticated, service_role;
+
 -- ---------------------------------------------------------------------------------------------
 -- 5. Third-Party Vendor delivery workflow
 -- ---------------------------------------------------------------------------------------------
@@ -250,6 +306,7 @@ create table if not exists public.caterlink_vendor_checkpoints (
   result text not null default 'PASS' check (result in ('PASS', 'ESCALATE')),
   remarks text,
   escalation_reason text,
+  observed jsonb,
   completed_at timestamptz not null default now(),
   unique (delivery_id, stage),
   check (result <> 'ESCALATE' or nullif(btrim(escalation_reason), '') is not null)
@@ -397,7 +454,8 @@ create or replace function public.record_caterlink_vendor_security_check_secure(
   p_signature_hash text default null,
   p_result text default 'PASS',
   p_remarks text default null,
-  p_escalation_reason text default null
+  p_escalation_reason text default null,
+  p_observed jsonb default null
 )
 returns void
 language plpgsql
@@ -436,10 +494,10 @@ begin
   select p.name, p.staff_no into v_profile from public.profiles p where p.id = v_caller;
 
   insert into public.caterlink_vendor_checkpoints (
-    delivery_id, stage, actor_id, actor_name, actor_staff_id, signature_url, signature_hash, result, remarks, escalation_reason
+    delivery_id, stage, actor_id, actor_name, actor_staff_id, signature_url, signature_hash, result, remarks, escalation_reason, observed
   ) values (
     p_delivery_id, 'B', v_caller, coalesce(v_profile.name, ''), coalesce(v_profile.staff_no, ''), p_signature_url,
-    p_signature_hash, p_result, p_remarks, p_escalation_reason
+    p_signature_hash, p_result, p_remarks, p_escalation_reason, p_observed
   );
   update public.caterlink_vendor_deliveries
     set status = case when p_result = 'PASS' then 'SECURITY_VERIFIED' else 'ESCALATED' end
@@ -449,8 +507,8 @@ begin
     jsonb_build_object('result', p_result, 'station', v_station_code));
 end;
 $function$;
-revoke execute on function public.record_caterlink_vendor_security_check_secure(uuid, text, text, text, text, text) from public, anon;
-grant execute on function public.record_caterlink_vendor_security_check_secure(uuid, text, text, text, text, text) to authenticated, service_role;
+revoke execute on function public.record_caterlink_vendor_security_check_secure(uuid, text, text, text, text, text, jsonb) from public, anon;
+grant execute on function public.record_caterlink_vendor_security_check_secure(uuid, text, text, text, text, text, jsonb) to authenticated, service_role;
 
 create or replace function public.complete_caterlink_vendor_delivery_secure(
   p_delivery_id uuid,
@@ -494,3 +552,53 @@ end;
 $function$;
 revoke execute on function public.complete_caterlink_vendor_delivery_secure(uuid, text, text) from public, anon;
 grant execute on function public.complete_caterlink_vendor_delivery_secure(uuid, text, text) to authenticated, service_role;
+
+-- ---------------------------------------------------------------------------------------------
+-- 6. Audit log for CaterLink Management (phase8_audit_log has no client read grant)
+-- ---------------------------------------------------------------------------------------------
+create or replace function public.list_caterlink_audit_secure(p_limit integer default 300)
+returns table (
+  id uuid, actor_id uuid, actor_name text, action text, entity_type text, entity_id uuid,
+  detail jsonb, created_at timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_aocs uuid[];
+begin
+  select coalesce(array_agg(distinct ura.aoc_id), '{}') into v_aocs
+  from public.user_role_assignments ura
+  join public.role_definitions rd on rd.id = ura.role_definition_id
+  where ura.profile_id = auth.uid()
+    and rd.code = 'caterlink_management'
+    and ura.aoc_id is not null
+    and ura.revoked_at is null
+    and (ura.starts_at is null or ura.starts_at <= now())
+    and (ura.ends_at is null or ura.ends_at > now());
+  if cardinality(v_aocs) = 0 then
+    raise exception 'Only CaterLink Management may read the CaterLink audit log.';
+  end if;
+
+  return query
+  select a.id, a.actor_id, p.name, a.action, a.entity_type, a.entity_id, a.detail, a.created_at
+  from public.phase8_audit_log a
+  left join public.profiles p on p.id = a.actor_id
+  where a.action like 'caterlink!_%' escape '!'
+    and (
+      exists (select 1 from public.transactions t where t.id = a.entity_id and t.aoc_id = any(v_aocs))
+      or exists (select 1 from public.caterlink_vendor_deliveries d where d.id = a.entity_id and d.aoc_id = any(v_aocs))
+      or exists (select 1 from public.caterlink_incidents i where i.id = a.entity_id and i.aoc_id = any(v_aocs))
+      or exists (select 1 from public.caterlink_archives r where r.id = a.entity_id and r.aoc_id = any(v_aocs))
+      or exists (select 1 from public.vehicles v where v.id = a.entity_id and v.aoc_id = any(v_aocs))
+      or exists (select 1 from public.drivers dr where dr.id = a.entity_id and dr.aoc_id = any(v_aocs))
+      or exists (select 1 from public.catering_companies c where c.id = a.entity_id and c.aoc_id = any(v_aocs))
+    )
+  order by a.created_at desc
+  limit least(greatest(coalesce(p_limit, 300), 1), 1000);
+end;
+$function$;
+revoke execute on function public.list_caterlink_audit_secure(integer) from public, anon;
+grant execute on function public.list_caterlink_audit_secure(integer) to authenticated, service_role;

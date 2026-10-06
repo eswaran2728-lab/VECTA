@@ -10,42 +10,21 @@ const initialState: ActionState = { error: null };
 
 interface VendorPartCFormProps {
   transactionId: string;
-  warehousePicName: string;
   vendorDriverName: string;
 }
 
-/**
- * Single submission captures both signatures on one device, handed
- * physically between the two people — the two pads are visually distinct
- * cards so it's unambiguous whose turn it is to sign.
- */
-export function VendorPartCForm({
-  transactionId,
-  warehousePicName,
-  vendorDriverName,
-}: VendorPartCFormProps) {
+export function VendorPartCForm({ transactionId, vendorDriverName }: VendorPartCFormProps) {
   const [state, formAction, pending] = useActionState(submitVendorPartC, initialState);
-  const [warehouseSignature, setWarehouseSignature] = useState<string | null>(null);
   const [vendorSignature, setVendorSignature] = useState<string | null>(null);
 
   return (
     <form action={formAction} className="space-y-4">
       <input type="hidden" name="transaction_id" value={transactionId} />
-      <input type="hidden" name="warehouse_signature" value={warehouseSignature ?? ""} />
       <input type="hidden" name="vendor_signature" value={vendorSignature ?? ""} />
-
-      <Card className="border-indigo-300 dark:border-indigo-800">
-        <CardHeader>
-          <CardTitle className="text-base">1. Warehouse PIC — {warehousePicName}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <SignatureField label="Warehouse PIC Signature" onChange={setWarehouseSignature} />
-        </CardContent>
-      </Card>
 
       <Card className="border-lime-300 dark:border-lime-800">
         <CardHeader>
-          <CardTitle className="text-base">2. Vendor Driver — {vendorDriverName}</CardTitle>
+          <CardTitle className="text-base">Vendor Driver — {vendorDriverName}</CardTitle>
         </CardHeader>
         <CardContent>
           <SignatureField label="Vendor Driver Signature" onChange={setVendorSignature} />
@@ -58,12 +37,7 @@ export function VendorPartCForm({
         </p>
       ) : null}
 
-      <Button
-        type="submit"
-        size="xl"
-        className="w-full"
-        disabled={pending || !warehouseSignature || !vendorSignature}
-      >
+      <Button type="submit" size="xl" className="w-full" disabled={pending || !vendorSignature}>
         {pending ? "Completing…" : "Complete Delivery"}
       </Button>
     </form>

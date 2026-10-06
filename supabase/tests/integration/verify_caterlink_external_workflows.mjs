@@ -221,6 +221,16 @@ async function main() {
     const nA = await asUser(noAccount, async () => (await db.query('select 1 from public.transactions;')).rows.length);
     assert(nA === 0, 'an account with no role reads nothing');
 
+    const opts = (await asUser(driverA, () => one('select public.list_caterlink_driver_options_secure() o;'))).o;
+    assert(opts.vehicles.some((v) => v.vehicle_number === 'WF1234A') && opts.drivers.some((d) => d.staff_id === 'WFD001') && opts.companies.some((c) => c.code === 'WFC') && opts.stations.includes('KUL - MAA') && !opts.stations.includes('PEN'), 'the Driver is offered the usable whitelist entries and only the create-capable stations');
+    assert(!JSON.stringify(opts).match(/created_by|approved_by|revoked/), 'the options expose only minimal fields');
+    for (const [label, id] of [['Vendor', vendorA], ['Management', mgmt], ['pending Driver', pendingDriver], ['an AVSEC officer', asoPen]]) {
+      assert((await asUserFail(id, () => db.query('select public.list_caterlink_driver_options_secure();'))).failed, `${label} cannot list the Driver creation options`);
+    }
+    {
+      const mismatch = await asUserFail(driverA, () => createTx(DRV_ARGS({ name: 'Someone Else', seal: 'S-NM' })));
+      assert(mismatch.failed, 'a driver name that does not match the whitelisted name is rejected');
+    }
     for (const [label, id] of [['Vendor', vendorA], ['Management', mgmt], ['pending Driver', pendingDriver], ['mixed identity (external + assignment)', mixed], ['an account with no role', noAccount], ['an AVSEC officer', asoPen], ['Operation Manager', ops]]) {
       const r2 = await asUserFail(id, () => createTx(DRV_ARGS({ seal: `S-${label.length}` })));
       assert(r2.failed, `${label} cannot create a movement through the Driver RPC`);
@@ -329,6 +339,18 @@ async function main() {
       const i = await asUserFail(vendorA, () => db.query(`insert into public.${t} (id) values (gen_random_uuid());`));
       assert(w.failed && i.failed, `${t}: the Vendor cannot write directly`);
     }
+  }
+
+  console.log('\n--- SECTION 3b: CaterLink audit log ---');
+  {
+    const audit = await asUser(mgmt, async () => (await db.query('select action, entity_type from public.list_caterlink_audit_secure(500);')).rows);
+    const actions = new Set(audit.map((r) => r.action));
+    assert(actions.has('caterlink_driver_transaction_create') && actions.has('caterlink_vendor_delivery_create') && actions.has('caterlink_vendor_security_check') && actions.has('caterlink_vendor_delivery_complete'), `Management reads the Driver and Vendor workflow audit events (${[...actions].join(', ')})`);
+    for (const [label, id] of [['Driver', driverA], ['Vendor', vendorA], ['Operation Manager', ops], ['an AVSEC officer', asoPen], ['an account with no role', noAccount]]) {
+      assert((await asUserFail(id, () => db.query('select * from public.list_caterlink_audit_secure(10);'))).failed, `${label} cannot read the CaterLink audit log`);
+    }
+    const direct = await asUserFail(mgmt, () => db.query('select 1 from public.phase8_audit_log limit 1;'));
+    assert(direct.failed, 'the raw audit table stays unreadable to clients');
   }
 
   console.log('\n--- SECTION 4: CaterLink-only isolation from VECTA data ---');

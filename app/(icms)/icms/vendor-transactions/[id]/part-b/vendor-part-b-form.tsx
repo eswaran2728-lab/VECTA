@@ -24,6 +24,7 @@ interface VendorPartBFormProps {
 export function VendorPartBForm({ transactionId, officerName, officerStaffId }: VendorPartBFormProps) {
   const [state, formAction, pending] = useActionState(submitVendorPartB, initialState);
   const [signature, setSignature] = useState<string | null>(null);
+  const [result, setResult] = useState<"PASS" | "ESCALATE">("PASS");
 
   return (
     <Card>
@@ -55,6 +56,25 @@ export function VendorPartBForm({ transactionId, officerName, officerStaffId }: 
             <Input id="seal_number" name="seal_number" className="font-mono" required />
           </div>
           <div className="space-y-2">
+            <Label htmlFor="result">Result</Label>
+            <select
+              id="result"
+              name="result"
+              value={result}
+              onChange={(e) => setResult(e.target.value === "ESCALATE" ? "ESCALATE" : "PASS")}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="PASS">Pass — approve</option>
+              <option value="ESCALATE">Escalate — discrepancy found</option>
+            </select>
+          </div>
+          {result === "ESCALATE" ? (
+            <div className="space-y-2">
+              <Label htmlFor="escalation_reason">Escalation reason</Label>
+              <Textarea id="escalation_reason" name="escalation_reason" rows={2} required />
+            </div>
+          ) : null}
+          <div className="space-y-2">
             <Label htmlFor="remarks">Remarks (optional)</Label>
             <Textarea id="remarks" name="remarks" rows={2} />
           </div>
@@ -77,7 +97,7 @@ export function VendorPartBForm({ transactionId, officerName, officerStaffId }: 
           ) : null}
 
           <Button type="submit" size="xl" className="w-full" disabled={pending || !signature}>
-            {pending ? "Saving…" : "Approve Part B"}
+            {pending ? "Saving…" : result === "ESCALATE" ? "Escalate" : "Approve Part B"}
           </Button>
         </form>
       </CardContent>

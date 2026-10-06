@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireProfile, requireRole, requireCheckpointRole } from "@/lib/icms/auth";
 import { uploadDataUrl } from "@/lib/icms/storage";
+import { callCaterlinkRpc } from "@/lib/caterlink/vendor";
 import { checkpointOrderError, getStep, resolveEscalatedStatus } from "@/lib/icms/workflow";
 import { generateQrToken } from "@/lib/icms/qr-token";
 import { generateCompletedFormPdf } from "@/lib/icms/completed-form-pdf";
@@ -362,86 +363,14 @@ export async function createTransaction(
     };
   }
 
-  const supabase = await createClient();
-
-  // Whitelist checks: CORRECTED (post-review, round 2) -- an expired pass
-  // must never authorize a transaction. resolve_usable_caterlink_vehicle/
-  // driver() is the single authoritative "currently usable" predicate
-  // (active, approved, not revoked/deactivated, effective, not expired)
-  // that the real enforce_whitelist_on_create() trigger below also
-  // re-verifies -- expiry is no longer a client-choosable override. The
-  // escort officer/vehicle is deliberately NOT checked against any
-  // whitelist: escort staffing rotates and isn't a registered catering
-  // vehicle/driver, unlike the primary vehicle and driver.
-  const [vehicleIdRes, driverIdRes, vehicleRawRes, driverRawRes] = await Promise.all([
-    supabase.rpc("resolve_usable_caterlink_vehicle", { p_vehicle_number: vehicleNumber }),
-    supabase.rpc("resolve_usable_caterlink_driver", { p_staff_id: driverId }),
-    supabase.from("vehicles").select("pass_expiry_date").eq("vehicle_number", vehicleNumber).maybeSingle(),
-    supabase.from("drivers").select("name, pass_expiry_date").eq("staff_id", driverId).maybeSingle(),
-  ]);
-  const usableVehicleId = vehicleIdRes.data as string | null;
-  const usableDriverId = driverIdRes.data as string | null;
-  const driverRec = driverRawRes.data;
-
-  const today = new Date().toISOString().slice(0, 10);
-  const expiredItems: string[] = [];
-  if (!usableVehicleId && vehicleRawRes.data?.pass_expiry_date && vehicleRawRes.data.pass_expiry_date < today) {
-    expiredItems.push(`vehicle ${vehicleNumber}`);
-  }
-  if (!usableDriverId && driverRec?.pass_expiry_date && driverRec.pass_expiry_date < today) {
-    expiredItems.push(`driver ${driverId}`);
-  }
-  if (expiredItems.length > 0) {
-    // CORRECTED: this is now a hard, non-bypassable denial -- the earlier
-    // "escalateExpired" flow let the transaction proceed anyway by still
-    // resolving an is_active-but-expired vehicle/driver id. The attempted
-    // expired credential is recorded for Admin follow-up (renewal/
-    // replacement), but it never grants permission to create the
-    // transaction. No transaction row is created, so this record is not
-    // tied to one.
-    await supabase.from("audit_logs").insert({
-      transaction_id: null,
-      action: "expired_whitelist_attempt",
-      performed_by: `${profile.name} (${profile.staff_id})`,
-      performed_by_id: profile.id,
-      old_values: null,
-      new_values: { vehicle_number: vehicleNumber, driver_id: driverId, expired_items: expiredItems },
-    });
-    return {
-      error:
-        `EXPIRED_PASS: airport pass expired for ${expiredItems.join(" and ")}. ` +
-        `This vehicle/driver cannot be used until the whitelist entry is renewed by an Admin — the attempt has been recorded. ` +
-        `/ Pas lapangan terbang telah tamat tempoh. Kenderaan/pemandu ini tidak boleh digunakan sehingga senarai putih diperbaharui oleh Admin — percubaan ini telah direkodkan.`,
-    };
-  }
-
-  // Strict whitelist: a vehicle/driver not currently usable (unlisted,
-  // pending, deactivated, revoked, or not-yet-effective) is a hard block,
-  // same severity tier as missing signature/seals.
-  const unlisted: string[] = [];
-  if (!usableVehicleId) unlisted.push(`vehicle ${vehicleNumber}`);
-  if (!usableDriverId) unlisted.push(`driver ${driverId}`);
-  if (unlisted.length > 0) {
-    return {
-      error:
-        `WHITELIST_VIOLATION: ${unlisted.join(" and ")} not on the active whitelist. Ask an Admin to add ` +
-        `this vehicle/driver to the whitelist before creating this transaction. ` +
-        `/ Tiada dalam senarai putih aktif — hubungi Admin untuk menambah kenderaan/pemandu ini sebelum mencipta transaksi.`,
-    };
-  }
-
-  // The driver ID resolved to a whitelist entry above, but the name typed
-  // in must match the name on file for that ID — otherwise a real,
-  // whitelisted driver's ID could be used to wave through a different
-  // (unlisted) person driving the vehicle.
-  if (driverRec && driverRec.name.trim().toUpperCase() !== driverName.trim().toUpperCase()) {
-    return {
-      error:
-        `WHITELIST_VIOLATION: driver name "${driverName}" does not match the whitelisted name on file for ` +
-        `driver ID ${driverId}. Enter the driver's registered name exactly, or ask an Admin to correct the ` +
-        `whitelist entry if the name on file is wrong. ` +
-        `/ Nama pemandu tidak sepadan dengan nama dalam senarai putih untuk ID pemandu ini.`,
-    };
+  // Canonical Phase 9 path: the database (create_caterlink_driver_transaction_secure) decides who may
+  // create, resolves the whitelist entries against the station's AOC (an unlisted, expired, revoked or
+  // not-yet-effective vehicle/driver is a hard block), checks the whitelisted driver name, numbers the
+  // movement, records the seal and Part A atomically, and audits it. Nothing below trusts a client
+  // identity: the PIC's name and staff id come from the trusted account row inside the function.
+  const truckSeal = seals.find((s) => s.seal_type === "TRUCK_SEAL");
+  if (!truckSeal) {
+    return { error: "A truck seal is required. / Sil trak diperlukan." };
   }
 
   let sig: { path: string; sha256: string };
@@ -451,73 +380,48 @@ export async function createTransaction(
     return { error: e instanceof Error ? e.message : "Signature upload failed." };
   }
 
-  const txId = crypto.randomUUID();
-  const { data: tx, error: txError } = await supabase
-    .from("transactions")
-    .insert({
-      id: txId,
-      // Always recomputed by trg_sync_transaction_stage (before insert) from
-      // status/direction/route — "A" is just a type-satisfying placeholder.
-      current_stage: "A",
-      direction,
-      route: effectiveRoute,
-      hub_destination: hubDestination,
-      vehicle_number: vehicleNumber,
-      driver_name: driverName,
-      driver_id: driverId,
-      seal_number: null,
-      created_by: profile.id,
-      qr_token: generateQrToken(txId),
-      flight_number: flightNumber || null,
-      aircraft_registration: aircraftRegistration || null,
-      catering_company_id: cateringCompanyId || null,
-      vehicle_id: usableVehicleId,
-      driver_id_ref: usableDriverId,
-      trolley_count: trolleyCount,
-      escort_officer_name: escortName || null,
-      escort_officer_staff_id: escortStaffId || null,
-      escort_vehicle_number: escortVehicleNumber || null,
-      station,
-      cargo_types: cargoTypes,
-      supplies_total: suppliesTotal,
-      supplies_carts: suppliesCarts,
-      supplies_smu: suppliesSmu,
-      supplies_pallets: suppliesPallets,
-      supplies_boxes: suppliesBoxes,
-      supplies_oven_racks: suppliesOvenRacks,
-    })
-    .select()
-    .single();
+  // Fields the canonical transaction row has no column for are kept with Part A as a remark so they are
+  // not lost (escort details, supplies breakdown, additional seals).
+  const extra: string[] = [];
+  if (escortName) extra.push(`Escort: ${escortName} (${escortStaffId}), vehicle ${escortVehicleNumber}`);
+  const supplies = [
+    ["total", suppliesTotal], ["carts", suppliesCarts], ["SMU", suppliesSmu],
+    ["pallets", suppliesPallets], ["boxes", suppliesBoxes], ["oven racks", suppliesOvenRacks],
+  ].filter(([, n]) => n !== null).map(([k, n]) => `${k} ${n}`);
+  if (supplies.length > 0) extra.push(`Supplies: ${supplies.join(", ")}`);
+  const otherSeals = seals.filter((s) => s !== truckSeal);
+  if (otherSeals.length > 0) extra.push(`Other seals: ${otherSeals.map((s) => `${s.seal_number} (${s.seal_type})`).join(", ")}`);
+  const partARemarks = [remarks, ...extra].filter(Boolean).join(" | ");
 
-  if (txError || !tx) {
-    return { error: `Could not create transaction: ${txError?.message ?? "unknown error"}` };
-  }
-
-  const { error: partError } = await supabase.from("part_a").insert({
-    transaction_id: tx.id,
-    pic_name: profile.name,
-    pic_staff_id: profile.staff_id,
-    vehicle_search_completed: vehicleSearchCompleted,
-    signature_url: sig.path,
-    signature_hash: sig.sha256,
-    remarks: remarks || null,
-    completed_by: profile.id,
+  const supabase = await createClient();
+  const { data, error } = await callCaterlinkRpc(supabase, "create_caterlink_driver_transaction_secure", {
+    p_origin_station: station,
+    p_direction: direction,
+    p_route: effectiveRoute,
+    p_vehicle_number: vehicleNumber,
+    p_driver_name: driverName,
+    p_driver_id: driverId,
+    p_seal_number: truckSeal.seal_number,
+    p_signature_url: sig.path,
+    p_signature_hash: sig.sha256,
+    p_vehicle_search_completed: vehicleSearchCompleted,
+    p_remarks: partARemarks || undefined,
+    p_hub_destination: hubDestination ?? undefined,
+    p_flight_number: flightNumber || undefined,
+    p_aircraft_reg: aircraftRegistration || undefined,
+    p_trolley_count: trolleyCount,
+    p_cargo_types: cargoTypes,
   });
-
-  if (partError) {
-    return { error: `Part A could not be saved: ${partError.message}` };
-  }
-
-  const { error: sealsError } = await supabase.from("seals").insert(
-    seals.map((s) => ({ ...s, transaction_id: tx.id }))
-  );
-  if (sealsError) {
-    return { error: `Seals could not be saved: ${sealsError.message}` };
+  const created = Array.isArray(data) ? data[0] : data;
+  if (error || !created?.transaction_id) {
+    return {
+      error: `Could not create the transaction: ${(error?.message ?? "unknown error").replace(/^ERROR:\s*/i, "")}`,
+    };
   }
 
   revalidatePath("/icms/transactions");
   revalidatePath("/icms/dashboard");
-  redirect(`/icms/transactions/${tx.id}?created=1`);
+  redirect(`/icms/transactions/${created.transaction_id}?created=1`);
 }
 
 /** Part B (In-flight Post) and Part C (Airport Post) share the same shape.

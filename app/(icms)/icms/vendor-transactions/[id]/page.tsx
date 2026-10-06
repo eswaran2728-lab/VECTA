@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FileDown } from "lucide-react";
 import { requireProfile } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
 import { signedUrl } from "@/lib/icms/storage";
@@ -9,24 +9,23 @@ import { QrDisplay } from "@/components/icms/qr-display";
 import { Badge } from "@/components/icms/ui/badge";
 import { Button } from "@/components/icms/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/icms/ui/card";
-import { VENDOR_STATUS_COLORS, VENDOR_STATUS_LABELS } from "@/lib/icms/constants";
 import { formatDateTime } from "@/lib/icms/utils";
-import type { VendorPartA, VendorPartB, VendorPartC, VendorTransaction } from "@/lib/icms/database.types";
+import {
+  VENDOR_DELIVERY_STATUS_COLORS,
+  VENDOR_DELIVERY_STATUS_LABELS,
+  loadVendorDelivery,
+  type VendorCheckpoint,
+} from "@/lib/caterlink/vendor";
 
 export const metadata: Metadata = { title: "Vendor Delivery" };
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function Sig({ url, label }: { url: string | null; label: string }) {
-  if (!url) return null;
-  return (
-    <div className="space-y-1">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={url} alt={label} className="h-20 rounded border bg-white object-contain" />
-    </div>
-  );
-}
+const STAGE_TITLES: Record<VendorCheckpoint["stage"], string> = {
+  A: "Part A — Vendor",
+  B: "Part B — Security check",
+  C: "Part C — Vendor confirmation",
+};
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -37,137 +36,88 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export default async function VendorTransactionDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function VendorTransactionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await requireProfile();
+  const profile = await requireProfile();
 
   const supabase = await createClient();
-  const { data: txRow } = await supabase.from("vendor_transactions").select("*").eq("id", id).single();
-  if (!txRow) notFound();
-  const transaction = txRow as VendorTransaction;
+  const { delivery, checkpoints } = await loadVendorDelivery(supabase, id);
+  if (!delivery) notFound();
 
-  const [partARes, partBRes, partCRes] = await Promise.all([
-    supabase.from("vendor_part_a").select("*").eq("transaction_id", id).maybeSingle(),
-    supabase.from("vendor_part_b").select("*").eq("transaction_id", id).maybeSingle(),
-    supabase.from("vendor_part_c").select("*").eq("transaction_id", id).maybeSingle(),
-  ]);
-  const partA = partARes.data as VendorPartA | null;
-  const partB = partBRes.data as VendorPartB | null;
-  const partC = partCRes.data as VendorPartC | null;
-
-  const [sigA, sigB, sigWarehouse, sigVendor, completedFormUrl] = await Promise.all([
-    signedUrl("signatures", partA?.signature_url ?? null),
-    signedUrl("signatures", partB?.signature_url ?? null),
-    signedUrl("signatures", partC?.warehouse_signature_url ?? null),
-    signedUrl("signatures", partC?.vendor_signature_url ?? null),
-    signedUrl("completed-forms", transaction.completed_form_url),
-  ]);
+  const sigs = await Promise.all(checkpoints.map((c) => signedUrl("signatures", c.signature_url)));
+  const isOwner = profile.role === "vendor" && delivery.vendor_user_id === profile.id;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="space-y-1">
-          <h1 className="font-heading text-2xl font-bold tracking-tight">
-            {transaction.transaction_number}
-          </h1>
-          <Badge className={VENDOR_STATUS_COLORS[transaction.status]}>
-            {VENDOR_STATUS_LABELS[transaction.status]}
-          </Badge>
+          <h1 className="font-heading text-2xl font-bold tracking-tight">{delivery.delivery_number}</h1>
+          <Badge className={VENDOR_DELIVERY_STATUS_COLORS[delivery.status]}>{VENDOR_DELIVERY_STATUS_LABELS[delivery.status]}</Badge>
         </div>
-        {completedFormUrl ? (
-          <a href={completedFormUrl} target="_blank" rel="noopener noreferrer">
-            <Button variant="outline" size="sm">
-              <FileDown className="mr-1.5 h-4 w-4" />
-              Completed Form (PDF)
-            </Button>
-          </a>
+        {isOwner && delivery.status === "SECURITY_VERIFIED" ? (
+          <Link href={`/icms/vendor-transactions/${delivery.id}/part-c`}>
+            <Button size="lg">Confirm handover</Button>
+          </Link>
         ) : null}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      {isOwner ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">QR Pass</CardTitle>
           </CardHeader>
           <CardContent>
-            <QrDisplay
-              token={generateQrToken(transaction.id, "VENDOR")}
-              transactionNumber={transaction.transaction_number}
-            />
+            <QrDisplay token={generateQrToken(delivery.id, "VENDOR")} transactionNumber={delivery.delivery_number} />
           </CardContent>
         </Card>
+      ) : null}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Overview</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            <Row label="Created" value={formatDateTime(transaction.created_at)} />
-            <Row label="Completed" value={formatDateTime(transaction.completed_at)} />
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Overview</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <Row label="Driver" value={`${delivery.driver_name} (${delivery.driver_nric})`} />
+          <Row label="Vehicle" value={delivery.vehicle_registration_no} />
+          <Row label="Seal Number" value={delivery.seal_number} />
+          {delivery.supplies_description ? <Row label="Supplies" value={delivery.supplies_description} /> : null}
+          <Row label="Created" value={formatDateTime(delivery.created_at)} />
+          <Row label="Completed" value={formatDateTime(delivery.completed_at)} />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {partA ? (
-          <Card>
+        {checkpoints.map((c, i) => (
+          <Card key={c.id}>
             <CardHeader>
-              <CardTitle className="text-base">Part A — Vendor</CardTitle>
+              <CardTitle className="text-base">{STAGE_TITLES[c.stage]}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <Row label="Driver" value={partA.driver_name} />
-              <Row label="NRIC" value={partA.nric_number} />
-              <Row label="Seal Number" value={partA.seal_number} />
-              <Row label="Completed" value={formatDateTime(partA.completed_at)} />
-              <Sig url={sigA} label="Vendor Driver signature" />
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {partB ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Part B — AirAsia Security (Post 2)</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Row label="Vehicle Reg. No" value={partB.vehicle_registration_no} />
-              <Row label="Driver" value={`${partB.driver_name} (${partB.driver_nric})`} />
-              <Row label="Seal Number" value={partB.seal_number} />
-              <Row label="ASO" value={`${partB.avsec_name} (${partB.avsec_staff_id})`} />
-              <Row label="Completed" value={formatDateTime(partB.completed_at)} />
-              {partB.remarks ? (
-                <p className="text-sm text-muted-foreground">“{partB.remarks}”</p>
+            <CardContent className="space-y-2">
+              <Row label="By" value={`${c.actor_name} (${c.actor_staff_id})`} />
+              <Row label="Result" value={c.result} />
+              <Row label="Completed" value={formatDateTime(c.completed_at)} />
+              {c.observed ? (
+                <div className="rounded-md bg-muted p-2 text-xs">
+                  <p className="mb-1 font-medium">Observed at the check</p>
+                  {Object.entries(c.observed).map(([k, v]) => (
+                    <p key={k}>
+                      <span className="text-muted-foreground">{k.replace(/_/g, " ")}:</span> {v}
+                    </p>
+                  ))}
+                </div>
               ) : null}
-              <Sig url={sigB} label="ASO signature" />
+              {c.remarks ? <p className="text-sm text-muted-foreground">“{c.remarks}”</p> : null}
+              {c.escalation_reason ? <p className="text-sm font-medium text-orange-700">Escalated: {c.escalation_reason}</p> : null}
+              {sigs[i] ? (
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Signature</p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={sigs[i] as string} alt="Signature" className="h-20 rounded border bg-white object-contain" />
+                </div>
+              ) : null}
             </CardContent>
           </Card>
-        ) : null}
-
-        {partC ? (
-          <Card className="md:col-span-2">
-            <CardHeader>
-              <CardTitle className="text-base">
-                Part C — Warehouse (In-Flight), Dual Certification
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-3">
-                <Row label="Warehouse PIC" value={partC.warehouse_pic_name ?? "—"} />
-                <Row label="Signed At" value={formatDateTime(partC.warehouse_signed_at)} />
-                <Sig url={sigWarehouse} label="Warehouse PIC signature" />
-              </div>
-              <div className="space-y-3">
-                <Row label="Vendor Driver" value={partC.vendor_driver_name ?? "—"} />
-                <Row label="Signed At" value={formatDateTime(partC.vendor_signed_at)} />
-                <Sig url={sigVendor} label="Vendor Driver signature" />
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+        ))}
       </div>
     </div>
   );

@@ -5,7 +5,7 @@ import { resolveIncident, type ResolveState } from "@/lib/icms/actions/incidents
 import { Button } from "@/components/icms/ui/button";
 import { Select } from "@/components/icms/ui/select";
 import { Textarea } from "@/components/icms/ui/textarea";
-import { INCIDENT_STATUS_LABELS, lifecycleFor } from "@/lib/icms/constants";
+import { INCIDENT_STATUS_LABELS } from "@/lib/icms/constants";
 import type { IncidentStatus, IncidentType } from "@/lib/icms/database.types";
 
 const initialState: ResolveState = { error: null, success: null };
@@ -25,11 +25,12 @@ export function IncidentResolve({
   const [state, action, pending] = useActionState(resolveIncident, initialState);
   const [target, setTarget] = useState<IncidentStatus | "">("");
 
-  const order = lifecycleFor(incidentType);
-  const options = order.slice(order.indexOf(currentStatus) + 1);
+  // The canonical model has one authorised transition: resolve (with notes). Reopen is separate.
+  const options: IncidentStatus[] = currentStatus === "OPEN" || currentStatus === "UNDER_REVIEW" ? ["RESOLVED"] : [];
+  void incidentType;
   if (options.length === 0) return null;
 
-  const needsNotes = target === "RESOLVED" || target === "CLOSED";
+  const needsNotes = target === "RESOLVED";
 
   return (
     <form action={action} className="space-y-2">

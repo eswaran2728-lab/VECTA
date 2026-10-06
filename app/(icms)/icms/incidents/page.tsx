@@ -20,16 +20,14 @@ import {
   INCIDENT_TYPE_LABELS,
 } from "@/lib/icms/constants";
 import { formatDateTime } from "@/lib/icms/utils";
-import { signedUrl } from "@/lib/icms/storage";
 import { IncidentResolve } from "./incident-resolve";
-import { IncidentPdfButton } from "./incident-pdf-button";
-import type { Incident, IncidentPhoto, Transaction } from "@/lib/icms/database.types";
+import type { Incident, Transaction } from "@/lib/icms/database.types";
 import { HighlightRow } from "@/components/dashboard/HighlightRow";
 
 export const metadata: Metadata = { title: "Incidents" };
 export const dynamic = "force-dynamic";
 
-type IncidentRow = Incident & { transactions: Pick<Transaction, "transaction_number" | "vehicle_number"> | null };
+type IncidentRow = Incident & { severity?: string; transactions: Pick<Transaction, "transaction_number" | "vehicle_number"> | null };
 
 export default async function IncidentsPage({
   searchParams: searchParamsPromise,
@@ -41,31 +39,20 @@ export default async function IncidentsPage({
   const canResolve = profile.role === "supervisor" || profile.role === "enforcement" || profile.role === "management";
   const supabase = await createClient();
 
+  // Canonical Phase 9 incidents (row-level security: CaterLink Management / Operation Manager / Main
+  // Enforcement in the AOC, or the reporter / assignee).
   const { data, error: incidentsError } = await supabase
-    .from("incidents")
+    .from("caterlink_incidents" as never)
     .select("*, transactions!inner(transaction_number, vehicle_number, archived)")
     .eq("transactions.archived", false)
     .order("created_at", { ascending: false })
     .limit(200);
 
   if (isModuleMissing(incidentsError)) {
-    return <ModuleNotActivated title="Incidents" detail="The legacy incident module is not activated on this environment, so there is no incident data to show." />;
+    return <ModuleNotActivated title="Incidents" detail="The incident module is not available on this environment, so there is no incident data to show." />;
   }
 
   const incidents = (data ?? []) as unknown as IncidentRow[];
-
-  // Signed photo URLs for the per-incident PDF export.
-  const { data: photoRows } = await supabase
-    .from("incident_photos")
-    .select("*")
-    .in("incident_id", incidents.map((i) => i.id));
-  const photoUrlMap = new Map<string, string[]>();
-  for (const photo of (photoRows ?? []) as IncidentPhoto[]) {
-    const url = await signedUrl("incident-photos", photo.photo_url);
-    if (url) {
-      photoUrlMap.set(photo.incident_id, [...(photoUrlMap.get(photo.incident_id) ?? []), url]);
-    }
-  }
 
   return (
     <div className="space-y-4">
@@ -84,7 +71,7 @@ export default async function IncidentsPage({
               <TableHead>Type</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Description</TableHead>
-              <TableHead>Reported by</TableHead>
+              <TableHead>Severity</TableHead>
               <TableHead>When</TableHead>
               {canResolve ? <TableHead>Resolution</TableHead> : null}
             </TableRow>
@@ -126,17 +113,9 @@ export default async function IncidentsPage({
                     ) : null}
                   </TableCell>
                   <TableCell className="max-w-md text-sm">{incident.description}</TableCell>
-                  <TableCell className="text-sm">{incident.reported_by}</TableCell>
+                  <TableCell className="text-sm capitalize">{incident.severity ?? "—"}</TableCell>
                   <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                     {formatDateTime(incident.created_at)}
-                    <span className="block">
-                      <IncidentPdfButton
-                        incident={incident}
-                        transactionNumber={incident.transactions?.transaction_number ?? "—"}
-                        vehicleNumber={incident.transactions?.vehicle_number ?? "—"}
-                        photoUrls={photoUrlMap.get(incident.id) ?? []}
-                      />
-                    </span>
                   </TableCell>
                   {canResolve ? (
                     <TableCell className="min-w-56">

@@ -58,13 +58,16 @@ export async function getExportResetBundle(): Promise<ExportBundle> {
 
   const ids = txRows.map((t) => t.id);
 
-  const [sealsRes, partARes, partBRes, partCRes, partDRes] = await Promise.all([
+  // Canonical Phase 9 checkpoint tables; Part B and Part C share part_b_c (checkpoint_stage B / C).
+  const [sealsRes, partARes, partBCRes, partDRes] = await Promise.all([
     supabase.from("seals").select("*").in("transaction_id", ids),
-    supabase.from("part_a").select("*").in("transaction_id", ids),
-    supabase.from("part_b").select("*").in("transaction_id", ids),
-    supabase.from("part_c").select("*").in("transaction_id", ids),
-    supabase.from("part_d").select("*").in("transaction_id", ids),
+    supabase.from("caterlink_checkpoint_part_a" as never).select("*").in("transaction_id", ids),
+    supabase.from("part_b_c" as never).select("*").in("transaction_id", ids),
+    supabase.from("caterlink_checkpoint_part_d" as never).select("*").in("transaction_id", ids),
   ]);
+  const partBCRows = (partBCRes.data ?? []) as unknown as (PartBC & { checkpoint_stage: "B" | "C" })[];
+  const partBRes = { data: partBCRows.filter((p) => p.checkpoint_stage === "B") };
+  const partCRes = { data: partBCRows.filter((p) => p.checkpoint_stage === "C") };
 
   const seals = (sealsRes.data ?? []) as Seal[];
   const sealIds = seals.map((s) => s.id);
@@ -134,14 +137,25 @@ export async function resetWeek(): Promise<ResetWeekState> {
   await requireRole(["supervisor", "management"]);
   const supabase = await createClient();
 
-  const { data, error } = await supabase.rpc("archive_all_pending", {});
-  if (error) return { error: error.message, archivedCount: null };
+  // Canonical path: archive each open transaction through the audited per-transaction RPC (nothing is
+  // deleted; the snapshot is kept in caterlink_archives). The legacy archive_all_pending RPC does not
+  // exist in the canonical model.
+  const { data: open } = await supabase.from("transactions").select("id").eq("archived", false).limit(2000);
+  let archived = 0;
+  for (const row of (open ?? []) as { id: string }[]) {
+    const { error: archiveError } = await supabase.rpc("archive_caterlink_transaction_secure", {
+      p_transaction_id: row.id,
+      p_reason: "Weekly export and reset",
+    });
+    if (archiveError) return { error: archiveError.message, archivedCount: archived };
+    archived += 1;
+  }
 
   revalidatePath("/icms/dashboard");
   revalidatePath("/icms/transactions");
   revalidatePath("/icms/incidents");
   revalidatePath("/icms/admin/archive");
-  return { error: null, archivedCount: (data as number) ?? 0 };
+  return { error: null, archivedCount: archived };
 }
 
 /**

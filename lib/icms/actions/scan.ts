@@ -158,12 +158,13 @@ async function resolveVendorTransaction(
   onDuty: boolean
 ): Promise<ScanResult> {
   const { data: tx } = await supabase
-    .from("vendor_transactions")
-    .select("id, transaction_number, status")
+    .from("caterlink_vendor_deliveries" as never)
+    .select("id, delivery_number, status")
     .eq("id", transactionId)
     .maybeSingle();
-  if (!tx) return { error: "Vendor transaction not found for this QR pass." };
-  const t = tx as { id: string; transaction_number: string; status: VendorTransactionStatus };
+  if (!tx) return { error: "Vendor delivery not found for this QR pass." };
+  const row = tx as unknown as { id: string; delivery_number: string; status: VendorTransactionStatus };
+  const t = { id: row.id, transaction_number: row.delivery_number, status: row.status };
 
   let actionableSlug: string | null = null;
   if (canActOnCheckpoints) {
