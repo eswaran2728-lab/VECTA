@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireProfile } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/icms/ui/card";
-import { loadVendorDelivery } from "@/lib/caterlink/vendor";
+import { callCaterlinkRpc, loadVendorDelivery } from "@/lib/caterlink/vendor";
 import { VendorPartBForm } from "./vendor-part-b-form";
 
 export const metadata: Metadata = { title: "Vendor Part B — Security check" };
@@ -21,6 +21,10 @@ export default async function VendorPartBPage({ params }: { params: Promise<{ id
   // owner / Management); anyone else gets a 404 here and the RPC would refuse them anyway.
   if (!delivery) notFound();
   if (profile.role === "vendor" || delivery.status !== "CREATED") redirect(`/icms/vendor-transactions/${id}`);
+  // Seeing a delivery is not permission to check it: only an active station operator at this station, holding the vendor-check
+  // capability, gets the form (the same database decision the security-check function enforces).
+  const { data: canCheck } = await callCaterlinkRpc(supabase, "caterlink_can_check_vendor_station", { p_station_id: delivery.station_id, p_aoc_id: delivery.aoc_id });
+  if (canCheck !== true) redirect(`/icms/vendor-transactions/${id}`);
 
   return (
     <div className="mx-auto max-w-lg space-y-4">

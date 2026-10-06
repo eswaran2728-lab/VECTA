@@ -1,46 +1,68 @@
-# Storage policy findings (staging, 2026-10-06)
+# Storage policy findings and repairs (staging, 2026-10-06)
 
-Two storage-policy problems were found while verifying the CaterLink external workflows. Neither is fixed on staging;
-both repairs are prepared in `supabase/proposed-migrations/` (deliberately outside `supabase/migrations/` so nothing applies
-them by accident) and need separate approval.
+## Status
 
-## 1. BLOCKER: every authenticated upload fails (pre-existing)
+| Item | Status |
+|---|---|
+| Authenticated uploads failed (`get_report_submitter`) | **FIXED on staging** by `20261026000001_storage_upload_policy_repair.sql` |
+| Any authenticated user could read/list every signature | **FIXED on staging** by `20261026000002_signature_read_scoping.sql` |
+| Pending/rejected/deactivated profiles read movements | **OPEN** — proposed repair prepared, NOT applied (see below) |
 
-- Symptom: any signed-in user uploading to `signatures` (or `incident-photos`, `completed-forms`, `report-attachments`) gets
-  `permission denied for function get_report_submitter`. Confirmed on staging for AVSEC officers, Operation Manager,
-  CaterLink Management, Driver and Vendor.
-- Cause: the policy `report attachments object insert` on `storage.objects` calls `get_report_submitter(...)` directly.
-  `20260924000001_pre_upgrade_remediation.sql` revoked EXECUTE on that function from `authenticated`. PostgreSQL checks
-  function privileges when it initialises the policy expression, even for a row in another bucket, so the whole INSERT fails.
-- Effect: every UI step that stores a signature is BLOCKED: Driver transaction creation, Vendor delivery creation, the
-  Part B security check and Vendor completion. The database functions themselves work (proven with signature path strings).
-- Proposed fix: `20261026000001_storage_upload_policy_repair.sql`: a boolean SECURITY DEFINER wrapper
-  `can_upload_report_attachment(name)` evaluating the same predicate; the policy now calls the wrapper. `get_report_submitter`
-  stays unexecutable by clients; uploads to other buckets are unchanged; a report-attachment upload for a report the caller did
-  not file is still refused. Reproduced and verified locally (`verify_storage_policies.mjs`).
+Both storage repairs were applied together, in order, in ONE transaction by `scripts/staging/apply-storage-repairs.mjs`
+(hash-pinned migration files, exact pre-state, in-transaction real-role probes, fail closed). SHA-256:
+`20261026000001` = `8d241df18648625478f60b38156c5bf651fcbbff9135a96b87cbe8770dc5d093`,
+`20261026000002` = `68d0b69a1cd80b7d7bb9e689475d525a8ce8564914f75b3c5fe2810a652d31a6`.
+Staging history: 65 migrations (last `20261025000001`) -> 67 (last `20261026000002`).
 
-## 2. OPEN SECURITY ISSUE: any authenticated user can read and list every signature
+## 1. Upload defect (fixed)
 
-- Policy: `signatures: authenticated read` (`bucket_id = 'signatures' and auth.role() = 'authenticated'`), from
-  `icms/20260101000002_rls.sql`. The same pattern exists for `incident-photos` and `completed-forms` (not changed in the proposal).
-- Confirmed on staging with the real external accounts (`probe-signature-exposure.mjs`, temporary probe objects, removed afterwards):
-  the Driver and the Vendor can **list** the bucket, **download** another party's object by path and **mint a signed URL** for it.
-- Affected: all signature objects (movement Parts A-D/Hub/REDQ, vendor Parts A-C). Today the bucket is empty on staging because
-  uploads fail (item 1), so no real signature is exposed yet; fixing item 1 without item 2 would start exposing them.
-- Proposed minimum correction: `20261026000002_signature_read_scoping.sql`: read only if the object is the caller's own upload or a
-  checkpoint row referencing it is visible to the caller (SECURITY INVOKER check, so the parent-transaction / delivery row-level
-  security from `20261025000001` decides). Upload is unchanged.
-- Compatibility: every current consumer (movement and vendor detail pages, archive export, final PDFs, receipt confirmation) reads a
-  signature through a checkpoint row the same caller can already see, so those workflows are unaffected. A user listing the bucket
-  sees only their own uploads and signatures of records they may see. Verified locally: Driver A/B and Vendor A/B each see only their
-  own; Management sees all referenced; Operation Manager sees movement signatures; a PEN officer sees the vendor signatures it can
-  check; unrelated officers and anon see none; orphan objects are invisible to clients.
-- Recommended order: apply both together (repair 1 first), so that enabling uploads never exposes signatures.
+The policy `report attachments object insert` on `storage.objects` called `get_report_submitter(...)` directly, but
+`20260924000001_pre_upgrade_remediation.sql` had revoked EXECUTE on it from `authenticated`. PostgreSQL checks function privileges
+when it initialises the policy expression, even for rows in other buckets, so every authenticated INSERT failed. Repair 1 adds
+`public.can_upload_report_attachment(name)`: boolean, SECURITY DEFINER, `search_path` pinned to `public`, EXECUTE for
+`authenticated`/`service_role` only (not anon/PUBLIC); the policy now calls it. It returns only true/false about the caller's own
+filing right. `get_report_submitter` stays unexecutable by authenticated, anon and PUBLIC (asserted locally and in the staging runner).
 
-## Other findings
+## 2. Signature read exposure (fixed)
 
-- `has_station_assignment_for_transaction` (existing `transactions_read_policy`) ignores the profile status: a **pending, rejected or
-  deactivated profile that still holds an active assignment at the movement's origin station can read that movement**, and through the
-  new parent-visibility policies its seals and checkpoints. Revoked, expired and future-dated assignments are correctly denied.
-  This predates the migration (the new policies inherit, and do not widen, the visibility). A fix (require an approved profile in that
-  helper) is a separate hosted change and is not included.
+`signatures: authenticated read` allowed any authenticated user to list, download and sign any signature object (demonstrated on
+staging with the real Driver and Vendor accounts before the fix). Repair 2 replaces it with
+`signatures: scoped read` (`to authenticated`): readable only if `owner = auth.uid()` (the uploader) OR a checkpoint row that
+references the object is visible to the caller (`caterlink_signature_visible(name)`, SECURITY INVOKER, so the parent-transaction /
+delivery row-level security decides). Upload is unchanged; there is no UPDATE or DELETE policy, so overwrite and delete are denied.
+A write-side guard (`caterlink_signature_owner_guard`, BEFORE INSERT on the six checkpoint tables) refuses a record that references a
+signature object uploaded by a different account, so a reference cannot be used to unlock someone else's object. No authorization
+uses email, filenames, client-supplied roles or UI state.
+
+Compatibility: every consumer of the bucket (movement and vendor detail pages, archive export, final PDFs, receipt confirmation) reads
+a signature through a checkpoint row the same caller can already see. The `incident-photos` and `completed-forms` buckets carry the
+same broad-read pattern and were **not** changed (no current CaterLink workflow stores signatures there); they remain a follow-up.
+
+## Verification
+
+- Local: `verify_storage_policies.mjs` 57 assertions, 0 failures (the original 23 retained): defect reproduced; repairs applied; same-user
+  and cross-user INSERT / SELECT (list) / download / signed-URL authorisation / UPDATE / DELETE for Driver A/B, Vendor A/B, Management,
+  Operation Manager, AVSEC officer, unrelated officer, no-role account, Staff Profiling and anon; write-side guard.
+- Staging, in the runner transaction (rolled back): real Driver, Vendor, officer, Management and anon roles.
+- Staging, real accounts through the Storage API (`verify-storage-staging.mjs`): see the final report matrix.
+
+## 3. OPEN: pending / rejected / deactivated profiles can read movements
+
+- Helper: `public.has_station_assignment_for_transaction(aoc, destination_station, origin_station)` — checks station, AOC, revocation and
+  dates, **not `profiles.status`**. (`has_role_in_scope` / `has_active_role_for_aoc`, the other branches of the same policy, do require
+  `p.status = 'approved'`.)
+- Policy: `transactions_read_policy` (its station-staff branch) is the only user of the helper. Through the parent-visibility policies of
+  `20261025000001` the same people also read that movement's `seals`, `seal_verifications` and `caterlink_checkpoint_*` / `part_b_c` rows.
+- Who: any holder of an active station-scoped assignment (sso/so/aso/dse, and any other role carrying a `station_id`, e.g. Staff Profiling)
+  whose profile is pending, rejected or deactivated, for movements originating at or destined for their station.
+- Why it passes: the helper never joins `profiles`. Revoked, expired and future-dated assignments are denied because the helper tests them.
+- Browser note: the app's own guard redirects such profiles to `/avsec/pending-approval`, so the flaw is reachable through the REST API
+  (their own JWT), not through the UI. Reproduction: `scripts/staging/reproduce-profile-state-flaw.mjs` (read-only) —
+  pending, rejected and deactivated accounts read the movement, Part A and seals; revoked, expired and future accounts do not.
+- Proposed minimum repair (NOT applied): `supabase/proposed-migrations/20261027000001_station_visibility_requires_approved_profile.sql`
+  adds `join profiles p ... and p.status = 'approved'` to the helper; signature, SECURITY DEFINER, volatility, `search_path` and grants
+  unchanged; no policy edited. Validated locally by `verify_profile_state_visibility.mjs` (16 assertions): flaw reproduced; after the
+  repair pending/rejected/deactivated are denied, approved officers, Management, Operation Manager and the creating Driver unaffected;
+  access follows profile state immediately; idempotent; scan decision untouched.
+- Compatibility: only the profile-state check is added. No current workflow depends on a non-approved profile reading movements.
+  Approved, active station staff are unaffected. Separate approval is required before it is applied.

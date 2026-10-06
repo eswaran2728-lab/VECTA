@@ -165,7 +165,13 @@ test("Driver and Vendor are denied each other's pages (not only each other's row
 test("the storage repairs are frozen migrations and the old proposal folder is gone", () => {
   const live = fs.readdirSync(path.join(REPO, "supabase/migrations"));
   assert.ok(live.includes("20261026000001_storage_upload_policy_repair.sql") && live.includes("20261026000002_signature_read_scoping.sql"));
-  assert.ok(!fs.existsSync(path.join(REPO, "supabase/proposed-migrations")), "proposed-migrations must be empty/removed once approved");
+  // only the still-unapproved profile-state repair may sit in the proposal folder, and it must not be a live migration
+  const proposed = fs.existsSync(path.join(REPO, "supabase/proposed-migrations")) ? fs.readdirSync(path.join(REPO, "supabase/proposed-migrations")) : [];
+  assert.deepEqual(proposed, ["20261027000001_station_visibility_requires_approved_profile.sql"]);
+  assert.ok(!live.some((f) => /^20261027/.test(f)), "the profile-state repair was moved into supabase/migrations without approval");
+  const prof = read("supabase/proposed-migrations/20261027000001_station_visibility_requires_approved_profile.sql");
+  assert.match(prof, /p\.status = 'approved'/);
+  assert.ok(!/create policy|drop policy/i.test(prof), "the profile-state repair edits no policy");
   const one = read("supabase/migrations/20261026000001_storage_upload_policy_repair.sql");
   const two = read("supabase/migrations/20261026000002_signature_read_scoping.sql");
   assert.match(one, /can_upload_report_attachment/);

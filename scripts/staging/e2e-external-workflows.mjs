@@ -16,7 +16,7 @@ const args = process.argv.slice(2);
 const argVal = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split("=").slice(1).join("=");
 const base = argVal("url") ?? "http://localhost:3000";
 const vpName = argVal("viewport") ?? "desktop";
-const flows = (argVal("flow") ?? "driver,vendor,management,isolation").split(",");
+const flows = (argVal("flow") ?? "driver,vendor,management,isolation,state").split(",");
 const VIEWPORTS = { desktop: { width: 1366, height: 850 }, mobile: { width: 390, height: 844 } };
 const vp = VIEWPORTS[vpName];
 const accounts = loadCurrentCredentials();
@@ -199,7 +199,8 @@ async function officerCheck(browser, label, id, result, reason, T) {
     await page.fill("#driver_nric", "E2E-NRIC-001");
     await page.fill("#seal_number", `E2E-OBS-${tag}`);
     if (result === "ESCALATE") {
-      await page.selectOption("#result", "ESCALATE");
+      // a dev server hydrates late: a change made before hydration is not seen by React, so repeat until the reason field appears
+      for (let i = 0; i < 8 && !(await page.locator("#escalation_reason").count()); i += 1) { await page.selectOption("#result", "ESCALATE"); await page.waitForTimeout(1500); }
       await page.fill("#escalation_reason", reason);
     }
     const checkBtn = page.getByRole("button", { name: result === "ESCALATE" ? /Escalate/i : /Approve Part B/i });
@@ -232,75 +233,73 @@ async function vendorFlow(browser, state) {
   try {
     ok(`${T}: signs in`, await login(page, "caterlink-vendor"));
     ok(`${T}: lands in CaterLink`, /^\/(caterlink|icms)\/dashboard/.test(pathOf(page)), pathOf(page));
+
+    // ===== PEN NORMAL FLOW, entirely through the UI =====
     const a = await vendorCreate(page, "PEN", `E2E-VUI-${tag}`);
     ok(`${T}: delivery station choices are exactly JHB and PEN`, a.stations.join("|") === "JHB|PEN", a.stations.join("|"));
-    if (a.id) {
-      state.vendorDeliveryId = a.id;
-      ok(`${T}: delivery created from the UI`, true, pathOf(page));
-    } else {
+    let penId = a.id;
+    if (penId) ok(`${T}: PEN delivery created from the UI`, true, pathOf(page));
+    else {
       const msg = ((await page.locator('[role="alert"]').allInnerTexts().catch(() => [])).join(" | ") || "none").slice(0, 300);
-      if (STORAGE_DEFECT.test(msg)) blocked(`${T}: delivery created from the UI`, "signature upload refused by the storage policy (pre-existing defect)");
-      else ok(`${T}: delivery created from the UI`, false, msg);
-      if (!state.fromFixture) Object.assign(state, loadFixtures());
+      if (STORAGE_DEFECT.test(msg)) blocked(`${T}: PEN delivery created from the UI`, "signature upload refused by the storage policy");
+      else ok(`${T}: PEN delivery created from the UI`, false, msg);
+      const fresh = await rpcAs("caterlink-vendor", "create_caterlink_vendor_delivery_secure", { p_station_code: "PEN", p_driver_name: "E2E Vendor Driver", p_driver_nric: "E2E-NRIC-001", p_vehicle_registration_no: `E2EV${tag}`, p_seal_number: `E2E-VRPC-${tag}`, p_signature_url: "signatures/e2e-vendor.png" });
+      penId = (Array.isArray(fresh.data) ? fresh.data[0] : fresh.data)?.delivery_id;
     }
-    // a fresh CREATED delivery (via the real function) so the officer / completion steps can be exercised
-    const fresh = await rpcAs("caterlink-vendor", "create_caterlink_vendor_delivery_secure", { p_station_code: "PEN", p_driver_name: "E2E Vendor Driver", p_driver_nric: "E2E-NRIC-001", p_vehicle_registration_no: `E2EV${tag}`, p_seal_number: `E2E-VRPC-${tag}`, p_signature_url: "signatures/e2e-vendor.png" });
-    const freshId = (Array.isArray(fresh.data) ? fresh.data[0] : fresh.data)?.delivery_id;
-    ok(`${T}: a CREATED delivery exists for the workflow steps`, !!freshId, fresh.error?.message);
+    state.vendorDeliveryId = penId;
     const viewText = async (id) => { await page.goto(`${base}/icms/vendor-transactions/${id}`, { waitUntil: "domcontentloaded" }); return visibleText(page); };
-    let t = await viewText(freshId);
+    let t = await viewText(penId);
     state.deliveryNumber = (t.match(/CLV-\d{4}-\d{6}/) ?? [])[0];
-    ok(`${T}: the delivery page shows its CLV number, status Created and the QR pass`, !!state.deliveryNumber && /Created/i.test(t) && (await page.locator("svg, canvas, img").count()) > 0, state.deliveryNumber);
-    await shot(page, "vendor-created");
+    ok(`${T}: the PEN delivery shows its CLV number, status Created, the QR pass and the Vendor's Part A`, !!state.deliveryNumber && /Created/i.test(t) && /Part A/i.test(t) && (await page.locator("svg, canvas, img").count()) > 0, state.deliveryNumber);
+    await shot(page, "vendor-pen-created");
     ok(`${T}: no Confirm handover before the security check`, (await page.getByRole("link", { name: /Confirm handover/i }).count()) === 0);
-    await page.goto(`${base}/icms/vendor-transactions/${freshId}/part-c`, { waitUntil: "domcontentloaded" });
+    await page.goto(`${base}/icms/vendor-transactions/${penId}/part-c`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1500);
     ok(`${T}: Part C is not available before the check`, !/Complete Delivery/i.test(await visibleText(page)), pathOf(page));
-    await officerDenied(browser, "aso-jhb", freshId, T);
-    await officerDenied(browser, "profiling_aso", freshId, T);
-    await officerDenied(browser, "aso-kul", freshId, T);
-    await officerCheck(browser, "aso", freshId, "PASS", null, T);
-    t = await viewText(freshId);
-    if (/Security check passed/i.test(t) || /Part B/i.test(t)) {
-      ok(`${T}: the delivery shows the security check passed`, true);
-      await page.getByRole("link", { name: /Confirm handover/i }).click().catch(() => {});
-      await page.waitForURL(/part-c/, { timeout: 15000 }).catch(() => {});
-      for (let i = 0; i < 6 && !(await page.locator("canvas").count()); i += 1) await page.waitForTimeout(1000);
-      const completeBtn = page.getByRole("button", { name: /Complete Delivery/i });
-      await drawUntilEnabled(page, completeBtn);
-      await shot(page, "vendor-part-c");
-      await completeBtn.click();
-      await page.waitForURL((u) => /completed=1/.test(u.search), { timeout: 30000 }).catch(() => {});
-      const msg = ((await page.locator('[role="alert"]').allInnerTexts().catch(() => [])).join(" | ") || "none").slice(0, 300);
-      if (/completed=1/.test(page.url())) ok(`${T}: completion submitted from the UI`, true);
-      else if (STORAGE_DEFECT.test(msg)) blocked(`${T}: completion submitted from the UI`, "signature upload refused by the storage policy (pre-existing defect)");
-      else ok(`${T}: completion submitted from the UI`, false, msg);
-    } else {
-      blocked(`${T}: confirm handover / completion from the UI`, "the security check could not be recorded from the UI (storage defect), so the delivery is still CREATED");
-      // complete through the real function so the COMPLETED view can still be verified in the browser
-      const done = await rpcAs("aso", "record_caterlink_vendor_security_check_secure", { p_delivery_id: freshId, p_signature_url: "signatures/e2e-officer.png", p_result: "PASS", p_observed: { seal_number: "E2E" } });
-      ok(`${T}: (setup) the PEN officer's function call recorded the check`, !done.error, done.error?.message);
-      await page.goto(`${base}/icms/vendor-transactions/${freshId}`, { waitUntil: "domcontentloaded" });
-      ok(`${T}: after the check the delivery offers Confirm handover`, (await page.getByRole("link", { name: /Confirm handover/i }).count()) > 0);
-      await page.goto(`${base}/icms/vendor-transactions/${freshId}/part-c`, { waitUntil: "domcontentloaded" });
-      ok(`${T}: the Part C form renders for the owning Vendor after the check`, (await page.getByRole("button", { name: /Complete Delivery/i }).count()) > 0 && (await page.locator("canvas").count()) > 0);
+    // wrong-station / unauthorised officers get no form
+    for (const l of ["aso-jhb", "profiling_aso", "profiling_so", "aso-kul", "caterlink_management", "operation_manager"]) await officerDenied(browser, l, penId, `${T} (PEN delivery)`);
+    // the authorised PEN officer performs the check through the UI
+    await officerCheck(browser, "aso", penId, "PASS", null, `${T} (PEN)`);
+    t = await viewText(penId);
+    ok(`${T}: after the PEN check the delivery shows the security check and offers Confirm handover`, /Part B/i.test(t) && (await page.getByRole("link", { name: /Confirm handover/i }).count()) > 0);
+    await page.getByRole("link", { name: /Confirm handover/i }).click().catch(() => {});
+    await page.waitForURL(/part-c/, { timeout: 15000 }).catch(() => {});
+    for (let i = 0; i < 8 && !(await page.locator("canvas").count()); i += 1) await page.waitForTimeout(1000);
+    const completeBtn = page.getByRole("button", { name: /Complete Delivery/i });
+    await drawUntilEnabled(page, completeBtn);
+    await shot(page, "vendor-pen-part-c");
+    await completeBtn.click();
+    await page.waitForURL((u) => /completed=1/.test(u.search), { timeout: 30000 }).catch(() => {});
+    ok(`${T}: Part C / handover completed through the UI`, /completed=1/.test(page.url()), pathOf(page));
+    t = await viewText(penId);
+    ok(`${T}: the PEN delivery is COMPLETED with Parts A, B and C recorded`, /Completed/.test(t) && /Part A/.test(t) && /Part B/.test(t) && /Part C/.test(t));
+    const signatureImages = await page.locator('img[alt="Signature"]').count();
+    ok(`${T}: the recorded signatures render (signed URLs work for the owner)`, signatureImages >= 3, `${signatureImages} signature image(s)`);
+    await shot(page, "vendor-pen-completed");
+    ok(`${T}: a completed delivery offers no further handover`, (await page.getByRole("link", { name: /Confirm handover/i }).count()) === 0);
+
+    // ===== JHB ESCALATION FLOW, entirely through the UI =====
+    const j = await vendorCreate(page, "JHB", `E2E-VESC-${tag}`);
+    let jhbId = j.id;
+    if (jhbId) ok(`${T}: JHB delivery created from the UI`, true);
+    else {
+      blocked(`${T}: JHB delivery created from the UI`, "no id returned");
+      const fresh = await rpcAs("caterlink-vendor", "create_caterlink_vendor_delivery_secure", { p_station_code: "JHB", p_driver_name: "E2E Vendor Driver", p_driver_nric: "E2E-NRIC-001", p_vehicle_registration_no: `E2EV${tag}`, p_seal_number: `E2E-VESCRPC-${tag}`, p_signature_url: "signatures/e2e-vendor.png" });
+      jhbId = (Array.isArray(fresh.data) ? fresh.data[0] : fresh.data)?.delivery_id;
     }
-    // views of the fixture deliveries: COMPLETED and ESCALATED
-    if (state.vendorDeliveryId) {
-      t = await viewText(state.vendorDeliveryId);
-      ok(`${T}: a completed delivery shows Completed with three recorded parts`, /Completed/.test(t) && /Part A/.test(t) && /Part B/.test(t) && /Part C/.test(t), state.vendorDeliveryId.slice(0, 8));
-      await shot(page, "vendor-completed");
-    }
-    if (state.escalatedId) {
-      t = await viewText(state.escalatedId);
-      ok(`${T}: the escalated delivery shows Escalated and the reason`, /Escalated/i.test(t) && /E2E seal mismatch/.test(t));
-      ok(`${T}: an escalated delivery offers no Confirm handover`, (await page.getByRole("link", { name: /Confirm handover/i }).count()) === 0);
-      await page.goto(`${base}/icms/vendor-transactions/${state.escalatedId}/part-c`, { waitUntil: "domcontentloaded" });
-      await page.waitForTimeout(1500);
-      ok(`${T}: Part C is not reachable for an escalated delivery`, !/Complete Delivery/i.test(await visibleText(page)), pathOf(page));
-      await shot(page, "vendor-escalated");
-    }
-    // other-role data is not reachable
+    state.escalatedId = jhbId;
+    await officerDenied(browser, "aso", jhbId, `${T} (JHB delivery, PEN officer)`);
+    await officerCheck(browser, "aso-jhb", jhbId, "ESCALATE", `E2E seal mismatch ${tag}`, `${T} (JHB)`);
+    t = await viewText(jhbId);
+    ok(`${T}: the JHB delivery is ESCALATED and shows the escalation reason`, /Escalated/i.test(t) && t.includes(`E2E seal mismatch ${tag}`));
+    ok(`${T}: an escalated delivery offers no Confirm handover`, (await page.getByRole("link", { name: /Confirm handover/i }).count()) === 0);
+    await page.goto(`${base}/icms/vendor-transactions/${jhbId}/part-c`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1500);
+    ok(`${T}: handover cannot proceed after escalation (Part C unreachable)`, !/Complete Delivery/i.test(await visibleText(page)), pathOf(page));
+    await shot(page, "vendor-jhb-escalated");
+    await officerDenied(browser, "aso-jhb", jhbId, `${T} (already escalated: no second check)`);
+
+    // ===== other-role data is not reachable =====
     if (state.txId) {
       await page.goto(`${base}/icms/transactions/${state.txId}`, { waitUntil: "domcontentloaded" });
       await page.waitForTimeout(1500);
@@ -323,6 +322,36 @@ async function vendorFlow(browser, state) {
     }
   } catch (err) { ok(`${T}: flow`, false, String(err.message).slice(0, 200)); await shot(page, "vendor-error"); }
   await ctx.close();
+}
+
+// assignment / profile state cases, in the browser and against the API, for the six negative-state review accounts
+async function stateFlow(browser, state) {
+  const T = "State";
+  const fresh = await rpcAs("caterlink-vendor", "create_caterlink_vendor_delivery_secure", { p_station_code: "PEN", p_driver_name: "E2E State", p_driver_nric: "E2E-NRIC-002", p_vehicle_registration_no: `E2ES${tag}`, p_seal_number: `E2E-VST-${tag}`, p_signature_url: "signatures/e2e-state.png" });
+  const id = (Array.isArray(fresh.data) ? fresh.data[0] : fresh.data)?.delivery_id;
+  ok(`${T}: (setup) a CREATED PEN delivery exists`, !!id, fresh.error?.message);
+  for (const label of ["neg-pending-profile", "neg-rejected-profile", "neg-deactivated-profile", "neg-revoked-assignment", "neg-expired-assignment", "neg-future-assignment"]) {
+    const { ctx, page } = await newCtx(browser);
+    try {
+      await login(page, label);
+      const landed = pathOf(page);
+      await page.goto(`${base}/icms/vendor-transactions/${id}/part-b`, { waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(2000);
+      ok(`${T}: ${label} gets no PEN security-check form`, (await page.locator("#vehicle_registration_no").count()) === 0, `landed ${landed}; part-b -> ${pathOf(page)}`);
+      const r = await rpcAs(label, "record_caterlink_vendor_security_check_secure", { p_delivery_id: id, p_signature_url: "x", p_result: "PASS" });
+      ok(`${T}: ${label} is refused by the security-check function`, !!r.error, r.error?.message?.slice(0, 80));
+      if (state.txId) {
+        await page.goto(`${base}/icms/transactions/${state.txId}`, { waitUntil: "domcontentloaded" });
+        await page.waitForTimeout(1500);
+        const readable = /CL-\d{4}-\d{6}/.test(await visibleText(page)) && !/error=|not found/i.test(page.url());
+        // revoked / expired / future-dated must be denied; pending / rejected / deactivated reproduce the OPEN flaw
+        const expectDenied = /revoked|expired|future/.test(label);
+        if (expectDenied) ok(`${T}: ${label} cannot open the movement`, !readable, readable ? "READABLE" : "denied");
+        else console.log(`INFO: [${vpName}] ${T}: ${label} ${readable ? "CAN open the movement (the documented OPEN profile-state flaw)" : "cannot open the movement"} -- landed ${landed}`);
+      }
+    } catch (e) { ok(`${T}: ${label}`, false, String(e.message).slice(0, 120)); }
+    await ctx.close();
+  }
 }
 
 async function managementFlow(browser, state) {
@@ -410,6 +439,7 @@ async function main() {
     })(); }
     if (flows.includes("management")) await managementFlow(browser, state);
     if (flows.includes("isolation")) await isolationFlow(browser, state);
+    if (flows.includes("state")) await stateFlow(browser, state);
   } finally { await browser.close(); }
   console.log(`\nEvidence directory: ${evDir}\nBlocked steps: ${blockedCount}\nTotal failures: ${failures}`);
   process.exit(failures ? 1 : 0);
