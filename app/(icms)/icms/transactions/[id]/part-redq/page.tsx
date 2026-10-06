@@ -1,64 +1,21 @@
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
-import { requireCheckpointRole } from "@/lib/icms/auth";
-import { createClient } from "@/lib/supabase/server";
-import { getStep, partsDoneFromStatus } from "@/lib/icms/workflow";
-import { DirectionBadge } from "@/components/icms/direction-badge";
-import { WorkflowStepper } from "@/components/icms/workflow-stepper";
-import { Card, CardContent } from "@/components/icms/ui/card";
-import { PartRedqForm } from "./part-redq-form";
-import type { Transaction } from "@/lib/icms/database.types";
+import { requireProfile } from "@/lib/icms/auth";
+import { ModuleNotActivated } from "@/components/icms/ModuleNotActivated";
 
-export const metadata: Metadata = { title: "Part REDQ — Re-seal" };
+export const metadata: Metadata = { title: "REDQ reseal" };
 export const dynamic = "force-dynamic";
 
-export default async function PartRedqPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const profile = await requireCheckpointRole("redq_avsec");
-
-  const supabase = await createClient();
-  const { data: tx } = await supabase.from("transactions").select("*").eq("id", id).single();
-  if (!tx) notFound();
-  const transaction = tx as Transaction;
-
-  const step = getStep(transaction.direction, "part_redq", transaction.route);
-  if (!step || transaction.status !== step.requiredStatus) {
-    redirect(`/icms/transactions/${id}`);
-  }
-
+// BLOCKED: this step was written against the legacy ICMS workflow tables (part_a..part_d, part_hub,
+// part_redq, incidents), which do not exist in the canonical Phase 9 CaterLink model. The canonical
+// model has no checkpoint-write RPC for it yet, so recording it here would fail. See
+// docs/dashboard-review/caterlink-legacy-to-canonical-mapping.md. Scanning permission itself
+// (can_user_scan_caterlink: PEN/JHB) is unchanged.
+export default async function BlockedCheckpointPage() {
+  await requireProfile();
   return (
-    <div className="mx-auto max-w-lg space-y-4">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-bold tracking-tight">{step.label}</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <DirectionBadge direction={transaction.direction} />
-          <span className="font-mono text-sm text-muted-foreground">
-            {transaction.transaction_number}
-          </span>
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="pt-6">
-          <WorkflowStepper
-            direction={transaction.direction}
-            status={transaction.status}
-            route={transaction.route}
-            parts={partsDoneFromStatus(transaction.direction, transaction.status, transaction.route)}
-          />
-        </CardContent>
-      </Card>
-
-      <p className="rounded-md bg-amber-100 p-3 text-xs font-medium text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
-        Physically read the current seal — its number and colour are not shown here. Enter what
-        you observe; a mismatch escalates automatically rather than proceeding.
-      </p>
-
-      <PartRedqForm
-        transactionId={id}
-        officerName={profile.name}
-        officerStaffId={profile.staff_id}
-      />
-    </div>
+    <ModuleNotActivated
+      title="REDQ reseal"
+      detail="Recording this step is not available yet: it has no canonical CaterLink workflow function on this environment."
+    />
   );
 }

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { isModuleMissing } from "@/lib/icms/module-state";
+import { ModuleNotActivated } from "@/components/icms/ModuleNotActivated";
 import { requireProfile } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/icms/ui/badge";
@@ -22,11 +24,14 @@ export default async function VendorTransactionsPage() {
 
   // Row-level security scopes this: a Vendor sees only its own deliveries, CaterLink Management sees
   // those in its AOC, and a scan-authorised officer sees those at its station.
-  const { data } = await supabase
+  const { data, error: vendorError } = await supabase
     .from("caterlink_vendor_deliveries" as never)
     .select("*")
     .order("created_at", { ascending: false })
     .limit(200);
+  if (isModuleMissing(vendorError)) {
+    return <ModuleNotActivated title="Vendor deliveries" detail="The vendor delivery workflow is not activated on this environment, so there is no data available." />;
+  }
   const deliveries = (data ?? []) as unknown as VendorDelivery[];
   const isVendor = profile.role === "vendor";
 

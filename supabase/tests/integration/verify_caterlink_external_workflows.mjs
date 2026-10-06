@@ -82,6 +82,24 @@ async function main() {
   await db.exec(MIG('20261024000001_canon_is_active_excludes_caterlink_only.sql'));
   await simulateService();
 
+  // A golden database rebuilt by migrate.mjs already contains this migration (it applies every dated root
+  // migration). Remove its additive objects so the run below proves the migration from the pre-migration shape.
+  if ((await one("select to_regclass('public.caterlink_vendor_deliveries') r;")).r) {
+    await db.exec('reset role;');
+    await db.exec(`drop table if exists public.caterlink_vendor_checkpoints, public.caterlink_vendor_deliveries cascade;
+      drop function if exists public.create_caterlink_driver_transaction_secure(text,text,text,text,text,text,text,text,text,boolean,text,text,text,text,integer,text[]);
+      drop function if exists public.list_caterlink_driver_options_secure();
+      drop function if exists public.create_caterlink_vendor_delivery_secure(text,text,text,text,text,text,text,text);
+      drop function if exists public.record_caterlink_vendor_security_check_secure(uuid,text,text,text,text,text,jsonb);
+      drop function if exists public.complete_caterlink_vendor_delivery_secure(uuid,text,text);
+      drop function if exists public.caterlink_can_check_vendor_station(uuid,uuid);
+      drop function if exists public.caterlink_can_scan_vendor_station(uuid,uuid);
+      drop function if exists public.list_caterlink_audit_secure(integer);
+      drop function if exists public.caterlink_external_role();
+      drop function if exists public.caterlink_vendor_guard();`);
+    await simulateService();
+  }
+
   const myAoc = (await one("select id from public.aocs where code = 'MY';")).id;
   const myEntity = (await one("select id from public.operating_entities where aoc_id = $1 and code = 'MAA';", [myAoc])).id;
   const deptId = async (code) => (await one('select id from public.departments where aoc_id = $1 and code = $2;', [myAoc, code])).id;
@@ -185,6 +203,8 @@ async function main() {
     assert(!vt.i && !vt.u && !vt.d && !vt.a, 'authenticated cannot write vendor tables directly; anon has no access');
     const fnPriv = await one("select has_function_privilege('anon','public.create_caterlink_driver_transaction_secure(text,text,text,text,text,text,text,text,text,boolean,text,text,text,text,integer,text[])','execute') a, has_function_privilege('anon','public.create_caterlink_vendor_delivery_secure(text,text,text,text,text,text,text,text)','execute') b;");
     assert(!fnPriv.a && !fnPriv.b, 'anon cannot execute the new RPCs');
+    const exposed = (await db.query(`select p.proname from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname ~ '^(caterlink_(external_role|can_scan_vendor_station|vendor_guard)|create_caterlink_(driver_transaction|vendor_delivery)_secure|list_caterlink_(driver_options|audit)_secure|record_caterlink_vendor_security_check_secure|complete_caterlink_vendor_delivery_secure)$' and has_function_privilege('anon', p.oid, 'execute');`)).rows;
+    assert(exposed.length === 0, `anon can execute none of the functions this migration adds (${exposed.map((r) => r.proname).join(', ')})`);
   }
 
   const DRV_ARGS = (over = {}) => ({ station: 'KUL - MAA', dir: 'OUTBOUND', route: 'AIRCRAFT', veh: 'WF1234A', name: 'WF Driver', id: 'WFD001', seal: 'SEAL-0001', sig: 'signatures/wf-part-a.png', ...over });
@@ -320,6 +340,27 @@ async function main() {
     const again = await asUserFail(vendorA, () => db.query('select public.complete_caterlink_vendor_delivery_secure($1,$2);', [delA.delivery_id, 'signatures/done2.png']));
     assert(again.failed, 'a completed delivery cannot be completed again');
 
+    // the security check is its own capability, not derived from the scan decision
+    assert((await one("select count(*)::int n from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prosrc ilike '%can_user_scan_caterlink%' and p.proname <> 'can_user_scan_caterlink';")).n === 0, 'no database function references the scan decision (the vendor check has its own capability)');
+    await db.query("update public.caterlink_station_capabilities c set can_check_vendor_delivery = false from public.org_stations s where s.id = c.station_id and s.code = 'PEN';");
+    const capOff = await asUserFail(vendorA, () => createDel(DEL({ seal: 'VS-CAP' })));
+    assert(capOff.failed, 'a station whose vendor-check capability is off accepts no deliveries');
+    await db.query("update public.caterlink_station_capabilities c set can_check_vendor_delivery = true from public.org_stations s where s.id = c.station_id and s.code = 'PEN';");
+    const profAso = await authUser('prof-aso');
+    {
+      const enfDept = await deptId('enforcement');
+      const unit = (await one("select id from public.units where department_id = $1 and code = 'profiling';", [enfDept]))?.id ?? null;
+      const mem = (await one("insert into public.user_entity_memberships (profile_id, aoc_id, operating_entity_id, status, is_primary) values ($1,$2,$3,'active',true) returning id;", [profAso, myAoc, myEntity])).id;
+      await db.query("insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, department_id, unit_id, hub_id, station_id, team_id, entity_membership_id, starts_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9, now() - interval '1 day');", [profAso, roleMap.get('profiling_aso'), myAoc, enfDept, unit, PEN.hub_id, PEN.id, await teamFor(PEN), mem]);
+    }
+    const delP = (await asUser(vendorA, () => createDel(DEL({ seal: 'VS-PROF' })))).rows[0];
+    assert((await asUserFail(profAso, () => check(profAso, delP.delivery_id))).failed, 'a Staff Profiling officer cannot record the security check');
+    const asoRevoked = await authUser('aso-revoked'); await assign(asoRevoked, 'aso', PEN);
+    await db.query('update public.user_role_assignments set revoked_at = now() where profile_id = $1;', [asoRevoked]);
+    assert((await asUserFail(asoRevoked, () => check(asoRevoked, delP.delivery_id))).failed, 'a revoked assignment cannot record the security check');
+    const asoPending = await authUser('aso-pending', { status: 'pending' }); await assign(asoPending, 'aso', PEN);
+    assert((await asUserFail(asoPending, () => check(asoPending, delP.delivery_id))).failed, 'an unapproved profile cannot record the security check');
+
     // escalation path
     const delE = (await asUser(vendorA, () => createDel(DEL({ station: 'JHB', seal: 'VS-ESC' })))).rows[0];
     const noReason = await asUserFail(asoJhb, () => check(asoJhb, delE.delivery_id, 'ESCALATE', null));
@@ -388,11 +429,13 @@ async function main() {
   {
     const pol = async () => (await one("select count(*)::int n from pg_policies where schemaname = 'public' and tablename like 'caterlink_%' or tablename = 'part_b_c';")).n;
     const before = await pol();
+    const rowsBefore = (await one('select (select count(*)::int from public.caterlink_vendor_deliveries) d, (select count(*)::int from public.transactions) t, (select count(*)::int from public.caterlink_vendor_checkpoints) c;'));
     await db.exec('reset role;');
     await db.exec(MIG('20261025000001_caterlink_external_workflows.sql'));
     await simulateService();
     assert((await pol()) === before, 'a second application leaves policies unchanged');
-    assert((await one('select count(*)::int n from public.caterlink_vendor_deliveries;')).n === 2 && (await one('select count(*)::int n from public.transactions;')).n === 1, 'a second application keeps existing rows');
+    const rowsAfter = (await one('select (select count(*)::int from public.caterlink_vendor_deliveries) d, (select count(*)::int from public.transactions) t, (select count(*)::int from public.caterlink_vendor_checkpoints) c;'));
+    assert(JSON.stringify(rowsBefore) === JSON.stringify(rowsAfter) && rowsAfter.d > 0 && rowsAfter.t > 0, 'a second application keeps existing rows');
   }
 
   console.log(`\nCaterLink external-workflow verification completed. Total failures: ${failures}`);

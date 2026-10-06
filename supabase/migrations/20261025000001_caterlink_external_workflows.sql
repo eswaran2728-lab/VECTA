@@ -271,7 +271,7 @@ revoke execute on function public.list_caterlink_driver_options_secure() from pu
 grant execute on function public.list_caterlink_driver_options_secure() to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------------------------
--- 5. Third-Party Vendor delivery workflow
+-- 5. Third-Party Vendor delivery workflow (the security check has its own station capability, not the scan decision)
 -- ---------------------------------------------------------------------------------------------
 create table if not exists public.caterlink_vendor_deliveries (
   id uuid primary key default gen_random_uuid(),
@@ -329,6 +329,9 @@ begin
 end;
 $function$;
 
+-- a trigger function needs no caller grant; without this PUBLIC (hence anon) could execute it
+revoke execute on function public.caterlink_vendor_guard() from public, anon, authenticated;
+
 drop trigger if exists trg_cl_vendor_deliveries_guard on public.caterlink_vendor_deliveries;
 create trigger trg_cl_vendor_deliveries_guard before update or delete on public.caterlink_vendor_deliveries
   for each row execute function public.caterlink_vendor_guard();
@@ -342,27 +345,68 @@ revoke all on public.caterlink_vendor_deliveries, public.caterlink_vendor_checkp
 grant all on public.caterlink_vendor_deliveries, public.caterlink_vendor_checkpoints to service_role;
 grant select on public.caterlink_vendor_deliveries, public.caterlink_vendor_checkpoints to authenticated;
 
-create or replace function public.caterlink_can_scan_vendor_station(p_station_id uuid, p_aoc_id uuid)
+-- A separate station capability (like the receipt capabilities), NOT derived from the scan decision: the
+-- security check on a vendor delivery is its own permission. It is enabled only for the two stations that
+-- already hold the reviewed scan scope today (PEN, JHB); scan and receipt capability values are not changed.
+alter table public.caterlink_station_capabilities
+  add column if not exists can_check_vendor_delivery boolean not null default false;
+update public.caterlink_station_capabilities c
+set can_check_vendor_delivery = true, updated_at = now()
+from public.org_stations s
+where s.id = c.station_id and s.code in ('PEN', 'JHB') and c.can_check_vendor_delivery is distinct from true;
+
+create or replace function public.caterlink_can_check_vendor_station(p_station_id uuid, p_aoc_id uuid)
 returns boolean
-language sql
+language plpgsql
 stable
 security definer
 set search_path to 'public'
 as $function$
-  select exists (
-    select 1 from public.org_stations s
-    where s.id = p_station_id and public.can_user_scan_caterlink(s.code, p_aoc_id)
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null or p_station_id is null or p_aoc_id is null then
+    return false;
+  end if;
+  if not exists (
+    select 1 from public.caterlink_station_capabilities cap
+    where cap.station_id = p_station_id and cap.aoc_id = p_aoc_id and cap.is_active and cap.can_check_vendor_delivery
+  ) then
+    return false;
+  end if;
+  if not exists (select 1 from public.profiles p where p.id = v_uid and p.status = 'approved') then
+    return false;
+  end if;
+  -- Staff Profiling is excluded, as for every checkpoint permission
+  if exists (
+    select 1 from public.user_role_assignments ura
+    join public.role_definitions rd on rd.id = ura.role_definition_id
+    where ura.profile_id = v_uid and rd.code in ('profiling_so', 'profiling_aso')
+      and ura.revoked_at is null and (ura.starts_at is null or ura.starts_at <= now())
+      and (ura.ends_at is null or ura.ends_at > now())
+  ) then
+    return false;
+  end if;
+  -- an active station-operator assignment AT this exact station
+  return exists (
+    select 1 from public.user_role_assignments ura
+    join public.role_definitions rd on rd.id = ura.role_definition_id and rd.is_active
+    where ura.profile_id = v_uid and ura.aoc_id = p_aoc_id and ura.station_id = p_station_id
+      and rd.code in ('sso', 'so', 'aso', 'dse')
+      and ura.revoked_at is null and (ura.starts_at is null or ura.starts_at <= now())
+      and (ura.ends_at is null or ura.ends_at > now())
   );
+end;
 $function$;
-revoke execute on function public.caterlink_can_scan_vendor_station(uuid, uuid) from public, anon;
-grant execute on function public.caterlink_can_scan_vendor_station(uuid, uuid) to authenticated, service_role;
+revoke execute on function public.caterlink_can_check_vendor_station(uuid, uuid) from public, anon;
+grant execute on function public.caterlink_can_check_vendor_station(uuid, uuid) to authenticated, service_role;
 
 drop policy if exists caterlink_vendor_deliveries_read on public.caterlink_vendor_deliveries;
 create policy caterlink_vendor_deliveries_read on public.caterlink_vendor_deliveries for select to authenticated
   using (
     vendor_user_id = auth.uid()
     or public.has_active_role_for_aoc('caterlink_management', aoc_id)
-    or public.caterlink_can_scan_vendor_station(station_id, aoc_id)
+    or public.caterlink_can_check_vendor_station(station_id, aoc_id)
   );
 drop policy if exists caterlink_vendor_checkpoints_read on public.caterlink_vendor_checkpoints;
 create policy caterlink_vendor_checkpoints_read on public.caterlink_vendor_checkpoints for select to authenticated
@@ -407,12 +451,11 @@ begin
     raise exception 'Missing required fields.';
   end if;
 
-  -- Deliveries are security-checked by a scan-authorised officer, so they may only be raised for a
-  -- station whose scan capability is enabled (the approved PEN/JHB scope; this never widens it).
+  -- Deliveries may only be raised for a station that can security-check them.
   select s.id, cap.aoc_id into v_station_id, v_aoc_id
   from public.org_stations s
-  join public.caterlink_station_capabilities cap on cap.station_id = s.id and cap.is_active and cap.can_scan
-  where s.code = p_station_code and s.is_active and s.code in ('PEN', 'JHB')
+  join public.caterlink_station_capabilities cap on cap.station_id = s.id and cap.is_active and cap.can_check_vendor_delivery
+  where s.code = p_station_code and s.is_active
   limit 1;
   if v_station_id is null then
     raise exception 'Station % does not accept vendor deliveries.', p_station_code;
@@ -476,7 +519,7 @@ begin
     raise exception 'Delivery not found.';
   end if;
   select s.code into v_station_code from public.org_stations s where s.id = v_d.station_id;
-  if not public.can_user_scan_caterlink(v_station_code, v_d.aoc_id) then
+  if not public.caterlink_can_check_vendor_station(v_d.station_id, v_d.aoc_id) then
     raise exception 'Not authorised to perform the security check at this station.';
   end if;
   if v_d.status <> 'CREATED' then

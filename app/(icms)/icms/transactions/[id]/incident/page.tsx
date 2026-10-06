@@ -1,37 +1,21 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import { requireProfile } from "@/lib/icms/auth";
-import { createClient } from "@/lib/supabase/server";
-import { IncidentForm } from "./incident-form";
-import type { Transaction } from "@/lib/icms/database.types";
+import { ModuleNotActivated } from "@/components/icms/ModuleNotActivated";
 
-export const metadata: Metadata = { title: "Report Incident" };
+export const metadata: Metadata = { title: "Report incident" };
 export const dynamic = "force-dynamic";
 
-export default async function IncidentPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+// BLOCKED: this step was written against the legacy ICMS workflow tables (part_a..part_d, part_hub,
+// part_redq, incidents), which do not exist in the canonical Phase 9 CaterLink model. The canonical
+// model has no checkpoint-write RPC for it yet, so recording it here would fail. See
+// docs/dashboard-review/caterlink-legacy-to-canonical-mapping.md. Scanning permission itself
+// (can_user_scan_caterlink: PEN/JHB) is unchanged.
+export default async function BlockedCheckpointPage() {
   await requireProfile();
-
-  const supabase = await createClient();
-  const { data: tx } = await supabase.from("transactions").select("*").eq("id", id).single();
-  if (!tx) notFound();
-  const transaction = tx as Transaction;
-
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-red-700 dark:text-red-400">
-          Report Incident
-        </h1>
-        <p className="font-mono text-sm text-muted-foreground">
-          {transaction.transaction_number} · {transaction.vehicle_number} · Seal{" "}
-          {transaction.seal_number}
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Submitting escalates the transaction immediately and notifies the admin.
-        </p>
-      </div>
-      <IncidentForm transactionId={transaction.id} />
-    </div>
+    <ModuleNotActivated
+      title="Report incident"
+      detail="Recording this step is not available yet: it has no canonical CaterLink workflow function on this environment."
+    />
   );
 }

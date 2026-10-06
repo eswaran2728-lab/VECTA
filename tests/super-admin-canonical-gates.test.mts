@@ -7,7 +7,7 @@ import { resolveEffectiveRole, isSuperAdminPathForbidden, isOperationalPathForbi
 
 const REPO = path.resolve(import.meta.dirname, "..");
 const read = (rel: string) => fs.readFileSync(path.join(REPO, rel), "utf8");
-const NOW = new Date("2026-10-05T00:00:00Z");
+const NOW = new Date(); // the code under test reads the real clock; a fixed date goes stale
 const day = (n: number) => new Date(NOW.getTime() + n * 86_400_000).toISOString();
 
 const active: SuperAdminAssignmentFacts = {

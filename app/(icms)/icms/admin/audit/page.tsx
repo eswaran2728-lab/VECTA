@@ -1,75 +1,62 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { isModuleMissing } from "@/lib/icms/module-state";
 import { ModuleNotActivated } from "@/components/icms/ModuleNotActivated";
-import Link from "next/link";
 import { requireRole } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
+import { callCaterlinkRpc } from "@/lib/caterlink/vendor";
 import { Card } from "@/components/icms/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/icms/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/icms/ui/table";
 import { formatDateTime } from "@/lib/icms/utils";
-import { ROLE_LABELS } from "@/lib/icms/constants";
-import { AuditRoleFilter } from "./audit-role-filter";
-import type { AuditLog, Role } from "@/lib/icms/database.types";
 
 export const metadata: Metadata = { title: "Audit Log" };
 export const dynamic = "force-dynamic";
 
-const ROLES = Object.keys(ROLE_LABELS) as Role[];
+interface AuditRow {
+  id: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  detail: Record<string, unknown>;
+  created_at: string;
+}
 
-export default async function AuditPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ role?: string }>;
-}) {
+/** Where an audited entity can be opened, when it has a page. */
+function entityHref(row: AuditRow): string | null {
+  if (!row.entity_id) return null;
+  if (row.entity_type === "transaction") return `/icms/transactions/${row.entity_id}`;
+  if (row.entity_type === "caterlink_vendor_delivery") return `/icms/vendor-transactions/${row.entity_id}`;
+  return null;
+}
+
+export default async function AuditPage() {
   await requireRole(["supervisor"]);
-  const { role: roleParam } = await searchParams;
-  const role = (ROLES.includes(roleParam as Role) ? roleParam : "") as Role | "";
   const supabase = await createClient();
 
-  let performedByIds: string[] | null = null;
-  if (role) {
-    const { data: usersOfRole } = await supabase.from("users").select("id").eq("role", role);
-    performedByIds = (usersOfRole ?? []).map((u) => u.id);
+  // The canonical audit log (phase8_audit_log) has no client read grant; CaterLink Management reads the
+  // events for its own AOC through this authorised RPC, which refuses everyone else.
+  const { data, error } = await callCaterlinkRpc(supabase, "list_caterlink_audit_secure", { p_limit: 300 });
+  if (isModuleMissing(error)) {
+    return <ModuleNotActivated title="Audit log" detail="The CaterLink audit log is not activated on this environment, so there is no data available." />;
   }
-
-  let query = supabase
-    .from("audit_logs")
-    .select("*")
-    .order("performed_at", { ascending: false })
-    .limit(300);
-  if (performedByIds) {
-    // Empty array (no user has this role) still needs a filter that matches
-    // nothing, rather than falling through to "all roles".
-    query = query.in("performed_by_id", performedByIds.length > 0 ? performedByIds : [
-      "00000000-0000-0000-0000-000000000000",
-    ]);
-  }
-  const { data, error: auditError } = await query;
-  if (isModuleMissing(auditError)) {
-    return <ModuleNotActivated title="Audit log" detail="The legacy ICMS audit log is not activated on this environment, so there is no data available." />;
-  }
-
-  const logs = (data ?? []) as AuditLog[];
+  const logs = (data ?? []) as AuditRow[];
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Audit Log</h1>
-          <p className="text-sm text-muted-foreground">
-            Immutable record of every write across the workflow (latest 300 events
-            {role ? `, filtered to ${ROLE_LABELS[role]}` : ""}).
-          </p>
-        </div>
-        <AuditRoleFilter role={role} />
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Audit Log</h1>
+        <p className="text-sm text-muted-foreground">
+          Immutable record of CaterLink actions in your AOC (latest 300 events).
+        </p>
       </div>
+
+      {error ? (
+        <p role="alert" className="rounded-md bg-red-100 p-3 text-sm font-medium text-red-800">
+          The audit log could not be loaded: {error.message.replace(/^ERROR:\s*/i, "")}
+        </p>
+      ) : null}
 
       <Card>
         <Table>
@@ -78,8 +65,8 @@ export default async function AuditPage({
               <TableHead>When</TableHead>
               <TableHead>Action</TableHead>
               <TableHead>Performed by</TableHead>
-              <TableHead>Transaction</TableHead>
-              <TableHead>Change</TableHead>
+              <TableHead>Record</TableHead>
+              <TableHead>Detail</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -90,41 +77,31 @@ export default async function AuditPage({
                 </TableCell>
               </TableRow>
             ) : (
-              logs.map((log) => (
-                <TableRow key={log.id}>
-                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                    {formatDateTime(log.performed_at)}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">{log.action}</TableCell>
-                  <TableCell className="text-sm">{log.performed_by}</TableCell>
-                  <TableCell>
-                    {log.transaction_id ? (
-                      <Link
-                        href={`/icms/transactions/${log.transaction_id}`}
-                        className="font-mono text-xs text-primary hover:underline"
-                      >
-                        {log.transaction_id.slice(0, 8)}…
-                      </Link>
-                    ) : (
-                      "—"
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <details className="text-xs">
-                      <summary className="cursor-pointer text-muted-foreground">
-                        before / after
-                      </summary>
-                      <pre className="mt-1 max-h-40 max-w-md overflow-auto rounded bg-muted p-2">
-                        {JSON.stringify(
-                          { before: log.old_values, after: log.new_values },
-                          null,
-                          2
-                        )}
-                      </pre>
-                    </details>
-                  </TableCell>
-                </TableRow>
-              ))
+              logs.map((log) => {
+                const href = entityHref(log);
+                return (
+                  <TableRow key={log.id}>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDateTime(log.created_at)}</TableCell>
+                    <TableCell className="font-mono text-xs">{log.action}</TableCell>
+                    <TableCell className="text-sm">{log.actor_name ?? "—"}</TableCell>
+                    <TableCell>
+                      {href && log.entity_id ? (
+                        <Link href={href} className="font-mono text-xs text-primary hover:underline">
+                          {log.entity_id.slice(0, 8)}…
+                        </Link>
+                      ) : (
+                        <span className="font-mono text-xs text-muted-foreground">{log.entity_type}</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-muted-foreground">detail</summary>
+                        <pre className="mt-1 max-h-40 max-w-md overflow-auto rounded bg-muted p-2">{JSON.stringify(log.detail, null, 2)}</pre>
+                      </details>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

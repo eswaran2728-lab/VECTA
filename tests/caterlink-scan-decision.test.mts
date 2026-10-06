@@ -91,7 +91,8 @@ test("migration: scan capability is switched off everywhere except PEN and JHB a
 
 // ---------------- application consistency ----------------
 test("every scan gate in the application uses the single database decision and never supplies an identity", () => {
-  const files = ["lib/avsec/auth.ts", "lib/icms/auth.ts", "lib/icms/actions/scan.ts", "app/api/icms/qr/validate/route.ts", "app/page.tsx", "app/(icms)/icms/transactions/[id]/page.tsx"];
+  const files = ["lib/avsec/auth.ts", "lib/icms/auth.ts", "lib/icms/actions/scan.ts", "app/api/icms/qr/validate/route.ts", "app/page.tsx"];
+  // The transaction detail page is read-only on the canonical model (no scan action), so it holds no scan gate.
   for (const f of files) {
     const src = read(f);
     assert.match(src, /can_user_scan_caterlink/, f);

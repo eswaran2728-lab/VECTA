@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Clock3, FileDown, LockKeyhole } from "lucide-react";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { requireProfile } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
 import { signedUrl } from "@/lib/icms/storage";
@@ -9,14 +8,8 @@ import { generateQrToken } from "@/lib/icms/qr-token";
 import { QrDisplay } from "@/components/icms/qr-display";
 import { StatusBadge } from "@/components/icms/status-badge";
 import { DirectionBadge } from "@/components/icms/direction-badge";
-import { WorkflowStepper } from "@/components/icms/workflow-stepper";
-import { Button } from "@/components/icms/ui/button";
+import { Badge } from "@/components/icms/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/icms/ui/card";
-import { getStep, nextStepFor, type CheckpointPart } from "@/lib/icms/workflow";
-import { decideCheckpointAccess } from "@/lib/icms/canonical";
-import { getActiveRoleAssignments } from "@/lib/dashboard/context";
-import { deriveCanonicalAccess } from "@/lib/auth/canonical-access";
-import { SegmentCountdown } from "@/components/icms/segment-countdown";
 import {
   CARGO_TYPE_LABELS,
   DELIVERY_LOCATION_LABELS,
@@ -25,32 +18,57 @@ import {
   INCIDENT_STATUS_LABELS,
   INCIDENT_TYPE_LABELS,
   ROUTE_LABELS,
-} from "@/lib/icms/constants";
-import { formatDateTime } from "@/lib/icms/utils";
-import { Badge } from "@/components/icms/ui/badge";
-import { UnescalateButton } from "@/components/icms/unescalate-button";
-import {
   SEAL_COLOR_BADGES,
   SEAL_COLOR_LABELS,
   SEAL_TYPE_LABELS,
 } from "@/lib/icms/constants";
-import type {
-  Incident,
-  PartA,
-  PartBC,
-  PartD,
-  PartHub,
-  PartRedq,
-  Seal,
-  SealVerification,
-  SegmentTimeout,
-  Transaction,
-  Role,
-} from "@/lib/icms/database.types";
+import { formatDateTime } from "@/lib/icms/utils";
+import type { Incident, Seal, SealVerification, Transaction } from "@/lib/icms/database.types";
 
 export const metadata: Metadata = { title: "Transaction" };
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+// Canonical Phase 9 checkpoint rows (row-level security follows the parent transaction's visibility).
+interface CheckpointBase {
+  id: string;
+  signature_url: string;
+  remarks: string | null;
+  completed_at: string;
+}
+interface PartARow extends CheckpointBase {
+  pic_name: string;
+  pic_staff_id: string;
+  vehicle_search_completed: boolean;
+}
+interface PartBCRow extends CheckpointBase {
+  checkpoint_stage: "B" | "C";
+  avsec_name: string;
+  avsec_staff_id: string;
+  vehicle_verified: boolean;
+  driver_verified: boolean;
+  seal_verified: boolean;
+  result: "PASS" | "ESCALATE";
+  escalation_reason: string | null;
+}
+interface PartDRow extends CheckpointBase {
+  delivery_location: "SRA_WAREHOUSE" | "AIRCRAFT";
+  receiver_name: string;
+  receiver_staff_id: string;
+  seal_intact: boolean;
+  result: "PASS" | "ESCALATE";
+  escalation_reason: string | null;
+  aircraft_identifier: string | null;
+}
+interface HubRow extends CheckpointBase {
+  confirmed_destination: string;
+  hub_avsec_name: string;
+  hub_avsec_staff_id: string;
+}
+interface RedqRow extends CheckpointBase {
+  redq_avsec_name: string;
+  redq_avsec_staff_id: string;
+}
 
 function Sig({ url, label }: { url: string | null; label: string }) {
   if (!url) return null;
@@ -87,67 +105,42 @@ function Check({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
-const ROLE_LABELS: Partial<Record<Role, string>> = {
-  post2_avsec: "In-flight Security Post",
-  post6_avsec: "Airport Security Post",
-  receiver: "Receiver",
-};
-
-function PendingPartCard({
-  id,
+function PartCard({
   title,
-  part,
-  currentPart,
-  responsibleRole,
-  canComplete,
-  deadline,
+  rows,
+  signature,
+  signatureLabel,
+  children,
 }: {
-  id: string;
   title: string;
-  part: CheckpointPart;
-  currentPart: CheckpointPart | null;
-  responsibleRole: Role;
-  /** Canonical decision: station operator at a scan-capable station (profiling excluded),
-   *  matching requireCheckpointRole() in lib/icms/auth.ts, which enforces it server-side. */
-  canComplete: boolean;
-  /** SLA deadline for this segment (Upgrade 5), null when uncapped. */
-  deadline?: string | null;
+  rows: [string, React.ReactNode][];
+  signature: string | null;
+  signatureLabel: string;
+  children?: React.ReactNode;
 }) {
-  const isCurrent = currentPart === part;
-  const actionable = isCurrent && canComplete;
-  const slug = part.replace("_", "-");
-
   return (
-    <Card className={actionable ? "border-primary bg-primary/5" : "border-dashed"}>
+    <Card>
       <CardHeader>
         <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
-      <CardContent>
-        {actionable ? (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-sm font-medium text-primary">
-                <Clock3 className="h-4 w-4" /> Your turn — ready to verify
-              </div>
-              {isCurrent ? <SegmentCountdown deadline={deadline ?? null} /> : null}
-            </div>
-            <Link href={`/icms/transactions/${id}/${slug}`}>
-              <Button className="w-full" size="lg">Scan / Verify</Button>
-            </Link>
-          </div>
-        ) : isCurrent ? (
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
-              <Clock3 className="h-4 w-4" /> Awaiting {ROLE_LABELS[responsibleRole]}
-            </div>
-            <SegmentCountdown deadline={deadline ?? null} />
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <LockKeyhole className="h-4 w-4" /> Locked — earlier checkpoint not completed
-          </div>
-        )}
+      <CardContent className="space-y-1">
+        {rows.map(([label, value]) => (
+          <Row key={label} label={label} value={value} />
+        ))}
+        {children}
+        <Sig url={signature} label={signatureLabel} />
       </CardContent>
+    </Card>
+  );
+}
+
+function PendingCard({ title }: { title: string }) {
+  return (
+    <Card className="border-dashed">
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="text-sm text-muted-foreground">Not recorded yet.</CardContent>
     </Card>
   );
 }
@@ -161,51 +154,34 @@ export default async function TransactionDetailPage({
 }) {
   const { id } = await params;
   const flags = await searchParams;
-  const profile = await requireProfile();
+  await requireProfile();
   const supabase = await createClient();
-  const access = deriveCanonicalAccess(await getActiveRoleAssignments());
-  let stationCanScan: boolean | null = null;
-  if (profile.identity === "canonical" && access.stationCode) {
-    const { data: capable } = await supabase.rpc("can_user_scan_caterlink", { p_station_code: access.stationCode });
-    stationCanScan = capable === true;
-  }
-  const canComplete = profile.identity === "canonical" && decideCheckpointAccess(access, stationCanScan).allowed;
 
-  const { data: tx } = await supabase
-    .from("transactions")
-    .select("*, catering_companies(name)")
-    .eq("id", id)
-    .single();
+  // Row-level security decides visibility: the creating Driver, CaterLink Management / Operation Manager /
+  // Main Enforcement in the AOC, or station staff. Anyone else gets a 404.
+  const { data: tx } = await supabase.from("transactions").select("*").eq("id", id).maybeSingle();
   if (!tx) notFound();
-  const transaction = tx as unknown as Transaction & {
-    catering_companies: { name: string } | null;
-  };
+  const transaction = tx as unknown as Transaction;
 
-  const [a, b, c, d, hub, redq, inc, sealRes] = await Promise.all([
-    supabase.from("part_a").select("*").eq("transaction_id", id).maybeSingle(),
-    supabase.from("part_b").select("*").eq("transaction_id", id).maybeSingle(),
-    supabase.from("part_c").select("*").eq("transaction_id", id).maybeSingle(),
-    supabase.from("part_d").select("*").eq("transaction_id", id).maybeSingle(),
-    supabase.from("part_hub").select("*").eq("transaction_id", id).maybeSingle(),
-    supabase.from("part_redq").select("*").eq("transaction_id", id).maybeSingle(),
-    supabase.from("incidents").select("*").eq("transaction_id", id).order("created_at"),
-    supabase
-      .from("seals")
-      .select("*, seal_verifications(*)")
-      .eq("transaction_id", id)
-      .order("applied_at"),
+  const [a, bc, d, hub, redq, inc, sealRes] = await Promise.all([
+    supabase.from("caterlink_checkpoint_part_a" as never).select("*").eq("transaction_id", id).maybeSingle(),
+    supabase.from("part_b_c" as never).select("*").eq("transaction_id", id),
+    supabase.from("caterlink_checkpoint_part_d" as never).select("*").eq("transaction_id", id).maybeSingle(),
+    supabase.from("caterlink_checkpoint_hub" as never).select("*").eq("transaction_id", id).maybeSingle(),
+    supabase.from("caterlink_checkpoint_redq" as never).select("*").eq("transaction_id", id).maybeSingle(),
+    supabase.from("caterlink_incidents" as never).select("*").eq("transaction_id", id).order("created_at"),
+    supabase.from("seals").select("*, seal_verifications(*)").eq("transaction_id", id).order("applied_at"),
   ]);
 
-  const partA = a.data as PartA | null;
-  const partB = b.data as PartBC | null;
-  const partC = c.data as PartBC | null;
-  const partD = d.data as PartD | null;
-  const partHub = hub.data as PartHub | null;
-  const partRedq = redq.data as PartRedq | null;
-  const incidents = (inc.data ?? []) as Incident[];
-  const seals = (sealRes.data ?? []) as unknown as (Seal & {
-    seal_verifications: SealVerification[];
-  })[];
+  const partA = a.data as unknown as PartARow | null;
+  const bcRows = (bc.data ?? []) as unknown as PartBCRow[];
+  const partB = bcRows.find((r) => r.checkpoint_stage === "B") ?? null;
+  const partC = bcRows.find((r) => r.checkpoint_stage === "C") ?? null;
+  const partD = d.data as unknown as PartDRow | null;
+  const partHub = hub.data as unknown as HubRow | null;
+  const partRedq = redq.data as unknown as RedqRow | null;
+  const incidents = (inc.data ?? []) as unknown as (Incident & { severity?: string })[];
+  const seals = (sealRes.data ?? []) as unknown as (Seal & { seal_verifications: SealVerification[] })[];
 
   const [sigA, sigB, sigC, sigD, sigHub, sigRedq] = await Promise.all([
     signedUrl("signatures", partA?.signature_url ?? null),
@@ -215,78 +191,13 @@ export default async function TransactionDetailPage({
     signedUrl("signatures", partHub?.signature_url ?? null),
     signedUrl("signatures", partRedq?.signature_url ?? null),
   ]);
-  const incidentPhotos = await Promise.all(
-    incidents.map((i) => signedUrl("incident-photos", i.photo_url))
-  );
-  const completedFormUrl = await signedUrl("completed-forms", transaction.completed_form_url);
-
-  // Which checkpoint can this user action right now? (direction- and route-aware)
-  const nextStep = nextStepFor(transaction.direction, transaction.status, transaction.route);
-  const nextAction =
-    nextStep &&
-    canComplete
-      ? {
-          href: `/icms/transactions/${id}/${nextStep.slug}`,
-          label: `Complete ${nextStep.shortLabel}`,
-        }
-      : null;
-  const currentPart = nextStep?.part ?? null;
-
-  // Segment SLA deadline (Upgrade 5) for whichever checkpoint is currently
-  // pending — null when the transaction is done/escalated, or the segment
-  // is uncapped (e.g. outbound Post 6 -> Receiver has no limit).
-  let segmentDeadline: string | null = null;
-  if (currentPart) {
-    const { data: segmentTimeout } = await supabase
-      .from("segment_timeouts")
-      .select("limit_minutes")
-      .eq("direction", transaction.direction)
-      .eq("from_status", transaction.status)
-      .maybeSingle();
-    const limitMinutes = (segmentTimeout as Pick<SegmentTimeout, "limit_minutes"> | null)
-      ?.limit_minutes;
-    if (limitMinutes != null) {
-      segmentDeadline = new Date(
-        new Date(transaction.status_entered_at).getTime() + limitMinutes * 60_000
-      ).toISOString();
-    }
-  }
-
-  const suppliesSum =
-    (transaction.supplies_total ?? 0) +
-    (transaction.supplies_carts ?? 0) +
-    (transaction.supplies_smu ?? 0) +
-    (transaction.supplies_pallets ?? 0) +
-    (transaction.supplies_boxes ?? 0) +
-    (transaction.supplies_oven_racks ?? 0);
-
-  // Part D is optional: the receiver or an admin can close the transaction
-  // out from AIRPORT_POST_APPROVED without ever completing Part D.
-  const canSkipPartD =
-    transaction.direction === "OUTBOUND" &&
-    transaction.status === "AIRPORT_POST_APPROVED" &&
-    !partD &&
-    (profile.role === "receiver" || profile.role === "supervisor");
-
-  // Admin / Enforcement release action for escalated transactions
-  const canAdminEscalation =
-    profile.role === "supervisor" ||
-    profile.role === "enforcement" ||
-    profile.role === "management";
-  const isEscalated = transaction.status === "ESCALATED";
-  const hasOpenIncidents = incidents.some(
-    (i) => i.status !== "RESOLVED" && i.status !== "CLOSED"
-  );
-  const canUnescalate = isEscalated && canAdminEscalation;
 
   const banner = flags.created
-    ? "Transaction created. Print or show the QR pass at Post 2."
+    ? "Transaction created. Show the QR pass at the security checkpoint."
     : flags.approved
       ? "Checkpoint recorded."
       : flags.completed
-        ? transaction.part_d_skipped
-          ? "Transaction completed without Part D."
-          : "Delivery confirmed — transaction completed."
+        ? "Delivery confirmed — transaction completed."
         : flags.escalated
           ? "Incident reported. Transaction escalated and admin notified."
           : null;
@@ -294,520 +205,202 @@ export default async function TransactionDetailPage({
   return (
     <div className="space-y-4">
       {banner ? (
-        <p
-          className={`rounded-md p-3 text-sm font-medium ${
-            flags.escalated
-              ? "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200"
-              : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
-          }`}
-        >
-          {banner}
-        </p>
+        <p className="rounded-md bg-emerald-100 p-3 text-sm font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">{banner}</p>
       ) : null}
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <span className="font-mono text-xs font-semibold uppercase tracking-wider text-primary block mb-0.5">
-            CATERING DISPATCH PASS
-          </span>
-          <h1 className="font-mono text-2xl font-bold tracking-tight">
-            {transaction.transaction_number}
-          </h1>
+          <span className="mb-0.5 block font-mono text-xs font-semibold uppercase tracking-wider text-primary">CATERING DISPATCH PASS</span>
+          <h1 className="font-mono text-2xl font-bold tracking-tight">{transaction.transaction_number}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <StatusBadge status={transaction.status} />
             <DirectionBadge direction={transaction.direction} />
-            {segmentDeadline ? <SegmentCountdown deadline={segmentDeadline} /> : null}
           </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {canUnescalate ? (
-            <UnescalateButton
-              transactionId={id}
-              transactionNumber={transaction.transaction_number}
-              disabled={hasOpenIncidents}
-              disabledReason={
-                hasOpenIncidents
-                  ? "Resolve or close all open incidents before releasing."
-                  : undefined
-              }
-            />
-          ) : null}
-          {nextAction ? (
-            <Link href={nextAction.href}>
-              <Button size="lg">{nextAction.label}</Button>
-            </Link>
-          ) : null}
-          {canSkipPartD ? (
-            <Link href={`/icms/transactions/${id}/skip-part-d`}>
-              <Button size="lg" variant="secondary">
-                Complete without Part D
-              </Button>
-            </Link>
-          ) : null}
-          {completedFormUrl ? (
-            <a href={completedFormUrl} target="_blank" rel="noopener noreferrer">
-              <Button size="lg" variant="secondary">
-                <FileDown className="mr-1 h-4 w-4" />
-                Completed Form (PDF)
-              </Button>
-            </a>
-          ) : null}
-          {transaction.status !== "COMPLETED" ||
-          profile.role === "supervisor" ||
-          profile.role === "enforcement" ||
-          profile.role === "management" ? (
-            <Link href={`/icms/transactions/${id}/incident`}>
-              <Button variant="destructive" size="lg">
-                Report Incident
-              </Button>
-            </Link>
-          ) : null}
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Consignment</CardTitle>
-          </CardHeader>
-          <CardContent className="divide-y">
-            {transaction.station ? (
-              <Row label="Station" value={<span className="font-mono">{transaction.station}</span>} />
-            ) : null}
-            {transaction.route !== "AIRCRAFT" ? (
-              <Row
-                label="Route"
-                value={
-                  transaction.route === "HUB" && transaction.hub_destination
-                    ? `Hub — ${HUB_DESTINATION_LABELS[transaction.hub_destination]}`
-                    : ROUTE_LABELS[transaction.route]
-                }
-              />
-            ) : null}
-            <Row label="Vehicle" value={<span className="font-mono">{transaction.vehicle_number}</span>} />
-            <Row label="Driver" value={transaction.driver_name} />
-            <Row label="Driver ID" value={<span className="font-mono">{transaction.driver_id}</span>} />
-            {transaction.flight_number ? (
-              <Row label="Flight" value={<span className="font-mono">{transaction.flight_number}</span>} />
-            ) : null}
-            {transaction.aircraft_registration ? (
-              <Row
-                label="Aircraft"
-                value={<span className="font-mono">{transaction.aircraft_registration}</span>}
-              />
-            ) : null}
-            {transaction.catering_companies ? (
-              <Row label="Catering Company" value={transaction.catering_companies.name} />
-            ) : null}
-            {transaction.trolley_count > 0 ? (
-              <Row label="Trolleys" value={transaction.trolley_count} />
-            ) : null}
-            {transaction.cargo_types.length > 0 ? (
-              <Row
-                label="Cargo Type"
-                value={
-                  <span className="flex flex-wrap justify-end gap-1">
-                    {transaction.cargo_types.map((c) => (
-                      <Badge key={c} className="border bg-muted text-muted-foreground">
-                        {CARGO_TYPE_LABELS[c]}
-                      </Badge>
-                    ))}
-                  </span>
-                }
-              />
-            ) : null}
-            {suppliesSum > 0 ? (
-              <Row
-                label="In-flight Supplies"
-                value={
-                  <span className="font-mono">
-                    {transaction.supplies_total ?? suppliesSum} total
-                    {" — "}
-                    {[
-                      transaction.supplies_carts ? `${transaction.supplies_carts} carts` : null,
-                      transaction.supplies_smu ? `${transaction.supplies_smu} SMU` : null,
-                      transaction.supplies_pallets ? `${transaction.supplies_pallets} pallets` : null,
-                      transaction.supplies_boxes ? `${transaction.supplies_boxes} boxes` : null,
-                      transaction.supplies_oven_racks
-                        ? `${transaction.supplies_oven_racks} oven rack`
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(", ") || "—"}
-                  </span>
-                }
-              />
-            ) : null}
-            {transaction.escort_officer_name ? (
-              <Row
-                label="Escort Officer"
-                value={`${transaction.escort_officer_name}${transaction.escort_officer_staff_id ? ` (${transaction.escort_officer_staff_id})` : ""}`}
-              />
-            ) : null}
-            {transaction.escort_vehicle_number ? (
-              <Row
-                label="Escort Vehicle"
-                value={<span className="font-mono">{transaction.escort_vehicle_number}</span>}
-              />
-            ) : null}
-            <Row label="Created" value={formatDateTime(transaction.created_at)} />
-            <Row label="Completed" value={formatDateTime(transaction.completed_at)} />
-            <div className="space-y-2 pt-2">
-              <p className="text-sm text-muted-foreground">Seals ({seals.length})</p>
-              {seals.map((seal) => (
-                <div key={seal.id} className="flex flex-wrap items-center gap-2 text-sm">
-                  <Badge className={SEAL_COLOR_BADGES[seal.seal_color]}>
-                    {SEAL_COLOR_LABELS[seal.seal_color]} {SEAL_TYPE_LABELS[seal.seal_type]}
-                  </Badge>
-                  <span className="font-mono font-medium">{seal.seal_number}</span>
-                  {seal.superseded_at ? (
-                    <span
-                      className="text-xs font-semibold text-muted-foreground"
-                      title={`Superseded ${formatDateTime(seal.superseded_at)}${seal.superseded_reason ? ` — ${seal.superseded_reason}` : ""}`}
-                    >
-                      Superseded {formatDateTime(seal.superseded_at)}
-                    </span>
-                  ) : null}
-                  {seal.seal_verifications.length > 0 ? (
-                    <span
-                      className={`text-xs ${
-                        seal.seal_verifications.every((v) => v.matched)
-                          ? "text-emerald-600"
-                          : "font-semibold text-red-600"
-                      }`}
-                    >
-                      {seal.seal_verifications.filter((v) => v.matched).length}/
-                      {seal.seal_verifications.length} checks matched
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">not yet verified</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-1">
           <CardHeader>
             <CardTitle className="text-base">QR Pass</CardTitle>
           </CardHeader>
           <CardContent>
-            <QrDisplay
-              token={generateQrToken(transaction.id)}
-              transactionNumber={transaction.transaction_number}
-            />
+            <QrDisplay token={generateQrToken(transaction.id)} transactionNumber={transaction.transaction_number} />
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Workflow Progress</CardTitle>
+            <CardTitle className="text-base">Overview</CardTitle>
           </CardHeader>
-          <CardContent>
-            <WorkflowStepper
-              direction={transaction.direction}
-              status={transaction.status}
-              route={transaction.route}
-              parts={{
-                part_b: !!partB,
-                part_c: !!partC,
-                part_d: !!partD || transaction.part_d_skipped,
-                part_hub: !!partHub,
-                part_redq: !!partRedq,
-              }}
+          <CardContent className="space-y-1">
+            <Row label="Route" value={ROUTE_LABELS[transaction.route]} />
+            {transaction.hub_destination ? <Row label="Hub destination" value={HUB_DESTINATION_LABELS[transaction.hub_destination]} /> : null}
+            <Row label="Station" value={transaction.station ?? "—"} />
+            <Row label="Vehicle" value={<span className="font-mono">{transaction.vehicle_number}</span>} />
+            <Row label="Driver" value={`${transaction.driver_name} (${transaction.driver_id})`} />
+            {transaction.flight_number ? <Row label="Flight" value={transaction.flight_number} /> : null}
+            {transaction.aircraft_registration ? <Row label="Aircraft" value={transaction.aircraft_registration} /> : null}
+            <Row label="Trolleys" value={transaction.trolley_count} />
+            <Row
+              label="Cargo"
+              value={transaction.cargo_types.length > 0 ? transaction.cargo_types.map((c) => CARGO_TYPE_LABELS[c] ?? c).join(", ") : "—"}
             />
+            <Row label="Created" value={formatDateTime(transaction.created_at)} />
+            <Row label="Completed" value={formatDateTime(transaction.completed_at)} />
           </CardContent>
         </Card>
       </div>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Seals</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {seals.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No seals recorded.</p>
+          ) : (
+            seals.map((s) => (
+              <div key={s.id} className="rounded-md border p-3 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono font-semibold">{s.seal_number}</span>
+                  <Badge className={SEAL_COLOR_BADGES[s.seal_color]}>{SEAL_COLOR_LABELS[s.seal_color]}</Badge>
+                  <span className="text-xs text-muted-foreground">{SEAL_TYPE_LABELS[s.seal_type]}</span>
+                  {s.superseded_at ? <span className="text-xs text-amber-700">superseded</span> : null}
+                </div>
+                {s.seal_verifications.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {s.seal_verifications.map((v) => (
+                      <Check key={v.id} ok={v.matched} label={`${v.checkpoint}: ${v.entered_seal_number}`} />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 md:grid-cols-2">
         {partA ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Part A — Warehouse PIC</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Row label="PIC" value={`${partA.pic_name} (${partA.pic_staff_id})`} />
-              <Row label="Completed" value={formatDateTime(partA.completed_at)} />
-              <div className="flex flex-wrap gap-2">
-                <Check ok={partA.vehicle_search_completed} label="Vehicle search" />
-              </div>
-              {partA.remarks ? <p className="text-sm text-muted-foreground">“{partA.remarks}”</p> : null}
-              <Sig url={sigA} label="PIC signature" />
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {partB ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Part B — AVSEC Post 2</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Row label="Officer" value={`${partB.avsec_name} (${partB.avsec_staff_id})`} />
-              <Row label="Completed" value={formatDateTime(partB.completed_at)} />
-              <div className="flex flex-wrap gap-2">
-                <Check ok={partB.vehicle_verified} label="Vehicle" />
-                <Check ok={partB.driver_verified} label="Driver" />
-                <Check ok={partB.seal_verified} label="Seal" />
-              </div>
-              {partB.remarks ? <p className="text-sm text-muted-foreground">“{partB.remarks}”</p> : null}
-              <Sig url={sigB} label="Officer signature" />
-            </CardContent>
-          </Card>
+          <PartCard
+            title="Part A — Dispatch (Driver)"
+            rows={[
+              ["PIC", `${partA.pic_name} (${partA.pic_staff_id})`],
+              ["Vehicle search", <Check key="vs" ok={partA.vehicle_search_completed} label={partA.vehicle_search_completed ? "Completed" : "Not completed"} />],
+              ["Completed", formatDateTime(partA.completed_at)],
+            ]}
+            signature={sigA}
+            signatureLabel="PIC signature"
+          >
+            {partA.remarks ? <p className="text-sm text-muted-foreground">“{partA.remarks}”</p> : null}
+          </PartCard>
         ) : (
-          <PendingPartCard
-            id={id}
-            title="Part B — AVSEC Post 2"
-            part="part_b"
-            currentPart={currentPart}
-            responsibleRole={
-              getStep(transaction.direction, "part_b", transaction.route)?.role ?? "post2_avsec"
-            }
-            canComplete={canComplete}
-            deadline={segmentDeadline}
-          />
+          <PendingCard title="Part A — Dispatch (Driver)" />
         )}
 
-        {transaction.route === "HUB" ? (
-          partHub ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Part Hub — Delivery Confirmation</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Row
-                  label="Hub AVSEC"
-                  value={`${partHub.hub_avsec_name} (${partHub.hub_avsec_staff_id})`}
-                />
-                <Row
-                  label="Confirmed Destination"
-                  value={HUB_DESTINATION_LABELS[partHub.confirmed_destination]}
-                />
-                <Row label="Completed" value={formatDateTime(partHub.completed_at)} />
-                {partHub.remarks ? (
-                  <p className="text-sm text-muted-foreground">“{partHub.remarks}”</p>
-                ) : null}
-                <Sig url={sigHub} label="Hub AVSEC signature" />
-              </CardContent>
-            </Card>
-          ) : (
-            <PendingPartCard
-              id={id}
-              title="Part Hub — Delivery Confirmation"
-              part="part_hub"
-              currentPart={currentPart}
-              responsibleRole="hub_avsec"
-              canComplete={canComplete}
-              deadline={segmentDeadline}
-            />
-          )
+        {partB ? (
+          <PartCard
+            title="Part B — Checkpoint"
+            rows={[
+              ["Officer", `${partB.avsec_name} (${partB.avsec_staff_id})`],
+              ["Verified", <span key="v" className="flex flex-wrap justify-end gap-1"><Check ok={partB.vehicle_verified} label="Vehicle" /><Check ok={partB.driver_verified} label="Driver" /><Check ok={partB.seal_verified} label="Seal" /></span>],
+              ["Result", partB.result],
+              ["Completed", formatDateTime(partB.completed_at)],
+            ]}
+            signature={sigB}
+            signatureLabel="Officer signature"
+          >
+            {partB.escalation_reason ? <p className="text-sm font-medium text-orange-700">Escalated: {partB.escalation_reason}</p> : null}
+          </PartCard>
         ) : (
-          <>
-            {transaction.route === "REDQ" ? (
-              partRedq ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Part REDQ — Re-seal</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <Row
-                      label="REDQ AVSEC"
-                      value={`${partRedq.redq_avsec_name} (${partRedq.redq_avsec_staff_id})`}
-                    />
-                    <Row label="Completed" value={formatDateTime(partRedq.completed_at)} />
-                    {partRedq.remarks ? (
-                      <p className="text-sm text-muted-foreground">“{partRedq.remarks}”</p>
-                    ) : null}
-                    <Sig url={sigRedq} label="REDQ AVSEC signature" />
-                  </CardContent>
-                </Card>
-              ) : (
-                <PendingPartCard
-                  id={id}
-                  title="Part REDQ — Re-seal"
-                  part="part_redq"
-                  currentPart={currentPart}
-                  responsibleRole="redq_avsec"
-                  canComplete={canComplete}
-                  deadline={segmentDeadline}
-                />
-              )
-            ) : null}
+          <PendingCard title="Part B — Checkpoint" />
+        )}
 
-            {partC ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Part C — AVSEC Post 6</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Row label="Officer" value={`${partC.avsec_name} (${partC.avsec_staff_id})`} />
-                  <Row label="Completed" value={formatDateTime(partC.completed_at)} />
-                  <div className="flex flex-wrap gap-2">
-                    <Check ok={partC.vehicle_verified} label="Vehicle" />
-                    <Check ok={partC.driver_verified} label="Driver" />
-                    <Check ok={partC.seal_verified} label="Seal" />
-                  </div>
-                  {partC.remarks ? (
-                    <p className="text-sm text-muted-foreground">“{partC.remarks}”</p>
-                  ) : null}
-                  <Sig url={sigC} label="Officer signature" />
-                </CardContent>
-              </Card>
-            ) : (
-              <PendingPartCard
-                id={id}
-                title="Part C — AVSEC Post 6"
-                part="part_c"
-                currentPart={currentPart}
-                responsibleRole={
-                  getStep(transaction.direction, "part_c", transaction.route)?.role ?? "post6_avsec"
-                }
-                canComplete={canComplete}
-                deadline={segmentDeadline}
-              />
-            )}
-          </>
+        {partC ? (
+          <PartCard
+            title="Part C — Checkpoint"
+            rows={[
+              ["Officer", `${partC.avsec_name} (${partC.avsec_staff_id})`],
+              ["Verified", <span key="v" className="flex flex-wrap justify-end gap-1"><Check ok={partC.vehicle_verified} label="Vehicle" /><Check ok={partC.driver_verified} label="Driver" /><Check ok={partC.seal_verified} label="Seal" /></span>],
+              ["Result", partC.result],
+              ["Completed", formatDateTime(partC.completed_at)],
+            ]}
+            signature={sigC}
+            signatureLabel="Officer signature"
+          >
+            {partC.escalation_reason ? <p className="text-sm font-medium text-orange-700">Escalated: {partC.escalation_reason}</p> : null}
+          </PartCard>
+        ) : (
+          <PendingCard title="Part C — Checkpoint" />
         )}
 
         {partD ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Part D — Delivery</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Row
-                label="Receiver"
-                value={`${partD.receiver_name} (${partD.receiver_staff_id})`}
-              />
-              <Row label="Location" value={DELIVERY_LOCATION_LABELS[partD.delivery_location]} />
-              {partD.aircraft_identifier ? (
-                <Row label="Aircraft Identifier" value={<span className="font-mono">{partD.aircraft_identifier}</span>} />
-              ) : null}
-              <Row label="Completed" value={formatDateTime(partD.completed_at)} />
-              <div className="flex flex-wrap gap-2">
-                <Check ok={partD.seal_intact} label="Seal intact" />
-              </div>
-              {partD.remarks ? <p className="text-sm text-muted-foreground">“{partD.remarks}”</p> : null}
-              <Sig url={sigD} label="Receiver signature" />
-            </CardContent>
-          </Card>
-        ) : transaction.part_d_skipped ? (
-          <Card className="border-dashed">
-            <CardHeader>
-              <CardTitle className="text-base">Part D — Delivery</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <p className="font-medium text-muted-foreground">
-                Skipped — transaction completed without Part D.
-              </p>
-              {transaction.part_d_skip_reason ? (
-                <p className="text-muted-foreground">“{transaction.part_d_skip_reason}”</p>
-              ) : null}
-            </CardContent>
-          </Card>
-        ) : transaction.direction === "OUTBOUND" &&
-          transaction.route !== "HUB" &&
-          transaction.route !== "MAINTENANCE" ? (
-          <PendingPartCard
-            id={id}
+          <PartCard
             title="Part D — Delivery"
-            part="part_d"
-            currentPart={currentPart}
-            responsibleRole="receiver"
-            canComplete={canComplete}
+            rows={[
+              ["Location", DELIVERY_LOCATION_LABELS[partD.delivery_location]],
+              ["Receiver", `${partD.receiver_name} (${partD.receiver_staff_id})`],
+              ["Seal intact", <Check key="si" ok={partD.seal_intact} label={partD.seal_intact ? "Intact" : "Not intact"} />],
+              ["Result", partD.result],
+              ["Completed", formatDateTime(partD.completed_at)],
+            ]}
+            signature={sigD}
+            signatureLabel="Receiver signature"
           />
-        ) : profile.role === "supervisor" || profile.role === "enforcement" || profile.role === "management" ? (
-          <Card className="border-dashed">
-            <CardHeader><CardTitle className="text-base">Part D — Delivery</CardTitle></CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              {transaction.route === "HUB"
-                ? "Not applicable to HUB-route transactions — Part Hub is the terminal step."
-                : transaction.route === "MAINTENANCE"
-                  ? "Not applicable — GSE Workshop has no security checkpoint; this transaction completed at Part C."
-                  : "Not applicable to inbound transactions."}
-            </CardContent>
-          </Card>
+        ) : transaction.route === "AIRCRAFT" ? (
+          <PendingCard title="Part D — Delivery" />
+        ) : null}
+
+        {partHub ? (
+          <PartCard
+            title="Hub — Destination receipt"
+            rows={[
+              ["Destination", partHub.confirmed_destination],
+              ["Officer", `${partHub.hub_avsec_name} (${partHub.hub_avsec_staff_id})`],
+              ["Completed", formatDateTime(partHub.completed_at)],
+            ]}
+            signature={sigHub}
+            signatureLabel="Officer signature"
+          />
+        ) : transaction.route === "HUB" ? (
+          <PendingCard title="Hub — Destination receipt" />
+        ) : null}
+
+        {partRedq ? (
+          <PartCard
+            title="REDQ — Reseal"
+            rows={[
+              ["Officer", `${partRedq.redq_avsec_name} (${partRedq.redq_avsec_staff_id})`],
+              ["Completed", formatDateTime(partRedq.completed_at)],
+            ]}
+            signature={sigRedq}
+            signatureLabel="Officer signature"
+          />
         ) : null}
       </div>
 
       {incidents.length > 0 ? (
         <Card className="border-red-300 dark:border-red-900">
           <CardHeader>
-            <CardTitle className="text-base text-red-700 dark:text-red-300">
-              Incidents ({incidents.length})
-            </CardTitle>
+            <CardTitle className="text-base text-red-700 dark:text-red-300">Incidents ({incidents.length})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {isEscalated && canAdminEscalation && !hasOpenIncidents ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-300 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-950/40">
-                <div>
-                  <p className="font-semibold text-emerald-900 dark:text-emerald-100">
-                    All linked incidents have been resolved / closed.
-                  </p>
-                  <p className="text-sm text-emerald-700 dark:text-emerald-300">
-                    You can now release this transaction so checkpoint verification and delivery can resume.
-                  </p>
-                </div>
-                <UnescalateButton
-                  transactionId={id}
-                  transactionNumber={transaction.transaction_number}
-                  size="default"
-                />
-              </div>
-            ) : isEscalated && canAdminEscalation && hasOpenIncidents ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/40">
-                <div>
-                  <p className="font-semibold text-amber-900 dark:text-amber-100">
-                    Action required to un-escalate
-                  </p>
-                  <p className="text-sm text-amber-700 dark:text-amber-300">
-                    Resolve or close the open incident(s) below to enable transaction release.
-                  </p>
-                </div>
-                <Link href="/icms/incidents">
-                  <Button size="sm" variant="outline">
-                    Go to Incident Management
-                  </Button>
-                </Link>
-              </div>
-            ) : null}
-
-            {incidents.map((incident, i) => (
-              <div key={incident.id} className="rounded-md border p-3 space-y-2">
+            {incidents.map((incident) => (
+              <div key={incident.id} className="space-y-2 rounded-md border p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold">
-                      {INCIDENT_TYPE_LABELS[incident.incident_type]}
-                    </span>
-                    <Badge className={INCIDENT_STATUS_COLORS[incident.status]}>
-                      {INCIDENT_STATUS_LABELS[incident.status]}
-                    </Badge>
+                    <span className="font-semibold">{INCIDENT_TYPE_LABELS[incident.incident_type]}</span>
+                    <Badge className={INCIDENT_STATUS_COLORS[incident.status]}>{INCIDENT_STATUS_LABELS[incident.status]}</Badge>
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    {formatDateTime(incident.created_at)} · {incident.reported_by}
-                  </span>
+                  <span className="text-xs text-muted-foreground">{formatDateTime(incident.created_at)}</span>
                 </div>
                 <p className="text-sm">{incident.description}</p>
                 {incident.resolution_notes ? (
                   <div className="rounded bg-muted/60 p-2 text-xs">
                     <span className="font-semibold text-muted-foreground">Resolution notes: </span>
                     <span className="text-foreground">“{incident.resolution_notes}”</span>
-                    {incident.resolved_at ? (
-                      <span className="ml-1 text-muted-foreground">
-                        ({formatDateTime(incident.resolved_at)})
-                      </span>
-                    ) : null}
                   </div>
-                ) : null}
-                {incidentPhotos[i] ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={incidentPhotos[i]!}
-                    alt="Incident evidence"
-                    className="mt-2 max-h-56 rounded border object-contain"
-                  />
                 ) : null}
               </div>
             ))}

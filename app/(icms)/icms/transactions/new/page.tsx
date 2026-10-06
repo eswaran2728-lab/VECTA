@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { isModuleMissing } from "@/lib/icms/module-state";
+import { ModuleNotActivated } from "@/components/icms/ModuleNotActivated";
 import { requireRole } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
 import { callCaterlinkRpc } from "@/lib/caterlink/vendor";
@@ -21,7 +23,10 @@ export default async function NewTransactionPage() {
   // The Driver cannot read the whitelist tables directly; this RPC returns only the currently usable
   // entries for the stations that may create movements.
   const supabase = await createClient();
-  const { data } = await callCaterlinkRpc(supabase, "list_caterlink_driver_options_secure", {});
+  const { data, error: optionsError } = await callCaterlinkRpc(supabase, "list_caterlink_driver_options_secure", {});
+  if (isModuleMissing(optionsError)) {
+    return <ModuleNotActivated title="New Transaction" detail="Creating a transaction is not activated on this environment yet." />;
+  }
   const options = (data ?? { stations: [], companies: [], vehicles: [], drivers: [] }) as DriverOptions;
 
   // The signed-in PIC is usually the one driving too — if their staff ID matches a whitelisted driver

@@ -1,37 +1,21 @@
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
-import { requireCheckpointRole } from "@/lib/icms/auth";
-import { createClient } from "@/lib/supabase/server";
-import { SkipPartDForm } from "./skip-part-d-form";
-import type { Transaction } from "@/lib/icms/database.types";
+import { requireProfile } from "@/lib/icms/auth";
+import { ModuleNotActivated } from "@/components/icms/ModuleNotActivated";
 
-export const metadata: Metadata = { title: "Complete without Part D" };
+export const metadata: Metadata = { title: "Skip Part D" };
 export const dynamic = "force-dynamic";
 
-export default async function SkipPartDPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  await requireCheckpointRole("receiver");
-
-  const supabase = await createClient();
-  const { data: tx } = await supabase.from("transactions").select("*").eq("id", id).single();
-  if (!tx) notFound();
-  const transaction = tx as Transaction;
-
-  if (transaction.direction !== "OUTBOUND" || transaction.status !== "AIRPORT_POST_APPROVED") {
-    redirect(`/icms/transactions/${id}`);
-  }
-
+// BLOCKED: this step was written against the legacy ICMS workflow tables (part_a..part_d, part_hub,
+// part_redq, incidents), which do not exist in the canonical Phase 9 CaterLink model. The canonical
+// model has no checkpoint-write RPC for it yet, so recording it here would fail. See
+// docs/dashboard-review/caterlink-legacy-to-canonical-mapping.md. Scanning permission itself
+// (can_user_scan_caterlink: PEN/JHB) is unchanged.
+export default async function BlockedCheckpointPage() {
+  await requireProfile();
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Complete without Part D</h1>
-        <p className="font-mono text-sm text-muted-foreground">{transaction.transaction_number}</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Part D is optional. This closes the transaction as Completed without a delivery
-          confirmation on file — a reason is required and is kept on the permanent record.
-        </p>
-      </div>
-      <SkipPartDForm transactionId={transaction.id} />
-    </div>
+    <ModuleNotActivated
+      title="Skip Part D"
+      detail="Recording this step is not available yet: it has no canonical CaterLink workflow function on this environment."
+    />
   );
 }

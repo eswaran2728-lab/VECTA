@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/icms/auth";
 import { createClient } from "@/lib/supabase/server";
 import { minutesBetween } from "@/lib/icms/utils";
 import { ReportBuilder, type RangeRow } from "./report-builder";
-import type { Direction, Incident, SegmentTimeout, TransactionStatus } from "@/lib/icms/database.types";
+import type { Direction, Incident, TransactionStatus } from "@/lib/icms/database.types";
 
 export const metadata: Metadata = { title: "Reports" };
 export const dynamic = "force-dynamic";
@@ -51,7 +51,7 @@ export default async function ReportsPage({
   const rangeStart = new Date(`${rangeFrom}T00:00:00`).toISOString();
   const rangeEnd = new Date(`${rangeTo}T23:59:59.999`).toISOString();
 
-  const [daily, monthlyTx, monthlyIncidents, rangeTx, segmentTimeouts] = await Promise.all([
+  const [daily, monthlyTx, monthlyIncidents, rangeTx, companyRows] = await Promise.all([
     supabase
       .from("transactions")
       .select("*, seals(seal_number)")
@@ -61,34 +61,49 @@ export default async function ReportsPage({
     supabase
       .from("transactions")
       .select(
-        "status, created_at, direction, catering_companies(name), part_a(completed_at), part_b(completed_at), part_c(completed_at), part_d(completed_at)"
+        "status, created_at, direction, catering_company_id, caterlink_checkpoint_part_a(completed_at), part_b_c(completed_at, checkpoint_stage), caterlink_checkpoint_part_d(completed_at)"
       )
       .gte("created_at", monthStart)
       .lte("created_at", monthEnd)
       .limit(3000),
     supabase
-      .from("incidents")
+      .from("caterlink_incidents" as never)
       .select("incident_type, created_at, status")
       .gte("created_at", monthStart)
       .lte("created_at", monthEnd),
     supabase
       .from("transactions")
-      .select("*, seals(seal_number), catering_companies(name)")
+      .select("*, seals(seal_number)")
       .gte("created_at", rangeStart)
       .lte("created_at", rangeEnd)
       .order("created_at")
       .limit(5000),
-    supabase.from("segment_timeouts").select("direction, from_status, limit_minutes"),
+    supabase.from("catering_companies").select("id, name"),
   ]);
-  const limitFor = (direction: Direction, fromStatus: TransactionStatus): number | null => {
-    const row = ((segmentTimeouts.data ?? []) as Pick<
-      SegmentTimeout,
-      "direction" | "from_status" | "limit_minutes"
-    >[]).find((r) => r.direction === direction && r.from_status === fromStatus);
-    return row?.limit_minutes ?? null;
-  };
+  // Segment time limits (segment_timeouts) are not part of the canonical model: no SLA is reported.
+  const limitFor = (_direction: Direction, _fromStatus: TransactionStatus): number | null => null;
 
-  const monthly = (monthlyTx.data ?? []) as unknown as MonthlyTx[];
+  const companyNameById = new Map(((companyRows.data ?? []) as { id: string; name: string }[]).map((c) => [c.id, c.name]));
+  const monthly: MonthlyTx[] = (
+    (monthlyTx.data ?? []) as unknown as {
+      status: TransactionStatus;
+      created_at: string;
+      direction: Direction;
+      catering_company_id: string | null;
+      caterlink_checkpoint_part_a: { completed_at: string } | { completed_at: string }[] | null;
+      part_b_c: { completed_at: string; checkpoint_stage: "B" | "C" }[] | null;
+      caterlink_checkpoint_part_d: { completed_at: string } | { completed_at: string }[] | null;
+    }[]
+  ).map((t) => ({
+    status: t.status,
+    created_at: t.created_at,
+    direction: t.direction,
+    catering_companies: t.catering_company_id && companyNameById.has(t.catering_company_id) ? { name: companyNameById.get(t.catering_company_id) as string } : null,
+    part_a: (Array.isArray(t.caterlink_checkpoint_part_a) ? t.caterlink_checkpoint_part_a[0] : t.caterlink_checkpoint_part_a) ?? null,
+    part_b: (t.part_b_c ?? []).find((r) => r.checkpoint_stage === "B") ?? null,
+    part_c: (t.part_b_c ?? []).find((r) => r.checkpoint_stage === "C") ?? null,
+    part_d: (Array.isArray(t.caterlink_checkpoint_part_d) ? t.caterlink_checkpoint_part_d[0] : t.caterlink_checkpoint_part_d) ?? null,
+  }));
 
   // Per-catering-company breakdown for the month.
   const companyMap = new Map<string, { total: number; completed: number; escalated: number }>();
