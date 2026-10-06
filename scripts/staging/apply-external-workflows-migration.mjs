@@ -116,7 +116,9 @@ async function main() {
     if (pre.reviewAccounts !== 40) fail(`Expected the 40 review accounts, found ${pre.reviewAccounts}`);
     if (pre.orgTeams !== 18 || pre.buckets !== 7) fail("org_teams/buckets baseline differs");
     if (pre.rowCounts.users !== 2) fail(`Expected 2 public.users rows, found ${pre.rowCounts.users}`);
-    for (const t of HARDENED_TABLES.filter((x) => x !== "users")) if (pre.rowCounts[t] !== 0) fail(`${t} is not empty (${pre.rowCounts[t]}); the reviewed data effects assumed an empty CaterLink workflow`);
+    // public.users (2) and the station capability rows (9) are expected data; every workflow table must be empty
+    if (pre.rowCounts.caterlink_station_capabilities !== 9) fail(`Expected 9 station capability rows, found ${pre.rowCounts.caterlink_station_capabilities}`);
+    for (const t of HARDENED_TABLES.filter((x) => x !== "users" && x !== "caterlink_station_capabilities")) if (pre.rowCounts[t] !== 0) fail(`${t} is not empty (${pre.rowCounts[t]}); the reviewed data effects assumed an empty CaterLink workflow`);
     const scanEnabledPre = pre.capabilities.filter((c) => c.can_scan).map((c) => c.code).sort().join(",");
     if (scanEnabledPre !== "JHB,PEN") fail(`Pre-state scan-enabled stations are ${scanEnabledPre}, expected JHB,PEN`);
     const existing = (await client.query("select table_name from information_schema.tables where table_schema='public' and table_name = any($1)", [[...LEGACY_TABLES, "caterlink_vendor_deliveries", "caterlink_vendor_checkpoints"]])).rows;
