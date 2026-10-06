@@ -144,8 +144,9 @@ test("STAGING-SCHEMA-CLONE: complete validation from legacy staging baseline thr
         .replace(/^\s*create extension if not exists\s+"?(pgcrypto|pg_cron|pg_net)"?/gmi, "-- extension skipped");
       try {
         await db.exec(sql);
-      } catch (err: any) {
-        throw new Error(`Failed applying migration ${migrationFile}: ${err.message}`);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`Failed applying migration ${migrationFile}: ${message}`);
       }
     }
 
