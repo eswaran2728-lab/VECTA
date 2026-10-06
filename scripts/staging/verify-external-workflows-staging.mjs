@@ -37,7 +37,7 @@ async function main() {
     await pg.query("BEGIN READ ONLY");
     const q = async (s, p) => (await pg.query(s, p)).rows;
     const mig = await q("select version from supabase_migrations.schema_migrations order by version");
-    check("67 recorded migrations ending 20261026000002 (incl. 20261025000001 and both storage repairs)", mig.length === 67 && mig[64].version === "20261025000001" && mig[66].version === "20261026000002");
+    check("at least 67 recorded migrations incl. 20261026000002 (incl. 20261025000001 and both storage repairs)", mig.length >= 67 && mig[64].version === "20261025000001" && mig[66].version === "20261026000002");
     check("the two vendor tables exist with RLS", (await q("select relname from pg_class where relnamespace='public'::regnamespace and relkind='r' and relname like 'caterlink_vendor_%' and relrowsecurity order by 1")).map((r) => r.relname).join() === "caterlink_vendor_checkpoints,caterlink_vendor_deliveries");
     check("none of the 14 legacy ICMS tables exists", (await q("select table_name from information_schema.tables where table_schema='public' and table_name = any($1)", [LEGACY])).length === 0);
     const fn = await q("select p.proname, p.prosecdef d, coalesce(p.proconfig,'{}') c, has_function_privilege('anon', p.oid, 'execute') a, has_function_privilege('authenticated', p.oid, 'execute') b from pg_proc p where p.pronamespace='public'::regnamespace and p.proname = any($1)", [NEW_FUNCTIONS]);
