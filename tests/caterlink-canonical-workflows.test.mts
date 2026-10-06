@@ -162,11 +162,17 @@ test("Driver and Vendor are denied each other's pages (not only each other's row
   assert.match(read("app/(icms)/icms/incidents/page.tsx"), /identity === "external"\) redirect\("\/icms\/dashboard\?error=forbidden"\)/);
 });
 
-test("the proposed storage repairs stay outside the live migrations folder until approved", () => {
+test("the storage repairs are frozen migrations and the old proposal folder is gone", () => {
   const live = fs.readdirSync(path.join(REPO, "supabase/migrations"));
-  assert.ok(!live.some((f) => /^2026102[6-9]/.test(f)), "a storage repair was moved into supabase/migrations without approval");
-  const proposed = fs.readdirSync(path.join(REPO, "supabase/proposed-migrations")).sort();
-  assert.deepEqual(proposed, ["20261026000001_storage_upload_policy_repair.sql", "20261026000002_signature_read_scoping.sql"]);
-  assert.match(read("supabase/proposed-migrations/20261026000001_storage_upload_policy_repair.sql"), /can_upload_report_attachment/);
-  assert.ok(!/get_report_submitter\(\s*\n?\s*\(storage/.test(read("supabase/proposed-migrations/20261026000002_signature_read_scoping.sql")));
+  assert.ok(live.includes("20261026000001_storage_upload_policy_repair.sql") && live.includes("20261026000002_signature_read_scoping.sql"));
+  assert.ok(!fs.existsSync(path.join(REPO, "supabase/proposed-migrations")), "proposed-migrations must be empty/removed once approved");
+  const one = read("supabase/migrations/20261026000001_storage_upload_policy_repair.sql");
+  const two = read("supabase/migrations/20261026000002_signature_read_scoping.sql");
+  assert.match(one, /can_upload_report_attachment/);
+  assert.ok(!/grant execute on function public\.get_report_submitter/i.test(one), "the repair must not re-grant get_report_submitter");
+  assert.match(one, /set search_path to 'public'/);
+  assert.match(one, /revoke execute on function public\.can_upload_report_attachment\(text\) from public, anon/);
+  assert.ok(!/using\s*\(\s*true\s*\)/i.test(two) && !/auth\.role\(\)/.test(two.replace(/--.*$/gm, "")), "no blanket authenticated read");
+  assert.match(two, /owner = auth\.uid\(\) or public\.caterlink_signature_visible\(name\)/);
+  assert.match(two, /security invoker/);
 });

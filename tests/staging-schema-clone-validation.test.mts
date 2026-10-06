@@ -32,6 +32,8 @@ const PHASE2_13_CHAIN = [
   "20261023000001_caterlink_external_account_table.sql",
   "20261024000001_canon_is_active_excludes_caterlink_only.sql",
   "20261025000001_caterlink_external_workflows.sql",
+  "20261026000001_storage_upload_policy_repair.sql",
+  "20261026000002_signature_read_scoping.sql",
 ];
 
 const LEGACY_ROLES = ["ASO", "SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"];

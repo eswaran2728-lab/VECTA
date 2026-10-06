@@ -1,4 +1,4 @@
--- PROPOSED (not applied): repair the storage upload policy that currently blocks EVERY authenticated upload.
+-- STORAGE REPAIR 1: repair the storage upload policy that currently blocks EVERY authenticated upload.
 --
 -- Defect (confirmed on staging 2026-10-06): the policy "report attachments object insert" on storage.objects calls
 -- get_report_submitter(...) directly. 20260924000001_pre_upgrade_remediation.sql revoked EXECUTE on that function from

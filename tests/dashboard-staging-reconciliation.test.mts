@@ -37,6 +37,8 @@ const EXPECTED_PHASE_ORDER = [
   "20261023000001_caterlink_external_account_table.sql",
   "20261024000001_canon_is_active_excludes_caterlink_only.sql",
   "20261025000001_caterlink_external_workflows.sql",
+  "20261026000001_storage_upload_policy_repair.sql",
+  "20261026000002_signature_read_scoping.sql",
 ];
 
 test("staging reconciliation: every Phase 2-13 migration file in the proposed execution order actually exists in the repository", () => {

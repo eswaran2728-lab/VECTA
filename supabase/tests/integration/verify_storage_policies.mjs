@@ -14,7 +14,7 @@ import { assertDisposableLocalTarget } from './safeguards.mjs';
 
 const { Client } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROPOSED = (n) => fs.readFileSync(path.join(__dirname, '..', '..', 'proposed-migrations', n), 'utf8');
+const PROPOSED = (n) => fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', n), 'utf8');
 let failures = 0;
 function assert(cond, msg) { if (!cond) { failures += 1; console.log('FAIL:', msg); return; } console.log('PASS:', msg); }
 
@@ -61,6 +61,23 @@ async function main() {
   for (const f of ['20261023000001_caterlink_external_account_table.sql', '20261024000001_canon_is_active_excludes_caterlink_only.sql']) {
     await db.query(fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', f), 'utf8'));
   }
+  // A golden database rebuilt by migrate.mjs already contains both repairs (it applies every dated root migration). Return it to the
+  // STAGING pre-repair state so the run below proves the repairs from the defective state: the original insert policy, the legacy
+  // blanket signature read, and none of the repair objects.
+  await db.query('reset role;');
+  await db.query(`drop trigger if exists trg_cl_sig_owner_part_a on public.caterlink_checkpoint_part_a;
+    drop trigger if exists trg_cl_sig_owner_part_bc on public.part_b_c;
+    drop trigger if exists trg_cl_sig_owner_part_d on public.caterlink_checkpoint_part_d;
+    drop trigger if exists trg_cl_sig_owner_hub on public.caterlink_checkpoint_hub;
+    drop trigger if exists trg_cl_sig_owner_redq on public.caterlink_checkpoint_redq;
+    drop trigger if exists trg_cl_sig_owner_vendor on public.caterlink_vendor_checkpoints;
+    drop policy if exists "signatures: scoped read" on storage.objects;
+    drop policy if exists "report attachments object insert" on storage.objects;
+    create policy "report attachments object insert" on storage.objects for insert
+      with check (bucket_id = 'report-attachments' and exists (select 1 from get_report_submitter((storage.foldername(name))[1], nullif((storage.foldername(name))[2], '')::uuid) sub where sub.profile_id = auth.uid()));
+    drop function if exists public.can_upload_report_attachment(text);
+    drop function if exists public.caterlink_signature_visible(text);
+    drop function if exists public.caterlink_signature_owner_guard();`);
   await db.query(`insert into storage.buckets (id, name, public) values ('signatures','signatures',false), ('incident-photos','incident-photos',false) on conflict (id) do nothing;
     create policy "signatures: authenticated upload" on storage.objects for insert with check (bucket_id = 'signatures' and auth.role() = 'authenticated');
     create policy "signatures: authenticated read" on storage.objects for select using (bucket_id = 'signatures' and auth.role() = 'authenticated');
@@ -181,6 +198,91 @@ async function main() {
     // the legacy blanket policy is gone and nothing else grants a read
     assert((await one("select count(*)::int n from pg_policies where tablename = 'objects' and policyname = 'signatures: authenticated read';")).n === 0, 'the blanket read policy is gone');
     assert((await one("select count(*)::int n from pg_policies where tablename = 'objects' and cmd = 'SELECT' and qual ilike '%signatures%';")).n === 1, 'exactly one SELECT policy covers the signatures bucket');
+  }
+
+  console.log('\n--- SECTION 4b: every operation, every identity (repairs 1 + 2 applied) ---');
+  {
+    const norole = await authUser('norole');
+    const people = { driverA, driverB, vendorA, vendorB, mgmt, ops, asoPen, asoJhb, norole };
+    const label = (id) => Object.entries(people).find(([, v]) => v === id)?.[0];
+    const allNames = (await db.query("select name from storage.objects where bucket_id = 'signatures';")).rows.map((r) => r.name);
+    const mine = { driverA: ['part-a/driver-a.png', 'part-a/driver-a-draft.png', 'probe/a.png'], driverB: ['part-a/driver-b.png', 'part-a/driver-b-new.png'], vendorA: ['vendor/vendor-a.png'], vendorB: ['vendor/vendor-b.png'] };
+    const unrelated = (who) => allNames.filter((n) => !(mine[who] ?? []).includes(n));
+    for (const who of ['driverA', 'vendorA', 'driverB', 'vendorB']) {
+      const id = people[who];
+      const other = unrelated(who).filter((n) => !n.startsWith('probe/'));
+      // LIST
+      const listed = await asUser(id, async () => (await db.query("select name from storage.objects where bucket_id = 'signatures';")).rows.map((r) => r.name));
+      assert(listed.every((n) => (mine[who] ?? []).includes(n)), `${who}: LIST shows none of another party's signatures (${listed.length} listed, all its own)`);
+      // DOWNLOAD (select by exact name) and SIGNED URL (the storage API authorises it with the same SELECT)
+      let leaked = 0;
+      for (const n of other) leaked += await asUser(id, async () => (await db.query('select 1 from storage.objects where bucket_id = $1 and name = $2;', ['signatures', n])).rows.length);
+      assert(leaked === 0, `${who}: DOWNLOAD and SIGNED-URL authorisation (SELECT by exact path) is denied for all ${other.length} unrelated objects`);
+      // UPDATE / overwrite and DELETE
+      let changed = 0; let removed = 0;
+      for (const n of other.concat(mine[who] ?? [])) {
+        const u = await asUserFail(id, async () => { const r = await db.query("update storage.objects set name = name || '.x' where bucket_id = 'signatures' and name = $1;", [n]); if (r.rowCount) changed += r.rowCount; });
+        const d = await asUserFail(id, async () => { const r = await db.query("delete from storage.objects where bucket_id = 'signatures' and name = $1;", [n]); if (r.rowCount) removed += r.rowCount; });
+        void u; void d;
+      }
+      assert(changed === 0 && removed === 0, `${who}: UPDATE (overwrite/rename) and DELETE change nothing, even on its own objects (no policy grants them)`);
+    }
+    // INSERT: allowed, and the uploader can read it back
+    for (const who of ['driverA', 'vendorA']) {
+      const n = `new/${who}-upload.png`;
+      await asUser(people[who], () => ins('signatures', n, people[who]));
+      const back = await asUser(people[who], async () => (await db.query('select 1 from storage.objects where name = $1;', [n])).rows.length);
+      const other = await asUser(people[who === 'driverA' ? 'vendorA' : 'driverA'], async () => (await db.query('select 1 from storage.objects where name = $1;', [n])).rows.length);
+      assert(back === 1 && other === 0, `${who}: INSERT succeeds, the uploader reads it back, the other party does not`);
+    }
+    // authorised checkpoint users still reach exactly the signatures they may see
+    const vis = async (who, n) => asUser(people[who], async () => (await db.query('select 1 from storage.objects where name = $1;', [n])).rows.length === 1);
+    assert((await vis('mgmt', 'part-a/driver-a.png')) && (await vis('mgmt', 'vendor/vendor-b.png')), 'Management still reads the movement and vendor signatures of its AOC');
+    assert((await vis('ops', 'part-a/driver-b.png')) && !(await vis('ops', 'vendor/vendor-a.png')), 'Operation Manager reads movement signatures it can see, not vendor ones');
+    assert((await vis('asoPen', 'vendor/vendor-a.png')) && !(await vis('asoPen', 'part-a/driver-a.png')), 'the PEN officer reads the vendor signature it must check, not a KUL movement signature');
+    assert(!(await vis('asoJhb', 'vendor/vendor-a.png')) && !(await vis('asoJhb', 'part-a/driver-a.png')), 'an unrelated officer (JHB, other station) reads neither');
+    for (const who of ['asoJhb', 'norole']) {
+      const n = await asUser(people[who], async () => (await db.query("select count(*)::int n from storage.objects where bucket_id = 'signatures';")).rows[0].n);
+      assert(n === 0, `${who}: LIST shows nothing (no ownership, no visible record)`);
+    }
+    // Staff Profiling at PEN gains no signature access (it cannot check vendor deliveries)
+    {
+      const prof = await authUser('prof-aso');
+      const enfDept = await deptId('enforcement');
+      const unit = (await one("select id from public.units where department_id = $1 and code = 'profiling';", [enfDept]))?.id ?? null;
+      const mem = (await one("insert into public.user_entity_memberships (profile_id, aoc_id, operating_entity_id, status, is_primary) values ($1,$2,$3,'active',true) returning id;", [prof, myAoc, myEntity])).id;
+      await db.query("insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, department_id, unit_id, hub_id, station_id, team_id, entity_membership_id, starts_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9, now() - interval '1 day');", [prof, roleMap.get('profiling_aso'), myAoc, enfDept, unit, PEN.hub_id, PEN.id, await teamFor(PEN), mem]);
+      const n = await asUser(prof, async () => (await db.query("select count(*)::int n from storage.objects where bucket_id = 'signatures';")).rows[0].n);
+      assert(n === 0, 'Staff Profiling at PEN: LIST shows nothing and no vendor/movement signature is readable');
+    }
+    // anon: no operation
+    for (const [op, sql] of [['SELECT', "select * from storage.objects;"], ['INSERT', "insert into storage.objects (bucket_id, name) values ('signatures','anon.png');"], ['UPDATE', "update storage.objects set name = name;"], ['DELETE', "delete from storage.objects;"]]) {
+      await db.query('select pg_temp.simulate_service_role();');
+      await db.query('set role anon;');
+      const r = await expectFail(() => db.query(sql));
+      await simulateService();
+      assert(r.failed, `anon: ${op} on storage.objects is denied`);
+    }
+    // a reference to someone else's signature cannot be used to read it (write-side guard)
+    await ins('signatures', 'part-a/owned-by-b.png', driverB);
+    const steal = await asUserFail(driverA, () => db.query("select * from public.create_caterlink_driver_transaction_secure('KUL - MAA','OUTBOUND','AIRCRAFT','ST1111A','ST Driver A','STD001','SEAL-STEAL','part-a/owned-by-b.png');"));
+    assert(steal.failed && /different account/.test(steal.error.message), 'Driver A cannot create a record that references Driver B\'s signature object');
+    const stealV = await asUserFail(vendorB, () => db.query("select * from public.create_caterlink_vendor_delivery_secure('PEN','D','N','V9','S9','vendor/vendor-a.png');"));
+    assert(stealV.failed && /different account/.test(stealV.error.message), 'Vendor B cannot create a delivery that references Vendor A\'s signature object');
+    assert(!(await vis('driverA', 'part-a/owned-by-b.png')), 'and the object stays unreadable to Driver A');
+    const fine = await asUser(driverB, () => one("select * from public.create_caterlink_driver_transaction_secure('KUL - MAA','OUTBOUND','AIRCRAFT','ST2222B','ST Driver B','STD002','SEAL-OWN','part-a/owned-by-b.png');"));
+    assert(!!fine.transaction_id, 'the real owner can reference its own signature object (the legitimate workflow still works)');
+    // repair 1 wrapper properties
+    const w = await one("select p.prosecdef d, coalesce(p.proconfig,'{}') c, has_function_privilege('anon', p.oid, 'execute') a, has_function_privilege('authenticated', p.oid, 'execute') b, pg_get_function_result(p.oid) r from pg_proc p where p.proname = 'can_upload_report_attachment';");
+    assert(w.d && w.c.some((x) => x.startsWith('search_path=')) && !w.a && w.b && w.r === 'boolean', 'wrapper: SECURITY DEFINER, pinned search_path, boolean result, anon denied, authenticated granted');
+    const g = await one("select has_function_privilege('authenticated','public.get_report_submitter(text,uuid)','execute') a, has_function_privilege('anon','public.get_report_submitter(text,uuid)','execute') b, exists (select 1 from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x where p.oid = 'public.get_report_submitter(text,uuid)'::regprocedure and x.grantee = 0 and x.privilege_type = 'EXECUTE') pub;");
+    assert(!g.a && !g.b && !g.pub, 'get_report_submitter is still executable by neither authenticated, anon nor PUBLIC');
+    const tg = await one("select count(*)::int n from pg_trigger where tgname like 'trg_cl_sig_owner_%';");
+    assert(tg.n === 6, 'the signature-owner guard is attached to all six checkpoint tables');
+    const gp = await one("select has_function_privilege('anon','public.caterlink_signature_owner_guard()','execute') a, has_function_privilege('authenticated','public.caterlink_signature_owner_guard()','execute') b;");
+    assert(!gp.a && !gp.b, 'the guard function is not callable by clients');
+    const gs = await one("select has_function_privilege('anon','public.caterlink_signature_visible(text)','execute') a;");
+    assert(!gs.a, 'the visibility check is not callable by anon');
   }
 
   console.log('\n--- SECTION 5: idempotent ---');
