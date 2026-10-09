@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireProfile } from "@/lib/avsec/auth";
+import type { CanonicalAccess } from "@/lib/auth/canonical-access";
 import {
   getDiscussionThread,
   getDiscussionCategories,
@@ -29,8 +30,10 @@ export default async function DiscussionThreadDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireProfile();
+  const profile = await requireProfile();
   const { id } = await params;
+  const roleCodes = (profile.canonical as CanonicalAccess).roleCodes;
+  const canBossReveal = roleCodes.includes("maa_boss") || roleCodes.includes("aax_boss");
 
   const [thread, categories, authored, isModerator] = await Promise.all([
     getDiscussionThread(id),
@@ -55,6 +58,7 @@ export default async function DiscussionThreadDetailPage({
           isThreadOwner={authored.isThreadOwner}
           ownedReplyIds={authored.ownedReplyIds}
           isModerator={isModerator}
+          canBossReveal={canBossReveal}
         />
       </div>
     </main>

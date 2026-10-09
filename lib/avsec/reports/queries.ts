@@ -146,20 +146,16 @@ export async function getReportById(type: ReportType, id: string) {
   const supabase = await createClient();
   const table = REPORT_META[type].table;
 
-  const { data: indexRow } = await supabase
-    .from("central_reports_index")
-    .select("id")
-    .eq("source_table", table)
-    .eq("source_id", id)
-    .maybeSingle();
-  if (!indexRow) {
-    throw new ReportNotIndexedError(type, id);
-  }
-
+  // ONE atomic call keyed by the report's own source id: the database resolves the repository row, makes the single
+  // has_report_access() decision, audits the access and returns the content. The page never reads the (client-revoked) index
+  // table, and an unauthorized or unknown id is indistinguishable from a missing one.
   const { data, error } = await supabase
-    .rpc("get_report_secure", { p_repository_report_id: indexRow.id })
+    .rpc("get_report_by_source_secure", { p_source_table: table, p_source_id: id })
     .single();
   if (error) {
+    if (/not found or not authorized/i.test(error.message)) {
+      throw new ReportNotIndexedError(type, id);
+    }
     throw new Error(error.message);
   }
   if (!data?.content) return null;

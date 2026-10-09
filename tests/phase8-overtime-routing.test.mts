@@ -21,7 +21,7 @@ let currentQueue = new ResultQueue();
 mock.module("next/navigation", { namedExports: { redirect: () => { throw new Error("redirect() should not be called by reviewOvertimeRequest itself"); } } });
 mock.module("next/cache", { namedExports: { revalidatePath: () => {} } });
 mock.module("@/lib/supabase/server", { namedExports: { createClient: async () => makeMockSupabaseClient(currentQueue) } });
-mock.module("@/lib/avsec/auth", { namedExports: { requireProfile: async () => currentProfile } });
+mock.module("@/lib/avsec/auth", { namedExports: { requireProfile: async () => currentProfile, requireAttendanceProfile: async () => currentProfile } });
 mock.module("@/lib/avsec/email/notifyOvertimeApproval", { namedExports: { notifyOvertimeApproval: async () => {} } });
 
 const { reviewOvertimeRequest } = await import("../lib/avsec/duty/overtime-actions.ts");

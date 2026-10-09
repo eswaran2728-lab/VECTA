@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Bell } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { markNotificationsRead } from "@/lib/notifications/actions";
+import { reportViewHref, REPORT_TYPE_OPTIONS } from "@/lib/dashboard/entity-report-filters";
 
 type AppNotification = {
   id: string;
@@ -14,6 +15,10 @@ type AppNotification = {
   body: string;
   is_read: boolean;
   created_at: string;
+  /** Set for entity-report notifications: opening goes through the secure report route, which re-authorizes. */
+  href?: string | null;
+  /** Which table the row came from (so read-marking targets the right one). */
+  source?: "legacy" | "entity";
 };
 
 function formatDateTime(iso: string): string {
@@ -30,6 +35,7 @@ function formatDateTime(iso: string): string {
  * re-check role/record access on load — this link is a navigation shortcut,
  * never itself a source of authorization. */
 function destinationFor(n: AppNotification): string {
+  if (n.href) return n.href;
   return n.incident_id ? "/icms/incidents" : "/avsec/dashboard";
 }
 
@@ -62,7 +68,37 @@ export function NotificationsBell({ userId }: { userId: string }) {
           setError(true);
           return;
         }
-        setItems((data ?? []) as AppNotification[]);
+        setItems((data ?? []).map((r) => ({ ...(r as AppNotification), source: "legacy" as const })));
+      });
+
+    // Entity report notifications (MAA/AAX leadership). The payload carries identifiers only; the row is RLS-scoped to the
+    // recipient and the link opens the report through the secure route, which authorizes again.
+    supabase
+      .from("user_notifications")
+      .select("id, event_type, payload, created_at, read_at")
+      .eq("recipient_profile_id", userId)
+      .eq("event_type", "entity_report_submitted")
+      .order("created_at", { ascending: false })
+      .limit(15)
+      .then(({ data }) => {
+        const mapped: AppNotification[] = (data ?? []).map((r) => {
+          const payload = (r.payload ?? {}) as { source_table?: string; source_id?: string };
+          const label = REPORT_TYPE_OPTIONS.find((o) => o.value === payload.source_table)?.label ?? "Report";
+          return {
+            id: `entity:${r.id}`,
+            user_id: userId,
+            incident_id: null,
+            title: "New entity report",
+            body: label,
+            is_read: r.read_at !== null,
+            created_at: r.created_at,
+            href: payload.source_table && payload.source_id ? reportViewHref(payload.source_table, payload.source_id) : null,
+            source: "entity" as const,
+          };
+        });
+        if (mapped.length > 0) {
+          setItems((prev) => [...prev, ...mapped].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 30));
+        }
       });
 
     // Channel name must be unique per mounted instance — the bell can be
@@ -97,6 +133,12 @@ export function NotificationsBell({ userId }: { userId: string }) {
     if (next && unread > 0) {
       setItems((prev) => prev.map((n) => ({ ...n, is_read: true })));
       await markNotificationsRead();
+      await createClient()
+        .from("user_notifications")
+        .update({ read_at: new Date().toISOString() })
+        .eq("recipient_profile_id", userId)
+        .eq("event_type", "entity_report_submitted")
+        .is("read_at", null);
     }
   };
 

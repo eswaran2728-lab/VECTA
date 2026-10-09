@@ -33,6 +33,7 @@ export const ALLOWED_DISPOSABLE_DATABASES = new Set([
   'vecta_cl_workflows_run',
   'vecta_storage_policy_run',
   'vecta_profile_state_run',
+  'vecta_entity_report_run',
 ]);
 
 export function assertDisposableLocalTarget(config, ...dbNames) {

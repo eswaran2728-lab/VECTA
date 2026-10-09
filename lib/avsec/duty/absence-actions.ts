@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentProfile, requireProfile } from "@/lib/avsec/auth";
+import { getAttendanceProfile, requireAttendanceProfile } from "@/lib/avsec/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { todayISODateMY } from "@/lib/avsec/datetime";
 import { getTodayRoster, getTodayDutyRecord } from "./checkin-queries";
@@ -48,7 +48,7 @@ export interface LeaveSubmitResult {
 export async function submitLeaveApplication(
   input: LeaveSubmitInput
 ): Promise<LeaveSubmitResult> {
-  const profile = await getCurrentProfile();
+  const profile = await getAttendanceProfile();
   if (!profile) {
     return { error: "You must be signed in to submit a leave application.", success: false };
   }
@@ -208,7 +208,7 @@ export async function requestLeaveCancellation(input: {
   noticeId: string;
   reason?: string;
 }): Promise<LeaveReviewResult> {
-  const profile = await requireProfile();
+  const profile = await requireAttendanceProfile();
   const supabase = createAdminClient();
 
   const { data: notice, error: fetchErr } = await supabase
@@ -270,7 +270,7 @@ export async function reviewLeaveApplication(input: {
   action: LeaveReviewAction;
   reviewNotes?: string;
 }): Promise<LeaveReviewResult> {
-  const profile = await requireProfile();
+  const profile = await requireAttendanceProfile();
   const isOrgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
   const isDSE = profile.role === "DSE";
 

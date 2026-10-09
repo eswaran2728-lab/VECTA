@@ -54,6 +54,7 @@ const ALLOWLIST: Record<string, string> = {
   // asserted explicitly below.
   "lib/avsec/dashboard/queries.ts": "Table name passed only as an RPC parameter (list_reports_secure/search_reports_secure) -- zero .from(\"report_sec...\") calls.",
   "lib/avsec/search/queries.ts": "Table name passed only as an RPC parameter (search_reports_secure) -- zero .from(\"report_sec...\") calls.",
+  "lib/dashboard/entity-report-filters.ts": "Constant option list and source-table-to-route map for the entity report filters and links -- string constants only, no Supabase query at all.",
   "lib/dashboard/flight-detail.ts": "Table name passed only as an RPC parameter (search_reports_secure/search_movements_by_registration_secure) -- zero .from(\"report_sec...\") calls.",
 };
 // CORRECTION (review round 4): lib/avsec/reports/queries.ts previously
@@ -168,11 +169,12 @@ test("DIRECT-READ CLOSURE: lib/avsec/export/queries.ts calls export_reports_secu
   assert.equal(referencesReportTable(content), false, "export/queries.ts should reference report table names not at all -- it works entirely through content.* fields");
 });
 
-test("DIRECT-READ CLOSURE: lib/avsec/reports/queries.ts (getReportById) calls get_report_secure() ONCE and reads content from its own return value -- no follow-up .from(table) read within that function specifically, and it fails closed (ReportNotIndexedError) when the report is not yet indexed", () => {
+test("DIRECT-READ CLOSURE: lib/avsec/reports/queries.ts (getReportById) calls get_report_by_source_secure() ONCE (atomic, source-keyed) and reads content from its own return value -- no follow-up .from(table) read within that function specifically, and it fails closed (ReportNotIndexedError) when the report is not yet indexed", () => {
   const content = fs.readFileSync(path.join(ROOT, "lib/avsec/reports/queries.ts"), "utf8");
   const fnStart = content.indexOf("export async function getReportById");
   const fnBody = content.slice(fnStart, fnStart + 900);
-  assert.match(fnBody, /\.rpc\("get_report_secure"/);
+  assert.match(fnBody, /\.rpc\("get_report_by_source_secure"/);
+  assert.doesNotMatch(fnBody, /central_reports_index/, "getReportById() must not read the revoked index table");
   assert.match(content, /class ReportNotIndexedError extends Error/);
   assert.match(fnBody, /throw new ReportNotIndexedError/);
   assert.match(fnBody, /data\.content/);

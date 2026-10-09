@@ -1,14 +1,14 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { requireProfile } from "@/lib/avsec/auth";
+import { requireAttendanceProfile } from "@/lib/avsec/auth";
 import { handoverSchema } from "@/lib/avsec/schemas/handover";
 import { getUnfinishedWorkSummary } from "./handover-queries";
 
 export async function createHandover(
   input: unknown,
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-  const profile = await requireProfile();
+  const profile = await requireAttendanceProfile();
   const parsed = handoverSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -51,7 +51,7 @@ export async function acknowledgeHandover(
   handoverId: string,
   notes: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const profile = await requireProfile();
+  const profile = await requireAttendanceProfile();
   const supabase = await createClient();
 
   const { error } = await supabase

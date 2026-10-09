@@ -28,6 +28,8 @@ import {
   LogOut,
   User,
 } from "lucide-react";
+import { NavGroupsList } from "@/components/layout/NavGroupsList";
+import type { NavModel } from "@/lib/dashboard/nav-capabilities";
 import { phase7DashboardNavEntry, scannerNavAllowedForRole, caterlinkNavAllowedForRole } from "@/lib/dashboard/navigation";
 
 interface NavItem {
@@ -52,6 +54,7 @@ export function AppSidebar({
   station,
   team,
   hasPhase7Assignment = false,
+  model,
   signOutAction,
 }: {
   userId?: string | null;
@@ -67,6 +70,9 @@ export function AppSidebar({
    *  fetched once in the layout). Purely a display decision -- see
    *  lib/dashboard/navigation.ts's own doc comment. */
   hasPhase7Assignment?: boolean;
+  /** Explicit canonical-role navigation model (lib/dashboard/nav-capabilities.ts). When given it is the ONLY source of links;
+   *  the legacy role-string branches below remain solely for the root dashboard and CaterLink shells. */
+  model?: NavModel;
   signOutAction?: () => Promise<void>;
 }) {
   const pathname = usePathname();
@@ -373,7 +379,10 @@ export function AppSidebar({
 
         {/* Scrollable Navigation Groups */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5 scrollbar-thin">
-          {groups.map((group) => (
+          {model ? (
+            <NavGroupsList groups={model.groups} />
+          ) : (
+          groups.map((group) => (
             <div key={group.title} className="space-y-1">
               <h3 className="px-3 font-mono text-[10px] font-bold tracking-wider text-muted-foreground uppercase">
                 {group.title}
@@ -385,7 +394,7 @@ export function AppSidebar({
                     <Link
                       key={item.href}
                       href={item.href}
-                      className={`flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                      className={`flex min-h-[40px] items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                         active
                           ? "bg-primary text-primary-foreground font-semibold shadow-xs"
                           : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
@@ -411,7 +420,8 @@ export function AppSidebar({
                 })}
               </div>
             </div>
-          ))}
+          ))
+          )}
         </nav>
 
         {/* W.O.I.S AI Smartbook Quick Launcher */}

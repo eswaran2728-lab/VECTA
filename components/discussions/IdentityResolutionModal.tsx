@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { X, ShieldAlert, UserCheck, AlertOctagon, Loader2, KeyRound } from "lucide-react";
 import type { DiscussionResolvedIdentity } from "@/lib/discussions/types";
-import { resolveAuthorIdentityAction } from "@/lib/discussions/actions";
+import { resolveAuthorIdentityAction, revealAuthorIdentityAsBossAction } from "@/lib/discussions/actions";
 
 interface IdentityResolutionModalProps {
   isOpen: boolean;
@@ -11,6 +11,8 @@ interface IdentityResolutionModalProps {
   contentType: "thread" | "reply";
   contentId: string;
   authorAlias: string;
+  /** "boss": MAA/AAX Boss audited reveal (staff number and name only). Default: the existing moderator resolution. */
+  mode?: "moderator" | "boss";
 }
 
 export function IdentityResolutionModal({
@@ -19,6 +21,7 @@ export function IdentityResolutionModal({
   contentType,
   contentId,
   authorAlias,
+  mode = "moderator",
 }: IdentityResolutionModalProps) {
   const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -38,7 +41,10 @@ export function IdentityResolutionModal({
     setErrorMessage(null);
 
     try {
-      const res = await resolveAuthorIdentityAction(contentType, contentId, reason);
+      const res =
+        mode === "boss"
+          ? await revealAuthorIdentityAsBossAction(contentType, contentId, reason)
+          : await resolveAuthorIdentityAction(contentType, contentId, reason);
       if (res.ok && res.data) {
         setResolvedData(res.data);
       } else {
@@ -117,10 +123,12 @@ export function IdentityResolutionModal({
                   <span className="block text-[10.5px] uppercase tracking-wider text-muted-foreground">Full Name</span>
                   <span className="font-medium text-foreground">{resolvedData.name}</span>
                 </div>
-                <div>
-                  <span className="block text-[10.5px] uppercase tracking-wider text-muted-foreground">Official Email</span>
-                  <span className="font-mono text-foreground text-[11px] truncate block">{resolvedData.email}</span>
-                </div>
+                {mode === "moderator" && (
+                  <div>
+                    <span className="block text-[10.5px] uppercase tracking-wider text-muted-foreground">Official Email</span>
+                    <span className="font-mono text-foreground text-[11px] truncate block">{resolvedData.email}</span>
+                  </div>
+                )}
               </div>
             </div>
 

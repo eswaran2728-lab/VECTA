@@ -225,7 +225,10 @@ export async function getSuperAdminTechnicalStatus(): Promise<SuperAdminTechnica
 }
 
 export interface FlaggedReportRow {
+  /** Repository id (central_reports_index.id). NOT the id the report view route uses -- see sourceId. */
   id: string;
+  /** The report's own source-table id: the identifier /avsec/reports/view/[type]/[id] is keyed by. */
+  sourceId: string;
   sourceTable: string;
   reportType: string | null;
   operatingEntityCode: string | null;
@@ -257,6 +260,7 @@ export async function getFlaggedReportsSecure(page = 1, pageSize = 25): Promise<
     status: "ok",
     rows: raw.map((r) => ({
       id: r.id as string,
+      sourceId: r.source_id as string,
       sourceTable: r.source_table as string,
       reportType: (r.report_type as string) ?? null,
       operatingEntityCode: (r.operating_entity_code as string) ?? null,

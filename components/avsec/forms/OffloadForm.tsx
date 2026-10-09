@@ -20,6 +20,7 @@ import { SubmissionConfirmation } from "@/components/avsec/forms/SubmissionConfi
 import { SubmissionRecovery } from "@/components/avsec/forms/SubmissionRecovery";
 import { AttachmentUpload, revokeAttachmentPreviews, type PendingAttachment } from "@/components/avsec/forms/AttachmentUpload";
 import type { Profile } from "@/lib/avsec/types";
+import { FlightEntityBadge } from "@/components/avsec/forms/FlightEntityBadge";
 
 interface UIValues {
   station: string;
@@ -185,7 +186,10 @@ export function OffloadForm({
 
       <FormSection title="Flight Details">
         <FieldRow>
-          <TextField name="flight_no" register={register} label="Flight No" required placeholder="e.g. AK123" error={errors.flight_no} />
+          <div className="space-y-1">
+            <TextField name="flight_no" register={register} label="Flight No" required placeholder="e.g. AK123" error={errors.flight_no} />
+            <FlightEntityBadge flight={values.flight_no} />
+          </div>
           <TextField name="destination" register={register} label="Destination" required error={errors.destination} />
         </FieldRow>
         <FieldRow>

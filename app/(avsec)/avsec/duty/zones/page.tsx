@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireProfile } from "@/lib/avsec/auth";
+import { requireAttendanceProfile } from "@/lib/avsec/auth";
 import { STATIONS, ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { getZonesForStation } from "@/lib/avsec/duty/zone-queries";
 import ZonesMapViewLoader from "@/components/avsec/duty/ZonesMapViewLoader";
@@ -10,7 +10,7 @@ export default async function DutyZonesViewPage({
   searchParams: Promise<{ station?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const profile = await requireProfile();
+  const profile = await requireAttendanceProfile();
   const orgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
   const station = searchParams.station || profile.station || STATIONS[0];
 

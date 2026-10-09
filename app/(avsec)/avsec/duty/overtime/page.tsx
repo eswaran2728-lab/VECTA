@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireProfile } from "@/lib/avsec/auth";
+import { requireAttendanceProfile } from "@/lib/avsec/auth";
 import { getVisibleOvertimeRequests } from "@/lib/avsec/duty/overtime-queries";
 import { createClient } from "@/lib/supabase/server";
 import { ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
@@ -23,7 +23,7 @@ export default async function OvertimeListPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const profile = await requireProfile();
+  const profile = await requireAttendanceProfile();
   const isDse = profile.role === "DSE";
   const orgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
   const supabaseForRoleCheck = await createClient();

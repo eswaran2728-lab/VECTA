@@ -33,6 +33,8 @@ mock.module("@/lib/avsec/auth", {
   namedExports: {
     requireProfile: async () => currentProfile,
     getCurrentProfile: async () => currentProfile,
+    requireAttendanceProfile: async () => currentProfile,
+    getAttendanceProfile: async () => currentProfile,
   },
 });
 mock.module("@/lib/phase8/workforce", {

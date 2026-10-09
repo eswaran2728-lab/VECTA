@@ -5573,6 +5573,7 @@ export type Database = {
         Args: { p_page?: number | null; p_page_size?: number | null }
         Returns: {
           id: string
+          source_id: string
           source_table: string
           report_type: string
           operating_entity_code: string | null
@@ -6103,6 +6104,124 @@ export type Database = {
           current_version: number
           content: Json | null
         }[]
+      }
+      // --- MAA/AAX entity report separation, directory, registrations, Bay Board, identity reveal (20261101000001-5) ---
+      normalize_flight_number: { Args: { p_flight: string | null }; Returns: string | null }
+      classify_flight_operating_entity: {
+        Args: { p_flight: string | null }
+        Returns: { status: string; prefix: string | null; entity_code: string | null; normalized: string | null }[]
+      }
+      get_report_by_source_secure: {
+        Args: { p_source_table: string; p_source_id: string; p_version_number?: number | null }
+        Returns: {
+          id: string
+          source_table: string
+          source_id: string
+          report_type: string
+          operating_entity_code: string | null
+          hub_code: string | null
+          station_code: string | null
+          team_name: string | null
+          flight_number: string | null
+          report_date: string | null
+          status: string
+          severity: string | null
+          flag_state: string
+          version_number: number
+          current_version: number
+          content: Json | null
+        }[]
+      }
+      authorize_report_pdf_by_source_secure: {
+        Args: { p_source_table: string; p_source_id: string }
+        Returns: { source_table: string; source_id: string; report_type: string }[]
+      }
+      can_read_report_attachment: { Args: { p_object_name: string }; Returns: boolean }
+      search_reports_filtered_secure: {
+        Args: {
+          p_page?: number | null
+          p_page_size?: number | null
+          p_registration?: string | null
+          p_flight_number?: string | null
+          p_from_date?: string | null
+          p_to_date?: string | null
+          p_source_table?: string | null
+          p_status?: string | null
+        }
+        Returns: {
+          id: string
+          source_table: string
+          source_id: string
+          report_type: string
+          operating_entity_code: string | null
+          flight_number: string | null
+          report_date: string | null
+          status: string
+          flag_state: string
+          indexed_at: string
+          staff_name: string | null
+          station: string | null
+          team: string | null
+          reg_no: string | null
+          total_count: number
+        }[]
+      }
+      get_entity_report_counts_secure: {
+        Args: { p_from_date?: string | null; p_to_date?: string | null }
+        Returns: { source_table: string; report_label: string; total: number }[]
+      }
+      get_entity_admin_overview_secure: {
+        Args: Record<string, never>
+        Returns: { entity_code: string; entity_active_staff: number; malaysia_pending_registrations: number }[]
+      }
+      list_entity_registration_requests_detailed_secure: {
+        Args: Record<string, never>
+        Returns: {
+          id: string
+          staff_name: string
+          staff_no: string
+          requested_role_code: string | null
+          requested_hub_code: string | null
+          requested_station_code: string | null
+          requested_team_name: string | null
+          applicant_notes: string | null
+          submitted_at: string
+          operating_entity_code: string
+          is_transfer: boolean
+        }[]
+      }
+      list_registration_assignment_options_secure: { Args: { p_request_id: string }; Returns: Json }
+      list_malaysia_staff_directory_secure: {
+        Args: { p_search?: string | null; p_entity_code?: string | null; p_page?: number | null; p_page_size?: number | null }
+        Returns: {
+          staff_no: string
+          staff_name: string
+          entity_code: string
+          role_code: string | null
+          department_code: string | null
+          unit_code: string | null
+          hub_code: string | null
+          station_code: string | null
+          team_name: string | null
+          account_state: string
+          total_count: number
+        }[]
+      }
+      get_malaysia_workforce_summary_secure: {
+        Args: { p_date?: string | null }
+        Returns: { entity_code: string; active_staff: number; checked_in: number; pending: number; absent: number; generated_at: string }[]
+      }
+      list_bay_board_scopes_secure: {
+        Args: Record<string, never>
+        Returns: { hub_code: string; hub_name: string; station_code: string; station_name: string }[]
+      }
+      get_bay_board_secure: {
+        Args: { p_hub_code?: string | null; p_station_code?: string | null }
+        Returns: { id: string; station: string; reg_no: string | null; aircraft_type: string | null; bay: string | null; flight: string | null; on_ground_since: string | null }[]
+      }
+      reveal_discussion_author_identity_secure: {
+        Args: { p_content_type: string; p_content_id: string; p_reason: string }
+        Returns: { staff_no: string; staff_name: string }[]
       }
       create_report_amendment: {
         Args: { p_repository_report_id: string; p_amendment_type: string; p_reason: string; p_amended_content?: Json | null }

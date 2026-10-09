@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireProfile } from "@/lib/avsec/auth";
+import { requireAttendanceProfile } from "@/lib/avsec/auth";
 import { getOvertimeRequestById } from "@/lib/avsec/duty/overtime-queries";
 import {
   approveOvertimeRequest,
@@ -36,7 +36,7 @@ export default async function OvertimeDetailPage({
 }) {
   const params = await paramsPromise;
   const searchParams = await searchParamsPromise;
-  const profile = await requireProfile();
+  const profile = await requireAttendanceProfile();
 
   // RLS scopes this to requests the caller may see (own, or monitor within rank/station/team).
   const request = await getOvertimeRequestById(params.id);

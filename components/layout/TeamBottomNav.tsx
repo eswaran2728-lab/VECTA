@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { NavModel } from "@/lib/dashboard/nav-capabilities";
 import { phase7DashboardNavEntry, scannerNavAllowedForRole } from "@/lib/dashboard/navigation";
 
 interface NavTab {
@@ -63,6 +64,7 @@ export function TeamBottomNav({
   role,
   canScan = false,
   hasPhase7Assignment = false,
+  model,
 }: {
   orgWide: boolean;
   role?: string | null;
@@ -73,6 +75,8 @@ export function TeamBottomNav({
    *  lib/dashboard/navigation.ts's own doc comment. Drivers/vendors never
    *  get this tab (they have no AVSEC dashboard context to select). */
   hasPhase7Assignment?: boolean;
+  /** Explicit canonical-role model: when given, its tabs are the only source (no role-string branching). */
+  model?: NavModel;
 }) {
   const pathname = usePathname();
 
@@ -82,7 +86,9 @@ export function TeamBottomNav({
   const phase7Tab: NavTab[] = phase7Entry ? [{ href: phase7Entry.href, label: phase7Entry.label }] : [];
 
   let tabs: NavTab[];
-  if (role === "vendor") {
+  if (model) {
+    tabs = model.tabs.map((t) => ({ href: t.href, label: t.label, match: t.match }));
+  } else if (role === "vendor") {
     tabs = [NEW_DELIVERY, MY_DELIVERIES, DRIVER_HOME];
   } else if (isDriver) {
     tabs = [NEW_TRANSACTION, MY_DISPATCHES, DRIVER_HOME];
@@ -99,7 +105,7 @@ export function TeamBottomNav({
 
   // Phase 9 / Profiling exclusion: roles without scanner navigation (e.g. profiling_so, profiling_aso)
   // must never see the SCAN tab in bottom navigation.
-  if (!scannerNavAllowedForRole(role ?? null)) {
+  if (!model && !scannerNavAllowedForRole(role ?? null)) {
     tabs = tabs.filter((t) => t.href !== SCAN.href);
   }
 
@@ -111,7 +117,7 @@ export function TeamBottomNav({
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card md:hidden"
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card lg:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       aria-label="Primary"
     >
@@ -123,7 +129,7 @@ export function TeamBottomNav({
               key={tab.href}
               href={tab.href}
               aria-current={active ? "page" : undefined}
-              className={`flex min-h-[52px] flex-col items-center justify-center gap-1 px-1 py-2 text-center ${
+              className={`flex min-h-[52px] flex-col items-center justify-center gap-1 px-1 py-2 text-center outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
                 active ? "bg-secondary text-primary" : "text-muted-foreground"
               }`}
             >

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireProfile } from "@/lib/avsec/auth";
+import { requireAttendanceProfile } from "@/lib/avsec/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatAbsenceGap, LEAVE_TYPE_LABELS, LEAVE_TYPE_ICONS } from "@/lib/avsec/duty/absence-logic";
 import { getAbsenceNotices, type AbsenceNoticeRow } from "@/lib/avsec/duty/absence-queries";
@@ -13,7 +13,7 @@ export default async function StaffLeavePortalPage({
   searchParams: Promise<{ highlight?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const profile = await requireProfile();
+  const profile = await requireAttendanceProfile();
   const isManagement = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
   const isDSE = profile.role === "DSE";
 

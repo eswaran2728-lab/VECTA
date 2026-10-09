@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { reportViewHref } from "@/lib/dashboard/entity-report-filters";
 import {
   getFlaggedReportsSecure,
   getOpsDashboardHubBreakdown,
@@ -107,7 +108,7 @@ export async function ExecutiveDashboard({ context }: { context: RoleAssignmentC
               {flagged.rows.map((r) => (
                 <Link
                   key={r.id}
-                  href={`/avsec/reports/view/${r.sourceTable.replace(/^report_/, "")}/${r.id}`}
+                  href={reportViewHref(r.sourceTable, r.sourceId) ?? "/avsec/my-dashboard"}
                   className="flex items-center justify-between py-2 hover:bg-card/40"
                 >
                   <span className="font-mono text-xs">

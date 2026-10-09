@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { requireProfile } from "@/lib/avsec/auth";
+import { requireAttendanceProfile } from "@/lib/avsec/auth";
 import { Clock, CheckCircle2, ArrowRight } from "lucide-react";
 
 export default async function NewOvertimeRequestPage() {
-  await requireProfile();
+  await requireAttendanceProfile();
 
   return (
     <main className="min-h-screen bg-background pb-28">

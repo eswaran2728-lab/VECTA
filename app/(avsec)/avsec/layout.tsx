@@ -11,6 +11,8 @@ import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { NotificationsBell } from "@/components/layout/NotificationsBell";
+import { NavDrawer } from "@/components/layout/NavDrawer";
+import { buildNavModel } from "@/lib/dashboard/nav-capabilities";
 
 export const metadata: Metadata = {
   title: APP_NAME,
@@ -28,13 +30,15 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
   const access = profile ? await getCanonicalAccess() : null;
   const isOrgWide = access?.orgWide ?? false;
   const showChrome = Boolean(profile && profile.status === "approved" && profile.name && access?.hasAssignment && !access.isSuperAdmin);
-  const displayRole = access?.primaryCompatRole ?? "ASO";
   const canScan = showChrome && access ? await getCanScanCaterLink(access) : false;
   // Phase 7: purely a nav-display decision (see lib/dashboard/navigation.ts)
   // -- skipped entirely when chrome isn't shown anyway (profile-setup/
   // pending-approval), and an empty result just means no "My Dashboard"
   // entry, never a broken link or an authorization change.
   const hasPhase7Assignment = showChrome ? Boolean(access?.hasAssignment) : false;
+  // Explicit canonical-role navigation. There is NO default role: an absent or unrecognised role gets the minimal model.
+  const navModel = showChrome && access ? buildNavModel({ roleCodes: access.roleCodes, canScan }) : null;
+  const roleLabel = access?.primaryCompatRole ? (ROLE_LABELS[access.primaryCompatRole] ?? null) : (access?.roleCodes[0] ?? null);
 
   return (
     <div className="min-h-screen bg-background text-foreground antialiased">
@@ -45,8 +49,9 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
           <AppSidebar
             userId={profile.id}
             name={profile.name}
-            role={displayRole}
-            roleLabel={access?.primaryCompatRole ? (ROLE_LABELS[access.primaryCompatRole] ?? null) : (access?.roleCodes[0] ?? null)}
+            role={navModel?.roleCode ?? null}
+            roleLabel={roleLabel}
+            model={navModel ?? undefined}
             canScan={canScan}
             station={profile.station}
             team={profile.team}
@@ -59,7 +64,8 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
             <div className="lg:hidden">
               <UnifiedHeader
                 name={profile.name}
-                roleLabel={access?.primaryCompatRole ? (ROLE_LABELS[access.primaryCompatRole] ?? null) : (access?.roleCodes[0] ?? null)}
+                roleLabel={roleLabel}
+                menu={navModel ? <NavDrawer groups={navModel.groups} /> : undefined}
                 signOutAction={authSignOut}
                 extra={<NotificationsBell userId={profile.id} />}
               />
@@ -68,8 +74,8 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
           {children}
         </div>
         <InstallPrompt />
-        {showChrome && profile ? (
-          <TeamBottomNav orgWide={isOrgWide} role={displayRole.toLowerCase()} canScan={canScan} hasPhase7Assignment={hasPhase7Assignment} />
+        {showChrome && profile && navModel ? (
+          <TeamBottomNav orgWide={isOrgWide} role={navModel.roleCode} canScan={canScan} hasPhase7Assignment={hasPhase7Assignment} model={navModel} />
         ) : null}
       </OfflineSyncProvider>
     </div>

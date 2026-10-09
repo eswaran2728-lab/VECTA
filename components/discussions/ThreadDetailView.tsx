@@ -35,6 +35,8 @@ interface ThreadDetailViewProps {
   isThreadOwner: boolean;
   ownedReplyIds: string[];
   isModerator: boolean;
+  /** MAA/AAX Boss only: shows the audited per-item author reveal control. The database re-checks the role on every call. */
+  canBossReveal?: boolean;
 }
 
 export function ThreadDetailView({
@@ -43,6 +45,7 @@ export function ThreadDetailView({
   isThreadOwner,
   ownedReplyIds,
   isModerator,
+  canBossReveal = false,
 }: ThreadDetailViewProps) {
   const router = useRouter();
   const [thread, setThread] = useState(initialThread);
@@ -69,6 +72,7 @@ export function ThreadDetailView({
     contentType: "thread" | "reply";
     contentId: string;
     authorAlias: string;
+    mode?: "moderator" | "boss";
   } | null>(null);
 
   // Action loading states
@@ -322,6 +326,18 @@ export function ThreadDetailView({
               </button>
             )}
 
+            {canBossReveal && (
+              <button
+                type="button"
+                onClick={() => setIdentityTarget({ contentType: "thread", contentId: thread.id, authorAlias: thread.author_alias, mode: "boss" })}
+                className="inline-flex min-h-[36px] items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+                title="Reveal this author (audited)"
+              >
+                <KeyRound className="h-3.5 w-3.5" />
+                <span>Reveal author</span>
+              </button>
+            )}
+
             {/* Moderator Controls */}
             {isModerator && (
               <div className="flex items-center gap-1.5 pl-2 border-l border-border">
@@ -499,6 +515,18 @@ export function ThreadDetailView({
                         </button>
                       )}
 
+                      {canBossReveal && (
+                        <button
+                          type="button"
+                          onClick={() => setIdentityTarget({ contentType: "reply", contentId: reply.id, authorAlias: reply.author_alias, mode: "boss" })}
+                          className="p-1 rounded text-destructive hover:bg-destructive/15 transition-colors"
+                          title="Reveal this author (audited)"
+                          aria-label="Reveal this reply's author (audited)"
+                        >
+                          <KeyRound className="h-3 w-3" />
+                        </button>
+                      )}
+
                       {isModerator && (
                         <>
                           <button
@@ -594,6 +622,7 @@ export function ThreadDetailView({
           contentType={identityTarget.contentType}
           contentId={identityTarget.contentId}
           authorAlias={identityTarget.authorAlias}
+          mode={identityTarget.mode ?? "moderator"}
           onClose={() => setIdentityTarget(null)}
         />
       )}

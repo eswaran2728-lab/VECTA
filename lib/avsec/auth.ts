@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { isNonRosteredLeadership } from "@/lib/auth/non-rostered-roles";
 import { createClient } from "@/lib/supabase/server";
 import type { Profile } from "./types";
 import type { UserRole } from "./reference-data";
@@ -128,6 +129,22 @@ export async function requireRole(roles: UserRole[]): Promise<Profile> {
   if (!accessSatisfiesRoles(access, roles)) {
     redirect(landingPathForAccess(access));
   }
+  return profile;
+}
+
+/** requireProfile() for the attendance surface (Duty Terminal, Check In/Out, Leave, Overtime, Timesheet, handover, zones): non-rostered
+ *  leadership (MAA/AAX Boss and Admin, AirAsia Management, GHOD, Global Reporting Controller) is sent to its own dashboard. */
+export async function requireAttendanceProfile(): Promise<Profile> {
+  const profile = await requireProfile();
+  if (isNonRosteredLeadership((profile.canonical as CanonicalAccess).roleCodes)) redirect("/avsec/my-dashboard");
+  return profile;
+}
+
+/** getCurrentProfile() for attendance mutations: null (denied) for non-rostered leadership, exactly like an unauthenticated caller. */
+export async function getAttendanceProfile(): Promise<Profile | null> {
+  const profile = await getCurrentProfile();
+  if (!profile) return null;
+  if (isNonRosteredLeadership((profile.canonical as CanonicalAccess).roleCodes)) return null;
   return profile;
 }
 

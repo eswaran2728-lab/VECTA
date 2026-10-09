@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireProfile } from "@/lib/avsec/auth";
+import { requireAttendanceProfile } from "@/lib/avsec/auth";
 import { ROLE_RANK } from "@/lib/avsec/reference-data";
 import { notifyOvertimeApproval } from "@/lib/avsec/email/notifyOvertimeApproval";
 
@@ -15,7 +15,7 @@ function backTo(id: string) {
  * endorse") is the actual authorization boundary — this check just keeps the wrong-role
  * action from being attempted in the first place. */
 export async function endorseOvertimeRequest(formData: FormData) {
-  const profile = await requireProfile();
+  const profile = await requireAttendanceProfile();
   const id = String(formData.get("id") || "");
   if (!id) return;
 
@@ -42,7 +42,7 @@ export async function reviewOvertimeRequest(input: {
   reviewNotes?: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
-    const profile = await requireProfile();
+    const profile = await requireAttendanceProfile();
     const { requestId, action, reviewNotes } = input;
     if (!requestId) return { success: false, error: "Missing request ID." };
 
@@ -204,7 +204,7 @@ export async function reviewOvertimeRequest(input: {
 }
 
 export async function approveOvertimeRequest(formData: FormData) {
-  const profile = await requireProfile();
+  const profile = await requireAttendanceProfile();
   const id = String(formData.get("id") || "");
   if (!id) return;
 
@@ -241,7 +241,7 @@ export async function rejectOvertimeRequest(formData: FormData) {
 /** The claimant can withdraw their own request while it's still untouched — RLS
  * ("overtime own update") only allows this while status = 'pending'. */
 export async function withdrawOvertimeRequest(formData: FormData) {
-  const profile = await requireProfile();
+  const profile = await requireAttendanceProfile();
   const id = String(formData.get("id") || "");
   if (!id) return;
 

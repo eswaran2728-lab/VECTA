@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { requireProfile } from "@/lib/avsec/auth";
+import { requireAttendanceProfile } from "@/lib/avsec/auth";
 import { getVisibleHandovers } from "@/lib/avsec/duty/handover-queries";
 import { formatDateTimeMY } from "@/lib/avsec/datetime";
 import { AcknowledgeControl } from "@/components/avsec/duty/AcknowledgeControl";
 
 export default async function ShiftHandoverPage() {
-  const profile = await requireProfile();
+  const profile = await requireAttendanceProfile();
   const handovers = await getVisibleHandovers();
 
   const pending = handovers.filter((h) => !h.acknowledged_at);

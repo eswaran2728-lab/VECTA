@@ -43,14 +43,13 @@ export async function GET(
     return NextResponse.json({ error: "Report not found" }, { status: 404 });
   }
   const supabase = await createClient();
-  const { data: indexRow } = await supabase
-    .from("central_reports_index")
-    .select("id")
-    .eq("source_table", REPORT_META[type].table)
-    .eq("source_id", params.id)
-    .maybeSingle();
-  if (indexRow) {
-    await supabase.rpc("authorize_report_pdf_secure", { p_repository_report_id: indexRow.id });
+  // Source-keyed authorization + 'pdf_generated' audit in one RPC (same has_report_access() decision); no direct index read.
+  const { error: pdfAuthError } = await supabase.rpc("authorize_report_pdf_by_source_secure", {
+    p_source_table: REPORT_META[type].table,
+    p_source_id: params.id,
+  });
+  if (pdfAuthError) {
+    return NextResponse.json({ error: "Report not found" }, { status: 404 });
   }
 
   const reportNo = (report as { report_no?: string | null }).report_no;

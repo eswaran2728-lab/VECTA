@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireProfile } from "@/lib/avsec/auth";
-import { getReportById } from "@/lib/avsec/reports/queries";
+import { getReportById, ReportNotIndexedError } from "@/lib/avsec/reports/queries";
 import { getAcknowledgement } from "@/lib/avsec/acknowledgements/queries";
 import { acknowledgeReport } from "@/lib/avsec/acknowledgements/actions";
 import { getReportAttachments } from "@/lib/avsec/attachments/actions";
@@ -25,7 +25,14 @@ export default async function ReportViewPage({
   if (!REPORT_TYPES.includes(params.type as ReportType)) notFound();
   const type = params.type as ReportType;
 
-  const report = await getReportById(type, params.id);
+  // An unauthorized, unknown or not-yet-indexed id is deliberately indistinguishable: all fail closed to the same 404.
+  let report: Record<string, unknown> | null;
+  try {
+    report = await getReportById(type, params.id);
+  } catch (e) {
+    if (e instanceof ReportNotIndexedError) notFound();
+    throw e;
+  }
   if (!report) notFound();
 
   const meta = REPORT_META[type];

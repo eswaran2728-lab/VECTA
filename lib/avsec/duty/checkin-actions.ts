@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentProfile } from "@/lib/avsec/auth";
+import { getAttendanceProfile } from "@/lib/avsec/auth";
 import { todayISODateMY } from "@/lib/avsec/datetime";
 import { dutyCheckInSchema, dutyCheckOutSchema } from "@/lib/avsec/schemas/duty";
 import { pointInPolygon } from "./geofence";
@@ -53,7 +53,7 @@ async function matchStationZone(
 // authoritative from the DB (roster, zone) rather than trusting client-supplied values —
 // the client's fence/lateness verdict is UI feedback only.
 export async function submitDutyCheckIn(input: unknown): Promise<ActionResult> {
-  const profile = await getCurrentProfile();
+  const profile = await getAttendanceProfile();
   if (!profile || !profile.station) return { ok: false, error: "Not authenticated" };
 
   const parsed = dutyCheckInSchema.safeParse(input);
@@ -220,7 +220,7 @@ export async function submitDutyCheckIn(input: unknown): Promise<ActionResult> {
 }
 
 export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> {
-  const profile = await getCurrentProfile();
+  const profile = await getAttendanceProfile();
   if (!profile || !profile.station) return { ok: false, error: "Not authenticated" };
 
   const parsed = dutyCheckOutSchema.safeParse(input);

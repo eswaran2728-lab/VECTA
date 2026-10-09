@@ -223,6 +223,33 @@ export async function reviewReportAction(
 }
 
 /**
+ * Server Action: MAA Boss / AAX Boss audited reveal of ONE anonymous author (Malaysia AOC discussion only). Distinct from the
+ * moderator resolution below: only staff number and name come back (never e-mail), the database requires a specific reason, audits
+ * actor / time / reason / target BEFORE disclosing, caps reveals per hour, and honours the platform_feature_flags kill switch. No
+ * notification is sent to the revealed author (owner policy unresolved -- documented, not invented).
+ */
+export async function revealAuthorIdentityAsBossAction(
+  contentType: "thread" | "reply",
+  contentId: string,
+  reason: string
+): Promise<ActionResult<DiscussionResolvedIdentity>> {
+  const trimmedReason = reason.trim();
+  if (trimmedReason.length < 10) {
+    return { ok: false, error: "A specific reason of at least 10 characters is required." };
+  }
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("reveal_discussion_author_identity_secure", {
+    p_content_type: contentType,
+    p_content_id: contentId,
+    p_reason: trimmedReason,
+  });
+  if (error || !data || data.length === 0) {
+    return { ok: false, error: error?.message || "The identity reveal was refused." };
+  }
+  return { ok: true, data: { profile_id: "", name: data[0].staff_name, staff_no: data[0].staff_no, email: "" } as DiscussionResolvedIdentity };
+}
+
+/**
  * Server Action: Privileged, strictly audited, single-item identity resolution.
  * Requires minimum 10-character justification.
  */

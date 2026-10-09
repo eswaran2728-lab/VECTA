@@ -1,9 +1,9 @@
-import { requireProfile } from "@/lib/avsec/auth";
+import { requireAttendanceProfile } from "@/lib/avsec/auth";
 import { getUnfinishedWorkSummary } from "@/lib/avsec/duty/handover-queries";
 import { NewHandoverForm } from "@/components/avsec/duty/NewHandoverForm";
 
 export default async function NewHandoverPage() {
-  const profile = await requireProfile();
+  const profile = await requireAttendanceProfile();
   const unfinishedWork = profile.station
     ? await getUnfinishedWorkSummary(profile.station, profile.team ?? undefined)
     : [];

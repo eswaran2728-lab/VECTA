@@ -14,6 +14,7 @@ export function UnifiedHeader({
   extra,
   brand = "VECTA",
   homeHref = "/",
+  menu,
 }: {
   name: string;
   roleLabel: string | null;
@@ -21,11 +22,15 @@ export function UnifiedHeader({
   extra?: React.ReactNode;
   brand?: string;
   homeHref?: string;
+  /** Optional leading navigation control (the tablet/mobile drawer trigger). */
+  menu?: React.ReactNode;
 }) {
   const isCaterLink = brand === "CATERLINK";
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-4 py-3 sm:px-6 sm:py-[18px]">
+      <div className="flex shrink-0 items-center gap-2">
+      {menu}
       <Link href={homeHref} className="flex shrink-0 items-center gap-2.5">
         {isCaterLink ? (
           <>
@@ -49,6 +54,7 @@ export function UnifiedHeader({
           </>
         )}
       </Link>
+      </div>
       <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1.5 sm:gap-3">
         {extra}
         <ThemeToggle />

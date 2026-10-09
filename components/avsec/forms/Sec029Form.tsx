@@ -25,6 +25,7 @@ import { Camera } from "lucide-react";
 import { cn } from "@/lib/avsec/utils";
 import type { Profile } from "@/lib/avsec/types";
 import type { EligibleOfficer } from "@/lib/avsec/reports/queries";
+import { FlightEntityBadge } from "@/components/avsec/forms/FlightEntityBadge";
 
 interface UIValues {
   station: string;
@@ -328,7 +329,10 @@ export function Sec029Form({
           />
         )}
         <FieldRow>
-          <TextField name="flight_no" register={register} label="Flight No" required error={errors.flight_no} />
+          <div className="space-y-1">
+            <TextField name="flight_no" register={register} label="Flight No" required error={errors.flight_no} />
+            <FlightEntityBadge flight={values.flight_no} />
+          </div>
           <TextField name="flight_destination" register={register} label="Flight Destination" error={errors.flight_destination} />
         </FieldRow>
         <FieldRow>

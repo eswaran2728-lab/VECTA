@@ -61,6 +61,11 @@ export function isShiftBasedAccess(access: CanonicalAccess): boolean {
 // to for dse / hub_se. Roster access is decided by the same canonical route policy
 // the page uses (and the roster RPCs enforce station/team/hub scope in the database).
 export function isAdminPathForbiddenFor(path: string, role: string | null, access: CanonicalAccess): boolean {
+  // Entity registration administration belongs to the MAA/AAX Admin roles (canonical assignment), not to legacy MANAGEMENT/ADMIN.
+  // The page and every RPC behind it re-authorize the admin for their own entity; this only stops the edge from blocking the route.
+  if (path === "/avsec/admin/entity-registrations" || path.startsWith("/avsec/admin/entity-registrations/")) {
+    if (access.roleCodes.some((c) => c === "maa_admin" || c === "aax_admin")) return false;
+  }
   if (path === "/avsec/admin/roster" || path.startsWith("/avsec/admin/roster/")) {
     if (routeAllows("/avsec/admin/roster", access, ["MANAGEMENT", "ADMIN"])) return false;
   }

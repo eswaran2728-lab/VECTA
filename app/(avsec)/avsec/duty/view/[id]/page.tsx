@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireProfile } from "@/lib/avsec/auth";
+import { requireAttendanceProfile } from "@/lib/avsec/auth";
 import { getDutyRecordDetail } from "@/lib/avsec/duty/timesheet-queries";
 import { getDutyZone } from "@/lib/avsec/duty/checkin-queries";
 import { ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
@@ -27,7 +27,7 @@ function FenceBadge({ inside }: { inside: boolean | null }) {
 
 export default async function DutyViewPage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
   const params = await paramsPromise;
-  const profile = await requireProfile();
+  const profile = await requireAttendanceProfile();
   const orgWide = (ORG_WIDE_ROLES as readonly string[]).includes(profile.role);
 
   // RLS scopes this select to records the caller may see (own, or monitor within

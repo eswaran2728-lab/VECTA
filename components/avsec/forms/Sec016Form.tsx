@@ -23,6 +23,7 @@ import { SmartInputSec016 } from "@/components/avsec/forms/SmartInputSec016";
 import { PlaneLanding, PlaneTakeoff, Star, Camera } from "lucide-react";
 import { cn } from "@/lib/avsec/utils";
 import type { Profile } from "@/lib/avsec/types";
+import { FlightEntityBadge } from "@/components/avsec/forms/FlightEntityBadge";
 
 interface UIValues {
   flight_type: "arrival" | "departure";
@@ -461,7 +462,10 @@ export function Sec016Form({
       {/* 5. Aircraft details */}
       <FormSection title="Aircraft">
         <FieldRow>
-          <TextField name="flight" register={register} label="Flight" required error={errors.flight} autoFilled={autoFilledFields.has("flight")} />
+          <div className="space-y-1">
+            <TextField name="flight" register={register} label="Flight" required error={errors.flight} autoFilled={autoFilledFields.has("flight")} />
+            <FlightEntityBadge flight={values.flight} />
+          </div>
           <TextField
             name="origin_arr_dep"
             register={register}
