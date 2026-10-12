@@ -47,7 +47,7 @@ export function ReceiptForm({ row, station }: { row: PendingReceipt; station: st
               setMessage(null);
               const res = await confirmFinalReceipt(fd);
               if (!res.ok) return setMessage(res.error ?? "Refused.");
-              setMessage(res.pdfVersion ? `Receipt recorded. Final PDF version ${res.pdfVersion} generated.` : "Receipt recorded. The final PDF will be regenerated shortly.");
+              setMessage(res.pdfVersion ? `Receipt recorded. Final PDF version ${res.pdfVersion} is ready.` : "Receipt recorded. The final PDF is pending and will be generated automatically; CaterLink Management can see its status.");
               router.refresh();
             });
           }}

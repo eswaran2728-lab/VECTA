@@ -48,6 +48,7 @@
     "verify-phase8-duty-draw-concurrency:native": "node verify_phase8_duty_draw_concurrency_native.mjs",
     "verify-phase8-concurrency-round2:native": "node verify_phase8_concurrency_round2_native.mjs",
     "verify-phase9-whitelist-concurrency:native": "node verify_phase9_whitelist_concurrency_native.mjs",
+    "verify-pdf-jobs-concurrency:native": "node verify_caterlink_pdf_jobs_concurrency_native.mjs",
     "verify-phase9-txn-concurrency:native": "node verify_phase9_transaction_creation_concurrency_native.mjs",
     "verify-phase9-legacy-collision:native": "node verify_phase9_legacy_collision_non_regression_native.mjs",
     "verify-phase10-discussion-concurrency:native": "node verify_phase10_discussion_concurrency_native.mjs",

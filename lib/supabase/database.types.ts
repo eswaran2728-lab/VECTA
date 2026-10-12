@@ -5282,6 +5282,52 @@ export type Database = {
         }
         Returns: { id: string; version: number; is_new: boolean }[]
       }
+      record_caterlink_receipt_pdf_version: {
+        Args: {
+          p_transaction_id: string
+          p_storage_path: string
+          p_content_hash: string
+          p_size_bytes: number
+          p_receiver: string
+        }
+        Returns: { id: string; version: number; is_new: boolean }[]
+      }
+      claim_caterlink_pdf_jobs: {
+        Args: { p_limit?: number; p_transaction_id?: string }
+        Returns: { job_id: string; transaction_id: string; receiver: string; attempt_count: number }[]
+      }
+      complete_caterlink_pdf_job: {
+        Args: { p_job_id: string; p_storage_path: string; p_content_hash: string; p_size_bytes: number }
+        Returns: { pdf_id: string; version: number; is_new: boolean }[]
+      }
+      fail_caterlink_pdf_job: {
+        Args: { p_job_id: string; p_category: string }
+        Returns: string
+      }
+      retry_caterlink_pdf_job_secure: {
+        Args: { p_job_id: string }
+        Returns: string
+      }
+      list_caterlink_pdf_jobs_secure: {
+        Args: { p_only_open?: boolean }
+        Returns: {
+          job_id: string
+          transaction_id: string
+          transaction_number: string
+          status: string
+          attempt_count: number
+          last_error_category: string | null
+          next_retry_at: string
+          created_at: string
+          updated_at: string
+          completed_at: string | null
+          pdf_version: number | null
+        }[]
+      }
+      get_caterlink_pdf_state_secure: {
+        Args: { p_transaction_id: string }
+        Returns: { state: string; version: number | null }[]
+      }
       get_caterlink_transaction_pdf_secure: {
         Args: { p_transaction_id: string }
         Returns: { storage_path: string; version: number; size_bytes: number; generated_at: string }[]

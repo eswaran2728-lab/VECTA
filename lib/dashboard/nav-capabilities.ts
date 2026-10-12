@@ -127,6 +127,7 @@ export function buildNavModel(input: { roleCodes: readonly string[]; selectedRol
         L("/icms/incidents", "Incident Handling", "shield"),
         L("/icms/admin/whitelists", "Whitelist Directory", "users"),
         L("/icms/admin/archive", "Transaction Archive", "file-text"),
+        L("/icms/admin/final-pdfs", "Final PDFs", "file-text"),
         L("/icms/admin/audit", "Audit Log", "activity"),
         L("/icms/reports", "Operational Reports", "calendar-check"),
       ];

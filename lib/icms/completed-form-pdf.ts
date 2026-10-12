@@ -2,6 +2,7 @@ import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { processPdfJobs, type PdfJobDeps, type PdfJobOutcome } from "@/lib/avsec/caterlink/pdf-jobs";
 import { signedUrl, uploadPdfBuffer } from "@/lib/icms/storage";
 import { formatDateTime } from "@/lib/icms/utils";
 import { loadOfficialTemplate, drawValue, drawWrapped, drawSignature, markSelected, markCargoTick } from "@/lib/icms/pdf-overlay";
@@ -587,29 +588,34 @@ export async function generateCompletedFormPdf(transactionId: string): Promise<v
 }
 
 /**
- * After a BKI / KCH final receipt the completed form gains its receipt part, so the final PDF is regenerated as a NEW VERSION: the
- * bytes go to the private caterlink-final-pdfs bucket at <transaction>/<sha256>.pdf and record_caterlink_receipt_pdf_version()
- * (service-role only) supersedes -- never overwrites -- the previous current version, idempotently by content hash. Best effort: a
- * failure is logged and never undoes the receipt (the receipt is already committed and audited).
+ * Service-role worker entry for the durable post-receipt PDF jobs (see lib/avsec/caterlink/pdf-jobs.ts). Claims due jobs (optionally
+ * only one transaction's), renders each completed form, uploads it to the private caterlink-final-pdfs bucket at
+ * <transaction>/<sha256>.pdf and records the authoritative version through complete_caterlink_pdf_job() -- all through the typed
+ * client. Failures are recorded as a category on the job and retried; they never undo the receipt.
  */
-export async function regenerateFinalPdfAfterReceipt(transactionId: string, receiverId: string): Promise<{ ok: boolean; version: number | null; error: string | null }> {
-  try {
-    const admin = createAdminClient();
-    const rendered = await renderCompletedFormPdf(admin as unknown as DbClient, transactionId, true);
-    if (!rendered) return { ok: false, version: null, error: "The transaction is not completed." };
-    const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(rendered.bytes));
-    const hash = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
-    const storagePath = `${transactionId}/${hash}.pdf`;
-    const { error: uploadError } = await admin.storage.from("caterlink-final-pdfs").upload(storagePath, new Uint8Array(rendered.bytes), { contentType: "application/pdf", upsert: false });
-    if (uploadError && !/already exists|duplicate/i.test(uploadError.message)) return { ok: false, version: null, error: `Upload failed: ${uploadError.message}` };
-    const { data, error } = await (admin.rpc as unknown as (n: string, a: Record<string, unknown>) => Promise<{ data: Array<{ version: number }> | null; error: { message: string } | null }>)(
-      "record_caterlink_receipt_pdf_version",
-      { p_transaction_id: transactionId, p_storage_path: storagePath, p_content_hash: hash, p_size_bytes: rendered.bytes.length, p_receiver: receiverId },
-    );
-    if (error) return { ok: false, version: null, error: error.message };
-    return { ok: true, version: data?.[0]?.version ?? null, error: null };
-  } catch (e) {
-    console.error("[completed-form-pdf] post-receipt regeneration failed for", transactionId, e);
-    return { ok: false, version: null, error: e instanceof Error ? e.message : "regeneration failed" };
-  }
+export async function runCaterlinkPdfJobs(opts: { limit?: number; transactionId?: string | null } = {}): Promise<PdfJobOutcome[]> {
+  const admin = createAdminClient();
+  const deps: PdfJobDeps = {
+    async claim(limit, transactionId) {
+      const { data, error } = await admin.rpc("claim_caterlink_pdf_jobs", { p_limit: limit, ...(transactionId ? { p_transaction_id: transactionId } : {}) });
+      if (error) throw new Error("claim failed");
+      return (data ?? []).map((r) => ({ jobId: r.job_id, transactionId: r.transaction_id, receiver: r.receiver, attemptCount: r.attempt_count }));
+    },
+    async render(transactionId) {
+      const rendered = await renderCompletedFormPdf(admin as unknown as DbClient, transactionId, true);
+      return rendered ? new Uint8Array(rendered.bytes) : null;
+    },
+    async upload(path, bytes) {
+      const { error } = await admin.storage.from("caterlink-final-pdfs").upload(path, bytes, { contentType: "application/pdf", upsert: false });
+      return { error: error ? error.message : null };
+    },
+    async complete(jobId, path, hash, size) {
+      const { data, error } = await admin.rpc("complete_caterlink_pdf_job", { p_job_id: jobId, p_storage_path: path, p_content_hash: hash, p_size_bytes: size });
+      return { version: data?.[0]?.version ?? null, error: Boolean(error) };
+    },
+    async fail(jobId, category) {
+      await admin.rpc("fail_caterlink_pdf_job", { p_job_id: jobId, p_category: category });
+    },
+  };
+  return processPdfJobs(deps, opts);
 }

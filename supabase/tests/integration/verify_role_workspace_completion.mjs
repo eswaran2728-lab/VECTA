@@ -39,7 +39,7 @@ async function main() {
   const myAoc = (await one("select id from public.aocs where code = 'MY';")).id;
   const maa = (await one("select id from public.operating_entities where aoc_id = $1 and code = 'MAA';", [myAoc])).id;
   const dept = async (code) => (await one('select id from public.departments where aoc_id = $1 and code = $2;', [myAoc, code])).id;
-  const opsDept = await dept('operation'); const enfDept = await dept('enforcement'); const compDept = await dept('compliance');
+  const clDept = await dept('caterlink'); const opsDept = await dept('operation'); const enfDept = await dept('enforcement'); const compDept = await dept('compliance');
   const invUnit = (await one("select u.id from public.units u join public.departments d on d.id = u.department_id where d.code = 'enforcement' and d.aoc_id = $1 and u.code = 'investigation';", [myAoc])).id;
   const roles = new Map((await rows('select id, code from public.role_definitions;')).map((r) => [r.code, r.id]));
   const station = async (code) => one('select id, hub_id, code from public.org_stations where code = $1;', [code]);
@@ -60,6 +60,7 @@ async function main() {
     else if (role === 'operation_manager') await ins('aoc_id, department_id', [myAoc, opsDept]);
     else if (role === 'main_enforcement') await ins('aoc_id, department_id', [myAoc, enfDept]);
     else if (role === 'compliance') await ins('aoc_id, department_id', [myAoc, compDept]);
+    else if (role === 'caterlink_management') await ins('aoc_id, department_id', [myAoc, clDept]);
     else if (role.startsWith('investigation_')) await ins('aoc_id, department_id, unit_id, entity_membership_id', [myAoc, enfDept, invUnit, await member()]);
     else if (role === 'hub_se') await ins('aoc_id, department_id, hub_id, entity_membership_id', [myAoc, opsDept, hub, await member()]);
     else if (role === 'aso' || role === 'so' || role === 'sso') await ins('aoc_id, department_id, hub_id, station_id, team_id, entity_membership_id', [myAoc, opsDept, st.hub_id, st.id, await teamOf(st), await member()]);
@@ -86,6 +87,7 @@ async function main() {
   const asoBki = await person('asobki', 'aso', { st: bki });
   const asoKch = await person('asokch', 'aso', { st: kch });
   const asoPen = await person('asopen', 'aso', { st: pen });
+  const clMgmt = await person('clmgmt', 'caterlink_management');
   const asoBtu = await person('asobtu', 'aso', { st: await station('BTU') });
   const soKul = await person('sokul', 'so', { st: kul });
   const ghod = await person('ghod', 'ghod');
@@ -134,6 +136,18 @@ async function main() {
   assert(noSec013 !== null && /does not include the sec013/i.test(noSec013), 'standard ASO cannot insert a SEC013 (trigger refusal)');
   const noOffload = await denied(asoBki, "insert into public.offload_records (profile_id) values ($1);", [asoBki]);
   assert(noOffload !== null && /does not include the offload/i.test(noOffload), 'ASO at BKI cannot insert an Offload once it is station-assigned to KUL');
+  // removing ONE station/form row denies only that form at that station (every form, KCH as the station under test)
+  const ALL_FORMS = ['offload', 'sec014', 'sec016', 'sec018', 'sec029', 'sec033'];
+  for (const f of ALL_FORMS) {
+    await db.query("update public.report_form_assignments set revoked_at = now() where role_code = 'aso' and station_code = 'KCH' and form_type = $1;", [f]);
+    assert(await forms(asoKch) === ALL_FORMS.filter((x) => x !== f).sort().join(','), `revoking ${f} at KCH removes only ${f} at KCH`);
+    assert(await forms(asoKul) === ALL_FORMS.slice().sort().join(',') && await forms(asoPen) === ALL_FORMS.slice().sort().join(','), `${f} is still available at KUL and PEN`);
+    assert(await forms(asoBki) === ALL_FORMS.filter((x) => x !== 'offload').sort().join(','), `BKI is unaffected by the KCH ${f} revocation`);
+    const blocked = await denied(asoKch, `insert into public.${{ offload: 'offload_records', sec014: 'report_sec014', sec016: 'report_sec016', sec018: 'report_sec018', sec029: 'report_sec029', sec033: 'report_sec033' }[f]} (profile_id) values ($1);`, [asoKch]);
+    assert(blocked !== null && new RegExp(`does not include the ${f}`, 'i').test(blocked), `the database refuses a ${f} insert at KCH once its row is revoked`);
+    await db.query("update public.report_form_assignments set revoked_at = null where role_code = 'aso' and station_code = 'KCH' and form_type = $1;", [f]);
+  }
+  assert(await forms(asoKch) === ALL_FORMS.slice().sort().join(','), 'restoring the rows restores the forms');
   const okForm = await denied(asoKul, "insert into public.report_sec016 (profile_id) values ($1);", [asoKul]);
   assert(okForm === null || !/does not include/i.test(okForm), 'ASO at KUL passes the form-assignment trigger for SEC016');
   for (const [lbl, u] of [['future-dated Investigation ASO', futureInv]]) {
@@ -361,6 +375,98 @@ async function main() {
   assert(notDone !== null && /COMPLETED/.test(notDone), 'a PDF is only recorded for a COMPLETED transaction');
   const dlPdf = await asUser(asoBki, "select * from public.get_caterlink_transaction_pdf_secure($1);", [done.id]);
   assert(dlPdf.length === 1 && dlPdf[0].version === 2, 'the receiving officer downloads the CURRENT version');
+
+
+  // ---------- 9b. durable post-receipt PDF jobs
+  const jobsOf = (tx) => rows('select * from public.caterlink_pdf_jobs where transaction_id = $1 order by created_at;', [tx]);
+  const sigPath = 'receipt/job.png';
+  const bkiTx = await insertTx('jobBKI', 'HUB', 'BKI', 'INFLIGHT_POST_APPROVED');
+  const kchTx = await insertTx('jobKCH', 'HUB', 'KCH', 'INFLIGHT_POST_APPROVED');
+  const r1 = await ok(asoBki, "select * from public.confirm_caterlink_destination_receipt_secure($1, 'BKI', $2, null);", [bkiTx.id, sigPath]);
+  const r2 = await ok(asoKch, "select * from public.confirm_caterlink_destination_receipt_secure($1, 'KCH', $2, null);", [kchTx.id, sigPath]);
+  assert(r1.ok && r2.ok, 'BKI and KCH officers confirm their final receipts through the real RPC');
+  const jb = await jobsOf(bkiTx.id);
+  const hubRow = await one('select id from public.caterlink_checkpoint_hub where transaction_id = $1;', [bkiTx.id]);
+  assert(jb.length === 1 && jb[0].status === 'pending' && jb[0].attempt_count === 0, 'the receipt created exactly one PENDING job atomically with the completion');
+  assert(jb[0].idempotency_key === `${bkiTx.id}:${hubRow.id}:1` && jb[0].receiver === asoBki, 'idempotency key = transaction : receipt : source version; receiver recorded');
+  assert((await jobsOf(kchTx.id)).length === 1, 'a KCH receipt creates its job too');
+  const again2 = await ok(asoBki, "select * from public.confirm_caterlink_destination_receipt_secure($1, 'BKI', $2, null);", [bkiTx.id, sigPath]);
+  assert(again2.ok === false && (await jobsOf(bkiTx.id)).length === 1, 'a repeated receipt is refused and never duplicates the job');
+  let dupErr = null;
+  try { await db.query('savepoint dj'); await db.query('insert into public.caterlink_pdf_jobs (transaction_id, receipt_id, receiver, idempotency_key) values ($1,$2,$3,$4);', [bkiTx.id, hubRow.id, asoBki, jb[0].idempotency_key]); await db.query('release savepoint dj'); } catch (e) { dupErr = e.message; await db.query('rollback to savepoint dj'); }
+  assert(dupErr !== null && /idempotency_key/.test(dupErr), 'the idempotency key is unique: a second job for the same receipt cannot exist');
+  // PEN completion creates no job
+  const penTx = await insertTx('jobPEN', 'HUB', 'PEN', 'INFLIGHT_POST_APPROVED');
+  await db.query('reset role;'); await db.query('set session_replication_role = replica;');
+  await db.query("insert into public.caterlink_checkpoint_hub (transaction_id, confirmed_destination, hub_avsec_name, hub_avsec_staff_id, signature_url, completed_by) values ($1,'PEN','x','x','s.png',$2);", [penTx.id, asoPen]);
+  await db.query('set session_replication_role = origin;'); await sup();
+  await db.query("update public.transactions set status = 'COMPLETED' where id = $1;", [penTx.id]);
+  assert((await jobsOf(penTx.id)).length === 0, 'PEN completion is unchanged: no PDF job');
+
+  // authorization of the worker surface
+  for (const [lbl, fn] of [['claim', 'select * from public.claim_caterlink_pdf_jobs(5, null)'], ['complete', "select * from public.complete_caterlink_pdf_job(gen_random_uuid(), 'x', repeat('a',64), 5)"], ['fail', "select public.fail_caterlink_pdf_job(gen_random_uuid(), 'render')"]]) {
+    assert(await denied(asoBki, fn) !== null && await denied(clMgmt, fn) !== null, `${lbl} is service-role only (not the receiver, not Management)`);
+  }
+  const job = jb[0];
+  const claim = () => rows('select * from public.claim_caterlink_pdf_jobs(5, $1);', [bkiTx.id]);
+  const failJob = async (cat) => (await rows('select public.fail_caterlink_pdf_job($1, $2) s;', [job.id, cat]))[0].s;
+  const c1 = await claim();
+  assert(c1.length === 1 && c1[0].attempt_count === 1 && (await jobsOf(bkiTx.id))[0].status === 'processing', 'claim marks the job processing and counts the attempt');
+  assert((await claim()).length === 0, 'a job being processed is not claimed again');
+  assert(await failJob('render') === 'failed_retryable', 'a rendering failure is retryable');
+  let j = (await jobsOf(bkiTx.id))[0];
+  assert(j.last_error_category === 'render' && j.attempt_count === 1 && new Date(j.next_retry_at) > new Date() && j.locked_at === null, 'category, attempt count and next retry time are recorded');
+  assert((await claim()).length === 0, 'a failed job is not claimed before its retry time');
+  await db.query("update public.caterlink_pdf_jobs set next_retry_at = now() - interval '1 second' where id = $1;", [job.id]);
+  assert((await claim()).length === 1, 'it is claimed again once the retry time passes');
+  await failJob('https://signed.example/x?token=SECRET');
+  j = (await jobsOf(bkiTx.id))[0];
+  assert(j.last_error_category === 'unknown' && !JSON.stringify(j).match(/https?:|token|SECRET/i), 'only a category is stored: free text, URLs and tokens are never kept');
+  await db.query("update public.caterlink_pdf_jobs set next_retry_at = now() - interval '1 second' where id = $1;", [job.id]);
+  await claim(); await failJob('storage');
+  assert((await jobsOf(bkiTx.id))[0].last_error_category === 'storage', 'a Storage failure is recorded as such');
+
+  // visibility and manual retry
+  assert((await asUser(asoBki, 'select * from public.get_caterlink_pdf_state_secure($1);', [bkiTx.id]))[0].state === 'failed', 'the receiver sees "failed", never "ready", while no version exists');
+  assert(await denied(compliance, 'select * from public.get_caterlink_pdf_state_secure($1);', [bkiTx.id]) !== null, 'Compliance cannot read the PDF state');
+  assert((await asUser(clMgmt, 'select * from public.list_caterlink_pdf_jobs_secure(true);')).some((r) => r.job_id === job.id && r.status === 'failed_retryable'), 'CaterLink Management sees the failed job');
+  assert((await asUser(asoBki, 'select * from public.list_caterlink_pdf_jobs_secure(true);')).length === 0 && (await asUser(compliance, 'select * from public.list_caterlink_pdf_jobs_secure(true);')).length === 0, 'officers and Compliance see no jobs');
+  for (const [lbl, u] of [['the receiving officer', asoBki], ['Compliance', compliance], ['Operation Manager', opm], ['another ASO', asoKch]]) {
+    assert(await denied(u, 'select public.retry_caterlink_pdf_job_secure($1);', [job.id]) !== null, `manual retry denied: ${lbl}`);
+  }
+  assert((await jobsOf(bkiTx.id))[0].status === 'failed_retryable', 'denied retries change nothing');
+  assert((await asUser(clMgmt, 'select public.retry_caterlink_pdf_job_secure($1) s;', [job.id]))[0].s === 'pending', 'CaterLink Management retries a failed job');
+  j = (await jobsOf(bkiTx.id))[0];
+  assert(j.status === 'pending' && j.manual_retry_count === 1 && j.attempt_count === 3, 'the retry re-queues it and keeps the attempt history');
+  assert((await one("select count(*)::int n from public.phase8_audit_log where action = 'caterlink_pdf_job_manual_retry' and entity_id = $1;", [bkiTx.id])).n === 1, 'the manual retry is audited');
+  assert(await denied(clMgmt, 'select public.retry_caterlink_pdf_job_secure($1);', [job.id]) !== null, 'a job that is not failed cannot be retried');
+
+  // success: exactly one authoritative version, whatever is re-rendered
+  await claim();
+  const hA = '1'.repeat(64), hB = '2'.repeat(64);
+  const done1 = (await rows('select * from public.complete_caterlink_pdf_job($1, $2, $3, 4000);', [job.id, `${bkiTx.id}/${hA}.pdf`, hA]))[0];
+  assert(done1.version === 1 && done1.is_new === true, 'retry success records version 1');
+  const done2 = (await rows('select * from public.complete_caterlink_pdf_job($1, $2, $3, 4100);', [job.id, `${bkiTx.id}/${hB}.pdf`, hB]))[0];
+  assert(done2.version === 1 && done2.is_new === false && done2.pdf_id === done1.pdf_id, 'processing a finished job again returns the existing version even when the re-render differs');
+  assert((await rows('select * from public.caterlink_transaction_pdfs where transaction_id = $1;', [bkiTx.id])).length === 1, 'exactly one authoritative version exists for the receipt');
+  assert((await claim()).length === 0 && await failJob('render') === 'succeeded', 'a finished job is never claimed or failed again');
+  j = (await jobsOf(bkiTx.id))[0];
+  assert(j.status === 'succeeded' && j.pdf_id === done1.pdf_id && j.last_error_category === null && j.completed_at !== null, 'job succeeded with its pdf recorded');
+  assert((await asUser(asoBki, 'select * from public.get_caterlink_pdf_state_secure($1);', [bkiTx.id]))[0].state === 'ready', 'only now is the PDF reported ready');
+  assert((await one("select count(*)::int n from public.phase8_audit_log where action = 'caterlink_pdf_job_succeeded' and entity_id = $1;", [bkiTx.id])).n === 1, 'successful generation is audited exactly once');
+  const before = (await one("select count(*)::int n from public.phase8_audit_log where action = 'caterlink_pdf_access' and entity_id = $1;", [bkiTx.id])).n;
+  assert((await asUser(asoBki, 'select * from public.get_caterlink_transaction_pdf_secure($1);', [bkiTx.id])).length === 1, 'the receiver downloads the authoritative version');
+  assert((await one("select count(*)::int n from public.phase8_audit_log where action = 'caterlink_pdf_access' and entity_id = $1;", [bkiTx.id])).n === before + 1, 'the authorized download is audited');
+  assert(await denied(compliance, 'select * from public.get_caterlink_transaction_pdf_secure($1);', [bkiTx.id]) !== null, 'an unauthorized download is refused');
+  // a later recorder version supersedes but never removes version 1
+  await rows('select * from public.record_caterlink_receipt_pdf_version($1,$2,$3,4200,$4);', [bkiTx.id, `${bkiTx.id}/${'3'.repeat(64)}.pdf`, '3'.repeat(64), asoBki]);
+  const vs = await rows('select version, is_current from public.caterlink_transaction_pdfs where transaction_id = $1 order by version;', [bkiTx.id]);
+  assert(vs.length === 2 && vs[0].is_current === false && vs[1].is_current === true, 'previous immutable versions are preserved');
+  assert((await jobsOf(bkiTx.id)).length === 1 && (await one('select count(*)::int n from public.caterlink_checkpoint_hub where transaction_id = $1;', [bkiTx.id])).n === 1, 'retrying never duplicated the receipt or the job');
+  // stale lock reclaim
+  const kj = (await jobsOf(kchTx.id))[0];
+  await db.query("update public.caterlink_pdf_jobs set status = 'processing', locked_at = now() - interval '11 minutes' where id = $1;", [kj.id]);
+  assert((await rows('select * from public.claim_caterlink_pdf_jobs(5, $1);', [kchTx.id])).length === 1, 'a job whose worker died (stale lock) is reclaimed');
 
   // ---------- 7. Main Enforcement / Operation Manager: no user administration at the RPC layer
   for (const [lbl, u] of [['Main Enforcement', mainEnf], ['Operation Manager', opm]]) {

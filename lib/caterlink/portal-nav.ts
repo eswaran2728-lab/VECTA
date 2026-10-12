@@ -27,6 +27,7 @@ export function caterLinkNavFor(kind: PortalKind): CaterLinkNavDef[] {
         { href: "/icms/reports", label: "Reports", icon: "reports" },
         { href: "/icms/admin/whitelists", label: "Whitelists", icon: "whitelists" },
         { href: "/icms/admin/archive", label: "Archive", icon: "archive" },
+        { href: "/icms/admin/final-pdfs", label: "Final PDFs", icon: "archive" },
         { href: "/icms/admin/audit", label: "Audit Log", icon: "audit" },
       ];
     case "caterlink_driver":
