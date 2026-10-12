@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // FROZEN-HASH STAGING MIGRATION RUNNER -- prepared, NOT executed.
 //
-// Applies exactly the eleven reviewed migrations below, in this order, to the approved staging project and
+// Applies exactly the twelve reviewed migrations below, in this order, to the approved staging project and
 // to nothing else. It never runs unless every gate passes, it dry-runs everything first inside ONE transaction that is rolled back, and
 // the live phase needs a separate explicit phrase plus a matching dry-run receipt. Prints names and counts only -- never a credential,
 // connection string or secret.
@@ -10,7 +10,7 @@
 //   node scripts/staging/apply-role-workspace-migrations.mjs --print-recovery              (no connection: recovery per migration)
 //   node --env-file=.env.local scripts/staging/apply-role-workspace-migrations.mjs --phase=dry-run --expected-head=<sha> --backup=<fresh.enc.json>
 //   node --env-file=.env.local scripts/staging/apply-role-workspace-migrations.mjs --phase=apply   --expected-head=<sha> --backup=<fresh.enc.json> \
-//        --dry-run-receipt=<path> --confirm="APPLY 11 MIGRATIONS TO STAGING ddlctzbnqewubltcavkh"
+//        --dry-run-receipt=<path> --confirm="APPLY 12 MIGRATIONS TO STAGING ddlctzbnqewubltcavkh"
 //
 // Gates (all must pass, any failure stops immediately): exact repository path / branch / origin, clean tree, HEAD == --expected-head;
 // approved staging ref only and the production ref absent everywhere; verified TLS (no insecure fallback); the existing encrypted
@@ -28,7 +28,7 @@ import { loadCurrentManifest } from "./lib/review-accounts.mjs";
 
 export const START_LAST = "20261027000001";
 export const START_COUNT = 68;
-export const LIVE_PHRASE = `APPLY 11 MIGRATIONS TO STAGING ${APPROVED_REF}`;
+export const LIVE_PHRASE = `APPLY 12 MIGRATIONS TO STAGING ${APPROVED_REF}`;
 
 /** version, name, frozen SHA-256 of the LF-normalised file, and what to do if it must be undone. */
 export const MIGRATIONS = [
@@ -48,6 +48,8 @@ export const MIGRATIONS = [
     recovery: "Additive. Leave in place; restore from the fresh pre-change backup if it must be removed." },
   { version: "20261102000002", name: "entity_staff_maintenance", sha256: "d7a0a81c3866932c88a3aebd25aa645ccc429a59e625186f6ef3ac0a2f3b47ed",
     recovery: "Replaces the profile guard with a narrow entity-admin branch. Restore the previous function body from the pre-change definition snapshot, then delete the history row." },
+  { version: "20261102000003", name: "shift_handovers_reconciliation", sha256: "fd318308cb57ccdbef929f827f2a6b500200b81120a0031cdd61e966b1ff7920",
+    recovery: "Additive reconciliation of shift_handovers table, indexes, RLS, policies and grants. Leave in place; if required to remove, drop table public.shift_handovers cascade only if 20261103000001 is undone." },
   { version: "20261103000001", name: "role_workspace_completion", sha256: "8c6420b6eb4e80b401963cb8771325e095a138ec3e35d5f232350c150036f4d8",
     recovery: "Adds report_form_assignments (per-station ASO seeds), investigation case tables and workflow RPCs. Revoke assignments (revoked_at) rather than dropping; a full removal is a restore from the fresh backup." },
   { version: "20261104000001", name: "caterlink_receipt_pdf_version", sha256: "65943c95e3172b7af1caaebb9484c6dac93eaf763d5d641fb4a561e02cbe679f",
@@ -103,7 +105,7 @@ async function fingerprints(client) {
     profiles: await f("select md5(string_agg(md5(p::text), ',' order by p.id::text)) v from public.profiles p"),
     transactions: await f("select coalesce(md5(string_agg(md5(t::text), ',' order by t.id::text)), 'none') v from public.transactions t"),
     storageObjects: await f("select count(*)::text v from storage.objects"),
-    legacyHubStations: await f("select coalesce(md5(string_agg(md5(c::text), ',' order by c.id::text)), 'none') v from public.caterlink_station_capabilities c where c.station_code in ('PEN','JHB','NILAI')"),
+    legacyHubStations: await f("select coalesce(md5(string_agg(md5(c::text), ',' order by c.id::text)), 'none') v from public.caterlink_station_capabilities c join public.org_stations s on s.id = c.station_id where s.code in ('PEN','JHB','NILAI')"),
   };
 }
 
@@ -121,9 +123,29 @@ async function verifyAndProbe(client, manifest, pre) {
   if (/'BTU'|'KUL'/.test(defs)) fail("hub destination constraint admits BTU or KUL");
   const fp = await fingerprints(client);
   for (const k of ["auth", "profiles", "transactions", "storageObjects", "legacyHubStations"]) if (fp[k] !== pre[k]) fail(`unexpected change in ${k}`);
-  const cap = async (st) => one("select can_scan, can_confirm_hub_receipt from public.caterlink_station_capabilities where station_code = $1", [st]);
-  for (const st of ["KCH", "BKI"]) { const c = await cap(st); if (c && c.can_scan) fail(`${st} must not have a scanner`); }
-  if (await cap("BTU")) { const c = await cap("BTU"); if (c.can_scan || c.can_confirm_hub_receipt) fail("BTU must have no CaterLink capability"); }
+
+  // Capabilities: join through org_stations. Fail on missing station or duplicate station code.
+  const allCaps = await q("select c.id, c.station_id, s.code, c.can_scan, c.can_confirm_hub_receipt, c.can_check_vendor_delivery from public.caterlink_station_capabilities c left join public.org_stations s on s.id = c.station_id");
+  if (allCaps.some((c) => !c.code)) fail("a caterlink station capability references a missing station");
+  const seenCodes = new Set();
+  for (const c of allCaps) {
+    if (seenCodes.has(c.code)) fail(`duplicate station code ${c.code} in caterlink station capabilities`);
+    seenCodes.add(c.code);
+  }
+  const cap = (st) => allCaps.find((c) => c.code === st);
+  const scanners = allCaps.filter((c) => c.can_scan).map((c) => c.code).sort().join(",");
+  if (scanners !== "JHB,PEN") fail(`unexpected scanner stations: ${scanners}`);
+  for (const st of ["KCH", "BKI"]) {
+    const c = cap(st);
+    if (!c || !c.can_confirm_hub_receipt) fail(`${st} must have final receipt capability`);
+    if (c.can_scan) fail(`${st} must not have a scanner`);
+  }
+  const vendorChecks = allCaps.filter((c) => c.can_check_vendor_delivery).map((c) => c.code).sort().join(",");
+  if (vendorChecks !== "JHB,PEN") fail(`unexpected vendor check stations: ${vendorChecks}`);
+  if (cap("BTU")) fail("BTU must have no CaterLink capability");
+
+  // Reconciled shift_handovers table exists
+  if ((await one("select count(*)::int n from information_schema.tables where table_schema = 'public' and table_name = 'shift_handovers'")).n !== 1) fail("shift_handovers table missing");
 
   // ASO form seed: one explicit row per active station and form, no all-station row; Profiling ASO SEC013 only; nothing else seeded
   if ((await one("select count(*)::int n from public.report_form_assignments where role_code = 'aso' and station_code is null and revoked_at is null")).n !== 0) fail("an all-station ASO row exists");

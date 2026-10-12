@@ -19,14 +19,15 @@ Nothing in this document has been applied to hosted staging. Execution needs a s
 | 6 | `20261101000005_entity_report_counts_and_admin_overview` | `8f4863685d1947463724810331b31e33cdf5ab9bd4535b5da6ef1ff75556da1b` |
 | 7 | `20261102000001_role_workspace_support` | `b477f818c8e85fb88a0500ee8c5416fd897e42e5638bd74e91c0cb29ba3fc3ed` |
 | 8 | `20261102000002_entity_staff_maintenance` | `d7a0a81c3866932c88a3aebd25aa645ccc429a59e625186f6ef3ac0a2f3b47ed` |
-| 9 | `20261103000001_role_workspace_completion` | `8c6420b6eb4e80b401963cb8771325e095a138ec3e35d5f232350c150036f4d8` |
-| 10 | `20261104000001_caterlink_receipt_pdf_version` | `65943c95e3172b7af1caaebb9484c6dac93eaf763d5d641fb4a561e02cbe679f` |
-| 11 | `20261105000001_caterlink_pdf_generation_jobs` | `292f070befd2e0fe1eb79b115403c7c20075f3a6fd74abd76accb4b357f6049b` |
+| 9 | `20261102000003_shift_handovers_reconciliation` | `fd318308cb57ccdbef929f827f2a6b500200b81120a0031cdd61e966b1ff7920` |
+| 10 | `20261103000001_role_workspace_completion` | `8c6420b6eb4e80b401963cb8771325e095a138ec3e35d5f232350c150036f4d8` |
+| 11 | `20261104000001_caterlink_receipt_pdf_version` | `65943c95e3172b7af1caaebb9484c6dac93eaf763d5d641fb4a561e02cbe679f` |
+| 12 | `20261105000001_caterlink_pdf_generation_jobs` | `292f070befd2e0fe1eb79b115403c7c20075f3a6fd74abd76accb4b357f6049b` |
 
-Each migration depends on every earlier one (full from-scratch rebuild verified on PGlite and native PostgreSQL 17: 96 migrations applied, 0 failed). `20261105000001` depends on `20261104000001`, which depends on `20261027000002`.
+Each migration depends on every earlier one (full from-scratch rebuild verified on PGlite and native PostgreSQL 17: 97 migrations applied, 0 failed). `20261105000001` depends on `20261104000001`, which depends on `20261027000002`.
 
 ## Runner (prepared, NOT executed): `scripts/staging/apply-role-workspace-migrations.mjs`
-- `--print-plan` / `--print-recovery` work offline. `--phase=dry-run` applies all eleven inside ONE transaction, runs the verification queries and real-role probes, ROLLS BACK, and confirms staging is unchanged; it writes a receipt. `--phase=apply` additionally needs the exact phrase `APPLY 11 MIGRATIONS TO STAGING ddlctzbnqewubltcavkh` and a matching, fresh dry-run receipt, then applies and records each migration exactly once in its own transaction, stopping at the first mismatch.
+- `--print-plan` / `--print-recovery` work offline. `--phase=dry-run` applies all twelve inside ONE transaction, runs the verification queries and real-role probes, ROLLS BACK, and confirms staging is unchanged; it writes a receipt. `--phase=apply` additionally needs the exact phrase `APPLY 12 MIGRATIONS TO STAGING ddlctzbnqewubltcavkh` and a matching, fresh dry-run receipt, then applies and records each migration exactly once in its own transaction, stopping at the first mismatch.
 - Gates: exact repo / branch / origin, clean tree, HEAD == `--expected-head`; approved staging ref only and the production ref absent; verified TLS; existing backups authenticate and a fresh backup (< 6 h, same Auth-user count, outside the repo) authenticates; hosted history is exactly 68 migrations ending `20261027000001` with none of the new versions; the repository holds exactly the frozen files (no missing, extra, reordered or modified file). It prints no credential, connection string or secret.
 - Recovery per migration: `--print-recovery`.
 

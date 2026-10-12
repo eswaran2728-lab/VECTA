@@ -13,12 +13,12 @@ const SRC = fs.readFileSync("scripts/staging/apply-role-workspace-migrations.mjs
 test("the frozen set is the reviewed order, strictly ascending, and matches the repository byte-for-byte (LF-normalised)", () => {
   assert.deepEqual(MIGRATIONS.map((m: { version: string }) => m.version), [
     "20261027000002", "20261101000001", "20261101000002", "20261101000003", "20261101000004", "20261101000005",
-    "20261102000001", "20261102000002", "20261103000001", "20261104000001", "20261105000001",
+    "20261102000001", "20261102000002", "20261102000003", "20261103000001", "20261104000001", "20261105000001",
   ]);
   assert.equal(START_LAST, "20261027000001");
   assert.equal(START_COUNT, 68);
   const files = verifyFrozenFiles(ROOT);
-  assert.equal(files.length, 11);
+  assert.equal(files.length, 12);
   for (const m of MIGRATIONS) assert.match(m.sha256, /^[0-9a-f]{64}$/);
 });
 
@@ -52,9 +52,9 @@ const run = (extra: string[]) => {
 test("--print-plan and --print-recovery run offline and list every migration with its recovery", () => {
   const plan = run(["--print-plan"]);
   assert.equal(plan.status, 0);
-  assert.equal((plan.stdout.match(/sha256=/g) ?? []).length, 11);
+  assert.equal((plan.stdout.match(/sha256=/g) ?? []).length, 12);
   const rec = run(["--print-recovery"]);
-  assert.equal((rec.stdout.match(/RECOVERY:/g) ?? []).length, 11);
+  assert.equal((rec.stdout.match(/RECOVERY:/g) ?? []).length, 12);
 });
 
 test("the runner refuses to start without a phase, head, backup, or (live) the exact phrase and a dry-run receipt", () => {

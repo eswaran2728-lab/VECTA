@@ -20,7 +20,7 @@ test("the KCH/BKI, role-workspace and PDF-version migrations are in the proposed
   const order = [
     "20261027000002_hub_destinations_kch_bki.sql",
     "20261101000001", "20261101000002", "20261101000003", "20261101000004", "20261101000005",
-    "20261102000001", "20261102000002", "20261103000001", "20261104000001",
+    "20261102000001", "20261102000002", "20261102000003", "20261103000001", "20261104000001",
   ];
   const idx = order.map((o) => files.findIndex((f) => f.startsWith(o)));
   idx.forEach((i, n) => assert.ok(i >= 0, `${order[n]} exists`));
