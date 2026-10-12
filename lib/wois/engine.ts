@@ -419,7 +419,7 @@ const APP_HELP_ACTIONS: Record<string, { href: string; label: string }> = {
   "SEC 016 Aircraft Attendance Guide": { href: "/avsec/reports/sec016", label: "Open SEC016" },
   "Overtime (OT) Automatic Calculation Guide": { href: "/avsec/duty/overtime", label: "Open My Overtime" },
   "Duty Check-In and Timesheet Guide": { href: "/avsec/duty", label: "Open Duty Check-In" },
-  "Anonymous Staff Feedback Guide": { href: "/avsec/feedback", label: "Open Staff Feedback" },
+  "Anonymous Staff Feedback Guide": { href: "/avsec/discussions", label: "Open the Discussion Board" },
   "Bay Board Operational Guide": { href: "/avsec/bay-board", label: "Open Bay Board" },
 };
 

@@ -284,23 +284,6 @@ export function AppSidebar({
         label: "Broadcast Announcements",
         icon: Megaphone,
       });
-      commsItems.push({
-        href: "/avsec/management/feedback",
-        label: "Staff Feedback Inbox",
-        icon: MessageSquare,
-      });
-      commsItems.push({
-        href: "/avsec/discussions/moderation",
-        label: "Discussion Moderation",
-        icon: Shield,
-        match: ["/avsec/discussions/moderation"],
-      });
-    } else {
-      commsItems.push({
-        href: "/avsec/feedback",
-        label: "Anonymous Feedback",
-        icon: MessageSquare,
-      });
     }
 
     groups.push({

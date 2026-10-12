@@ -55,7 +55,7 @@ export default async function TimesheetPage({
   return (
     <main className="min-h-screen bg-background pb-28">
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
-        <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">MY TIMESHEET</span>
+        <h1 className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">MY TIMESHEET</h1>
         <div className="flex items-center justify-between">
           <Link
             href={`/avsec/duty/timesheet?week=${prevWeek}`}

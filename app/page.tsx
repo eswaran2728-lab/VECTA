@@ -299,13 +299,6 @@ export default async function LandingPage() {
                       <h2 className="font-display text-lg font-bold tracking-[0.03em]">Attendance Monitor</h2>
                       <p className="vecta-eyebrow mt-0.5">Live duty, leave & auto-OT</p>
                     </Link>
-                    <Link href="/avsec/management/feedback" className="vecta-tile group">
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                      <h2 className="font-display text-lg font-bold tracking-[0.03em]">Feedback Inbox</h2>
-                      <p className="vecta-eyebrow mt-0.5">Anonymous staff feedback</p>
-                    </Link>
                     <Link href="/avsec/management/announcements" className="vecta-tile group">
                       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
                         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
@@ -315,15 +308,6 @@ export default async function LandingPage() {
                       <p className="vecta-eyebrow mt-0.5">Broadcast to staff & teams</p>
                     </Link>
                   </>
-                )}
-                {!showAdmin && (
-                  <Link href="/avsec/feedback" className="vecta-tile group">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    <h2 className="font-display text-lg font-bold tracking-[0.03em]">Staff Feedback</h2>
-                    <p className="vecta-eyebrow mt-0.5">Submit anonymous feedback</p>
-                  </Link>
                 )}
               </div>
 

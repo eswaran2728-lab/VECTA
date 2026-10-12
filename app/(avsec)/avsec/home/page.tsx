@@ -76,22 +76,6 @@ export default async function HomePage() {
             </span>
           </Link>
 
-          <Link
-            href="/avsec/feedback"
-            className="flex items-center justify-between gap-3 p-4 rounded-xl border border-border bg-card border-l-4 border-l-cyan hover:border-cyan/80 transition-colors group"
-          >
-            <div>
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan">
-                ANONYMOUS FEEDBACK
-              </p>
-              <p className="text-[13.5px] font-semibold text-foreground mt-1">
-                Report safety hazards & suggestions
-              </p>
-            </div>
-            <span className="font-mono text-sm text-muted-foreground group-hover:text-cyan transition-colors shrink-0">
-              →
-            </span>
-          </Link>
         </div>
 
         {overdue.length > 0 && (

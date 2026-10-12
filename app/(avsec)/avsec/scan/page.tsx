@@ -34,7 +34,7 @@ export default async function UnifiedScanPage() {
   return (
     <main className="min-h-screen bg-background pb-28">
       <div className="flex items-center justify-between px-8 pt-6">
-        <span className="font-display text-base font-extrabold tracking-[0.06em]">SCAN</span>
+        <h1 className="font-display text-base font-extrabold tracking-[0.06em]">SCAN</h1>
         {scopeChip ? <span className="vecta-chip">{scopeChip}</span> : null}
       </div>
 

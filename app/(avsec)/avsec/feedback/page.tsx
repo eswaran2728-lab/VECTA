@@ -1,16 +1,12 @@
+import { redirect } from "next/navigation";
 import { requireProfile } from "@/lib/avsec/auth";
-import { getMyFeedbackThreads } from "@/lib/avsec/feedback/queries";
-import { StaffFeedbackList } from "@/components/avsec/feedback/StaffFeedbackList";
 
-export default async function StaffFeedbackPage() {
-  const profile = await requireProfile();
-  const threads = await getMyFeedbackThreads(profile.id);
-
-  return (
-    <main className="min-h-screen pb-32">
-      <div className="max-w-3xl mx-auto px-4 py-6">
-        <StaffFeedbackList initialThreads={threads} />
-      </div>
-    </main>
-  );
+/**
+ * Retired. The legacy Anonymous Feedback module (feedback_threads / feedback_messages and the public.notifications table) was
+ * superseded by the Phase 10 anonymous discussion board (see migration 20260929000001) and does not exist in the canonical schema.
+ * This route only keeps old bookmarks working: it requires a signed-in approved profile and sends the caller to the Discussion Board.
+ */
+export default async function RetiredFeedbackPage() {
+  await requireProfile();
+  redirect("/avsec/discussions");
 }

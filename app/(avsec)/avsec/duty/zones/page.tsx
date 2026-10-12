@@ -20,7 +20,7 @@ export default async function DutyZonesViewPage({
   return (
     <main className="min-h-screen bg-background pb-28">
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
-        <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">DUTY ZONES</span>
+        <h1 className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">DUTY ZONES</h1>
         <p className="text-[13px] text-muted-foreground">
           Geofence areas the check-in screen tests against.
           {(profile.role === "MANAGEMENT" || profile.role === "ADMIN") && (

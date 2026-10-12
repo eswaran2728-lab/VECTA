@@ -81,3 +81,29 @@ test("pages found without a heading by the hosted UAT now have an h1; the modera
   assert.match(read("app/(avsec)/avsec/operation/duty-draw/page.tsx"), /<h1[^>]*>Duty-Zone Draw<\/h1>\s*<div className="card p-6/);
   assert.doesNotMatch(read("lib/dashboard/nav-capabilities.ts"), /L\("\/avsec\/discussions\/moderation"/);
 });
+
+test("the legacy Anonymous Feedback module is retired: no reference to the missing notifications / feedback tables remains in application code", () => {
+  const walk = (d: string): string[] =>
+    fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+      if (e.name === "node_modules" || e.name === ".next" || e.name === "database.types.ts") return [];
+      const p = `${d}/${e.name}`;
+      return e.isDirectory() ? walk(p) : /\.(ts|tsx)$/.test(e.name) ? [p] : [];
+    });
+  const offenders = ["app", "lib", "components"].flatMap(walk).filter((f) => /from\(\s*["'](notifications|feedback_threads|feedback_messages)["']\s*\)|table:\s*["']notifications["']/.test(read(f)));
+  assert.deepEqual(offenders, []);
+  for (const gone of ["lib/avsec/feedback/actions.ts", "lib/avsec/feedback/queries.ts", "components/avsec/feedback/ManagementFeedbackInbox.tsx", "app/api/avsec/feedback/[id]/messages/route.ts"]) assert.ok(!fs.existsSync(gone), gone);
+  for (const stub of ["app/(avsec)/avsec/feedback/page.tsx", "app/(avsec)/avsec/management/feedback/page.tsx"]) {
+    const src = read(stub);
+    assert.match(src, /requireProfile\(\)/);
+    assert.match(src, /redirect\("\/avsec\/discussions"\)/);
+    assert.doesNotMatch(src, /\.from\(|\.rpc\(/);
+  }
+  assert.doesNotMatch(read("lib/dashboard/nav-capabilities.ts"), /\/avsec\/feedback|management\/feedback/);
+  assert.doesNotMatch(read("components/layout/AppSidebar.tsx"), /\/avsec\/feedback|management\/feedback|discussions\/moderation/);
+});
+
+test("every AVSEC page the hosted UAT reached has a page heading (h1 or h2) in its source or its header component", () => {
+  for (const f of ["duty/page.tsx", "duty/zones/page.tsx", "duty/timesheet/page.tsx", "scan/page.tsx", "bay-board/page.tsx", "profile/page.tsx"]) {
+    assert.match(read(`app/(avsec)/avsec/${f}`), /<h1[\s>]/, f);
+  }
+});

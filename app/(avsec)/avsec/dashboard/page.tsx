@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireLegacyManagementDashboard, landingPathForRole } from "@/lib/avsec/auth";
+import { requireLegacyManagementDashboard } from "@/lib/avsec/auth";
 import { STATIONS, REPORT_META, REPORT_TYPES, ORG_WIDE_ROLES, type ReportType } from "@/lib/avsec/reference-data";
 import {
   getTodayCounts,
@@ -13,7 +13,6 @@ import { getDutyComplianceForDate } from "@/lib/avsec/duty/compliance-queries";
 import { formatDateTimeMY, todayISODateMY } from "@/lib/avsec/datetime";
 import { cn } from "@/lib/avsec/utils";
 import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries";
-import { getManagementFeedbackStats } from "@/lib/avsec/feedback/queries";
 import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
 import { searchDailyReportsByStaff, searchAircraftReportsByStaff } from "@/lib/avsec/search/queries";
 import { getNeedsYourActionItems } from "@/lib/dashboard/needs-your-action";
@@ -37,7 +36,6 @@ export default async function DashboardPage({
     reportType: (searchParams.reportType as ReportType) || undefined,
   };
 
-  const isManagement = profile.role === "MANAGEMENT" || profile.role === "ADMIN";
   const supabaseForRoleCheck = await createClient();
   const { data: isMainEnforcement } = await supabaseForRoleCheck.rpc("has_active_role", { p_role_code: "main_enforcement" });
   const { data: isSatAso } = await supabaseForRoleCheck.rpc("has_active_role", { p_role_code: "sat_aso" });
@@ -53,11 +51,10 @@ export default async function DashboardPage({
   ]);
   const isInvestigation = isInvSso || isInvSo || isInvAso;
 
-  const [{ counts, submissions }, bayBoard, announcements, feedbackStats, actionItems] = await Promise.all([
+  const [{ counts, submissions }, bayBoard, announcements, actionItems] = await Promise.all([
     getTodayCounts(filters),
     getOpenBayBoard(filters.station),
     getActiveAnnouncementsForUser(profile),
-    isManagement ? getManagementFeedbackStats() : Promise.resolve({ totalOpen: 0, urgentSafetyCount: 0 }),
     getNeedsYourActionItems(),
   ]);
   const attachmentCounts = await getAttachmentCounts(submissions.map((s) => s.id));
@@ -95,54 +92,6 @@ export default async function DashboardPage({
         <AnnouncementBanner announcements={announcements} />
 
         <NeedsYourActionPanel items={actionItems} />
-
-        {/* Management Communication Portal */}
-        {isManagement && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Link
-              href="/avsec/management/feedback"
-              className={cn(
-                "p-4 rounded-xl border flex items-center justify-between transition-all",
-                feedbackStats.urgentSafetyCount > 0
-                  ? "border-red-500/60 bg-red-500/10 text-red-400 animate-pulse"
-                  : "border-border/80 bg-surface/80 hover:border-primary/50 text-foreground"
-              )}
-            >
-              <div>
-                <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">
-                  Anonymous Feedback Inbox
-                </p>
-                <p className="text-sm font-bold mt-0.5">
-                  {feedbackStats.urgentSafetyCount > 0 ? (
-                    <span className="text-red-400">🚨 {feedbackStats.urgentSafetyCount} Urgent Safety Concern{feedbackStats.urgentSafetyCount === 1 ? "" : "s"}</span>
-                  ) : (
-                    <span>{feedbackStats.totalOpen} Open Thread{feedbackStats.totalOpen === 1 ? "" : "s"}</span>
-                  )}
-                </p>
-              </div>
-              <span className="px-2.5 py-1 rounded text-xs font-mono font-bold bg-primary/10 text-primary border border-primary/20">
-                View Inbox →
-              </span>
-            </Link>
-
-            <Link
-              href="/avsec/management/announcements"
-              className="p-4 rounded-xl border border-border/80 bg-surface/80 hover:border-primary/50 text-foreground flex items-center justify-between transition-all"
-            >
-              <div>
-                <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">
-                  Staff Directives
-                </p>
-                <p className="text-sm font-bold mt-0.5">
-                  Broadcast Announcements
-                </p>
-              </div>
-              <span className="px-2.5 py-1 rounded text-xs font-mono font-bold bg-primary/10 text-primary border border-primary/20">
-                Manage →
-              </span>
-            </Link>
-          </div>
-        )}
 
         {isOrgWideViewer && (
           <div className="grid grid-cols-2 gap-2">

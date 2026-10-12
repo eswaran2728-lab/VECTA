@@ -22,9 +22,9 @@ export default async function DutyPage() {
     <main className="min-h-screen bg-background pb-28">
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
         <div className="flex items-center justify-between gap-2">
-          <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">
+          <h1 className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">
             DUTY CHECK-IN
-          </span>
+          </h1>
           <span className="vecta-chip">
             {profile.station ?? "—"}
             {profile.team ? ` · ${profile.team}` : ""}

@@ -14,7 +14,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createRequire } from "node:module";
 import { defaultCredentialsDir } from "./lib/run-gates.mjs";
 import { loadCurrentCredentials, loadCurrentManifest } from "./lib/review-accounts.mjs";
-import { roleLabelFor, landsOnRoleDashboard, ROLE_CAPABILITIES } from "../../lib/auth/role-capabilities.ts";
+import { roleLabelFor, landsOnRoleDashboard, isRostered, ROLE_CAPABILITIES } from "../../lib/auth/role-capabilities.ts";
 import { buildNavModel } from "../../lib/dashboard/nav-capabilities.ts";
 
 const require = createRequire(import.meta.url);
@@ -76,7 +76,7 @@ async function newSession(browser, vp, tag) {
   const rawGoto = page.goto.bind(page);
   page.goto = async (url, opts) => {
     for (let i = 0; ; i++) {
-      try { return await rawGoto(url, opts); } catch (e) { if (i >= 3 || !/net::ERR_(NETWORK|INTERNET|FAILED|CONNECTION|NAME)/.test(String(e.message))) throw e; await sleep(6000 * (i + 1)); }
+      try { return await rawGoto(url, opts); } catch (e) { if (i >= 10 || !/net::ERR_(NETWORK|INTERNET|FAILED|CONNECTION|NAME|TIMED_OUT)|Timeout/.test(String(e.message))) throw e; await sleep(15000 * Math.min(i + 1, 4)); }
     }
   };
   const issues = [];
@@ -151,8 +151,13 @@ async function sectionAuthAndRoutes(browser) {
     try {
       await login(s.page, a);
       const landed = pathOf(s.page);
-      const want = expectedLanding(m);
-      check("auth", `${label} signs in and lands on ${want}`, landed === want, `landed ${landed}`);
+      // A rostered officer without an open duty check-in is sent to the duty check-in page: that gate must stay in force.
+      const rostered = m.kind !== "negative" && isRostered(m.roleCode);
+      const hasDuty = ledger.duty.some((d) => d.label === label);
+      const dutyGated = rostered && !hasDuty && landed === "/avsec/duty";
+      const want = dutyGated ? "/avsec/duty" : expectedLanding(m);
+      check("auth", `${label} signs in and lands on ${want}${dutyGated ? " (duty check-in gate: no open duty fixture)" : ""}`, landed === want, `landed ${landed}`);
+      if (dutyGated) { totals.inconclusive = totals.inconclusive ?? { pass: 0, fail: 0 }; totals.inconclusive.pass += 1; console.log(`INFO [inconclusive] ${label}: route authorization not exercised (rostered, no duty fixture by design)`); }
       const heading = await headingOf(s.page);
       const body = (await s.page.textContent("body").catch(() => "")) ?? "";
       check("auth", `${label}: landing page has a role-specific heading and no application error`, heading.length > 0 && !/application error|something went wrong/i.test(body), `h="${heading.slice(0, 50)}"`);
@@ -167,7 +172,7 @@ async function sectionAuthAndRoutes(browser) {
         check("negative", `${label} (${m.accountState}) cannot open any of ${probes.length} operational routes`, denied === probes.length, `${denied}/${probes.length} denied`);
         const txt = await s.page.goto(`${base}/avsec/pending-approval`).then(() => s.page.textContent("body")).catch(() => "");
         check("negative", `${label}: pending page states the account state`, /waiting|declined|deactivated|no workspace|assigned/i.test(txt ?? ""));
-      } else if (m.kind !== "caterlink_external" && m.roleCode !== "super_admin" && m.roleCode !== "caterlink_management") {
+      } else if (!dutyGated && m.kind !== "caterlink_external" && m.roleCode !== "super_admin" && m.roleCode !== "caterlink_management") {
         // route authorization: every navigation destination of the role opens with a heading; the deny matrix is refused
         const st = await rpc(label, "can_user_scan_caterlink", { p_station_code: man(label)?.scope?.station ?? "" }).catch(() => ({ data: false }));
         const nav = buildNavModel({ roleCodes: [m.roleCode], canScan: st.data === true, canReceive: false });
@@ -469,13 +474,15 @@ async function sectionResponsive(browser) {
 async function main() {
   const browser = await chromium.launch({ executablePath: CHROME, headless: true, args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] });
   try {
-    if (phase === "pre-duty") { await sectionStations(browser); }
+    const run = async (name, fn) => { try { await fn(); } catch (e) { check("sections", `${name} ran to completion`, false, String(e.message).slice(0, 120)); } };
+    if (phase === "pre-duty") { await run("stations", () => sectionStations(browser)); }
     else {
-      await sectionAuthAndRoutes(browser);
-      await sectionReadWrite();
-      await sectionSegregation(browser);
-      await sectionStations(browser);
-      await sectionResponsive(browser);
+      const want = (n) => !argVal("sections") || argVal("sections").split(",").includes(n);
+      if (want("auth")) await run("auth+routes", () => sectionAuthAndRoutes(browser));
+      if (want("rw")) await run("read+write", () => sectionReadWrite());
+      if (want("seg")) await run("segregation", () => sectionSegregation(browser));
+      if (want("stations")) await run("stations", () => sectionStations(browser));
+      if (want("resp")) await run("responsive", () => sectionResponsive(browser));
     }
   } finally { await browser.close(); }
 

@@ -1,32 +1,12 @@
-import { requireRole, MANAGEMENT_ROLES } from "@/lib/avsec/auth";
-import { getManagementFeedbackInbox } from "@/lib/avsec/feedback/queries";
-import { ManagementFeedbackInbox } from "@/components/avsec/feedback/ManagementFeedbackInbox";
+import { redirect } from "next/navigation";
+import { requireProfile } from "@/lib/avsec/auth";
 
-export default async function ManagementFeedbackPage({
-  searchParams: searchParamsPromise,
-}: {
-  searchParams: Promise<{ category?: string; status?: string }>;
-}) {
-  const searchParams = await searchParamsPromise;
-  await requireRole(MANAGEMENT_ROLES);
-
-  const threads = await getManagementFeedbackInbox({
-    category: searchParams.category as never,
-    status: searchParams.status as never,
-  });
-
-  return (
-    <main className="min-h-screen pb-32">
-      <div className="max-w-4xl mx-auto px-4 py-6 space-y-4">
-        <div>
-          <h1 className="text-xl font-bold font-display">Staff Feedback Inbox</h1>
-          <p className="text-xs text-muted-foreground">
-            Confidential staff feedback channel. Submitter identities are permanently stripped by access control.
-          </p>
-        </div>
-
-        <ManagementFeedbackInbox initialThreads={threads} />
-      </div>
-    </main>
-  );
+/**
+ * Retired. The legacy Anonymous Feedback module (feedback_threads / feedback_messages and the public.notifications table) was
+ * superseded by the Phase 10 anonymous discussion board (see migration 20260929000001) and does not exist in the canonical schema.
+ * This route only keeps old bookmarks working: it requires a signed-in approved profile and sends the caller to the Discussion Board.
+ */
+export default async function RetiredFeedbackPage() {
+  await requireProfile();
+  redirect("/avsec/discussions");
 }

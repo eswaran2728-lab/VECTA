@@ -65,7 +65,6 @@ const L = (href: string, label: string, icon: NavIcon, extra: Partial<NavLink> =
 const DASHBOARD = L("/avsec/my-dashboard", "My Dashboard", "dashboard");
 const PROFILE = L("/avsec/profile", "Profile", "user");
 const DISCUSSIONS = L("/avsec/discussions", "Discussion Board", "message", { match: ["/avsec/discussions"] });
-const FEEDBACK = L("/avsec/feedback", "Anonymous Feedback", "message");
 const BAY_BOARD = L("/avsec/bay-board", "Bay Board", "plane");
 const BAY_BOARD_RO = L("/avsec/bay-board", "Bay Board (read-only)", "plane");
 const REPORT_SEARCH = L("/avsec/reports/lookup", "Report Search", "search");
@@ -287,7 +286,7 @@ export function buildNavModel(input: { roleCodes: readonly string[]; selectedRol
         [
           { title: "HUB", items: [hub, L("/avsec/hub", "Hub Stations", "building", { match: ["/avsec/hub"] }), DUTY, BAY_BOARD, ROSTER, REPORT_SEARCH] },
           { title: "ATTENDANCE & APPROVALS", items: [LEAVE_QUEUE, OT_QUEUE, TIMESHEET] },
-          { title: "COMMUNICATION", items: [DISCUSSIONS, FEEDBACK] },
+          { title: "COMMUNICATION", items: [DISCUSSIONS] },
           { title: "ACCOUNT", items: [PROFILE] },
         ],
         [hub, DUTY, ROSTER, BAY_BOARD, PROFILE],
@@ -308,7 +307,7 @@ export function buildNavModel(input: { roleCodes: readonly string[]; selectedRol
           { title: "OPERATIONS", items: ops },
           { title: "ATTENDANCE & APPROVALS", items: [LEAVE_QUEUE, OT_QUEUE, TIMESHEET] },
           { title: "SECURITY REPORTS", items: [REPORT_SEARCH] },
-          { title: "COMMUNICATION", items: [DISCUSSIONS, FEEDBACK] },
+          { title: "COMMUNICATION", items: [DISCUSSIONS] },
           { title: "ACCOUNT", items: [PROFILE] },
         ],
         [dash, DUTY, ROSTER, BAY_BOARD, PROFILE],
@@ -332,7 +331,7 @@ export function buildNavModel(input: { roleCodes: readonly string[]; selectedRol
         { title: "ATTENDANCE", items: SELF_ATTENDANCE },
       ];
       if (code !== "aso") groups.push({ title: "SECURITY REPORTS", items: [REPORT_SEARCH] });
-      groups.push({ title: "COMMUNICATION", items: [DISCUSSIONS, FEEDBACK] }, { title: "ACCOUNT", items: [PROFILE] });
+      groups.push({ title: "COMMUNICATION", items: [DISCUSSIONS] }, { title: "ACCOUNT", items: [PROFILE] });
       const tabs = input.canScan
         ? [dash, L("/avsec/scan", "Scan", "scan"), L("/icms/transactions", "Transaction History", "activity", { match: ["/icms/transactions"] }), BAY_BOARD, PROFILE]
         : [dash, DUTY, BAY_BOARD, PROFILE];
@@ -355,7 +354,7 @@ export function buildNavModel(input: { roleCodes: readonly string[]; selectedRol
         [
           { title: "WORKSPACE", items: [dash, DUTY, BAY_BOARD, ...work] },
           { title: "ATTENDANCE", items: SELF_ATTENDANCE },
-          { title: "COMMUNICATION", items: [DISCUSSIONS, FEEDBACK] },
+          { title: "COMMUNICATION", items: [DISCUSSIONS] },
           { title: "ACCOUNT", items: [PROFILE] },
         ],
         [dash, DUTY, BAY_BOARD, ...work.slice(0, 1), PROFILE],
