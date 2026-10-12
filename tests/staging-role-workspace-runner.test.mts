@@ -39,7 +39,7 @@ const first = () => `${MIGRATIONS[0].version}_${MIGRATIONS[0].name}.sql`;
 test("a modified, missing or extra migration is rejected", () => {
   assert.throws(() => verifyFrozenFiles(sandbox((d) => fs.appendFileSync(path.join(d, first()), "\n-- tampered\n"))), /differs from the frozen/);
   assert.throws(() => verifyFrozenFiles(sandbox((d) => fs.rmSync(path.join(d, first())))), /differ from the frozen list/);
-  assert.throws(() => verifyFrozenFiles(sandbox((d) => fs.writeFileSync(path.join(d, "20261106000001_extra.sql"), "select 1;"))), /differ from the frozen list/);
+  assert.throws(() => verifyFrozenFiles(sandbox((d) => fs.writeFileSync(path.join(d, "20261104500000_extra.sql"), "select 1;"))), /differ from the frozen list/);
   assert.throws(() => verifyFrozenFiles(sandbox((d) => fs.writeFileSync(path.join(d, "20261027000009_inserted_before.sql"), "select 1;"))), /differ from the frozen list/);
 });
 

@@ -468,6 +468,31 @@ async function main() {
   await db.query("update public.caterlink_pdf_jobs set status = 'processing', locked_at = now() - interval '11 minutes' where id = $1;", [kj.id]);
   assert((await rows('select * from public.claim_caterlink_pdf_jobs(5, $1);', [kchTx.id])).length === 1, 'a job whose worker died (stale lock) is reclaimed');
 
+
+  // ---------- 10. report index queue runs in the service-role context (cron has no JWT: auth.role() is NULL)
+  async function submitSec016(u, flight, reg) {
+    await db.query('select pg_temp.sim_user($1)', [u]);
+    let id = null;
+    try {
+      id = (await one(`insert into public.report_sec016 (profile_id, status, submitted_at, station, team, staff_name, staff_no, duty_date, duty_hour, flight, origin_arr_dep, assisted_by, aircraft_type, reg_no, sta_std, ata_atd, bay_no, do_infmd, inbound_baggage, outbound_baggage, inbound_cargo, outbound_cargo, inbound_co_mail, outbound_co_mail, shift_leader, ramp_staff_1, ramp_staff_2, ramp_staff_3, ramp_staff_4, ramp_staff_5, cargo_hold_checked, staff_frisked, discrepancies, offload_flight_no, offload_destination, offload_baggage_tag_no, offload_total_baggage, offload_remark)
+        values ($1,'submitted',now(),'KUL - MAA','ALPHA','RC','RC-1',current_date,'10:00',$2,'ARR/KUL','x','A320',$3,'10:00','10:15','B1','NO','0','0','0','0','0','0','x','x','x','x','x','x','NO','NO','UAT','N/A','N/A','N/A','0','x') returning id;`, [u, flight, reg])).id;
+      await db.query('select public.mark_report_ready_for_indexing($1, $2, 0);', ['report_sec016', id]);
+    } finally { await sup(); }
+    return id;
+  }
+  const maaRep = await submitSec016(asoKul, 'AK9101', '9M-IDX01');
+  const aaxRep = await submitSec016(asoKul, 'D79101', '9M-IDX02');
+  // the exact context of pg_cron: role postgres-like, no JWT claims at all
+  await db.query('reset role;');
+  await db.query("select set_config('request.jwt.claims', '', false), set_config('request.jwt.claim.role', '', false);");
+  assert((await one('select auth.role() r')).r !== 'service_role', 'the worker is invoked WITHOUT the service-role claim (as pg_cron does)');
+  const run = await one('select * from public.process_report_index_queue(50);');
+  assert(run.indexed >= 2 && run.permanently_failed === 0, `both new reports are indexed from the cron context (indexed ${run.indexed}, permanently_failed ${run.permanently_failed})`);
+  await sup();
+  const idxRows = await rows("select source_id, operating_entity_code from public.central_reports_index where source_id = any($1::uuid[]);", [[maaRep, aaxRep]]);
+  assert(idxRows.find((r) => r.source_id === maaRep)?.operating_entity_code === 'MAA' && idxRows.find((r) => r.source_id === aaxRep)?.operating_entity_code === 'AAX', 'AK -> MAA and D7 -> AAX in the repository index');
+  assert((await one("select count(*)::int n from public.report_index_queue where status = 'permanently_failed' and last_error like 'Submitted reports are immutable%';")).n === 0, 'no queue row is left failed by the immutability guard');
+
   // ---------- 7. Main Enforcement / Operation Manager: no user administration at the RPC layer
   for (const [lbl, u] of [['Main Enforcement', mainEnf], ['Operation Manager', opm]]) {
     assert(await denied(u, "select public.approve_registration_request(gen_random_uuid(), 'aso', $1, $2, null, null, null, null, null);", [myAoc, maa]) !== null, `${lbl}: cannot approve a registration`);

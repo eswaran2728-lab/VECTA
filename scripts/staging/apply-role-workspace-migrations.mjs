@@ -76,7 +76,8 @@ export function verifyFrozenFiles(root) {
   const versions = MIGRATIONS.map((m) => m.version);
   if (versions.some((v, i) => i > 0 && !(v > versions[i - 1])) || versions[0] <= START_LAST) fail("frozen order is not strictly ascending after the starting point");
   const onDisk = fs.readdirSync(dir).filter((f) => /^\d{14}_.*\.sql$/.test(f)).sort();
-  const after = onDisk.filter((f) => f.slice(0, 14) > START_LAST);
+  // this runner owns only the frozen range; later forward migrations are applied by their own guarded runners
+  const after = onDisk.filter((f) => f.slice(0, 14) > START_LAST && f.slice(0, 14) <= versions[versions.length - 1]);
   const expected = MIGRATIONS.map((m) => `${m.version}_${m.name}.sql`);
   if (JSON.stringify(after) !== JSON.stringify(expected)) fail(`repository migrations after ${START_LAST} differ from the frozen list (missing, extra or reordered): ${after.join(",")}`);
   return MIGRATIONS.map((m) => {
