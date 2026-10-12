@@ -135,6 +135,10 @@ async function main() {
       for (const x of plan) if ((await q("select 1 from public.transactions where transaction_number = $1", [x.number])).length) fail(`${x.number} already exists`);
       console.log(`plan: ${plan.map((x) => `${x.number}@${x.station}`).join(", ")} (CREATED, OUTBOUND, AIRCRAFT)`);
       if (!LIVE) return console.log("DRY RUN: nothing written");
+      await client.query("BEGIN");
+      try {
+      // synthetic movements cannot be on the real vehicle/driver whitelist: bypass the whitelist trigger for THIS transaction only
+      await client.query("set local session_replication_role = replica");
       for (const x of plan) {
         const st = (await q("select id from public.org_stations where code = $1", [x.station]))[0]?.id ?? fail(`no station ${x.station}`);
         const r = (await q(
@@ -144,6 +148,8 @@ async function main() {
         ))[0];
         ledger.tx.push({ id: r.id, number: x.number, station: x.station });
       }
+      await client.query("COMMIT");
+      } catch (e) { await client.query("ROLLBACK"); throw e; }
       writeLedger(ledger);
       console.log(`created ${ledger.tx.length} synthetic movements: ${ledger.tx.map((t) => t.id).join(", ")}`);
       return;
@@ -184,8 +190,10 @@ async function main() {
           await client.query("RESET ROLE");
           await client.query("COMMIT");
           ledger.reports.push({ key: r.key, id: row.id, table: "report_sec016", flight: r.flight, reg: r.reg, date: today });
+          writeLedger(ledger);
         } catch (e) { await client.query("ROLLBACK"); throw e; }
       }
+      // the queue worker sets its own transaction-local service-role context (migration 20261106000001)
       await q("select * from public.process_report_index_queue(50)");
       for (const rep of ledger.reports) {
         const idx = (await q("select id, operating_entity_code, status from public.central_reports_index where source_table = 'report_sec016' and source_id = $1", [rep.id]))[0];
@@ -210,6 +218,10 @@ async function main() {
         await q("delete from public.user_notifications where payload->>'source_id' = any($1::text[])", [ids]);
         await q("delete from public.report_classification_review_queue where source_id = any($1::uuid[])", [ids]).catch(() => {});
         await q("delete from public.report_access_grants where repository_report_id in (select id from public.central_reports_index where source_id = any($1::uuid[]))", [ids]);
+        await q("delete from public.report_versions where repository_report_id in (select id from public.central_reports_index where source_id = any($1::uuid[]))", [ids]);
+        await q("delete from public.report_access_requests where repository_report_id in (select id from public.central_reports_index where source_id = any($1::uuid[]))", [ids]);
+        await q("delete from public.report_access_audit where repository_report_id in (select id from public.central_reports_index where source_id = any($1::uuid[]))", [ids]);
+        await q("delete from public.investigation_case_reports where repository_report_id in (select id from public.central_reports_index where source_id = any($1::uuid[]))", [ids]);
         await q("delete from public.central_reports_index where source_id = any($1::uuid[])", [ids]);
         await q("delete from public.report_index_queue where source_id = any($1::uuid[])", [ids]);
         const del = await q("delete from public.report_sec016 where id = any($1::uuid[]) returning id", [ids]);

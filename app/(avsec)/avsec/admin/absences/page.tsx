@@ -79,9 +79,9 @@ export default async function AdminLeaveAuditPage({
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-display text-lg font-extrabold tracking-[0.06em] text-foreground">
+              <h1 className="font-display text-lg font-extrabold tracking-[0.06em] text-foreground">
                 LEAVE & ABSENCE AUDIT DASHBOARD
-              </span>
+              </h1>
               <span className="vecta-chip">Management Org-Wide</span>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">

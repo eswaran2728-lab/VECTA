@@ -62,7 +62,8 @@ function expectedLanding(a) {
   if (a.kind === "negative") return "/avsec/pending-approval";
   if (a.kind === "caterlink_external" || a.roleCode === "caterlink_management") return "/caterlink/dashboard";
   if (a.roleCode === "super_admin") return "/super-admin";
-  if (landsOnRoleDashboard([a.roleCode])) return "/avsec/my-dashboard";
+  // role workspaces (executive, entity, GRC, compliance, investigation, SAT, profiling) land on /avsec/my-dashboard; operational roles on /
+  if ((a.expectedWorkspace ?? "").startsWith("/avsec/my-dashboard") || landsOnRoleDashboard([a.roleCode])) return "/avsec/my-dashboard";
   return "/";
 }
 
@@ -71,6 +72,13 @@ async function newSession(browser, vp, tag) {
   const ctx = await browser.newContext({ viewport: vp, isMobile: vp.width < 500, hasTouch: vp.width < 500 });
   ctx.on("request", (r) => { try { hosts.add(new URL(r.url()).hostname); } catch { /* ignore */ } });
   const page = await ctx.newPage();
+  // transient network errors (e.g. the host sleeping) must not be mistaken for application failures: retry navigation
+  const rawGoto = page.goto.bind(page);
+  page.goto = async (url, opts) => {
+    for (let i = 0; ; i++) {
+      try { return await rawGoto(url, opts); } catch (e) { if (i >= 3 || !/net::ERR_(NETWORK|INTERNET|FAILED|CONNECTION|NAME)/.test(String(e.message))) throw e; await sleep(6000 * (i + 1)); }
+    }
+  };
   const issues = [];
   page.on("pageerror", (e) => issues.push({ kind: "pageerror", msg: String(e.message).slice(0, 140) }));
   page.on("console", (m) => { if (m.type() === "error" && !/vercel\.live|feedback\.js/.test(m.text())) issues.push({ kind: "console", msg: m.text().slice(0, 140) }); });
@@ -166,16 +174,17 @@ async function sectionAuthAndRoutes(browser) {
         const hrefs = [...new Set(nav.groups.flatMap((g) => g.items.map((i) => i.href)).filter((h) => h.startsWith("/")))];
         let opened = 0; const bad = [];
         for (const h of hrefs) {
+          const want = h.split("#")[0].split("?")[0];
           await s.page.goto(`${base}${h}`, { waitUntil: "domcontentloaded" });
-          await s.page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+          await s.page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
           const p = pathOf(s.page); const hd = await headingOf(s.page);
           const txt = (await s.page.textContent("body").catch(() => "")) ?? "";
-          if ((p === h || p.startsWith(h.split("?")[0])) && hd.length > 0 && !/application error/i.test(txt)) opened += 1; else bad.push(`${h}->${p}`);
+          if (p === want && hd.length > 0 && !/application error/i.test(txt)) opened += 1; else bad.push(`${h}->${p}${hd ? "" : " (no heading)"}`);
         }
         check("routes", `${label}: ${opened}/${hrefs.length} navigation destinations open with a heading`, bad.length === 0, bad.slice(0, 4).join(" "));
         for (const [route, allowed] of Object.entries(DENY)) {
           await s.page.goto(`${base}${route}`, { waitUntil: "domcontentloaded" });
-          await s.page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+          await s.page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
           const reached = pathOf(s.page) === route;
           check("routes", `${label}: ${route} is ${allowed.has(m.roleCode) ? "open" : "refused"}`, reached === allowed.has(m.roleCode), `reached=${reached}`);
         }
@@ -293,7 +302,7 @@ async function sectionSegregation(browser) {
     const s = await newSession(browser, VIEWPORTS.desktop, label);
     try {
       await login(s.page, a);
-      const go = async (u) => { await s.page.goto(`${base}${u}`, { waitUntil: "domcontentloaded" }); await s.page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => {}); return { p: pathOf(s.page), t: (await s.page.textContent("body").catch(() => "")) ?? "" }; };
+      const go = async (u) => { await s.page.goto(`${base}${u}`, { waitUntil: "domcontentloaded" }); await s.page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {}); return { p: pathOf(s.page), t: (await s.page.textContent("body").catch(() => "")) ?? "" }; };
       const mine = tableOf[own]; const theirs = tableOf[other];
       let r = await go("/avsec/entity-reports");
       check("segregation", `${label}: entity reports page lists the ${own} report`, r.t.includes(mine.flight) || r.t.includes(mine.reg), "");
@@ -338,11 +347,20 @@ async function sectionStations(browser) {
     const s = await newSession(browser, VIEWPORTS.desktop, x.label);
     try {
       await login(s.page, a);
-      const onDutyDb = (await rpc(x.label, "get_my_active_role_assignments")).ok;
-      void onDutyDb;
+      if (phase === "pre-duty") {
+        // no open duty check-in: the application sends every station officer to the duty check-in page (the gate must stay in force)
+        for (const route of ["/avsec/scan", "/avsec/caterlink/receipt"]) {
+          await s.page.goto(`${base}${route}`, { waitUntil: "domcontentloaded" });
+          await s.page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
+          check("duty", `${x.label}: without an open duty check-in ${route} redirects to the duty check-in page`, pathOf(s.page) === "/avsec/duty" && s.page.url().includes("next="), pathOf(s.page));
+        }
+        recordIssues(`${x.label}/pre-duty`, s.issues);
+        await s.ctx.close();
+        continue;
+      }
       // scanner: manual entry of a reference
       await s.page.goto(`${base}/avsec/scan`, { waitUntil: "domcontentloaded" });
-      await s.page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => {});
+      await s.page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
       const scanReach = pathOf(s.page) === "/avsec/scan";
       check("stations", `${x.label}: scanner page ${scanReach ? "opens" : "redirects"} (station operator)`, scanReach);
       if (scanReach) {
@@ -364,7 +382,7 @@ async function sectionStations(browser) {
       }
       // receipt page
       await s.page.goto(`${base}/avsec/caterlink/receipt`, { waitUntil: "domcontentloaded" });
-      await s.page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => {});
+      await s.page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
       const recvReach = pathOf(s.page) === "/avsec/caterlink/receipt";
       const h = await headingOf(s.page);
       check("stations", `${x.label}: receipt page ${expRecv ? `opens ("Final receipt — ${x.st}")` : "is refused"}`, recvReach === expRecv && (!expRecv || h.includes(x.st)), `h="${h.slice(0, 40)}"`);
@@ -388,7 +406,7 @@ async function sectionResponsive(browser) {
       const s = await newSession(browser, vp, `${label}/${vpName}`);
       try {
         await login(s.page, a);
-        await s.page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => {});
+        await s.page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
         const m = await s.page.evaluate(() => {
           const vis = (el) => { const r = el.getBoundingClientRect(); const st = getComputedStyle(el); return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && st.display !== "none"; };
           const ctrls = [...document.querySelectorAll("a[href], button, input:not([type=hidden]), select, textarea, [role=button]")].filter(vis);

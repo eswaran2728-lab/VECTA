@@ -63,3 +63,21 @@ test("header touch targets are at least 44x44 on mobile and keep their desktop s
   assert.match(BELL, /h-11 w-11[^"]*sm:h-9 sm:w-9/);
   assert.match(BELL, /aria-label=/);
 });
+
+test("layout icon metadata points at files that exist under public/ (no favicon 404 console errors)", () => {
+  const layout = read("app/layout.tsx");
+  const urls = [...layout.matchAll(/(?:url|apple): "(\/[^"]+\.png)"/g)].map((m) => m[1]);
+  assert.ok(urls.length >= 3);
+  for (const u of urls) assert.ok(fs.existsSync(`public${u}`), `public${u} exists`);
+});
+
+test("the profile page has a page heading (h1) for assistive technology", () => {
+  assert.match(read("app/(avsec)/avsec/profile/page.tsx"), /<h1 className="font-display[^>]*>\s*\{profile\.name\}\s*<\/h1>/);
+});
+
+test("pages found without a heading by the hosted UAT now have an h1; the moderation link is not offered to a role the page refuses", () => {
+  assert.match(read("app/(avsec)/avsec/admin/absences/page.tsx"), /<h1[^>]*>\s*LEAVE & ABSENCE AUDIT DASHBOARD/);
+  assert.match(read("app/(avsec)/avsec/duty/overtime/page.tsx"), /<h1[^>]*>\s*OVERTIME \(OT\)/);
+  assert.match(read("app/(avsec)/avsec/operation/duty-draw/page.tsx"), /<h1[^>]*>Duty-Zone Draw<\/h1>\s*<div className="card p-6/);
+  assert.doesNotMatch(read("lib/dashboard/nav-capabilities.ts"), /L\("\/avsec\/discussions\/moderation"/);
+});

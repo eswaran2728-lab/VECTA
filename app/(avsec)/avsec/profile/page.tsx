@@ -54,9 +54,9 @@ export default async function ProfilePage() {
             {initials(profile.name)}
           </div>
           <div className="min-w-0">
-            <div className="font-display font-bold text-lg text-foreground tracking-[0.03em] uppercase">
+            <h1 className="font-display font-bold text-lg text-foreground tracking-[0.03em] uppercase">
               {profile.name}
-            </div>
+            </h1>
             <div className="font-mono text-xs font-semibold text-primary mt-1">
               {ROLE_LABELS[profile.role]}
             </div>

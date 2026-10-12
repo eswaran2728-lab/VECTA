@@ -221,7 +221,7 @@ export function buildNavModel(input: { roleCodes: readonly string[]; selectedRol
             ],
           },
           { title: "REPORTS & STAFF", items: [REPORT_SEARCH, L("/avsec/operation/staff", "Operation Staff (read-only)", "users"), CATERLINK_MOVEMENTS] },
-          { title: "COMMUNICATION", items: [DISCUSSIONS, L("/avsec/discussions/moderation", "Discussion Moderation", "shield", { match: ["/avsec/discussions/moderation"] })] },
+          { title: "COMMUNICATION", items: [DISCUSSIONS] }, // moderation is super-admin only (is_discussion_moderator): never linked from another role
           { title: "ACCOUNT", items: [PROFILE] },
         ],
         [overview, L("/avsec/admin/attendance-monitor", "Attendance", "calendar-check"), REPORT_SEARCH, BAY_BOARD_RO, PROFILE],

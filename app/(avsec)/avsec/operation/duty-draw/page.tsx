@@ -23,7 +23,8 @@ export default async function DutyDrawPage({
     return (
       <main className="min-h-screen pb-32">
         <div className="max-w-2xl mx-auto px-4 py-6">
-          <div className="card p-6 text-center text-xs text-muted-foreground">
+          <h1 className="mb-3 text-xl font-bold font-display">Duty-Zone Draw</h1>
+          <div className="card p-6 text-center text-xs text-muted-foreground" role="status">
             No station on file for your account — an Operation Manager can pass a station via
             ?station=.
           </div>

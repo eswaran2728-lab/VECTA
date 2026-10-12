@@ -55,9 +55,9 @@ export default async function OvertimeListPage({
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <span className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">
+            <h1 className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">
               OVERTIME (OT)
-            </span>
+            </h1>
             <p className="font-mono text-xs text-muted-foreground mt-0.5">
               {isDse
                 ? `DSE Approval Queue · ${profile.station ?? "All Stations"}`
