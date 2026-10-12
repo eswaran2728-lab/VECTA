@@ -216,7 +216,7 @@ export default async function LandingPage() {
                 {activity.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No recent activity to show.</p>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Live activity stream (scrollable)">
                     <table className="w-full min-w-[560px] border-collapse text-left text-sm">
                       <thead>
                         <tr className="border-b border-border text-[10px] uppercase tracking-[0.1em] text-muted-foreground">

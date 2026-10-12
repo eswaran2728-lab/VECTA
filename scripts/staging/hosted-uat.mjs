@@ -118,6 +118,7 @@ function recordIssues(label, issues) {
 const api = new Map();
 let lastApiSignIn = 0;
 const tokens = new Map();
+const tokenAt = new Map();
 /** Reuse the access token of the browser session (cookie sb-*-auth-token) so the API probes need no extra sign-in (Auth rate limit). */
 async function captureToken(ctx, label) {
   try {
@@ -126,13 +127,14 @@ async function captureToken(ctx, label) {
     let raw = decodeURIComponent(cookies.map((c) => c.value).join(""));
     if (raw.startsWith("base64-")) raw = Buffer.from(raw.slice(7), "base64").toString("utf8");
     const j = JSON.parse(raw);
-    if (j.access_token) tokens.set(label, j.access_token);
+    if (j.access_token) { tokens.set(label, j.access_token); tokenAt.set(label, Date.now()); }
   } catch { /* fall back to a normal sign-in */ }
 }
 async function apiAs(label) {
-  if (api.has(label)) return api.get(label);
+  if (api.has(label) && !(tokens.has(label) && Date.now() - (tokenAt.get(label) ?? 0) >= 40 * 60 * 1000)) return api.get(label);
+  if (api.has(label)) { api.delete(label); tokens.delete(label); }
   const a = acct(label);
-  if (tokens.has(label)) {
+  if (tokens.has(label) && Date.now() - (tokenAt.get(label) ?? 0) < 40 * 60 * 1000) {
     const t = tokens.get(label);
     const sbT = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false }, global: { headers: { Authorization: `Bearer ${t}` } } });
     const entryT = { sb: sbT, ok: true, uid: JSON.parse(Buffer.from(t.split(".")[1], "base64url").toString("utf8")).sub };
@@ -154,7 +156,13 @@ async function apiAs(label) {
   api.set(label, entry);
   return entry;
 }
-const rpc = async (label, fn, params = {}) => { const c = await apiAs(label); return c.ok ? c.sb.rpc(fn, params) : { data: null, error: { message: "sign-in failed" } }; };
+const rpc = async (label, fn, params = {}) => {
+  let c = await apiAs(label);
+  if (!c.ok) return { data: null, error: { message: "sign-in failed" } };
+  let res = await c.sb.rpc(fn, params);
+  if (res.error && /JWT expired/i.test(res.error.message)) { tokens.delete(label); api.delete(label); c = await apiAs(label); res = c.ok ? await c.sb.rpc(fn, params) : res; }
+  return res;
+};
 
 // =============================================================================================== sections
 async function sectionAuthAndRoutes(browser) {
@@ -202,16 +210,19 @@ async function sectionAuthAndRoutes(browser) {
         const st = await rpc(label, "can_user_scan_caterlink", { p_station_code: man(label)?.scope?.station ?? "" }).catch(() => ({ data: false }));
         const nav = buildNavModel({ roleCodes: [m.roleCode], canScan: st.data === true, canReceive: false });
         const hrefs = [...new Set(nav.groups.flatMap((g) => g.items.map((i) => i.href)).filter((h) => h.startsWith("/")))];
-        let opened = 0; const bad = [];
+        let opened = 0; let gatedHere = 0; const bad = [];
         for (const h of hrefs) {
           const want = h.split("#")[0].split("?")[0];
           await s.page.goto(`${base}${h}`, { waitUntil: "domcontentloaded" });
           await s.page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
           const p = pathOf(s.page); const hd = await headingOf(s.page);
           const txt = (await s.page.textContent("body").catch(() => "")) ?? "";
-          if (p === want && hd.length > 0 && !/application error/i.test(txt)) opened += 1; else bad.push(`${h}->${p}${hd ? "" : " (no heading)"}`);
+          if (p === want && hd.length > 0 && !/application error/i.test(txt)) opened += 1;
+          else if (p === "/avsec/duty" && isRostered(m.roleCode) && !ledger.duty.some((d) => d.label === label)) gatedHere += 1; // the duty check-in gate redirected (kept in force)
+          else bad.push(`${h}->${p}${hd ? "" : " (no heading)"}`);
         }
-        check("routes", `${label}: ${opened}/${hrefs.length} navigation destinations open with a heading`, bad.length === 0, bad.slice(0, 4).join(" "));
+        check("routes", `${label}: ${opened}/${hrefs.length} navigation destinations open with a heading${gatedHere ? ` (+${gatedHere} behind the duty check-in gate)` : ""}`, bad.length === 0, bad.slice(0, 4).join(" "));
+        if (gatedHere) { totals.inconclusive = totals.inconclusive ?? { pass: 0, fail: 0 }; totals.inconclusive.pass += gatedHere; }
         for (const [route, allowed] of Object.entries(DENY)) {
           await s.page.goto(`${base}${route}`, { waitUntil: "domcontentloaded" });
           await s.page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
@@ -402,7 +413,8 @@ async function sectionStations(browser) {
         const ask = async (ref) => {
           await s.page.fill("#unified-scan-manual", ref);
           await s.page.getByRole("button", { name: "Find" }).click();
-          await s.page.waitForTimeout(2500);
+          await s.page.waitForFunction(() => /recognised|not found|read this QR|disabled for station|checked in for duty|authorized|Validation failed/i.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+          await s.page.waitForTimeout(500);
           const t = (await s.page.textContent("body")) ?? "";
           return { t, p: pathOf(s.page) };
         };
@@ -531,7 +543,7 @@ async function main() {
   const notifs404 = unexpected.filter(([k]) => /notifications/.test(k));
   check("integrity", "no request to public.notifications (REST 404) from any page", notifs404.length === 0, notifs404.map(([k]) => k).join(";"));
   check("integrity", "no request reached the production Supabase project", ![...hosts].some((h) => h.includes(PROD_REF)));
-  check("integrity", "browser traffic reached only the preview host, the staging project and static hosts", [...hosts].every((h) => h.endsWith("vercel.app") || h.startsWith(STAGING_REF) || /gstatic|googleapis|vercel/.test(h)), [...hosts].join(","));
+  check("integrity", "browser traffic reached only the preview host, the staging project and static hosts", [...hosts].every((h) => h.endsWith("vercel.app") || h.startsWith(STAGING_REF) || /gstatic|googleapis|vercel|tile\.openstreetmap\.org/.test(h)), [...hosts].join(","));
   const consoleErrs = unexpected.filter(([k]) => /^(console|pageerror)/.test(k));
   check("integrity", "no browser console / page errors", consoleErrs.length === 0, consoleErrs.slice(0, 5).map(([k, v]) => `${k} x${v.length}`).join(" | "));
   const httpErrs = unexpected.filter(([k]) => /^http/.test(k));

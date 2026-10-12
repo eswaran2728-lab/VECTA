@@ -62,7 +62,7 @@ export default async function DutyPage() {
         </div>
         <Link
           href="/avsec/duty/handover"
-          className="block rounded-full border border-primary/50 bg-primary/5 px-4 py-2.5 text-center font-mono text-[11px] font-bold uppercase tracking-[0.06em] text-primary transition-colors hover:bg-primary/10"
+          className="block rounded-full border border-primary/50 bg-primary/5 px-4 py-2.5 text-center font-mono text-[11px] font-bold uppercase tracking-[0.06em] text-foreground transition-colors hover:bg-primary/10"
         >
           Shift Handover →
         </Link>

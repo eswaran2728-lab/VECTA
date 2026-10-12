@@ -340,7 +340,7 @@ export function CheckInScreen({
 
   if (!roster) {
     return (
-      <div className="vecta-panel border-brand/40 bg-brand/10 px-5 py-4 text-sm font-medium text-brand">
+      <div className="vecta-panel border-brand/40 bg-brand/10 px-5 py-4 text-sm font-medium text-foreground">
         No roster set for today — contact your supervisor.
       </div>
     );

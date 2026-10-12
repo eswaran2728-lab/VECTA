@@ -77,7 +77,7 @@ export function CaterLinkShell({
         <div className="flex items-center gap-1">
           {languageToggle}
           <form action={signOutAction}>
-            <button type="submit" aria-label="Sign out" className="inline-flex items-center gap-1 rounded-lg px-2 py-2 text-xs font-medium text-muted-foreground hover:bg-muted">
+            <button type="submit" aria-label="Sign out" className="inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 py-2 text-xs font-medium text-muted-foreground hover:bg-muted">
               <LogOut className="h-4 w-4" aria-hidden />
               Sign out
             </button>

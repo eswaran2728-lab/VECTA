@@ -130,7 +130,7 @@ export function TeamBottomNav({
               href={tab.href}
               aria-current={active ? "page" : undefined}
               className={`flex min-h-[52px] flex-col items-center justify-center gap-1 px-1 py-2 text-center outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
-                active ? "bg-secondary text-primary" : "text-muted-foreground"
+                active ? "bg-secondary text-foreground" : "text-muted-foreground"
               }`}
             >
               <span
