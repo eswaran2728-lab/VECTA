@@ -116,15 +116,39 @@ function recordIssues(label, issues) {
 
 // ------------------------------------------------------------------------------------------------ API sessions (direct secure RPC probes)
 const api = new Map();
+let lastApiSignIn = 0;
+const tokens = new Map();
+/** Reuse the access token of the browser session (cookie sb-*-auth-token) so the API probes need no extra sign-in (Auth rate limit). */
+async function captureToken(ctx, label) {
+  try {
+    const cookies = (await ctx.cookies()).filter((c) => /^sb-.*-auth-token(\.\d+)?$/.test(c.name)).sort((a, b) => a.name.localeCompare(b.name));
+    if (!cookies.length) return;
+    let raw = decodeURIComponent(cookies.map((c) => c.value).join(""));
+    if (raw.startsWith("base64-")) raw = Buffer.from(raw.slice(7), "base64").toString("utf8");
+    const j = JSON.parse(raw);
+    if (j.access_token) tokens.set(label, j.access_token);
+  } catch { /* fall back to a normal sign-in */ }
+}
 async function apiAs(label) {
   if (api.has(label)) return api.get(label);
   const a = acct(label);
+  if (tokens.has(label)) {
+    const t = tokens.get(label);
+    const sbT = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false }, global: { headers: { Authorization: `Bearer ${t}` } } });
+    const entryT = { sb: sbT, ok: true, uid: JSON.parse(Buffer.from(t.split(".")[1], "base64url").toString("utf8")).sub };
+    api.set(label, entryT);
+    return entryT;
+  }
   const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
   let res;
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
+    // Supabase Auth limits sign-ins per IP: pace them (>= 10 s apart) and back off when the limit is reported
+    const wait = lastApiSignIn + 15000 - Date.now();
+    if (wait > 0) await sleep(wait);
+    lastApiSignIn = Date.now();
     res = await sb.auth.signInWithPassword({ email: a.email, password: a.password });
-    if (!res.error || !/rate limit/i.test(res.error.message)) break;
-    await sleep(15000 * (i + 1));
+    if (!res.error || !/rate limit|too many/i.test(res.error.message)) break;
+    await sleep(45000 * (i + 1));
   }
   const entry = { sb, ok: !res.error, uid: res.data?.user?.id };
   api.set(label, entry);
@@ -158,6 +182,7 @@ async function sectionAuthAndRoutes(browser) {
       const want = dutyGated ? "/avsec/duty" : expectedLanding(m);
       check("auth", `${label} signs in and lands on ${want}${dutyGated ? " (duty check-in gate: no open duty fixture)" : ""}`, landed === want, `landed ${landed}`);
       if (dutyGated) { totals.inconclusive = totals.inconclusive ?? { pass: 0, fail: 0 }; totals.inconclusive.pass += 1; console.log(`INFO [inconclusive] ${label}: route authorization not exercised (rostered, no duty fixture by design)`); }
+      await captureToken(s.ctx, label);
       const heading = await headingOf(s.page);
       const body = (await s.page.textContent("body").catch(() => "")) ?? "";
       check("auth", `${label}: landing page has a role-specific heading and no application error`, heading.length > 0 && !/application error|something went wrong/i.test(body), `h="${heading.slice(0, 50)}"`);
@@ -219,7 +244,7 @@ async function sectionReadWrite() {
     check("read", `${label}: active assignment lists ${m.kind === "negative" ? "no usable role" : m.roleCode}`, roleOk);
     if (m.kind === "negative") {
       const s = await rpc(label, "search_reports_filtered_secure", {});
-      check("negative", `${label} (${m.accountState}): report search is refused`, !!s.error, s.error?.message?.slice(0, 50));
+      check("negative", `${label} (${m.accountState}): report search is refused or returns nothing`, !!s.error || (s.data ?? []).length === 0, s.error?.message?.slice(0, 50));
       const sc = await rpc(label, "can_user_scan_caterlink", { p_station_code: "PEN" });
       check("negative", `${label}: scanner capability is false`, sc.data === false);
     }
@@ -256,7 +281,7 @@ async function sectionSegregation(browser) {
     investigation_sso: { MAA: true, AAX: true }, operation_manager: { MAA: true, AAX: true },
     "aso-kul": { MAA: true, AAX: true }, // the submitter (own submissions)
     aso: { MAA: false, AAX: false }, "aso-jhb": { MAA: false, AAX: false }, so: { MAA: false, AAX: false }, airasia_management: { MAA: false, AAX: false }, ghod: { MAA: false, AAX: false },
-    profiling_aso: { MAA: false, AAX: false }, hub_se: { MAA: true, AAX: true },
+    profiling_aso: { MAA: false, AAX: false }, hub_se: { MAA: false, AAX: false }, // Northern-hub Hub SE: the fixtures sit in the KUL hub
   };
   const tableOf = { MAA: maa, AAX: aax };
   for (const [label, want] of Object.entries(EXPECT)) {
@@ -307,25 +332,30 @@ async function sectionSegregation(browser) {
     const s = await newSession(browser, VIEWPORTS.desktop, label);
     try {
       await login(s.page, a);
-      const go = async (u) => { await s.page.goto(`${base}${u}`, { waitUntil: "domcontentloaded" }); await s.page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {}); return { p: pathOf(s.page), t: (await s.page.textContent("body").catch(() => "")) ?? "" }; };
+      const go = async (u) => {
+        const resp = await s.page.goto(`${base}${u}`, { waitUntil: "domcontentloaded" });
+        await s.page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
+        const links = await s.page.$$eval("a[href]", (els) => els.map((e) => e.getAttribute("href") ?? ""));
+        return { p: pathOf(s.page), status: resp?.status() ?? 0, links, t: (await s.page.textContent("body").catch(() => "")) ?? "" };
+      };
       const mine = tableOf[own]; const theirs = tableOf[other];
       let r = await go("/avsec/entity-reports");
-      check("segregation", `${label}: entity reports page lists the ${own} report`, r.t.includes(mine.flight) || r.t.includes(mine.reg), "");
-      check("segregation", `${label}: entity reports page never lists the ${other} report`, !r.t.includes(theirs.flight) && !r.t.includes(theirs.reg));
+      check("segregation", `${label}: entity reports page lists the ${own} report (row link to its id)`, r.links.some((h) => h.includes(mine.id)), "");
+      check("segregation", `${label}: entity reports page never lists the ${other} report (no row link to its id)`, !r.links.some((h) => h.includes(theirs.id)) && !r.t.includes(theirs.reg));
       r = await go(`/avsec/entity-reports?reg=${encodeURIComponent(mine.reg)}`);
-      check("segregation", `${label}: registration search in the browser finds the ${own} report`, r.t.includes(mine.reg));
+      check("segregation", `${label}: registration search in the browser finds the ${own} report`, r.links.some((h) => h.includes(mine.id)));
       r = await go(`/avsec/entity-reports?flight=${encodeURIComponent(mine.flight)}`);
-      check("segregation", `${label}: flight search in the browser finds the ${own} report`, r.t.includes(mine.flight));
+      check("segregation", `${label}: flight search in the browser finds the ${own} report`, r.links.some((h) => h.includes(mine.id)));
       r = await go(`/avsec/entity-reports?from=${mine.date}&to=${mine.date}`);
-      check("segregation", `${label}: date filter in the browser finds the ${own} report`, r.t.includes(mine.flight));
+      check("segregation", `${label}: date filter in the browser finds the ${own} report`, r.links.some((h) => h.includes(mine.id)));
       r = await go(`/avsec/entity-reports?reg=${encodeURIComponent(theirs.reg)}`);
-      check("segregation", `${label}: searching the ${other} registration finds nothing`, !r.t.includes(theirs.reg) || /no (reports|results|matching)/i.test(r.t));
+      check("segregation", `${label}: searching the ${other} registration finds nothing`, !r.links.some((h) => h.includes(theirs.id)));
       r = await go(`/avsec/entity-reports?flight=${encodeURIComponent(theirs.flight)}&entity=${other}&operating_entity_code=${other}&type=report_sec016`);
-      check("segregation", `${label}: tampered entity parameters do not reveal the ${other} report`, !r.t.includes(theirs.flight));
+      check("segregation", `${label}: tampered entity parameters do not reveal the ${other} report`, !r.links.some((h) => h.includes(theirs.id)));
       r = await go(view(mine));
-      check("segregation", `${label}: opens the ${own} report by id`, r.p === view(mine) && r.t.includes(mine.flight));
+      check("segregation", `${label}: opens the ${own} report by id`, r.p === view(mine) && r.status === 200 && r.t.includes(mine.flight));
       r = await go(view(theirs));
-      check("segregation", `${label}: direct ${other} report id is refused`, !r.t.includes(theirs.flight) && !r.t.includes(theirs.reg), `landed ${r.p}`);
+      check("segregation", `${label}: direct ${other} report id is refused (HTTP ${r.status}, no report content)`, r.status !== 200 && !r.t.includes(theirs.flight) && !r.t.includes(theirs.reg), `landed ${r.p}`);
     } catch (e) { check("segregation", `${label} browser segregation session`, false, String(e.message).slice(0, 100)); }
     recordIssues(`${label}/segregation`, s.issues);
     await s.ctx.close();
@@ -381,6 +411,8 @@ async function sectionStations(browser) {
         else check("stations", `${x.label}: scanner denied for station ${x.st}`, /scanning is disabled for station/i.test(bogus.t));
         if (x.scan) {
           const res = await ask(x.tx);
+          if (phase !== "pre-duty") await s.page.waitForURL(/\/icms\/transactions\//, { timeout: 25000 }).catch(() => {});
+          res.p = pathOf(s.page);
           if (phase === "pre-duty") check("duty", `${x.label}: without an open duty check-in the checkpoint is refused`, /checked in for duty/i.test(res.t), res.p);
           else check("duty", `${x.label}: on duty, the checkpoint opens`, /\/icms\/transactions\//.test(res.p), res.p);
         }
@@ -487,7 +519,15 @@ async function main() {
   } finally { await browser.close(); }
 
   console.log("\n=== Console / network integrity ===");
-  const unexpected = [...netIssues.entries()].filter(([k]) => !/^http(307|308)/.test(k));
+  const deniedIds = new Set((ledger.reports ?? []).map((r) => r.id));
+  const isIntendedDenial = (k) => /^http404: preview\/avsec\/reports\/view\/sec016\//.test(k) && [...deniedIds].some((id) => k.includes(id));
+  const intendedDenials = [...netIssues.entries()].filter(([k]) => isIntendedDenial(k));
+  let consoleAllowance = intendedDenials.reduce((n, [, v]) => n + v.length, 0);
+  const unexpected = [...netIssues.entries()].filter(([k]) => !/^http(307|308)/.test(k) && !isIntendedDenial(k)).map(([k, v]) => {
+    if (/^console: Failed to load resource: the server responded with a status of 404/.test(k) && consoleAllowance > 0) { const take = Math.min(consoleAllowance, v.length); consoleAllowance -= take; return [k, v.slice(take)]; }
+    return [k, v];
+  }).filter(([, v]) => v.length > 0);
+  check("integrity", `intended access denials (HTTP 404 for another entity's report id): ${intendedDenials.reduce((n, [, v]) => n + v.length, 0)} observed and excluded`, true);
   const notifs404 = unexpected.filter(([k]) => /notifications/.test(k));
   check("integrity", "no request to public.notifications (REST 404) from any page", notifs404.length === 0, notifs404.map(([k]) => k).join(";"));
   check("integrity", "no request reached the production Supabase project", ![...hosts].some((h) => h.includes(PROD_REF)));

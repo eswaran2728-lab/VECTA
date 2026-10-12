@@ -57,7 +57,7 @@ test("row mapping: entity reports link through the secure route; read state foll
 
 test("header touch targets are at least 44x44 on mobile and keep their desktop size", () => {
   const header = read("components/layout/UnifiedHeader.tsx");
-  assert.match(header, /min-h-\[44px\] min-w-\[44px\][^"]*sm:min-h-0 sm:min-w-0/);
+  assert.match(header, /min-h-\[44px\] min-w-\[44px\][^"]*sm:min-h-\[28px\] sm:min-w-0/);
   assert.match(header, /Link href=\{homeHref\} className="flex min-h-\[44px\][^"]*sm:min-h-0/);
   assert.match(read("components/layout/ThemeToggle.tsx"), /h-11 w-11[^"]*sm:h-9 sm:w-9/);
   assert.match(BELL, /h-11 w-11[^"]*sm:h-9 sm:w-9/);
@@ -106,4 +106,13 @@ test("every AVSEC page the hosted UAT reached has a page heading (h1 or h2) in i
   for (const f of ["duty/page.tsx", "duty/zones/page.tsx", "duty/timesheet/page.tsx", "scan/page.tsx", "bay-board/page.tsx", "profile/page.tsx"]) {
     assert.match(read(`app/(avsec)/avsec/${f}`), /<h1[\s>]/, f);
   }
+});
+
+test("accessibility fixes found by axe-core and the target-size audit", () => {
+  assert.match(read("components/layout/TransactionStageBar.tsx"), /role="img" aria-label=\{`Stage: \$\{status\}`\}/);
+  const side = read("components/layout/AppSidebar.tsx");
+  assert.match(side, /min-h-\[28px\] items-center gap-1\.5 text-\[11\.5px\]/);
+  assert.match(side, /min-h-\[28px\] items-center gap-1 text-\[11px\]/);
+  assert.match(side, /text-\[9px\] font-bold text-foreground/);
+  assert.match(read("components/dashboard/EntityDashboard.tsx"), /inline-flex min-h-\[24px\] items-center font-mono text-xs text-primary/);
 });

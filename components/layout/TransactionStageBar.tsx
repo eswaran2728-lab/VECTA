@@ -29,7 +29,7 @@ export function TransactionStageBar({ status }: { status: TransactionStatus }) {
   const currentIndex = STEP_ORDER.indexOf(effective);
 
   return (
-    <span className="inline-flex items-center gap-[3px]" aria-label={`Stage: ${status}`}>
+    <span className="inline-flex items-center gap-[3px]" role="img" aria-label={`Stage: ${status}`}>
       {STEP_ORDER.map((step, i) => (
         <span
           key={step}

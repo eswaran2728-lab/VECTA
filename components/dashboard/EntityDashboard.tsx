@@ -52,7 +52,7 @@ export async function EntityDashboard({ context }: { context: RoleAssignmentCont
             <StatTile key={r.sourceTable} label={r.label} value={r.total} />
           ))}
         </div>
-        <Link href="/avsec/entity-reports" className="font-mono text-xs text-primary">
+        <Link href="/avsec/entity-reports" className="inline-flex min-h-[24px] items-center font-mono text-xs text-primary">
           Search and open reports →
         </Link>
       </DashboardCard>

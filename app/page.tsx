@@ -317,7 +317,7 @@ export default async function LandingPage() {
                   <div className="mb-3 flex items-center justify-between">
                     <p className="vecta-eyebrow">File Reports</p>
                     {showReports && (
-                      <Link href="/avsec/history" className="font-mono text-[10px] uppercase tracking-[0.1em] text-primary hover:underline">
+                      <Link href="/avsec/history" className="inline-flex min-h-[24px] items-center font-mono text-[10px] uppercase tracking-[0.1em] text-primary hover:underline">
                         History &rarr;
                       </Link>
                     )}

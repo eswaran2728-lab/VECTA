@@ -353,7 +353,7 @@ export function AppSidebar({
               </span>
             </div>
             {roleLabel && (
-              <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-primary border border-primary/25 shrink-0">
+              <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-foreground border border-primary/25 shrink-0">
                 {roleLabel}
               </span>
             )}
@@ -428,7 +428,7 @@ export function AppSidebar({
           <div className="flex items-center justify-between gap-2 pt-1 px-1">
             <Link
               href="/avsec/profile"
-              className="flex items-center gap-1.5 text-[11.5px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+              className="flex min-h-[28px] items-center gap-1.5 text-[11.5px] font-mono text-muted-foreground hover:text-foreground transition-colors"
             >
               <User className="h-3.5 w-3.5" />
               <span>Profile</span>
@@ -438,7 +438,7 @@ export function AppSidebar({
               <form action={signOutAction}>
                 <button
                   type="submit"
-                  className="flex items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-brand transition-colors cursor-pointer"
+                  className="flex min-h-[28px] items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-brand transition-colors cursor-pointer"
                 >
                   <LogOut className="h-3.5 w-3.5" />
                   <span>Sign out</span>

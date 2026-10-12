@@ -63,7 +63,7 @@ export function UnifiedHeader({
         <form action={signOutAction}>
           <button
             type="submit"
-            className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center px-2 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-brand sm:min-h-0 sm:min-w-0 sm:px-0"
+            className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center px-2 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-brand sm:min-h-[28px] sm:min-w-0 sm:px-0"
           >
             Sign out
           </button>
