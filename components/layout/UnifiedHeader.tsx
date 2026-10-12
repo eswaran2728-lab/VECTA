@@ -31,7 +31,7 @@ export function UnifiedHeader({
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-4 py-3 sm:px-6 sm:py-[18px]">
       <div className="flex shrink-0 items-center gap-2">
       {menu}
-      <Link href={homeHref} className="flex shrink-0 items-center gap-2.5">
+      <Link href={homeHref} className="flex min-h-[44px] shrink-0 items-center gap-2.5 sm:min-h-0">
         {isCaterLink ? (
           <>
             <span className="flex h-5 w-5 items-center justify-center rounded bg-amber-500/20 text-amber-500 font-bold text-xs">
@@ -63,7 +63,7 @@ export function UnifiedHeader({
         <form action={signOutAction}>
           <button
             type="submit"
-            className="shrink-0 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-brand"
+            className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center px-2 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-brand sm:min-h-0 sm:min-w-0 sm:px-0"
           >
             Sign out
           </button>

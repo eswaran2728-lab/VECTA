@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { PGlite } from "../supabase/tests/integration/node_modules/@electric-sql/pglite/dist/index.js";
-import { MIGRATIONS, verifyFrozenFiles } from "../scripts/staging/apply-role-workspace-migrations.mjs";
+import { verifyFrozenFiles } from "../scripts/staging/apply-role-workspace-migrations.mjs";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const MIGRATIONS_DIR = path.join(REPO_ROOT, "supabase", "migrations");
@@ -102,7 +102,7 @@ test("LOCAL REPRODUCTION: Corrected 12 migrations apply cleanly over exact stagi
       where table_schema = 'public' and table_name = 'caterlink_station_capabilities'
       and column_name in ('station_id', 'station_code');
     `);
-    const cols = colCheck.rows.map((r: any) => r.column_name);
+    const cols = colCheck.rows.map((r: { column_name: string }) => r.column_name);
     assert.ok(cols.includes("station_id"), "station_id must exist");
     assert.ok(!cols.includes("station_code"), "station_code must not exist on caterlink_station_capabilities");
 
