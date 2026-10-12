@@ -50,7 +50,8 @@ export type Direction = "OUTBOUND" | "INBOUND";
  * supabase/migrations/20260818000001_maintenance_route.sql.
  */
 export type TransactionRoute = "AIRCRAFT" | "HUB" | "REDQ" | "MAINTENANCE";
-export type HubDestination = "PEN" | "JHB" | "NILAI";
+// Keep in sync with HUB_DESTINATIONS in lib/icms/constants.ts (a compile-time check there enforces it).
+export type HubDestination = "PEN" | "JHB" | "NILAI" | "KCH" | "BKI";
 
 export type DeliveryLocation = "SRA_WAREHOUSE" | "AIRCRAFT";
 

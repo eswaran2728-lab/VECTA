@@ -10,7 +10,7 @@ import { callCaterlinkRpc } from "@/lib/caterlink/vendor";
 import { checkpointOrderError, getStep, resolveEscalatedStatus } from "@/lib/icms/workflow";
 import { generateQrToken } from "@/lib/icms/qr-token";
 import { generateCompletedFormPdf } from "@/lib/icms/completed-form-pdf";
-import { CARGO_TYPES } from "@/lib/icms/constants";
+import { CARGO_TYPES, HUB_DESTINATIONS, isHubDestination } from "@/lib/icms/constants";
 import type {
   CargoType,
   DeliveryLocation,
@@ -307,7 +307,7 @@ export async function createTransaction(
   if (route === "HUB" && !hubDestination) {
     return { error: "Select a hub destination. / Pilih destinasi hab." };
   }
-  if (route === "HUB" && !["PEN", "JHB", "NILAI"].includes(hubDestination as string)) {
+  if (route === "HUB" && !isHubDestination(hubDestination)) {
     return { error: "Invalid hub destination selected." };
   }
   if (route !== "HUB" && hubDestination) {
@@ -778,7 +778,7 @@ export async function completePartHub(
   const officerStation = officerRes.data?.station;
   if (
     officerStation &&
-    ["PEN", "JHB", "NILAI"].includes(officerStation) &&
+    (HUB_DESTINATIONS as readonly string[]).includes(officerStation) &&
     officerStation !== tx.hub_destination
   ) {
     return {

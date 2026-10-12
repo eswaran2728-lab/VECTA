@@ -85,11 +85,29 @@ export const ROUTE_LABELS: Record<TransactionRoute, string> = {
   MAINTENANCE: "GSE Workshop (Maintenance)",
 };
 
+/**
+ * The one list of Hub destinations. The Part A form, server validation and the
+ * Part Hub gate all use it. Scanning stays station-capability controlled
+ * (PEN/JHB only); KCH and BKI are destinations for final receipt.
+ */
+export const HUB_DESTINATIONS = ["PEN", "JHB", "NILAI", "KCH", "BKI"] as const satisfies readonly HubDestination[];
+
+// Compile-time guard: fails typecheck if HubDestination gains a code missing from the list.
+type _HubDestinationsExhaustive = Exclude<HubDestination, (typeof HUB_DESTINATIONS)[number]> extends never ? true : never;
+const _hubDestinationsExhaustive: _HubDestinationsExhaustive = true;
+void _hubDestinationsExhaustive;
+
+export function isHubDestination(value: unknown): value is HubDestination {
+  return typeof value === "string" && (HUB_DESTINATIONS as readonly string[]).includes(value);
+}
+
 /** Hub destinations only — REDQ is a route, not a Hub destination. */
 export const HUB_DESTINATION_LABELS: Record<HubDestination, string> = {
   PEN: "Penang (PEN)",
   JHB: "Johor Bahru (JHB)",
   NILAI: "Nilai",
+  KCH: "Kuching (KCH)",
+  BKI: "Kota Kinabalu (BKI)",
 };
 
 export const DIRECTION_LABELS: Record<Direction, string> = {

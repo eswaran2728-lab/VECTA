@@ -4,7 +4,7 @@ import { useActionState, useMemo, useState } from "react";
 import { PlaneTakeoff, PlaneLanding, Building2, Repeat } from "lucide-react";
 import { createTransaction, type ActionState } from "@/lib/icms/actions/transactions";
 import { stepsFor } from "@/lib/icms/workflow";
-import { CARGO_TYPE_LABELS, CARGO_TYPES, HUB_DESTINATION_LABELS } from "@/lib/icms/constants";
+import { CARGO_TYPE_LABELS, CARGO_TYPES, HUB_DESTINATION_LABELS, HUB_DESTINATIONS } from "@/lib/icms/constants";
 import { Button } from "@/components/icms/ui/button";
 import { Card, CardContent } from "@/components/icms/ui/card";
 import { BigCheckbox } from "@/components/icms/ui/checkbox";
@@ -109,8 +109,6 @@ const MOVEMENT_OPTIONS: {
     icon: Repeat,
   },
 ];
-
-const HUB_DESTINATIONS: HubDestination[] = ["PEN", "JHB", "NILAI"];
 
 export function PartAForm({
   picName,
