@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireRole } from "@/lib/avsec/auth";
+import { requireLegacyManagementDashboard } from "@/lib/avsec/auth";
 import { STATIONS, ORG_WIDE_ROLES, type UserRole } from "@/lib/avsec/reference-data";
 import { getLiveDutyPoints, getHistoryDutyPoints, getRostersForRange, type DutyPoint } from "@/lib/avsec/duty/heatmap-queries";
 import { getZonesForStation } from "@/lib/avsec/duty/zone-queries";
@@ -71,7 +71,7 @@ export default async function HeatmapPage({
   }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const profile = await requireRole([...ORG_WIDE_ROLES] as UserRole[]);
+  const profile = await requireLegacyManagementDashboard();
 
   const mode = searchParams.mode === "history" ? "history" : "live";
   const view = searchParams.view === "pins" ? "pins" : "heat";

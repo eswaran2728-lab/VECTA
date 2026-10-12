@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireProfile, landingPathForRole } from "@/lib/avsec/auth";
+import { requireProfile } from "@/lib/avsec/auth";
 import { resolveDashboardContext } from "@/lib/dashboard/context";
 import { ContextSelector } from "@/components/dashboard/ContextSelector";
 import { ExecutiveDashboard } from "@/components/dashboard/ExecutiveDashboard";
@@ -40,7 +40,7 @@ export default async function DashboardEntryPage({
   const { assignments, active } = await resolveDashboardContext(searchParams.context ?? null);
 
   if (assignments.length === 0) {
-    redirect(landingPathForRole(profile.role));
+    redirect("/avsec/pending-approval");
   }
 
   if (!active) {
@@ -106,5 +106,12 @@ export default async function DashboardEntryPage({
   // report's classification for exactly which roles this affects (none,
   // as of this pass, for any currently-defined Phase 3 role -- this branch
   // exists for forward compatibility with a future role_definitions row).
-  redirect(landingPathForRole(profile.role));
+  return (
+    <div className="mx-auto max-w-2xl p-4">
+      <section className="card space-y-1 p-4" role="status">
+        <h1 className="text-lg font-bold">No workspace is configured for your role</h1>
+        <p className="font-mono text-xs text-muted-foreground">Contact your administrator. Nothing else is shown until a workspace exists for this role.</p>
+      </section>
+    </div>
+  );
 }

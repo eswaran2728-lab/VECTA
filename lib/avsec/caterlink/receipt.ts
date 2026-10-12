@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireProfile } from "@/lib/avsec/auth";
 import { createClient } from "@/lib/supabase/server";
 import { uploadDataUrl } from "@/lib/icms/storage";
+import { regenerateFinalPdfAfterReceipt } from "@/lib/icms/completed-form-pdf";
 
 /**
  * BKI / KCH final-receipt workflow. Receipt only: no scanner, no stream, no Post 2 / Post 6 repetition. The station capability table
@@ -45,10 +46,12 @@ export async function listPendingReceipts(stationCode: string): Promise<{ ok: bo
 export interface ReceiptResult {
   ok: boolean;
   error: string | null;
+  /** Version of the regenerated final PDF, or null when regeneration is pending (the receipt itself is committed either way). */
+  pdfVersion?: number | null;
 }
 
 export async function confirmFinalReceipt(formData: FormData): Promise<ReceiptResult> {
-  await requireProfile();
+  const profile = await requireProfile();
   const transactionId = String(formData.get("transactionId") || "");
   const station = String(formData.get("station") || "");
   const signature = String(formData.get("signature") || "");
@@ -88,6 +91,9 @@ export async function confirmFinalReceipt(formData: FormData): Promise<ReceiptRe
   });
   if (error) return { ok: false, error: error.message };
 
+  // The completed form now has its receipt part: regenerate the final PDF as a NEW VERSION (best effort; the receipt is already committed).
+  const pdf = await regenerateFinalPdfAfterReceipt(transactionId, profile.id);
+
   revalidatePath("/avsec/caterlink/receipt");
-  return { ok: true, error: null };
+  return { ok: true, error: null, pdfVersion: pdf.ok ? pdf.version : null };
 }

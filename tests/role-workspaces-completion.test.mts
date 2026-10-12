@@ -52,7 +52,10 @@ test("report forms: one DB-backed resolver; pages, list and actions all use it; 
   assert.doesNotMatch(actions, /canCreateReport\(/);
   assert.match(read("app/(avsec)/avsec/home/page.tsx"), /getAllowedReportForms\(\)/);
   // seeds == documented defaults
-  assert.match(MIG, /'aso', null, null, f,/);
+  // ASO: one explicit row per ACTIVE STATION and form -- never an all-station row
+  assert.match(MIG, /select 'aso', s\.code, null, f,/);
+  assert.match(MIG, /cross join unnest/);
+  assert.doesNotMatch(MIG, /'aso', null, null, f,/);
   assert.match(MIG, /unnest\(array\['sec016', 'sec014', 'sec029', 'sec018', 'sec033', 'offload'\]\)/);
   assert.match(MIG, /\('profiling_aso', null, null, 'sec013'/);
   const staticDefaults = Object.fromEntries(Object.entries(ROLE_CAPABILITIES).filter(([, c]) => c.reportForms.length).map(([k, c]) => [k, [...c.reportForms].sort().join(",")]));

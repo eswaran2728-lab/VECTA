@@ -303,7 +303,8 @@ test("closure: dashboard-link target pages are gated through requireRouteAccess 
     "/avsec/enforcement/search": "app/(avsec)/avsec/enforcement/search/page.tsx",
     "/avsec/duty": "app/(avsec)/avsec/duty/page.tsx",
     "/avsec/reports/sec013": "app/(avsec)/avsec/reports/sec013/page.tsx",
-    "/avsec/dashboard": "app/(avsec)/avsec/dashboard/page.tsx",
   };
   for (const [href, file] of Object.entries(pages)) assert.ok(read(file).includes(`requireRouteAccess("${href}"`), file);
+  // the legacy generic dashboard is closed to every role but Operation Manager (see tests/legacy-dashboard-closure.test.mts)
+  assert.ok(read("app/(avsec)/avsec/dashboard/page.tsx").includes("requireLegacyManagementDashboard("));
 });

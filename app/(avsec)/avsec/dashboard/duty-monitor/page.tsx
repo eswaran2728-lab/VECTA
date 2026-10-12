@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireRole } from "@/lib/avsec/auth";
+import { requireLegacyManagementDashboard } from "@/lib/avsec/auth";
 import { STATIONS, ORG_WIDE_ROLES, type UserRole } from "@/lib/avsec/reference-data";
 import { getDutyMonitorRows, type DutyMonitorRow } from "@/lib/avsec/duty/monitor-queries";
 import { getStationTeams } from "@/lib/avsec/duty/roster-queries";
@@ -32,7 +32,7 @@ export default async function DutyMonitorPage({
   searchParams: Promise<{ station?: string; team?: string; date?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const profile = await requireRole([...ORG_WIDE_ROLES] as UserRole[]);
+  const profile = await requireLegacyManagementDashboard();
 
   const station = searchParams.station || profile.station || STATIONS[0];
   const today = todayISODateMY();

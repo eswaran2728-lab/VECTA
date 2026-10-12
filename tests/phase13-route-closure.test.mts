@@ -32,6 +32,7 @@ const GATE_MARKERS = [
   "requireAttendanceProfile(",
   "requireReportFormAccess(", // report forms: requireProfile() + the person's assigned form (report_form_assignments) // duty / leave / overtime surface: requireProfile() that also denies non-rostered leadership
   "requirePhase8Role(",
+  "requireLegacyManagementDashboard(", // legacy generic dashboard family: Operation Manager only, everyone else is sent to their own workspace
   "isSuperAdmin(",
   "redirect(\"/login\")",
   "redirect('/login')",

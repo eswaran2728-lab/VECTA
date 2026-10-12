@@ -18,8 +18,17 @@ import type {
   Transaction,
 } from "@/lib/icms/database.types";
 
-async function signatureBytes(path: string | null): Promise<Buffer | null> {
-  const url = await signedUrl("signatures", path);
+type DbClient = Awaited<ReturnType<typeof createClient>>;
+
+async function signatureBytes(path: string | null, client?: DbClient): Promise<Buffer | null> {
+  // With an explicit (service-role) client the signature is fetched with it; otherwise with the caller's own session.
+  let url: string | null = null;
+  if (client && path) {
+    const { data } = await client.storage.from("signatures").createSignedUrl(path, 60);
+    url = data?.signedUrl ?? null;
+  } else {
+    url = await signedUrl("signatures", path);
+  }
   if (!url) return null;
   try {
     const res = await fetch(url);
@@ -483,27 +492,37 @@ async function overlayHub(
  * workflow) and instead overlays onto the vendor Supplies Security Form
  * template (see overlayHub above).
  */
-export async function generateCompletedFormPdf(transactionId: string): Promise<void> {
-  try {
-    const supabase = await createClient();
+/**
+ * Renders the completed-form PDF for a COMPLETED transaction. `client` decides whose permissions read the parts and the signatures:
+ * the caller's session for the legacy flow, a service-role client for the post-receipt regeneration (the receiver may not be able to
+ * read every earlier checkpoint's signature). The Hub/receipt part is read from the canonical caterlink_checkpoint_hub table (the
+ * legacy part_hub name no longer exists after Phase 9), falling back to part_hub where an old database still has it.
+ */
+async function renderCompletedFormPdf(client: DbClient, transactionId: string, serviceRole = false): Promise<{ bytes: Buffer; transactionNumber: string } | null> {
+  {
+    const supabase = client;
     const { data: txRow } = await supabase.from("transactions").select("*").eq("id", transactionId).single();
-    if (!txRow) return;
+    if (!txRow) return null;
     const transaction = txRow as Transaction;
-    if (transaction.status !== "COMPLETED") return;
+    if (transaction.status !== "COMPLETED") return null;
 
     const [partARes, partBRes, partCRes, partDRes, partHubRes, sealsRes] = await Promise.all([
       supabase.from("part_a").select("*").eq("transaction_id", transactionId).maybeSingle(),
       supabase.from("part_b").select("*").eq("transaction_id", transactionId).maybeSingle(),
       supabase.from("part_c").select("*").eq("transaction_id", transactionId).maybeSingle(),
       supabase.from("part_d").select("*").eq("transaction_id", transactionId).maybeSingle(),
-      supabase.from("part_hub").select("*").eq("transaction_id", transactionId).maybeSingle(),
+      supabase.from("caterlink_checkpoint_hub" as never).select("*").eq("transaction_id", transactionId).maybeSingle(),
       supabase.from("seals").select("*").eq("transaction_id", transactionId),
     ]);
     const partA = partARes.data as PartA | null;
     const partB = partBRes.data as PartBC | null;
     const partC = partCRes.data as PartBC | null;
     const partD = partDRes.data as PartD | null;
-    const partHub = partHubRes.data as PartHub | null;
+    let partHub = partHubRes.data as PartHub | null;
+    if (!partHub) {
+      const legacy = await supabase.from("part_hub").select("*").eq("transaction_id", transactionId).maybeSingle();
+      partHub = (legacy.data as PartHub | null) ?? null;
+    }
     const seals = (sealsRes.data ?? []) as Seal[];
 
     const sealIds = seals.map((s) => s.id);
@@ -514,11 +533,11 @@ export async function generateCompletedFormPdf(transactionId: string): Promise<v
       : [];
 
     const [sigA, sigB, sigC, sigD, sigHub] = await Promise.all([
-      signatureBytes(partA?.signature_url ?? null),
-      signatureBytes(partB?.signature_url ?? null),
-      signatureBytes(partC?.signature_url ?? null),
-      signatureBytes(partD?.signature_url ?? null),
-      signatureBytes(partHub?.signature_url ?? null),
+      signatureBytes(partA?.signature_url ?? null, serviceRole ? client : undefined),
+      signatureBytes(partB?.signature_url ?? null, serviceRole ? client : undefined),
+      signatureBytes(partC?.signature_url ?? null, serviceRole ? client : undefined),
+      signatureBytes(partD?.signature_url ?? null, serviceRole ? client : undefined),
+      signatureBytes(partHub?.signature_url ?? null, serviceRole ? client : undefined),
     ]);
 
     const pdfBytes =
@@ -534,9 +553,17 @@ export async function generateCompletedFormPdf(transactionId: string): Promise<v
             part_c: sigC,
             part_d: sigD,
           });
-    const bytes = Buffer.from(pdfBytes);
+    return { bytes: Buffer.from(pdfBytes), transactionNumber: transaction.transaction_number };
+  }
+}
 
-    const path = await uploadPdfBuffer("completed-forms", bytes, transaction.transaction_number);
+export async function generateCompletedFormPdf(transactionId: string): Promise<void> {
+  try {
+    const supabase = await createClient();
+    const rendered = await renderCompletedFormPdf(supabase, transactionId);
+    if (!rendered) return;
+    const bytes = rendered.bytes;
+    const path = await uploadPdfBuffer("completed-forms", bytes, rendered.transactionNumber);
 
     // No RLS UPDATE policy exists for regular authenticated users on
     // transactions (writes go through triggers/RPCs) — use the service
@@ -556,5 +583,33 @@ export async function generateCompletedFormPdf(transactionId: string): Promise<v
     }
   } catch (e) {
     console.error("[completed-form-pdf] generation failed for", transactionId, e);
+  }
+}
+
+/**
+ * After a BKI / KCH final receipt the completed form gains its receipt part, so the final PDF is regenerated as a NEW VERSION: the
+ * bytes go to the private caterlink-final-pdfs bucket at <transaction>/<sha256>.pdf and record_caterlink_receipt_pdf_version()
+ * (service-role only) supersedes -- never overwrites -- the previous current version, idempotently by content hash. Best effort: a
+ * failure is logged and never undoes the receipt (the receipt is already committed and audited).
+ */
+export async function regenerateFinalPdfAfterReceipt(transactionId: string, receiverId: string): Promise<{ ok: boolean; version: number | null; error: string | null }> {
+  try {
+    const admin = createAdminClient();
+    const rendered = await renderCompletedFormPdf(admin as unknown as DbClient, transactionId, true);
+    if (!rendered) return { ok: false, version: null, error: "The transaction is not completed." };
+    const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(rendered.bytes));
+    const hash = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    const storagePath = `${transactionId}/${hash}.pdf`;
+    const { error: uploadError } = await admin.storage.from("caterlink-final-pdfs").upload(storagePath, new Uint8Array(rendered.bytes), { contentType: "application/pdf", upsert: false });
+    if (uploadError && !/already exists|duplicate/i.test(uploadError.message)) return { ok: false, version: null, error: `Upload failed: ${uploadError.message}` };
+    const { data, error } = await (admin.rpc as unknown as (n: string, a: Record<string, unknown>) => Promise<{ data: Array<{ version: number }> | null; error: { message: string } | null }>)(
+      "record_caterlink_receipt_pdf_version",
+      { p_transaction_id: transactionId, p_storage_path: storagePath, p_content_hash: hash, p_size_bytes: rendered.bytes.length, p_receiver: receiverId },
+    );
+    if (error) return { ok: false, version: null, error: error.message };
+    return { ok: true, version: data?.[0]?.version ?? null, error: null };
+  } catch (e) {
+    console.error("[completed-form-pdf] post-receipt regeneration failed for", transactionId, e);
+    return { ok: false, version: null, error: e instanceof Error ? e.message : "regeneration failed" };
   }
 }

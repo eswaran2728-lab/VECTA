@@ -134,6 +134,18 @@ export async function requireRole(roles: UserRole[]): Promise<Profile> {
   return profile;
 }
 
+/** The ONLY canonical role that may open the legacy generic management dashboard family (/avsec/dashboard, its heatmap and duty
+ *  monitor). Every other role has its own workspace (/avsec/my-dashboard) -- including Main Enforcement, SO, DSE, Hub SE and the
+ *  entity leaders -- and is sent there. Unknown roles are denied too (fail closed). */
+export const LEGACY_MANAGEMENT_DASHBOARD_ROLE_CODES: readonly string[] = ["operation_manager"];
+
+export async function requireLegacyManagementDashboard(): Promise<Profile> {
+  const profile = await requireProfile();
+  const roles = (profile.canonical as CanonicalAccess).roleCodes;
+  if (!roles.some((c) => LEGACY_MANAGEMENT_DASHBOARD_ROLE_CODES.includes(c))) redirect("/avsec/my-dashboard");
+  return profile;
+}
+
 /** requireProfile() for the attendance surface (Duty Terminal, Check In/Out, Leave, Overtime, Timesheet, handover, zones): non-rostered
  *  leadership (MAA/AAX Boss and Admin, AirAsia Management, GHOD, Global Reporting Controller) is sent to its own dashboard. */
 export async function requireAttendanceProfile(): Promise<Profile> {

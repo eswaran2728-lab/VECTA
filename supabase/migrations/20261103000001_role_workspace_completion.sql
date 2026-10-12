@@ -80,12 +80,15 @@ revoke all on public.report_form_assignments from public, anon, authenticated;
 grant all on public.report_form_assignments to service_role;
 
 -- Explicit operational defaults (the mapping is documented in docs/dashboard-review/role-workspace-correction.md):
---   standard ASO (every station): SEC016, SEC014, SEC029, SEC018, SEC033 and Offload
+--   standard ASO: SEC016, SEC014, SEC029, SEC018, SEC033 and Offload -- ONE ROW PER ACTIVE STATION AND FORM (there is no all-station
+--   row), so each station/form pair can be revoked individually and a station added later gets no form until one is assigned
 --   Profiling ASO: SEC013 only
 -- Nothing is seeded for SO, SSO, DSE, Hub SE, SAT, Profiling SO, leadership, enforcement or Investigation.
 insert into public.report_form_assignments (role_code, station_code, profile_id, form_type, note)
-select 'aso', null, null, f, 'explicit operational default (station-wide); narrow by adding station rows and revoking this one'
-from unnest(array['sec016', 'sec014', 'sec029', 'sec018', 'sec033', 'offload']) as f
+select 'aso', s.code, null, f, 'explicit operational default for this station; revoke the row to narrow'
+from public.org_stations s
+cross join unnest(array['sec016', 'sec014', 'sec029', 'sec018', 'sec033', 'offload']) as f
+where s.is_active
 on conflict on constraint report_form_assignments_unique do nothing;
 insert into public.report_form_assignments (role_code, station_code, profile_id, form_type, note)
 values ('profiling_aso', null, null, 'sec013', 'explicit operational default: SEC013 is the only form of the Profiling ASO')

@@ -21,5 +21,5 @@ export async function requirePhase8Role(roleCodes: string[]) {
     }
   }
 
-  redirect("/avsec/dashboard");
+  redirect("/avsec/my-dashboard");
 }

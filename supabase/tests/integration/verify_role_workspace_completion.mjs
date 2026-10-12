@@ -121,9 +121,12 @@ async function main() {
     assert(await forms(u) === '', `${lbl}: no report form is assigned`);
   }
   const profilingAso = (await one("select 1 as x"))?.x; void profilingAso;
-  // station-narrowed assignment: revoke the all-station Offload and grant it at KUL only
-  await db.query("update public.report_form_assignments set revoked_at = now() where role_code = 'aso' and form_type = 'offload' and station_code is null;");
-  await db.query("insert into public.report_form_assignments (role_code, station_code, form_type, note) values ('aso', 'KUL - MAA', 'offload', 'KUL only');");
+  // narrowed by station: the seed is ONE ROW PER ACTIVE STATION AND FORM (no all-station row); revoking BKI's Offload row narrows only BKI
+  assert((await one("select count(*)::int n from public.report_form_assignments where role_code = 'aso' and station_code is null;")).n === 0, 'no all-station ASO row exists: every ASO assignment is station-specific');
+  const seeded = (await one("select count(*)::int n from public.report_form_assignments a join public.org_stations s on s.code = a.station_code and s.is_active where a.role_code = 'aso' and a.revoked_at is null;")).n;
+  const stationsActive = (await one("select count(*)::int n from public.org_stations where is_active;")).n;
+  assert(seeded === stationsActive * 6, `six explicit rows per active station (${seeded} = ${stationsActive} x 6)`);
+  await db.query("update public.report_form_assignments set revoked_at = now() where role_code = 'aso' and form_type = 'offload' and station_code = 'BKI';");
   assert((await forms(asoKul)).includes('offload') && !(await forms(asoBki)).includes('offload'), 'Offload follows the station assignment (KUL yes, BKI no)');
   const noForm = await denied(soKul, "insert into public.report_sec016 (profile_id) values ($1);", [soKul]);
   assert(noForm !== null && /does not include the sec016/i.test(noForm), 'SO cannot insert a SEC016 (trigger refusal)');
@@ -290,6 +293,74 @@ async function main() {
   await db.query("update public.report_access_grants set expires_at = now() - interval '1 minute', starts_at = now() - interval '3 days' where id = $1;", [grant]);
   assert((await ok(ghod, "select * from public.get_report_by_source_secure('report_sec016', $1, null);", [rep])).ok === false, 'after expiry the access ends');
   assert((await asUser(ghod, "select * from public.list_my_report_access_requests_secure();"))[0].grant_state === 'expired', 'the requester sees the grant as expired');
+
+
+  // ---------- 8. KCH / BKI are valid HUB destinations; PEN / JHB / NILAI unchanged; BTU and KUL are not destinations
+  async function insertTx(label, route, hubDest, status, dest = null) {
+    const id = nextId();
+    await db.query('reset role;');
+    await db.query('set session_replication_role = replica;');
+    let err = null;
+    await db.query('savepoint h');
+    try {
+      await db.query(`insert into public.transactions (id, transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, seal_number, status, route, hub_destination, origin_station_id, destination_station_id, flight_number, created_by)
+        values ($1,$2,$3,'OUTBOUND','WXX2','Driver','D2','S-200',$4,$5,$6,$7,$8,'AK703',$9);`, [id, `TX-HUB-${label}`, myAoc, status, route, hubDest, kul.id, dest, asoKul]);
+      await db.query('release savepoint h');
+    } catch (e) { err = e.message; await db.query('rollback to savepoint h'); }
+    await db.query('set session_replication_role = origin;');
+    await sup();
+    return { id, err };
+  }
+  const hubTx = {};
+  for (const d of ['PEN', 'JHB', 'NILAI', 'KCH', 'BKI']) {
+    const r = await insertTx(d, 'HUB', d, 'INFLIGHT_POST_APPROVED');
+    hubTx[d] = r.id;
+    assert(r.err === null, `${d} is a valid HUB destination`);
+  }
+  for (const d of ['KUL', 'BTU', 'XXX']) {
+    const r = await insertTx(`bad${d}`, 'HUB', d, 'CREATED');
+    assert(r.err !== null && /hub_destination_check/.test(r.err), `${d} is NOT a valid HUB destination`);
+  }
+  const cons = (await rows("select pg_get_constraintdef(oid) d from pg_constraint where conrelid = 'public.transactions'::regclass and conname = 'transactions_hub_destination_check';"))[0]?.d ?? '';
+  assert(['PEN', 'JHB', 'NILAI', 'KCH', 'BKI'].every((c) => cons.includes(`'${c}'`)), 'the transactions constraint lists exactly the five destinations');
+  const cap = async (u, fn, st) => (await asUser(u, `select public.${fn}($1) v;`, [st]))[0].v;
+  assert(await cap(asoPen, 'can_user_scan_caterlink', 'PEN') === true, 'PEN keeps its scanner');
+  assert(await cap(asoBki, 'can_user_scan_caterlink', 'BKI') === false && await cap(asoKch, 'can_user_scan_caterlink', 'KCH') === false, 'KCH and BKI have NO scanner');
+  assert(await cap(asoBtu, 'can_user_scan_caterlink', 'BTU') === false && await cap(asoBtu, 'can_user_confirm_caterlink_receipt', 'BTU') === false, 'BTU has no CaterLink capability at all');
+  assert(await cap(asoBki, 'can_user_confirm_caterlink_receipt', 'BKI') === true && await cap(asoKch, 'can_user_confirm_caterlink_receipt', 'KCH') === true, 'KCH and BKI have final receipt');
+  const listBki = await asUser(asoBki, "select * from public.list_caterlink_pending_receipts_secure('BKI');");
+  assert(listBki.some((r) => r.transaction_number === 'TX-HUB-BKI'), 'a HUB movement destined for BKI (post-approved) is listed for the BKI receipt');
+  assert(!listBki.some((r) => r.transaction_number === 'TX-HUB-KCH'), 'a KCH-destined movement is not listed at BKI');
+  const early = await insertTx('earlyBKI', 'HUB', 'BKI', 'CREATED');
+  const listBki2 = await asUser(asoBki, "select * from public.list_caterlink_pending_receipts_secure('BKI');");
+  assert(early.err === null && !listBki2.some((r) => r.transaction_number === 'TX-HUB-earlyBKI'), 'a HUB movement not yet through the In-flight Post is NOT offered for receipt (no step is skipped)');
+  assert((await ok(asoBki, "select * from public.confirm_caterlink_destination_receipt_secure($1, 'BKI', 's.png', null);", [early.id])).ok === false, 'receipt cannot be confirmed before the In-flight Post approval');
+
+  // ---------- 9. final PDF re-versioned after the receipt (service role only, receiver bound, idempotent, supersedes)
+  const done = await insertTx('pdfdone', 'HUB', 'BKI', 'COMPLETED');
+  await db.query('reset role;');
+  await db.query('set session_replication_role = replica;');
+  await db.query("insert into public.caterlink_checkpoint_hub (transaction_id, confirmed_destination, hub_avsec_name, hub_avsec_staff_id, signature_url, completed_by) values ($1,'BKI','RC asobki','RC-asobki','receipt/x.png',$2);", [done.id, asoBki]);
+  await db.query('set session_replication_role = origin;');
+  await sup();
+  const h1 = 'a'.repeat(64); const h2 = 'b'.repeat(64);
+  const rec = (hash, who = asoBki, tx = done.id) => rows("select * from public.record_caterlink_receipt_pdf_version($1,$2,$3,5000,$4);", [tx, `${tx}/${hash}.pdf`, hash, who]);
+  const v1 = await rec(h1);
+  assert(v1[0].version === 1 && v1[0].is_new === true, 'first post-receipt PDF is version 1');
+  const again = await rec(h1);
+  assert(again[0].version === 1 && again[0].is_new === false, 'identical content is idempotent (same version, not new)');
+  const v2 = await rec(h2);
+  assert(v2[0].version === 2 && v2[0].is_new === true, 'changed content becomes version 2');
+  const cur = await rows("select version, is_current from public.caterlink_transaction_pdfs where transaction_id = $1 order by version;", [done.id]);
+  assert(cur.length === 2 && cur[0].is_current === false && cur[1].is_current === true, 'the previous version is superseded, never deleted or overwritten');
+  assert(await denied(asoBki, "select * from public.record_caterlink_receipt_pdf_version($1,$2,$3,5000,$4);", [done.id, `${done.id}/${h2}.pdf`, 'c'.repeat(64), asoBki]) !== null, 'an authenticated officer cannot record a PDF version directly (service role only)');
+  assert(await denied(compliance, "select * from public.record_caterlink_receipt_pdf_version($1,$2,$3,5000,$4);", [done.id, 'x', 'd'.repeat(64), compliance]) !== null, 'Compliance cannot record a PDF version');
+  let wrong = null; try { await db.query('savepoint w'); await rec('e'.repeat(64), asoKch); await db.query('release savepoint w'); } catch (e) { wrong = e.message; await db.query('rollback to savepoint w'); }
+  assert(wrong !== null && /No final receipt by this officer/.test(wrong), 'a PDF cannot be recorded for a receiver who did not confirm the receipt');
+  let notDone = null; try { await db.query('savepoint n'); await rec('f'.repeat(64), asoBki, hubTx.BKI); await db.query('release savepoint n'); } catch (e) { notDone = e.message; await db.query('rollback to savepoint n'); }
+  assert(notDone !== null && /COMPLETED/.test(notDone), 'a PDF is only recorded for a COMPLETED transaction');
+  const dlPdf = await asUser(asoBki, "select * from public.get_caterlink_transaction_pdf_secure($1);", [done.id]);
+  assert(dlPdf.length === 1 && dlPdf[0].version === 2, 'the receiving officer downloads the CURRENT version');
 
   // ---------- 7. Main Enforcement / Operation Manager: no user administration at the RPC layer
   for (const [lbl, u] of [['Main Enforcement', mainEnf], ['Operation Manager', opm]]) {

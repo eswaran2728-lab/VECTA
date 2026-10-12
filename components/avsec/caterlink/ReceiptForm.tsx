@@ -47,7 +47,7 @@ export function ReceiptForm({ row, station }: { row: PendingReceipt; station: st
               setMessage(null);
               const res = await confirmFinalReceipt(fd);
               if (!res.ok) return setMessage(res.error ?? "Refused.");
-              setMessage("Receipt recorded.");
+              setMessage(res.pdfVersion ? `Receipt recorded. Final PDF version ${res.pdfVersion} generated.` : "Receipt recorded. The final PDF will be regenerated shortly.");
               router.refresh();
             });
           }}
