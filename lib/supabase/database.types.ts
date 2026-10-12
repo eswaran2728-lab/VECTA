@@ -6223,6 +6223,83 @@ export type Database = {
         Args: { p_content_type: string; p_content_id: string; p_reason: string }
         Returns: { staff_no: string; staff_name: string }[]
       }
+      // --- role-workspace support (20261102000001) ---
+      caller_bay_board_aoc: { Args: Record<string, never>; Returns: string | null }
+      list_report_access_requests_secure: {
+        Args: { p_status?: string | null; p_page?: number | null; p_page_size?: number | null }
+        Returns: {
+          id: string
+          requester_profile_id: string
+          requester_name: string
+          requester_staff_no: string
+          source_table: string
+          operating_entity_code: string | null
+          flight_number: string | null
+          report_date: string | null
+          business_reason: string
+          requested_duration_days: number | null
+          status: string
+          decision_reason: string | null
+          created_at: string
+          reviewed_at: string | null
+          total_count: number
+        }[]
+      }
+      list_report_access_grants_secure: {
+        Args: { p_state?: string | null; p_page?: number | null; p_page_size?: number | null }
+        Returns: {
+          id: string
+          grantee_profile_id: string
+          grantee_name: string
+          grantee_staff_no: string
+          granted_by_name: string
+          source_table: string
+          operating_entity_code: string | null
+          reason: string
+          starts_at: string
+          expires_at: string | null
+          revoked_at: string | null
+          state: string
+          created_at: string
+          total_count: number
+        }[]
+      }
+      list_report_access_audit_secure: {
+        Args: { p_scope?: string | null; p_page?: number | null; p_page_size?: number | null }
+        Returns: {
+          id: string
+          actor_name: string | null
+          actor_staff_no: string | null
+          action: string
+          source_table: string | null
+          operating_entity_code: string | null
+          reason: string | null
+          created_at: string
+          total_count: number
+        }[]
+      }
+      reject_report_access_request: { Args: { p_request_id: string; p_reason: string }; Returns: undefined }
+      // --- entity staff maintenance (20261102000002) ---
+      caller_entity_admin_context: { Args: Record<string, never>; Returns: { aoc_id: string; entity_id: string; entity_code: string }[] }
+      list_entity_staff_for_admin_secure: {
+        Args: { p_search?: string | null; p_page?: number | null; p_page_size?: number | null }
+        Returns: {
+          assignment_id: string
+          profile_id: string
+          staff_no: string
+          staff_name: string
+          role_code: string
+          department_code: string | null
+          unit_code: string | null
+          hub_code: string | null
+          station_code: string | null
+          team_name: string | null
+          starts_at: string
+          is_self: boolean
+          total_count: number
+        }[]
+      }
+      list_entity_assignment_options_secure: { Args: Record<string, never>; Returns: Json }
       create_report_amendment: {
         Args: { p_repository_report_id: string; p_amendment_type: string; p_reason: string; p_amended_content?: Json | null }
         Returns: string

@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { requireProfile } from "@/lib/avsec/auth";
+import { canActOnBayBoard, canViewBayBoard } from "@/lib/auth/role-capabilities";
 import type { CanonicalAccess } from "@/lib/auth/canonical-access";
 import { getOpenBayBoard } from "@/lib/avsec/reports/queries";
 import { entityLeadershipFromRoleCodes } from "@/lib/dashboard/entity-leadership-roles";
@@ -9,9 +11,12 @@ import { EntityBayBoard } from "@/components/avsec/bay-board/EntityBayBoard";
 export default async function BayBoardPage({ searchParams: searchParamsPromise }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const profile = await requireProfile();
   const params = await searchParamsPromise;
-  const leadership = entityLeadershipFromRoleCodes((profile.canonical as CanonicalAccess).roleCodes);
+  const roleCodes = (profile.canonical as CanonicalAccess).roleCodes;
+  const leadership = entityLeadershipFromRoleCodes(roleCodes);
+  // Roles with no Bay Board capability (Compliance, Investigation, executives, GRC) never see an operational board, even by URL.
+  if (!canViewBayBoard(roleCodes)) redirect("/avsec/my-dashboard");
 
-  if (leadership) {
+  if (leadership || !canActOnBayBoard(roleCodes)) {
     // MAA/AAX Boss and Admin: read-only board with a Hub + Station selector (no station of their own, no entity inference).
     return (
       <main className="min-h-screen pb-32">

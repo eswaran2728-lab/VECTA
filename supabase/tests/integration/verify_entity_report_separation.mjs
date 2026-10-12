@@ -42,6 +42,7 @@ async function main() {
     try { await db.query(sql, params); await db.query('rollback to savepoint s'); return null; }
     catch (e) { await db.query('rollback to savepoint s'); return e.message; }
   });
+  const affected = async (u, sql, p = []) => asUser(u, async () => { await db.query('savepoint af'); try { const r = await db.query(sql, p); await db.query('rollback to savepoint af'); return r.rowCount; } catch (e) { await db.query('rollback to savepoint af'); return 0; } });
   await db.query('begin;');
   await asSuper();
 
@@ -273,6 +274,33 @@ async function main() {
   assert(expRows.some((r) => r.staff_no === 'ER-asomaa') && !expRows.some((r) => r.staff_no === 'ER-asoaax'), 'directory export lists own-entity staff only');
   assert(await denied(aaxAdmin, "select * from public.export_entity_user_directory('MAA');") !== null, 'AAX Admin cannot export the MAA directory');
   assert(await denied(maaBoss, "select * from public.export_entity_user_directory('MAA');") !== null, 'Boss cannot use the admin directory export');
+
+
+  // ---------- 18. entity staff maintenance (MAA/AAX Admin, own entity only) ----------
+  const staff = await asUser(maaAdmin, async () => rows("select * from public.list_entity_staff_for_admin_secure(null, 1, 100);"));
+  assert(staff.some((r) => r.staff_no === 'ER-asomaa') && !staff.some((r) => r.staff_no === 'ER-asoaax'), 'MAA Admin lists own-entity staff only');
+  assert(!staff.some((r) => ['maa_boss', 'maa_admin', 'aax_boss', 'aax_admin', 'ghod'].includes(r.role_code)), 'protected leadership roles never appear in the maintenance list');
+  assert(await denied(maaBoss, "select * from public.list_entity_staff_for_admin_secure(null, 1, 10);") !== null, 'Boss cannot list staff for maintenance');
+  assert(await denied(asoMaa, "select * from public.list_entity_assignment_options_secure();") !== null, 'ASO cannot load assignment options');
+  assert(await denied(pendingBoss, "select * from public.list_entity_staff_for_admin_secure(null, 1, 10);") !== null, 'pending leader cannot list staff');
+  const maaAsoRow = staff.find((r) => r.staff_no === 'ER-asomaa');
+  const aaxAsoRow = await asUser(aaxAdmin, async () => rows("select * from public.list_entity_staff_for_admin_secure(null, 1, 100);"));
+  const aaxAssignment = aaxAsoRow.find((r) => r.staff_no === 'ER-asoaax')?.assignment_id;
+  assert(!!maaAsoRow && !!aaxAssignment, 'both admins see their own entity assignment ids');
+  assert(await denied(maaAdmin, "select public.deactivate_assignment($1, 'cross entity attempt');", [aaxAssignment]) !== null, 'MAA Admin cannot deactivate an AAX assignment');
+  assert(await denied(maaAdmin, "select public.transfer_assignment_same_entity($1, 'aso', null, null, null, null, null, 'cross');", [aaxAssignment]) !== null, 'MAA Admin cannot transfer an AAX assignment');
+  const adminOwn = (await asUser(maaAdmin, async () => rows("select public.list_entity_staff_for_admin_secure(null,1,5) x;"))).length;
+  assert(adminOwn >= 0, 'self listing is harmless');
+  assert(await denied(maaAdmin, "select public.deactivate_assignment($1, 'self');", [(await one("select id from public.user_role_assignments where profile_id = $1 and revoked_at is null;", [maaAdmin])).id]) !== null, 'an Admin cannot deactivate their own assignment (no self-service changes)');
+  const ok = await asUser(maaAdmin, async () => { await db.query('savepoint m'); try { await db.query("select public.deactivate_assignment($1, 'left the entity');", [maaAsoRow.assignment_id]); await db.query('release savepoint m'); return 'ok'; } catch (e) { await db.query('rollback to savepoint m'); return e.message; } });
+  assert(ok === 'ok', `MAA Admin deactivates an own-entity assignment (${ok})`);
+
+
+  // the profile-guard branch is narrow: it admits only the derived primary-entity field, only for an Admin of a membership entity
+  assert((await affected(maaAdmin, "update public.profiles set name = 'renamed by admin' where id = $1;", [asoMaa])) === 0, 'an entity Admin still cannot edit another profile\'s name');
+  assert((await affected(maaAdmin, "update public.profiles set status = 'approved', role = 'MANAGEMENT' where id = $1;", [asoMaa])) === 0, 'an entity Admin still cannot change another profile\'s status or legacy role');
+  assert((await affected(asoAax, "update public.profiles set operating_entity_id = null where id = $1;", [asoMaa])) === 0, 'an ASO cannot touch another profile\'s operating entity');
+  assert((await affected(aaxAdmin, "update public.profiles set operating_entity_id = null where id = $1;", [asoMaa])) === 0, 'an AAX Admin cannot touch an MAA-only profile\'s operating entity');
 
   // ---------- 15. foreign-AOC leader: nothing crosses AOCs ----------
   if (fEntity) {

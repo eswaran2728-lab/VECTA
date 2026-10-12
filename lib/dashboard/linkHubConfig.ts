@@ -31,7 +31,12 @@ const ICMS_TRANSACTIONS: HubLink = { href: "/icms/transactions", label: "Transac
 const ICMS_INCIDENTS: HubLink = { href: "/icms/incidents", label: "Incidents" };
 const ICMS_WHITELIST: HubLink = { href: "/icms/admin/whitelists", label: "Whitelist" };
 const ICMS_ARCHIVE: HubLink = { href: "/icms/admin/archive", label: "Archive" };
-const EXPORT_ENTRY: HubLink = { href: "/avsec/dashboard", label: "Export / Filters" };
+const FLIGHTS: HubLink = { href: "/avsec/flights", label: "Flight Dashboard (read-only)" };
+const ENFORCEMENT_WORKFORCE: HubLink = { href: "/avsec/enforcement/workforce", label: "SAT & Profiling Workforce" };
+const CASES: HubLink = { href: "/avsec/investigation/cases", label: "Investigation Cases" };
+const SAT_REPORTS: HubLink = { href: "/avsec/sat/reports", label: "SAT Combined Daily PDF" };
+const PROFILING_WORKSPACE: HubLink = { href: "/avsec/profiling/workspace", label: "Profiling Workspace" };
+const REPORT_REQUESTS: HubLink = { href: "/avsec/reports/requests", label: "Report Requests, Grants & Audit" };
 
 /** Roles that never get a checkpoint scanner link from this dashboard --
  *  asserted directly by a unit test (Phase 7 spec: "Profiling has NO
@@ -51,19 +56,19 @@ export const LINK_HUB_CONFIG: Record<string, LinkHubDashboardConfig> = {
   global_reporting_controller: {
     title: "VECTA Global Reporting Controller",
     subtitle: "Repository-wide secure report search, audit and export -- no Super Admin technical controls",
-    links: [REPORT_SEARCH, EXPORT_ENTRY],
+    links: [REPORT_SEARCH, REPORT_REQUESTS],
     showStaffing: false,
   },
   main_enforcement: {
     title: "Main Enforcement — Malaysia Enforcement Dashboard",
     subtitle: "Malaysia AOC · Enforcement department · Investigation/SAT/Profiling staffing and reports",
-    links: [REPORT_SEARCH, ENFORCEMENT_SEARCH, SEC013],
+    links: [REPORT_SEARCH, ENFORCEMENT_SEARCH, ENFORCEMENT_WORKFORCE, CASES, SAT_REPORTS],
     showHubBreakdown: true,
   },
   compliance: {
     title: "Compliance — Malaysia Overview",
     subtitle: "Malaysia AOC · Compliance department · read-only",
-    links: [REPORT_SEARCH],
+    links: [REPORT_SEARCH, FLIGHTS],
   },
   caterlink_management: {
     title: "CaterLink Management",
@@ -75,32 +80,32 @@ export const LINK_HUB_CONFIG: Record<string, LinkHubDashboardConfig> = {
   investigation_sso: {
     title: "Investigation SSO — Malaysia-wide",
     subtitle: "Malaysia AOC · Enforcement · Investigation unit · MAA + AAX, no acknowledgement requirement",
-    links: [REPORT_SEARCH, ENFORCEMENT_SEARCH],
+    links: [REPORT_SEARCH, ENFORCEMENT_SEARCH, CASES, SAT_REPORTS],
   },
   investigation_so: {
     title: "Investigation SO — Malaysia-wide",
     subtitle: "Malaysia AOC · Enforcement · Investigation unit · MAA + AAX, no acknowledgement requirement",
-    links: [REPORT_SEARCH, ENFORCEMENT_SEARCH],
+    links: [REPORT_SEARCH, ENFORCEMENT_SEARCH, CASES, SAT_REPORTS],
   },
   investigation_aso: {
     title: "Investigation ASO — Malaysia-wide",
     subtitle: "Malaysia AOC · Enforcement · Investigation unit · MAA + AAX, no acknowledgement requirement",
-    links: [REPORT_SEARCH, ENFORCEMENT_SEARCH],
+    links: [REPORT_SEARCH, ENFORCEMENT_SEARCH, CASES, SAT_REPORTS],
   },
   sat_aso: {
     title: "SAT ASO — KUL",
     subtitle: "KUL hub · Enforcement · SAT unit · one combined 3-shift PDF per team per day",
-    links: [DUTY, BAY_BOARD, REPORT_SEARCH],
+    links: [DUTY, BAY_BOARD, REPORT_SEARCH, SAT_REPORTS],
   },
   profiling_so: {
     title: "Profiling SO",
-    subtitle: "Malaysia AOC · Enforcement · Profiling unit · SEC013 · no checkpoint scanner",
-    links: [SEC013, DUTY, REPORT_SEARCH],
+    subtitle: "Malaysia AOC · Enforcement · Profiling unit · SEC013 acknowledgement · no checkpoint scanner",
+    links: [PROFILING_WORKSPACE, DUTY, REPORT_SEARCH],
   },
   profiling_aso: {
     title: "Profiling ASO",
     subtitle: "Malaysia AOC · Enforcement · Profiling unit · SEC013 · no checkpoint scanner",
-    links: [SEC013, DUTY, REPORT_SEARCH],
+    links: [SEC013, PROFILING_WORKSPACE, DUTY, REPORT_SEARCH],
   },
   hub_se: {
     title: "Hub SE",
@@ -111,7 +116,7 @@ export const LINK_HUB_CONFIG: Record<string, LinkHubDashboardConfig> = {
   dse: {
     title: "KUL DSE",
     subtitle: "Assigned KUL team only",
-    links: [ROSTER, ABSENCES, OVERTIME, BAY_BOARD, DUTY],
+    links: [ROSTER, ABSENCES, OVERTIME, BAY_BOARD, DUTY, REPORT_SEARCH],
   },
   sso: {
     title: "SSO",

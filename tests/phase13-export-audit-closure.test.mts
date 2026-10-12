@@ -28,6 +28,7 @@ const ALLOWED_EXPORT_AUDIT_RPCS = new Set([
   "replace_sat_combined_report_secure",
   "authorize_report_pdf_secure",
   "authorize_report_pdf_by_source_secure",
+  "list_report_access_audit_secure",
   "add_announcement_attachment_secure",
   "get_announcement_attachment_download_secure",
   "remove_announcement_attachment_secure",

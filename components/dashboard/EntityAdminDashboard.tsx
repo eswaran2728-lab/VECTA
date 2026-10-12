@@ -24,6 +24,9 @@ export async function EntityAdminDashboard({ context }: { context: RoleAssignmen
         <Link href="/avsec/admin/entity-registrations" className="rounded-lg border border-border/60 px-3 py-3 text-sm font-medium hover:bg-card/40 min-h-[44px]">
           Registration Administration
         </Link>
+        <Link href="/avsec/admin/entity-staff" className="rounded-lg border border-border/60 px-3 py-3 text-sm font-medium hover:bg-card/40 min-h-[44px]">
+          Staff Accounts
+        </Link>
         <Link href="/avsec/entity-reports" className="rounded-lg border border-border/60 px-3 py-3 text-sm font-medium hover:bg-card/40 min-h-[44px]">
           {entityLabel} Reports
         </Link>

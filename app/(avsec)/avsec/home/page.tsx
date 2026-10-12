@@ -7,7 +7,8 @@ import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries
 import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
 import { formatTimeMY, nowTimeMY } from "@/lib/avsec/datetime";
 
-const REPORT_ORDER: ReportType[] = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013"];
+// SEC013 belongs to the Profiling unit (lib/auth/role-capabilities.ts); a standard ASO is not offered it.
+const REPORT_ORDER: ReportType[] = ["sec016", "sec014", "sec029", "sec018", "sec033"];
 const RED_ACCENT: Partial<Record<ReportType, true>> = { sec029: true, sec033: true };
 
 function shortLabel(type: ReportType) {

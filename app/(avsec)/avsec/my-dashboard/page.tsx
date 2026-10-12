@@ -9,6 +9,7 @@ import { EntityAdminDashboard } from "@/components/dashboard/EntityAdminDashboar
 import { SuperAdminDashboard } from "@/components/dashboard/SuperAdminDashboard";
 import { GenericLinkHubDashboard } from "@/components/dashboard/GenericLinkHubDashboard";
 import { LINK_HUB_CONFIG } from "@/lib/dashboard/linkHubConfig";
+import { capabilityFor } from "@/lib/auth/role-capabilities";
 
 /**
  * Phase 7 dashboard-context entry point (/avsec/my-dashboard). Placed
@@ -51,40 +52,39 @@ export default async function DashboardEntryPage({
   }
 
   const roleCode = active.roleCode;
+  // The dashboard comes from the single capability table (lib/auth/role-capabilities.ts) -- the same table navigation, labels and the
+  // attendance / report-form guards read -- so a role can never be shown one dashboard and another menu.
+  const kind = capabilityFor(roleCode)?.dashboard;
 
-  if (roleCode === "airasia_management" || roleCode === "ghod") {
+  if (kind === "executive") {
     return (
       <div className="p-4 max-w-4xl mx-auto">
         <ExecutiveDashboard context={active} />
       </div>
     );
   }
-
-  if (roleCode === "super_admin") {
+  if (kind === "super_admin") {
     return (
       <div className="p-4 max-w-4xl mx-auto">
         <SuperAdminDashboard />
       </div>
     );
   }
-
-  if (roleCode === "maa_boss" || roleCode === "aax_boss") {
+  if (kind === "entity_boss") {
     return (
       <div className="p-4 max-w-4xl mx-auto">
         <EntityDashboard context={active} />
       </div>
     );
   }
-
-  if (roleCode === "maa_admin" || roleCode === "aax_admin") {
+  if (kind === "entity_admin") {
     return (
       <div className="p-4 max-w-4xl mx-auto">
         <EntityAdminDashboard context={active} />
       </div>
     );
   }
-
-  if (roleCode === "operation_manager") {
+  if (kind === "operation_manager") {
     return (
       <div className="p-4 max-w-4xl mx-auto">
         <OperationManagerDashboard />

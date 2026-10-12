@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentProfile } from "@/lib/avsec/auth";
+import { canActOnBayBoard, canCreateReport, type ReportFormType } from "@/lib/auth/role-capabilities";
+import type { CanonicalAccess } from "@/lib/auth/canonical-access";
 import { getEligibleSupervisingOfficers } from "@/lib/avsec/reports/queries";
 import { hasOpenDutyCheckIn } from "@/lib/avsec/duty/checkin-queries";
 import { sec016Schema } from "@/lib/avsec/schemas/sec016";
@@ -33,7 +35,7 @@ export interface ActionResult {
   error?: string;
 }
 
-async function requireProfileId(): Promise<{
+async function requireProfileId(reportType?: ReportFormType | "bayboard"): Promise<{
   id: string;
   station: string;
   team: string;
@@ -41,6 +43,11 @@ async function requireProfileId(): Promise<{
 } | null> {
   const profile = await getCurrentProfile();
   if (!profile || !profile.station || !profile.team) return null;
+  // Server-side report-form rule (lib/auth/role-capabilities.ts): creating a report needs a role that is allowed THAT form. A page link
+  // being hidden is not enough -- this closes the direct server-action call.
+  if (reportType === "bayboard") {
+    if (!canActOnBayBoard((profile.canonical as CanonicalAccess).roleCodes)) return null;
+  } else if (reportType && !canCreateReport((profile.canonical as CanonicalAccess).roleCodes, reportType)) return null;
   return {
     id: profile.id,
     station: profile.station,
@@ -205,7 +212,7 @@ export async function resumeReportSubmission(reportType: string, reportId: strin
 // ---------- SEC 016 ----------
 
 export async function submitSec016(input: unknown): Promise<ActionResult> {
-  const profile = await requireProfileId();
+  const profile = await requireProfileId("sec016");
   if (!profile) return { ok: false, error: "Not authenticated" };
   const checkInError = await ensureCheckedIn(profile.id);
   if (checkInError) return { ok: false, error: checkInError };
@@ -383,7 +390,7 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
 // ---------- SEC 014 ----------
 
 export async function submitSec014(input: unknown): Promise<ActionResult> {
-  const profile = await requireProfileId();
+  const profile = await requireProfileId("sec014");
   if (!profile) return { ok: false, error: "Not authenticated" };
   const checkInError = await ensureCheckedIn(profile.id);
   if (checkInError) return { ok: false, error: checkInError };
@@ -452,7 +459,7 @@ export async function submitSec014(input: unknown): Promise<ActionResult> {
 // ---------- SEC 029 ----------
 
 export async function submitSec029(input: unknown): Promise<ActionResult> {
-  const profile = await requireProfileId();
+  const profile = await requireProfileId("sec029");
   if (!profile) return { ok: false, error: "Not authenticated" };
   const checkInError = await ensureCheckedIn(profile.id);
   if (checkInError) return { ok: false, error: checkInError };
@@ -551,7 +558,7 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
 // ---------- SEC 018 ----------
 
 export async function submitSec018(input: unknown): Promise<ActionResult> {
-  const profile = await requireProfileId();
+  const profile = await requireProfileId("sec018");
   if (!profile) return { ok: false, error: "Not authenticated" };
   const checkInError = await ensureCheckedIn(profile.id);
   if (checkInError) return { ok: false, error: checkInError };
@@ -616,7 +623,7 @@ export async function submitSec018(input: unknown): Promise<ActionResult> {
 // ---------- SEC 033 ----------
 
 export async function submitSec033(input: unknown): Promise<ActionResult> {
-  const profile = await requireProfileId();
+  const profile = await requireProfileId("sec033");
   if (!profile) return { ok: false, error: "Not authenticated" };
   const checkInError = await ensureCheckedIn(profile.id);
   if (checkInError) return { ok: false, error: checkInError };
@@ -677,7 +684,7 @@ export async function submitSec033(input: unknown): Promise<ActionResult> {
 // ---------- SEC 013 ----------
 
 export async function submitSec013(input: unknown): Promise<ActionResult> {
-  const profile = await requireProfileId();
+  const profile = await requireProfileId("sec013");
   if (!profile) return { ok: false, error: "Not authenticated" };
   const checkInError = await ensureCheckedIn(profile.id);
   if (checkInError) return { ok: false, error: checkInError };
@@ -745,7 +752,7 @@ export async function submitSec013(input: unknown): Promise<ActionResult> {
 // ---------- Offload Information (Departure Flight) ----------
 
 export async function submitOffload(input: unknown): Promise<ActionResult> {
-  const profile = await requireProfileId();
+  const profile = await requireProfileId("offload");
   if (!profile) return { ok: false, error: "Not authenticated" };
   const checkInError = await ensureCheckedIn(profile.id);
   if (checkInError) return { ok: false, error: checkInError };
@@ -820,7 +827,7 @@ export async function addBayBoardEntry(input: {
   flight?: string;
   on_ground_since: string;
 }): Promise<ActionResult> {
-  const profile = await requireProfileId();
+  const profile = await requireProfileId("bayboard");
   if (!profile) return { ok: false, error: "Not authenticated" };
 
   const supabase = await createClient();
@@ -845,7 +852,7 @@ export async function addBayBoardEntry(input: {
 }
 
 export async function clearBayBoardEntry(id: string): Promise<ActionResult> {
-  const profile = await requireProfileId();
+  const profile = await requireProfileId("bayboard");
   if (!profile) return { ok: false, error: "Not authenticated" };
 
   const supabase = await createClient();

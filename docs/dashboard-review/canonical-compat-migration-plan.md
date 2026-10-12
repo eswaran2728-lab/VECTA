@@ -107,3 +107,6 @@ exactly equal to the requested station; no profiling assignment; active explicit
 the reviewed allowlist (PEN, JHB). Scan capability is switched off at every other station (KUL, KCH, BKI, BTU,
 ...). Receipt confirmation capabilities are separate and untouched (KCH/BKI currently have none configured; granting
 them needs a separate reviewed configuration). Only one function signature remains.
+
+
+> **Superseded (2026-10-12):** the statement above that KCH/BKI "currently have none configured" for receipt was overtaken by migration `20261022000001_phase9_caterlink_kch_bki_final_receipt.sql`. Current decision: scanner PEN and JHB, final receipt BKI and KCH, vendor check PEN and JHB, BTU none. See `role-workspace-correction.md` section 4.

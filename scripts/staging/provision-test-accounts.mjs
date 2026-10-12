@@ -168,7 +168,7 @@ async function main() {
   const timingFor = (state) => ({
     revoked: { starts_at: new Date(now - DAY).toISOString(), revoked_at: now.toISOString() },
     expired: { starts_at: new Date(now - 5 * DAY).toISOString(), ends_at: new Date(now - DAY).toISOString() },
-    future_dated: { starts_at: new Date(+now + DAY).toISOString() },
+    future_dated: { starts_at: new Date(+now + 3650 * DAY).toISOString() },
   }[state] ?? { starts_at: new Date(now - 60000).toISOString() });
   const profileStatusFor = (state) => ({ pending: "pending", rejected: "rejected", deactivated: "deactivated" }[state] ?? "approved");
 

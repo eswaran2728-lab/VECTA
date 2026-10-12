@@ -100,6 +100,7 @@ export async function ExecutiveDashboard({ context }: { context: RoleAssignmentC
       </DashboardCard>
 
       {isGhod && flagged && (
+        <div id="flagged-reports">
         <DashboardCard title="Flagged Reports" status={flagged.status}>
           {flagged.rows.length === 0 ? (
             <p className="font-mono text-xs text-muted-foreground">No flagged reports right now.</p>
@@ -120,6 +121,7 @@ export async function ExecutiveDashboard({ context }: { context: RoleAssignmentC
             </div>
           )}
         </DashboardCard>
+        </div>
       )}
     </div>
   );

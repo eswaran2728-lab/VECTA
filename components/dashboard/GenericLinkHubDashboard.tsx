@@ -3,6 +3,7 @@ import { getOpsDashboardHubBreakdown, getOpsDashboardSummary, getReportCountsSec
 import { DashboardCard, StatTile } from "@/components/dashboard/DashboardCard";
 import type { RoleAssignmentContext } from "@/lib/dashboard/context";
 import type { HubLink } from "@/lib/dashboard/linkHubConfig";
+import { roleLabelFor } from "@/lib/auth/role-capabilities";
 
 export type { HubLink };
 
@@ -47,7 +48,7 @@ export async function GenericLinkHubDashboard({
   return (
     <div className="space-y-4">
       <header className="space-y-1">
-        <h1 className="font-bold text-lg">{title}</h1>
+        <h1 className="font-bold text-lg">{context.roleCode === "hub_se" && context.hubCode ? `Hub SE — Hub ${context.hubCode}` : context.roleCode === "sat_aso" && context.teamName ? `SAT ASO — Team ${context.teamName}` : title}</h1>
         <p className="font-mono text-xs text-muted-foreground">{subtitle}</p>
       </header>
 
@@ -103,7 +104,7 @@ export async function GenericLinkHubDashboard({
       </section>
 
       <p className="font-mono text-[10px] text-muted-foreground">
-        {context.roleCode}
+        {roleLabelFor(context.roleCode) ?? context.roleCode}
         {context.hubCode ? ` · hub: ${context.hubCode}` : ""}
         {context.stationCode ? ` · station: ${context.stationCode}` : ""}
         {context.teamName ? ` · team: ${context.teamName}` : ""}

@@ -242,6 +242,16 @@ const ROUTE_GATED: Record<string, string[]> = {
   "/avsec/duty": ["ASO", "SO", "DSE"],
   "/avsec/reports/sec013": ["ASO"],
   "/avsec/dashboard": ["SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"],
+  "/avsec/flights": ["SO", "DSE", "ENFORCEMENT", "MANAGEMENT", "ADMIN"],
+  "/avsec/reports/requests": [],
+};
+// Pages gated by requirePhase8Role([...]) -> has_active_role() in the database. The allowed role list is READ FROM THE PAGE SOURCE below,
+// so a dashboard link can never point at a page that refuses the role showing it.
+const PHASE8_ROLE_GATED: Record<string, string> = {
+  "/avsec/enforcement/workforce": "app/(avsec)/avsec/enforcement/workforce/page.tsx",
+  "/avsec/investigation/cases": "app/(avsec)/avsec/investigation/cases/page.tsx",
+  "/avsec/sat/reports": "app/(avsec)/avsec/sat/reports/page.tsx",
+  "/avsec/profiling/workspace": "app/(avsec)/avsec/profiling/workspace/page.tsx",
 };
 // Routes that only require an approved profile with any active assignment.
 const OPEN_TO_ANY_ASSIGNMENT = ["/avsec/bay-board", "/avsec/duty/absences", "/avsec/duty/overtime"];
@@ -250,9 +260,20 @@ const KNOWN_GAPS = ["/icms/dashboard", "/icms/transactions", "/icms/incidents", 
 
 test("every dashboard link is classified: gated, open-to-assignment, or a documented known gap", () => {
   const hrefs = new Set(Object.values(LINK_HUB_CONFIG).flatMap((c) => c.links.map((l) => l.href)));
-  const classified = new Set([...Object.keys(ROUTE_GATED), ...OPEN_TO_ANY_ASSIGNMENT, ...KNOWN_GAPS]);
+  const classified = new Set([...Object.keys(ROUTE_GATED), ...Object.keys(PHASE8_ROLE_GATED), ...OPEN_TO_ANY_ASSIGNMENT, ...KNOWN_GAPS]);
   const unclassified = [...hrefs].filter((h) => !classified.has(h));
   assert.deepEqual(unclassified, [], `dashboard link(s) with no reviewed gate decision: ${unclassified.join(", ")}`);
+});
+
+test("dashboard reachability: every Phase 8 role-gated link is shown ONLY to roles its page admits", () => {
+  for (const [href, file] of Object.entries(PHASE8_ROLE_GATED)) {
+    const src = read(file);
+    const allowed = new Set([...(src.match(/requirePhase8Role\(\[([^\]]*)\]/)?.[1] ?? "").matchAll(/"([a-z_]+)"/g)].map((m) => m[1]));
+    assert.ok(allowed.size > 0, `${file} must declare its roles`);
+    for (const [roleCode, cfg] of Object.entries(LINK_HUB_CONFIG)) {
+      if (cfg.links.some((l) => l.href === href)) assert.ok(allowed.has(roleCode), `${roleCode} is shown ${href} but the page refuses it`);
+    }
+  }
 });
 
 for (const [roleCode, cfg] of Object.entries(LINK_HUB_CONFIG)) {

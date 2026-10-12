@@ -7,6 +7,7 @@ import { getOpenBayBoard } from "@/lib/avsec/reports/queries";
 import { REPORT_TYPES as AVSEC_REPORT_TYPES, REPORT_META } from "@/lib/avsec/reference-data";
 import { requiresDailyReport } from "@/lib/avsec/auth";
 import { StatusDot, type OpsStatus } from "@/components/layout/StatusDot";
+import { landsOnRoleDashboard, primaryRoleLabel } from "@/lib/auth/role-capabilities";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { AppSidebar } from "@/components/layout/AppSidebar";
@@ -75,7 +76,7 @@ export default async function LandingPage() {
   if (access.isSuperAdmin) redirect("/super-admin");
   if (!access.hasAssignment) redirect("/avsec/pending-approval");
   // Canonical roles with no legacy-page rank work through the Phase 7 dashboards.
-  if (!access.primaryCompatRole) redirect("/avsec/my-dashboard");
+  if (!access.primaryCompatRole || landsOnRoleDashboard(access.roleCodes)) redirect("/avsec/my-dashboard");
 
   const { data: avsecProfile } = await supabase.from("profiles").select("name").eq("id", user.id).maybeSingle();
   if (!avsecProfile) redirect("/login?error=no-profile");
@@ -110,7 +111,7 @@ export default async function LandingPage() {
       ? AVSEC_REPORT_TYPES
       : ([] as readonly (typeof AVSEC_REPORT_TYPES)[number][]);
 
-  const roleChip = formatRoleChip(role);
+  const roleChip = primaryRoleLabel(access.roleCodes) ?? formatRoleChip(role);
 
   const currentUserProfile = {
     id: user.id,

@@ -6,13 +6,13 @@ import { InstallPrompt } from "@/components/avsec/offline/InstallPrompt";
 import { APP_NAME, APP_DESCRIPTION } from "@/lib/avsec/branding";
 import { getRawProfile, getCanonicalAccess, getCanScanCaterLink } from "@/lib/avsec/auth";
 import { signOut as authSignOut } from "@/lib/avsec/profile-actions";
-import { ROLE_LABELS } from "@/lib/avsec/reference-data";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { NotificationsBell } from "@/components/layout/NotificationsBell";
 import { NavDrawer } from "@/components/layout/NavDrawer";
 import { buildNavModel } from "@/lib/dashboard/nav-capabilities";
+import { primaryRoleLabel } from "@/lib/auth/role-capabilities";
 
 export const metadata: Metadata = {
   title: APP_NAME,
@@ -38,7 +38,8 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
   const hasPhase7Assignment = showChrome ? Boolean(access?.hasAssignment) : false;
   // Explicit canonical-role navigation. There is NO default role: an absent or unrecognised role gets the minimal model.
   const navModel = showChrome && access ? buildNavModel({ roleCodes: access.roleCodes, canScan }) : null;
-  const roleLabel = access?.primaryCompatRole ? (ROLE_LABELS[access.primaryCompatRole] ?? null) : (access?.roleCodes[0] ?? null);
+  // Exact canonical label (SSO is SSO, Hub SE is Hub SE) -- never the legacy compat label.
+  const roleLabel = access ? (primaryRoleLabel(access.roleCodes) ?? access.roleCodes[0] ?? null) : null;
 
   return (
     <div className="min-h-screen bg-background text-foreground antialiased">

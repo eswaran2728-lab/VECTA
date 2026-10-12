@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireRole, MONITOR_ROLES } from "@/lib/avsec/auth";
+import { requireRouteAccess, MONITOR_ROLES } from "@/lib/avsec/auth";
 import { STATIONS } from "@/lib/avsec/reference-data";
 import { getFlightsForDate } from "@/lib/dashboard/flight-detail";
 import { todayISODateMY } from "@/lib/avsec/datetime";
@@ -10,7 +10,7 @@ export default async function FlightsPage({
   searchParams: Promise<{ date?: string; station?: string; flightNo?: string; flightDate?: string; reg?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const profile = await requireRole(MONITOR_ROLES);
+  const profile = await requireRouteAccess("/avsec/flights", MONITOR_ROLES);
 
   const today = todayISODateMY();
   const date = searchParams.date || today;

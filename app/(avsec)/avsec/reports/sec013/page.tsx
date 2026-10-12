@@ -4,7 +4,7 @@ import { Sec013Form } from "@/components/avsec/forms/Sec013Form";
 import { REPORT_META } from "@/lib/avsec/reference-data";
 
 export default async function Sec013Page() {
-  const profile = await requireRouteAccess("/avsec/reports/sec013", ["ASO"]);
+  const profile = await requireRouteAccess("/avsec/reports/sec013", []);
   const serverDraft = await loadDraft("sec013");
 
   return (

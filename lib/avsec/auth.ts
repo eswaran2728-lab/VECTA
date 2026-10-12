@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { landsOnRoleDashboard } from "@/lib/auth/role-capabilities";
 import { isNonRosteredLeadership } from "@/lib/auth/non-rostered-roles";
 import { createClient } from "@/lib/supabase/server";
 import type { Profile } from "./types";
@@ -78,6 +79,7 @@ export async function getCanScanCaterLink(access: CanonicalAccess): Promise<bool
 /** Where a user with this canonical access should land. */
 export function landingPathForAccess(access: CanonicalAccess): string {
   if (!access.hasAssignment) return "/avsec/pending-approval";
+  if (landsOnRoleDashboard(access.roleCodes)) return "/avsec/my-dashboard";
   if (access.primaryCompatRole) return landingPathForRole(access.primaryCompatRole);
   return "/avsec/my-dashboard";
 }
