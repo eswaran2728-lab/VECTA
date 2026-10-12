@@ -5328,6 +5328,10 @@ export type Database = {
         Args: { p_transaction_id: string }
         Returns: { state: string; version: number | null }[]
       }
+      unescalate_transaction: {
+        Args: { p_transaction_id: string; p_notes?: string }
+        Returns: string
+      }
       get_caterlink_transaction_pdf_secure: {
         Args: { p_transaction_id: string }
         Returns: { storage_path: string; version: number; size_bytes: number; generated_at: string }[]

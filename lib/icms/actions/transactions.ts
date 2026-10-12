@@ -1129,16 +1129,11 @@ export async function unescalateTransaction(
   const supabase = await createClient();
 
   // Try the security-definer RPC function first
-  type RpcCaller = (
-    name: string,
-    params: Record<string, unknown>
-  ) => Promise<{ data: string | null; error: { message: string; details?: string; hint?: string; code?: string } | null }>;
-
   let restoredStatus: TransactionStatus | null = null;
   let rpcSucceeded = false;
 
   try {
-    const { data: rpcStatus, error: rpcError } = await (supabase.rpc as unknown as RpcCaller)(
+    const { data: rpcStatus, error: rpcError } = await supabase.rpc(
       "unescalate_transaction",
       {
         p_transaction_id: transactionId,

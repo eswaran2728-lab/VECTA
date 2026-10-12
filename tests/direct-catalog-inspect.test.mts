@@ -22,8 +22,9 @@ test("direct catalog inspector: rejects forbidden production project reference",
         stdio: "pipe"
       }
     );
-  }, (err: any) => {
-    const stderr = err.stderr || err.stdout || "";
+  }, (err: unknown) => {
+    const e = err as { stderr?: string; stdout?: string };
+    const stderr = e.stderr || e.stdout || "";
     return stderr.includes("FATAL: FORBIDDEN PRODUCTION PROJECT REF DETECTED");
   });
 });

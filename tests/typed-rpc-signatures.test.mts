@@ -9,7 +9,9 @@ import path from "node:path";
  * returned columns with lib/supabase/database.types.ts. Fails if an RPC disappears from the types or drifts from the SQL.
  */
 const MIG_DIR = "supabase/migrations";
-const sql = fs.readdirSync(MIG_DIR).filter((f) => f.endsWith(".sql")).sort().map((f) => fs.readFileSync(path.join(MIG_DIR, f), "utf8").replace(/--.*$/gm, "")).join("\n");
+const sql = [MIG_DIR, path.join(MIG_DIR, "icms")]
+  .flatMap((d) => fs.readdirSync(d).filter((f) => f.endsWith(".sql")).sort().map((f) => fs.readFileSync(path.join(d, f), "utf8").replace(/--.*$/gm, "")))
+  .join("\n");
 const types = fs.readFileSync("lib/supabase/database.types.ts", "utf8");
 
 const TS: Record<string, string> = { uuid: "string", text: "string", integer: "number", boolean: "boolean", timestamptz: "string" };
@@ -53,6 +55,7 @@ const RPCS = [
   "retry_caterlink_pdf_job_secure",
   "list_caterlink_pdf_jobs_secure",
   "get_caterlink_pdf_state_secure",
+  "unescalate_transaction",
 ];
 
 for (const name of RPCS) {
@@ -80,11 +83,22 @@ for (const name of RPCS) {
 }
 
 test("application code calls the PDF RPCs through the typed Supabase client (no untyped cast)", () => {
-  for (const f of ["lib/icms/completed-form-pdf.ts", "lib/avsec/caterlink/receipt.ts", "lib/icms/actions/pdf-jobs.ts"]) {
+  for (const f of ["lib/icms/completed-form-pdf.ts", "lib/avsec/caterlink/receipt.ts", "lib/icms/actions/pdf-jobs.ts", "lib/icms/actions/transactions.ts"]) {
     const src = fs.readFileSync(f, "utf8");
     assert.doesNotMatch(src, /rpc as unknown as/, f);
     assert.doesNotMatch(src, /\.rpc\(\s*"[a-z_]+"\s*as\s/i, f);
   }
   const worker = fs.readFileSync("lib/icms/completed-form-pdf.ts", "utf8");
   for (const n of ["claim_caterlink_pdf_jobs", "complete_caterlink_pdf_job", "fail_caterlink_pdf_job"]) assert.match(worker, new RegExp(`admin\\.rpc\\("${n}"`));
+});
+
+test("no untyped RPC cast remains anywhere in application code", () => {
+  const walk = (d: string): string[] =>
+    fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+      if (e.name === "node_modules" || e.name === ".next") return [];
+      const p = path.join(d, e.name);
+      return e.isDirectory() ? walk(p) : /\.(ts|tsx)$/.test(e.name) ? [p] : [];
+    });
+  const offenders = ["app", "lib", "components"].flatMap(walk).filter((f) => /rpc\s+as\s+unknown\s+as/.test(fs.readFileSync(f, "utf8")));
+  assert.deepEqual(offenders, []);
 });

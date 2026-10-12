@@ -25,7 +25,7 @@ test("MIGRATION: 20260928000000_user_registration_requests applies cleanly to em
     const cols = await db.query(
       "select column_name from information_schema.columns where table_schema = 'public' and table_name = 'user_registration_requests';"
     );
-    const colNames = new Set(cols.rows.map((r: any) => r.column_name));
+    const colNames = new Set(cols.rows.map((r: { column_name: string }) => r.column_name));
     for (const expected of [
       "id", "profile_id", "requested_aoc_id", "requested_operating_entity_id",
       "requested_department_id", "requested_unit_id", "requested_hub_id",
