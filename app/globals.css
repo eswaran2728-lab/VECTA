@@ -386,3 +386,16 @@
     display: none;
   }
 }
+
+
+/* Keyboard users always see where focus is, on every link, button and control (WCAG 2.4.7). */
+@layer base {
+  a:focus-visible,
+  button:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  input:focus-visible,
+  summary:focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary;
+  }
+}

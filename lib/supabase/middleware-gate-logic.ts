@@ -57,6 +57,41 @@ export function isShiftBasedAccess(access: CanonicalAccess): boolean {
   return access.roleCodes.some((c) => DUTY_CODES.has(c));
 }
 
+// Main Enforcement works in its OWN workspace only. The legacy generic management surface (dashboard, flights, duty / attendance /
+// roster / zone pages, user administration, report filing, the CaterLink stream, exports of operations data) is closed to a caller
+// whose only role is main_enforcement: any /avsec path that is not on this allowlist is refused at the edge. (A mixed profile that also
+// holds another role is decided by that role's own gates, never silently merged.)
+export const MAIN_ENFORCEMENT_ALLOWED_AVSEC_PREFIXES: readonly string[] = [
+  "/avsec/my-dashboard",
+  "/avsec/enforcement",
+  "/avsec/investigation",
+  "/avsec/sat",
+  "/avsec/reports/lookup",
+  "/avsec/reports/view",
+  "/avsec/discussions",
+  "/avsec/bay-board",
+  "/avsec/profile",
+  "/avsec/profile-setup",
+  "/avsec/pending-approval",
+  "/avsec/auth",
+];
+export const MAIN_ENFORCEMENT_FORBIDDEN_API_PREFIXES: readonly string[] = [
+  "/api/avsec/export/attendance",
+  "/api/avsec/export/overtime",
+  "/api/avsec/export/excel",
+  "/api/avsec/export/pdf/duty",
+];
+
+export function isMainEnforcementOnly(access: CanonicalAccess): boolean {
+  return access.roleCodes.length > 0 && access.roleCodes.every((c) => c === "main_enforcement");
+}
+const underPrefix = (path: string, prefix: string) => path === prefix || path.startsWith(prefix + "/");
+export function isMainEnforcementPathForbidden(path: string, access: CanonicalAccess): boolean {
+  if (!isMainEnforcementOnly(access)) return false;
+  if (underPrefix(path, "/avsec")) return !MAIN_ENFORCEMENT_ALLOWED_AVSEC_PREFIXES.some((p) => underPrefix(path, p));
+  return MAIN_ENFORCEMENT_FORBIDDEN_API_PREFIXES.some((p) => underPrefix(path, p));
+}
+
 // /avsec/admin is the management section, EXCEPT the roster, which dashboards link
 // to for dse / hub_se. Roster access is decided by the same canonical route policy
 // the page uses (and the roster RPCs enforce station/team/hub scope in the database).

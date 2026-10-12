@@ -176,6 +176,10 @@ export const DAILY_REPORT_ROLES: ProfileRole[] = (["ASO", "SO", "DSE", "ENFORCEM
   requiresDailyReport,
 );
 export const MANAGEMENT_ROLES: ProfileRole[] = ["MANAGEMENT", "ADMIN"];
+/** Roles that may administer user ACCOUNTS through the legacy /avsec/admin/users surface: NONE. Account lifecycle is self-registration or
+ *  approved provisioning, then the MAA / AAX Admin for their own entity (registration + staff accounts), with Super Admin for exceptional
+ *  platform administration. Operation Manager has read-only operational staff search only. An empty list makes requireRole() deny everyone. */
+export const USER_ADMIN_ROLES: ProfileRole[] = [];
 export const ADMIN_ROLES: ProfileRole[] = MANAGEMENT_ROLES;
 // Only the team-scoped roles actually work a shift, so only they check in/out at /duty.
 export const DUTY_ROLES: ProfileRole[] = ["ASO", "SO", "DSE"];

@@ -8,6 +8,7 @@ import {
   isReadinessPath,
   effectiveGateRole,
   isShiftBasedAccess,
+  isMainEnforcementPathForbidden,
 } from "./middleware-gate-logic";
 import { deriveCanonicalAccess, assignmentsFromRpcRows } from "../auth/canonical-access";
 import {
@@ -176,6 +177,9 @@ export async function updateSession(request: NextRequest) {
     if (decidePortalRequest(apiIdentity, path, true).action === "deny_api") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    if (isMainEnforcementPathForbidden(path, deriveCanonicalAccess(assignmentsFromRpcRows(apiRows)))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
   }
 
   // Phase 13 readiness portal: canonical Phase 3 role-assignment gate only.
@@ -292,6 +296,14 @@ export async function updateSession(request: NextRequest) {
       path.startsWith("/avsec/duty") ||
       path.startsWith("/avsec/profile-setup") ||
       path.startsWith("/avsec/pending-approval");
+
+    // Main Enforcement: dedicated workspace only (the generic legacy management surface is closed, deny by default).
+    if (path.startsWith("/avsec") && isMainEnforcementPathForbidden(path, access)) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/avsec/my-dashboard";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
 
     // Coarse edge-level defense-in-depth for the admin section:
     if (isAdminPathForbiddenFor(path, role, access)) {

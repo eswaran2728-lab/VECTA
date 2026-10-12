@@ -1,10 +1,11 @@
-import { requireRole } from "@/lib/avsec/auth";
+import { requireReportFormAccess } from "@/lib/avsec/reports/form-capability";
 import { loadDraft } from "@/lib/avsec/reports/drafts";
 import { Sec033Form } from "@/components/avsec/forms/Sec033Form";
 import { REPORT_META } from "@/lib/avsec/reference-data";
 
 export default async function Sec033Page() {
-  const profile = await requireRole(["ASO"]);
+  const profile = await requireReportFormAccess("sec033");
+
   const serverDraft = await loadDraft("sec033");
 
   return (

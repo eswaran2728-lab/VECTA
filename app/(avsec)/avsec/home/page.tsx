@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/avsec/auth";
+import { getAllowedReportForms } from "@/lib/avsec/reports/form-capability";
 import { getOverdueAircraft, getMySubmissions } from "@/lib/avsec/reports/queries";
 import { getTodayRoster, getTodayDutyRecord } from "@/lib/avsec/duty/checkin-queries";
 import { REPORT_META, type ReportType } from "@/lib/avsec/reference-data";
@@ -7,8 +8,8 @@ import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries
 import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
 import { formatTimeMY, nowTimeMY } from "@/lib/avsec/datetime";
 
-// SEC013 belongs to the Profiling unit (lib/auth/role-capabilities.ts); a standard ASO is not offered it.
-const REPORT_ORDER: ReportType[] = ["sec016", "sec014", "sec029", "sec018", "sec033"];
+// The list shown is the person's ASSIGNED forms (report_form_assignments), not this constant.
+const REPORT_ORDER: ReportType[] = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013"];
 const RED_ACCENT: Partial<Record<ReportType, true>> = { sec029: true, sec033: true };
 
 function shortLabel(type: ReportType) {
@@ -24,6 +25,8 @@ function greeting() {
 
 export default async function HomePage() {
   const profile = await requireRole(["ASO"]);
+  const allowedForms = await getAllowedReportForms();
+  const visibleForms = REPORT_ORDER.filter((t) => (allowedForms as string[]).includes(t));
   const [overdue, recent, roster, announcements] = await Promise.all([
     profile.station ? getOverdueAircraft(profile.station) : Promise.resolve([]),
     getMySubmissions({ profileId: profile.id, limit: 5 }),
@@ -115,7 +118,7 @@ export default async function HomePage() {
             New report
           </h2>
           <div className="flex flex-col gap-2">
-            {REPORT_ORDER.map((type) => {
+            {visibleForms.map((type) => {
               const meta = REPORT_META[type];
               const isRed = RED_ACCENT[type];
               return (

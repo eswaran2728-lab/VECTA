@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireRole, MANAGEMENT_ROLES } from "@/lib/avsec/auth";
+import { requireRole, USER_ADMIN_ROLES } from "@/lib/avsec/auth";
 import { isProfileActiveSuperAdmin } from "@/lib/super-admin/authority";
 import {
   REQUESTABLE_ROLES,
@@ -14,7 +14,7 @@ import {
 import { validateApprovalAssignment } from "@/lib/avsec/admin/validation";
 
 export async function createStaffAccount(formData: FormData) {
-  await requireRole(MANAGEMENT_ROLES);
+  await requireRole(USER_ADMIN_ROLES);
 
   const name = String(formData.get("name") || "").trim();
   const staffNo = String(formData.get("staffNo") || "").trim();
@@ -98,7 +98,7 @@ export async function createStaffAccount(formData: FormData) {
  * Management to explicitly (re-)select every field.
  */
 export async function approveUser(formData: FormData) {
-  const manager = await requireRole(MANAGEMENT_ROLES);
+  const manager = await requireRole(USER_ADMIN_ROLES);
   const profileId = String(formData.get("profileId") || "");
   if (!profileId) return;
   if (profileId === manager.id) {
@@ -121,7 +121,7 @@ export async function approveUser(formData: FormData) {
 }
 
 export async function approveUserWithAssignment(formData: FormData) {
-  const manager = await requireRole(MANAGEMENT_ROLES);
+  const manager = await requireRole(USER_ADMIN_ROLES);
   const profileId = String(formData.get("profileId") || "");
   const role = String(formData.get("role") || "").trim();
   const station = String(formData.get("station") || "").trim();
@@ -178,7 +178,7 @@ export async function approveUserWithAssignment(formData: FormData) {
 }
 
 export async function rejectUser(formData: FormData) {
-  const manager = await requireRole(MANAGEMENT_ROLES);
+  const manager = await requireRole(USER_ADMIN_ROLES);
   const profileId = String(formData.get("profileId") || "");
   const reason = String(formData.get("reason") || "").trim();
   if (!profileId) return;
@@ -207,7 +207,7 @@ export async function rejectUser(formData: FormData) {
 }
 
 export async function deactivateUser(formData: FormData) {
-  const manager = await requireRole(MANAGEMENT_ROLES);
+  const manager = await requireRole(USER_ADMIN_ROLES);
   const profileId = String(formData.get("profileId") || "");
   if (!profileId) return;
 
@@ -234,7 +234,7 @@ const REPORT_TABLES = [
 ] as const;
 
 export async function deleteUserAccount(formData: FormData) {
-  const manager = await requireRole(MANAGEMENT_ROLES);
+  const manager = await requireRole(USER_ADMIN_ROLES);
   const profileId = String(formData.get("profileId") || "");
   if (!profileId) return;
 
@@ -286,7 +286,7 @@ export async function deleteUserAccount(formData: FormData) {
 }
 
 export async function updateUserAssignment(formData: FormData) {
-  await requireRole(MANAGEMENT_ROLES);
+  await requireRole(USER_ADMIN_ROLES);
   const profileId = String(formData.get("profileId") || "");
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
+import { requireRole, USER_ADMIN_ROLES } from "@/lib/avsec/auth";
 import { createClient } from "@/lib/supabase/server";
 import { CreateAccountForm } from "@/components/avsec/admin/CreateAccountForm";
 import { UsersTable } from "@/components/avsec/admin/UsersTable";
@@ -13,7 +13,7 @@ export default async function AdminUsersPage({
   searchParams: Promise<{ error?: string; success?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const profile = await requireRole(ADMIN_ROLES);
+  await requireRole(USER_ADMIN_ROLES);
 
   const supabase = await createClient();
   const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });

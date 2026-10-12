@@ -6300,6 +6300,118 @@ export type Database = {
         }[]
       }
       list_entity_assignment_options_secure: { Args: Record<string, never>; Returns: Json }
+      // --- role-workspace completion (20261103000001) ---
+      caller_is_non_rostered_only: { Args: Record<string, never>; Returns: boolean }
+      can_user_confirm_caterlink_receipt: { Args: { p_station_code: string; p_aoc_id?: string | null }; Returns: boolean }
+      can_create_report_form: { Args: { p_form: string }; Returns: boolean }
+      list_my_report_forms_secure: { Args: Record<string, never>; Returns: { form_type: string }[] }
+      search_operation_staff_secure: {
+        Args: { p_search?: string | null; p_page?: number | null; p_page_size?: number | null }
+        Returns: { staff_no: string; staff_name: string; role_code: string; hub_code: string | null; station_code: string | null; team_name: string | null; total_count: number }[]
+      }
+      link_flight_to_case_secure: { Args: { p_case_id: string; p_flight: string; p_flight_date?: string | null; p_note?: string | null }; Returns: undefined }
+      link_staff_to_case_secure: { Args: { p_case_id: string; p_staff_no: string; p_note?: string | null }; Returns: { staff_no: string; staff_name: string }[] }
+      list_investigation_case_links_secure: {
+        Args: { p_case_id: string }
+        Returns: { id: string; link_type: string; flight_number: string | null; flight_date: string | null; staff_no: string | null; staff_name: string | null; note: string | null; linked_by_name: string; linked_at: string }[]
+      }
+      prepare_case_evidence_secure: { Args: { p_case_id: string; p_file_name: string; p_mime_type: string; p_size_bytes: number }; Returns: string }
+      register_case_evidence_secure: {
+        Args: { p_case_id: string; p_storage_path: string; p_file_name: string; p_mime_type: string; p_size_bytes: number; p_description?: string | null }
+        Returns: string
+      }
+      list_investigation_case_evidence_secure: {
+        Args: { p_case_id: string }
+        Returns: { id: string; file_name: string; mime_type: string; size_bytes: number; description: string | null; uploaded_by_name: string; uploaded_at: string }[]
+      }
+      authorize_case_evidence_download_secure: { Args: { p_evidence_id: string }; Returns: { storage_path: string; file_name: string }[] }
+      can_read_case_evidence: { Args: { p_object_name: string }; Returns: boolean }
+      close_investigation_case_secure: { Args: { p_case_id: string; p_reason: string }; Returns: undefined }
+      get_investigation_case_timeline_secure: {
+        Args: { p_case_id: string }
+        Returns: { event_at: string; event_type: string; actor_name: string | null; summary: string; ref_id: string }[]
+      }
+      list_investigation_case_audit_secure: {
+        Args: { p_case_id: string }
+        Returns: { id: string; created_at: string; action: string; actor_name: string | null; detail: Json }[]
+      }
+      list_caterlink_pending_receipts_secure: {
+        Args: { p_station_code: string }
+        Returns: {
+          id: string
+          transaction_number: string
+          direction: string
+          route: string | null
+          status: string | null
+          vehicle_number: string
+          driver_name: string
+          seal_number: string | null
+          flight_number: string | null
+          aircraft_registration: string | null
+          trolley_count: number | null
+          origin_station: string | null
+          destination_station: string | null
+          created_at: string
+        }[]
+      }
+      list_caterlink_movements_readonly_secure: {
+        Args: { p_station_code?: string | null; p_status?: string | null; p_page?: number | null; p_page_size?: number | null }
+        Returns: {
+          id: string
+          transaction_number: string
+          direction: string
+          route: string | null
+          status: string | null
+          origin_station: string | null
+          destination_station: string | null
+          flight_number: string | null
+          aircraft_registration: string | null
+          vehicle_number: string
+          trolley_count: number | null
+          created_at: string
+          completed_at: string | null
+          total_count: number
+        }[]
+      }
+      caller_hub_se_hub: { Args: Record<string, never>; Returns: string | null }
+      list_hub_stations_secure: { Args: Record<string, never>; Returns: { hub_code: string; hub_name: string; station_code: string; station_name: string }[] }
+      get_hub_station_overview_secure: {
+        Args: { p_station_code?: string | null; p_date?: string | null }
+        Returns: {
+          station_code: string
+          rostered_teams: number
+          checked_in: number
+          pending: number
+          absent: number
+          total_staff: number
+          open_bay_board: number
+          reports_last_7_days: number
+          can_scan: boolean
+          can_confirm_receipt: boolean
+        }[]
+      }
+      search_report_stubs_for_request_secure: {
+        Args: { p_flight?: string | null; p_from?: string | null; p_to?: string | null; p_source_table?: string | null; p_page?: number | null; p_page_size?: number | null }
+        Returns: { id: string; source_table: string; operating_entity_code: string | null; flight_number: string | null; report_date: string | null; status: string; already_accessible: boolean; total_count: number }[]
+      }
+      list_my_report_access_requests_secure: {
+        Args: Record<string, never>
+        Returns: {
+          id: string
+          source_table: string
+          operating_entity_code: string | null
+          flight_number: string | null
+          report_date: string | null
+          business_reason: string
+          status: string
+          decision_reason: string | null
+          created_at: string
+          reviewed_at: string | null
+          grant_state: string | null
+          grant_expires_at: string | null
+          source_id: string | null
+        }[]
+      }
       create_report_amendment: {
         Args: { p_repository_report_id: string; p_amendment_type: string; p_reason: string; p_amended_content?: Json | null }
         Returns: string

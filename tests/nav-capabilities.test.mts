@@ -95,7 +95,7 @@ test("Investigation: Malaysia-wide search + case workspace, no station operation
 
 test("Compliance is read-only: search + flight dashboard + discussions, nothing operational", () => {
   const h = nav("compliance", true);
-  assert.deepEqual([...new Set(h)].sort(), ["/avsec/discussions", "/avsec/flights", "/avsec/my-dashboard", "/avsec/profile", "/avsec/reports/lookup"].sort());
+  assert.deepEqual([...new Set(h)].sort(), ["/avsec/caterlink/movements", "/avsec/discussions", "/avsec/flights", "/avsec/my-dashboard", "/avsec/profile", "/avsec/reports/lookup"].sort());
   assert.equal(canCreateReport(["compliance"], "sec016"), false);
 });
 

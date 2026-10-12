@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentProfile } from "@/lib/avsec/auth";
-import { canActOnBayBoard, canCreateReport, type ReportFormType } from "@/lib/auth/role-capabilities";
+import { canActOnBayBoard, type ReportFormType } from "@/lib/auth/role-capabilities";
+import { mayCreateReportForm } from "@/lib/avsec/reports/form-capability";
 import type { CanonicalAccess } from "@/lib/auth/canonical-access";
 import { getEligibleSupervisingOfficers } from "@/lib/avsec/reports/queries";
 import { hasOpenDutyCheckIn } from "@/lib/avsec/duty/checkin-queries";
@@ -47,7 +48,7 @@ async function requireProfileId(reportType?: ReportFormType | "bayboard"): Promi
   // being hidden is not enough -- this closes the direct server-action call.
   if (reportType === "bayboard") {
     if (!canActOnBayBoard((profile.canonical as CanonicalAccess).roleCodes)) return null;
-  } else if (reportType && !canCreateReport((profile.canonical as CanonicalAccess).roleCodes, reportType)) return null;
+  } else if (reportType && !(await mayCreateReportForm(reportType))) return null;
   return {
     id: profile.id,
     station: profile.station,

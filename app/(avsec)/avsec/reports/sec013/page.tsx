@@ -1,10 +1,14 @@
 import { requireRouteAccess } from "@/lib/avsec/auth";
+import { requireReportFormAccess } from "@/lib/avsec/reports/form-capability";
 import { loadDraft } from "@/lib/avsec/reports/drafts";
 import { Sec013Form } from "@/components/avsec/forms/Sec013Form";
 import { REPORT_META } from "@/lib/avsec/reference-data";
 
 export default async function Sec013Page() {
-  const profile = await requireRouteAccess("/avsec/reports/sec013", []);
+  // Two independent gates: the dashboard-link route policy, then the person's ASSIGNED form (report_form_assignments).
+  await requireRouteAccess("/avsec/reports/sec013", []);
+  const profile = await requireReportFormAccess("sec013");
+
   const serverDraft = await loadDraft("sec013");
 
   return (

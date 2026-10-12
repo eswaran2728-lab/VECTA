@@ -29,7 +29,8 @@ const GATE_MARKERS = [
   "requireRouteAccess(",
   "requireProfile(",
   "requireEntityLeadership(", // MAA/AAX leadership pages: canonical role codes via requireProfile(), plus per-RPC database re-authorization
-  "requireAttendanceProfile(", // duty / leave / overtime surface: requireProfile() that also denies non-rostered leadership
+  "requireAttendanceProfile(",
+  "requireReportFormAccess(", // report forms: requireProfile() + the person's assigned form (report_form_assignments) // duty / leave / overtime surface: requireProfile() that also denies non-rostered leadership
   "requirePhase8Role(",
   "isSuperAdmin(",
   "redirect(\"/login\")",

@@ -631,6 +631,13 @@ $$;
 
 select pg_temp.clear_simulation();
 
+-- Report forms are an ASSIGNED function (migration 20261103000001: report_form_assignments + a BEFORE INSERT trigger). The harness
+-- fixture user is an ASO and the scenarios below exercise SEC013 finalization, so its role is explicitly assigned that form here
+-- (a harness fixture only; nothing in a migration grants a standard ASO SEC013).
+insert into public.report_form_assignments (role_code, station_code, profile_id, form_type, note)
+values ('aso', null, null, 'sec013', 'harness fixture: SEC013 finalization scenarios')
+on conflict on constraint report_form_assignments_unique do nothing;
+
 -- =======================================================================
 -- SCENARIO 10: a valid zero-child report finalizes successfully
 -- =======================================================================

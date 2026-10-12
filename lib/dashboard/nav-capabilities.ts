@@ -81,6 +81,9 @@ const TIMESHEET = L("/avsec/duty/timesheet", "My Timesheet", "calendar-days");
 const LEAVE_QUEUE = L("/avsec/duty/absences", "Leave Approval Queue", "coffee");
 const OT_QUEUE = L("/avsec/duty/overtime", "OT Approval Queue", "clock");
 const ROSTER = L("/avsec/admin/roster", "Roster", "calendar-days");
+const REQUEST_ACCESS = L("/avsec/reports/request-access", "Request Report Access", "inbox", { match: ["/avsec/reports/request-access"] });
+const CATERLINK_MOVEMENTS = L("/avsec/caterlink/movements", "CaterLink Movements (read-only)", "truck", { match: ["/avsec/caterlink/movements"] });
+const CATERLINK_RECEIPT = L("/avsec/caterlink/receipt", "CaterLink Final Receipt", "package", { match: ["/avsec/caterlink/receipt"] });
 
 /** Personal attendance block for rostered, non-supervising staff. */
 const SELF_ATTENDANCE: NavLink[] = [LEAVES_MINE, OT_MINE, TIMESHEET];
@@ -100,7 +103,7 @@ function model(kind: NavKind, code: string, groups: NavGroupModel[], tabs: NavLi
   return { kind, roleCode: code, roleLabel: roleLabelFor(code), groups, tabs: tabsFrom(tabs), duty, attendanceSelfService };
 }
 
-export function buildNavModel(input: { roleCodes: readonly string[]; selectedRoleCode?: string | null; canScan?: boolean }): NavModel {
+export function buildNavModel(input: { roleCodes: readonly string[]; selectedRoleCode?: string | null; canScan?: boolean; canReceive?: boolean }): NavModel {
   const { roleCode, multi } = resolveNavRole(input.roleCodes, input.selectedRoleCode);
   if (input.roleCodes.length === 0) return { kind: "none", roleCode: null, roleLabel: null, groups: [], tabs: [], duty: false, attendanceSelfService: false };
 
@@ -159,6 +162,7 @@ export function buildNavModel(input: { roleCodes: readonly string[]; selectedRol
         code,
         [
           { title: "EXECUTIVE", items: [overview] },
+          { title: "REPORTS", items: [REQUEST_ACCESS] },
           { title: "COMMUNICATION", items: [DISCUSSIONS, L("/avsec/management/announcements", "Announcements (read-only)", "megaphone")] },
           { title: "ACCOUNT", items: [PROFILE] },
         ],
@@ -172,7 +176,7 @@ export function buildNavModel(input: { roleCodes: readonly string[]; selectedRol
         "executive",
         code,
         [
-          { title: "EXECUTIVE", items: [overview, L("/avsec/my-dashboard#flagged-reports", "Flagged Reports", "shield")] },
+          { title: "EXECUTIVE", items: [overview, L("/avsec/my-dashboard#flagged-reports", "Flagged Reports", "shield"), REQUEST_ACCESS] },
           { title: "COMMUNICATION", items: [DISCUSSIONS, L("/avsec/management/announcements", "Global Announcements", "megaphone", { match: ["/avsec/management/announcements"] })] },
           { title: "ACCOUNT", items: [PROFILE] },
         ],
@@ -215,7 +219,7 @@ export function buildNavModel(input: { roleCodes: readonly string[]; selectedRol
               L("/avsec/admin/attendance-report", "Attendance Report & Export", "file-text"),
             ],
           },
-          { title: "REPORTS", items: [REPORT_SEARCH, L("/icms/transactions", "CaterLink Movements (read-only)", "truck")] },
+          { title: "REPORTS & STAFF", items: [REPORT_SEARCH, L("/avsec/operation/staff", "Operation Staff (read-only)", "users"), CATERLINK_MOVEMENTS] },
           { title: "COMMUNICATION", items: [DISCUSSIONS, L("/avsec/discussions/moderation", "Discussion Moderation", "shield", { match: ["/avsec/discussions/moderation"] })] },
           { title: "ACCOUNT", items: [PROFILE] },
         ],
@@ -266,7 +270,7 @@ export function buildNavModel(input: { roleCodes: readonly string[]; selectedRol
         "compliance",
         code,
         [
-          { title: "COMPLIANCE (READ-ONLY)", items: [overview, REPORT_SEARCH, flights] },
+          { title: "COMPLIANCE (READ-ONLY)", items: [overview, REPORT_SEARCH, flights, CATERLINK_MOVEMENTS] },
           { title: "COMMUNICATION", items: [DISCUSSIONS] },
           { title: "ACCOUNT", items: [PROFILE] },
         ],
@@ -280,7 +284,7 @@ export function buildNavModel(input: { roleCodes: readonly string[]; selectedRol
         "hub",
         code,
         [
-          { title: "HUB", items: [hub, DUTY, BAY_BOARD, ROSTER, REPORT_SEARCH] },
+          { title: "HUB", items: [hub, L("/avsec/hub", "Hub Stations", "building", { match: ["/avsec/hub"] }), DUTY, BAY_BOARD, ROSTER, REPORT_SEARCH] },
           { title: "ATTENDANCE & APPROVALS", items: [LEAVE_QUEUE, OT_QUEUE, TIMESHEET] },
           { title: "COMMUNICATION", items: [DISCUSSIONS, FEEDBACK] },
           { title: "ACCOUNT", items: [PROFILE] },
@@ -320,6 +324,8 @@ export function buildNavModel(input: { roleCodes: readonly string[]; selectedRol
       if (input.canScan) ops.push(L("/avsec/scan", "Checkpoint Scanner", "scan"));
       ops.push(BAY_BOARD);
       if (input.canScan) ops.push(L("/icms/transactions", "ICMS Catering Stream", "activity", { match: ["/icms/transactions"] }));
+      // Final-receipt stations (BKI / KCH): receipt only -- no scanner, no stream.
+      if (input.canReceive && !input.canScan) ops.push(CATERLINK_RECEIPT);
       const groups: NavGroupModel[] = [
         { title: "OPERATIONS", items: ops },
         { title: "ATTENDANCE", items: SELF_ATTENDANCE },

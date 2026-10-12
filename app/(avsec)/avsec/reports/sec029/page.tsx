@@ -1,11 +1,12 @@
-import { requireRole } from "@/lib/avsec/auth";
+import { requireReportFormAccess } from "@/lib/avsec/reports/form-capability";
 import { loadDraft } from "@/lib/avsec/reports/drafts";
 import { getEligibleSupervisingOfficers } from "@/lib/avsec/reports/queries";
 import { Sec029Form } from "@/components/avsec/forms/Sec029Form";
 import { REPORT_META } from "@/lib/avsec/reference-data";
 
 export default async function Sec029Page() {
-  const profile = await requireRole(["ASO"]);
+  const profile = await requireReportFormAccess("sec029");
+
   const serverDraft = await loadDraft("sec029");
   // Best-effort: an outage here must never block filing a security report — worst
   // case, the dropdown is briefly empty and the officer re-selects after a retry.

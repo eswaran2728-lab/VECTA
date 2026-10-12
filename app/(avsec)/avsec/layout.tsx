@@ -5,6 +5,7 @@ import { ServiceWorkerRegister } from "@/components/avsec/offline/ServiceWorkerR
 import { InstallPrompt } from "@/components/avsec/offline/InstallPrompt";
 import { APP_NAME, APP_DESCRIPTION } from "@/lib/avsec/branding";
 import { getRawProfile, getCanonicalAccess, getCanScanCaterLink } from "@/lib/avsec/auth";
+import { getCanConfirmCaterLinkReceipt } from "@/lib/avsec/caterlink/receipt-capability";
 import { signOut as authSignOut } from "@/lib/avsec/profile-actions";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
@@ -35,9 +36,10 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
   // -- skipped entirely when chrome isn't shown anyway (profile-setup/
   // pending-approval), and an empty result just means no "My Dashboard"
   // entry, never a broken link or an authorization change.
+  const canReceive = showChrome && access ? await getCanConfirmCaterLinkReceipt(access) : false;
   const hasPhase7Assignment = showChrome ? Boolean(access?.hasAssignment) : false;
   // Explicit canonical-role navigation. There is NO default role: an absent or unrecognised role gets the minimal model.
-  const navModel = showChrome && access ? buildNavModel({ roleCodes: access.roleCodes, canScan }) : null;
+  const navModel = showChrome && access ? buildNavModel({ roleCodes: access.roleCodes, canScan, canReceive }) : null;
   // Exact canonical label (SSO is SSO, Hub SE is Hub SE) -- never the legacy compat label.
   const roleLabel = access ? (primaryRoleLabel(access.roleCodes) ?? access.roleCodes[0] ?? null) : null;
 
