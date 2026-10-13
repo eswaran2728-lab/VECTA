@@ -89,17 +89,21 @@ async function newSession(browser, vp, tag) {
   await page.goto(`${base}/login?x-vercel-protection-bypass=${bypass}&x-vercel-set-bypass-cookie=true`, { waitUntil: "domcontentloaded" });
   return { ctx, page, issues, tag };
 }
+let lastBrowserLogin = 0;
 async function login(page, a) {
-  for (let i = 0; i < 4; i++) {
+  // Supabase Auth rate-limits sign-ins per IP: pace them and retry (a refused sign-in leaves the page on /login)
+  for (let i = 0; i < 6; i++) {
+    const wait = lastBrowserLogin + 8000 - Date.now();
+    if (wait > 0) await sleep(wait);
+    lastBrowserLogin = Date.now();
     await page.goto(`${base}/login`, { waitUntil: "domcontentloaded" });
     await page.fill('input[name="email"]', a.email);
     await page.fill('input[name="password"]', a.password);
     await page.getByRole("button", { name: /Sign in with Credentials/i }).click();
-    await page.waitForURL((u) => !/\/login$/.test(u.pathname) || /error/.test(u.search), { timeout: 25000 }).catch(() => {});
+    await page.waitForURL((u) => !/\/login$/.test(u.pathname), { timeout: 25000 }).catch(() => {});
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
-    const body = (await page.textContent("body").catch(() => "")) ?? "";
-    if (/rate limit/i.test(body)) { await sleep(20000 * (i + 1)); continue; }
-    return;
+    if (!/\/login$/.test(new URL(page.url()).pathname) || /[?&]error=/.test(page.url())) return;
+    await sleep(30000 * (i + 1));
   }
 }
 const pathOf = (page) => new URL(page.url()).pathname;
