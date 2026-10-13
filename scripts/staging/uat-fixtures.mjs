@@ -15,6 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { environmentGates, connectVerified, FORBIDDEN_REF, APPROVED_REF } from "./lib/run-gates.mjs";
 import { loadCurrentManifest } from "./lib/review-accounts.mjs";
+import { DUTY_LABELS, dbClock, inactiveDutyLabels } from "./lib/uat-duty.mjs";
 
 const args = process.argv.slice(2);
 const argVal = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split("=").slice(1).join("=");
@@ -22,10 +23,6 @@ const action = argVal("action");
 const runId = argVal("run-id");
 const LIVE = args.includes("--live");
 
-/** The ONLY accounts these fixtures may touch: label -> expected station code. */
-export const DUTY_ACCOUNTS = {
-  aso: "PEN", "aso-jhb": "JHB", "aso-kul": "KUL - MAA", "aso-kch-receipt": "KCH", "aso-bki-receipt": "BKI", "aso-no-caterlink": "BTU",
-};
 const SUBMITTER = "aso-kul";
 export const REPORTS = [
   { key: "MAA", flight: "AK9001", reg: "9M-UAT01", flightPrefixEntity: "MAA" },
@@ -43,7 +40,7 @@ const fail = (m) => { throw new Error(m); };
 const redact = (m) => String(m).replace(/postgres(ql)?:\/\/[^@\s]+@/g, "postgres://[REDACTED]@");
 
 async function main() {
-  if (!["status", "create-duty", "cleanup-duty", "create-reports", "cleanup-reports", "create-tx", "cleanup-tx", "create-notifications", "cleanup-notifications"].includes(action)) fail("unknown --action");
+  if (!["status", "create-duty", "cleanup-duty", "create-reports", "cleanup-reports", "create-tx", "cleanup-tx", "create-notifications", "cleanup-notifications", "verify-duty"].includes(action)) fail("unknown --action");
   environmentGates();
   if (JSON.stringify(process.env).includes(FORBIDDEN_REF)) fail("production reference present");
   const manifest = loadCurrentManifest();
@@ -54,24 +51,39 @@ async function main() {
   try {
     const host = (await q("select current_setting('server_version') v"))[0].v;
     console.log(`staging ${APPROVED_REF} connected (server ${host}); mode=${LIVE ? "LIVE" : "DRY RUN"}; action=${action}; tag=${TAG}`);
-    const today = (await q("select (now() at time zone 'Asia/Kuala_Lumpur')::date::text d"))[0].d;
+    const clock = await dbClock(client);
+    const today = clock.myDate; // the Malaysia operational date, read from the STAGING DATABASE
 
     if (action === "status") {
       console.log(JSON.stringify({ duty: ledger.duty.length, reports: ledger.reports.length, ledger: path.basename(ledgerPath) }));
       return;
     }
 
+    if (action === "verify-duty") {
+      const bad = await inactiveDutyLabels(client, ledger.duty, manifest);
+      console.log(`db now=${clock.nowUtc} my-date=${clock.myDate} seconds-left=${clock.secondsLeft}; fixture entries=${ledger.duty.length}; inactive=${bad.length}${bad.length ? " (" + bad.join(",") + ")" : ""}`);
+      if (bad.length || ledger.duty.some((d) => d.date !== clock.myDate)) fail("duty fixtures are not all active for the current Malaysia date");
+      return;
+    }
+
     if (action === "create-duty") {
+      // ONE active row per required account, for the CURRENT Malaysia date; refuse when the date would roll over during the run.
+      const maxRunMin = Number.parseInt(argVal("max-run-minutes") ?? "360", 10);
+      const marginMin = Number.parseInt(argVal("margin-minutes") ?? "45", 10);
+      const need = (maxRunMin + marginMin) * 60;
+      console.log(`staging clock: now=${clock.nowUtc}; Malaysia date=${clock.myDate}; ${Math.floor(clock.secondsLeft / 60)} min until Malaysia midnight; required ${maxRunMin}+${marginMin} min`);
+      if (clock.secondsLeft < need) fail("not enough time before Malaysia midnight for the configured run plus margin; refusing to create duty fixtures");
+      if (ledger.duty.length) fail("this run already holds duty fixtures; clean them up first (idempotent: nothing is created twice)");
       const plan = [];
-      for (const [label, station] of Object.entries(DUTY_ACCOUNTS)) {
+      for (const label of DUTY_LABELS) {
         const a = account(label);
         const p = (await q("select id, station, status from public.profiles where id = $1", [a.authUserId]))[0] ?? fail(`${label}: no profile`);
-        if (p.status !== "approved" || p.station !== station) fail(`${label}: profile is not approved at ${station}`);
+        if (p.status !== "approved" || !p.station) fail(`${label}: profile is not an approved station officer`);
         const existing = (await q("select count(*)::int n from public.duty_records where profile_id = $1 and duty_date = $2::date", [p.id, today]))[0].n;
-        if (existing) fail(`${label}: a duty record already exists for ${today}; refusing to collide`);
-        plan.push({ label, profileId: p.id, station });
+        if (existing) fail(`${label}: a duty record already exists for ${today} (real or earlier fixture); refusing to collide`);
+        plan.push({ label, profileId: p.id, station: p.station });
       }
-      console.log(`plan: ${plan.map((x) => `${x.label}@${x.station}`).join(", ")} for ${today} (the row expires with the duty date)`);
+      console.log(`plan: ${plan.length} accounts (${plan.map((x) => `${x.label}@${x.station}`).join(", ")}) for ${today}`);
       if (!LIVE) return console.log("DRY RUN: nothing written");
       await client.query("BEGIN");
       try {
@@ -81,12 +93,14 @@ async function main() {
              values ($1, $2, $3::date, 'UAT', now(), true, 'present', $4) returning id`,
             [x.profileId, x.station, today, TAG],
           ))[0];
-          ledger.duty.push({ id: r.id, label: x.label, date: today });
+          ledger.duty.push({ id: r.id, label: x.label, date: today, validUntilSecondsAfterCreate: clock.secondsLeft });
         }
         await client.query("COMMIT");
       } catch (e) { await client.query("ROLLBACK"); throw e; }
       writeLedger(ledger);
-      console.log(`created ${plan.length} duty rows: ${ledger.duty.map((d) => d.id).join(", ")}`);
+      const bad = await inactiveDutyLabels(client, ledger.duty, manifest);
+      if (bad.length) fail(`created fixtures are not active through the duty-gate predicate: ${bad.join(",")}`);
+      console.log(`created ${plan.length} duty rows, all verified active through the duty-gate predicate under RLS: ${ledger.duty.map((d) => d.id).join(", ")}`);
       return;
     }
 
@@ -104,13 +118,16 @@ async function main() {
     if (action === "create-notifications") {
       const labels = ["maa_admin", "aax_admin", "aso-kul", "aso", "operation_manager", "compliance"];
       console.log(`plan: one synthetic notification for each of ${labels.join(", ")}`);
+      if (ledger.notifications.length) fail("this run already holds notifications; never reuse a consumed notification: clean up and use a NEW run id");
       if (!LIVE) return console.log("DRY RUN: nothing written");
       for (const l of labels) {
         const pid = account(l).authUserId;
         const key = `uat:${runId}:${l}`;
         await q("select public.notify($1, 'request_submitted', $2, null, null, null, $3::jsonb)", [pid, key, JSON.stringify({ uat: runId })]);
         const row = (await q("select id from public.user_notifications where dedup_key = $1", [key]))[0];
-        ledger.notifications.push({ id: row.id, label: l, profileId: pid });
+        const st = (await q("select read_at from public.user_notifications where id = $1", [row.id]))[0];
+        if (st.read_at !== null) fail(`notification for ${l} is not unread immediately after creation`);
+        ledger.notifications.push({ id: row.id, label: l, profileId: pid, createdUnread: true });
       }
       writeLedger(ledger);
       console.log(`created ${ledger.notifications.length} notifications: ${ledger.notifications.map((n) => n.id).join(", ")}`);
@@ -169,7 +186,7 @@ async function main() {
     if (action === "create-reports") {
       const sub = account(SUBMITTER);
       const prof = (await q("select id, station, team, name, staff_no, status from public.profiles where id = $1", [sub.authUserId]))[0] ?? fail("no submitter profile");
-      if (prof.status !== "approved" || prof.station !== DUTY_ACCOUNTS[SUBMITTER] || !prof.team) fail("submitter profile is not the expected approved station officer with a team");
+      if (prof.status !== "approved" || prof.station !== "KUL - MAA" || !prof.team) fail("submitter profile is not the expected approved station officer with a team");
       console.log(`plan: ${REPORTS.map((r) => `${r.key} ${r.flight} ${r.reg}`).join("; ")} submitted by ${SUBMITTER} (${prof.station}/${prof.team}) dated ${today}`);
       if (!LIVE) return console.log("DRY RUN: nothing written");
       for (const r of REPORTS) {

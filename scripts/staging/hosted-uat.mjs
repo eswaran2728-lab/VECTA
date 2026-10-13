@@ -12,7 +12,9 @@ import path from "node:path";
 import { chromium } from "playwright";
 import { createClient } from "@supabase/supabase-js";
 import { createRequire } from "node:module";
-import { defaultCredentialsDir } from "./lib/run-gates.mjs";
+import child_process from "node:child_process";
+import { defaultCredentialsDir, connectVerified } from "./lib/run-gates.mjs";
+import { DUTY_LABELS, dbClock, inactiveDutyLabels } from "./lib/uat-duty.mjs";
 import { loadCurrentCredentials, loadCurrentManifest } from "./lib/review-accounts.mjs";
 import { roleLabelFor, landsOnRoleDashboard, isRostered, ROLE_CAPABILITIES } from "../../lib/auth/role-capabilities.ts";
 import { buildNavModel } from "../../lib/dashboard/nav-capabilities.ts";
@@ -34,7 +36,9 @@ const credDir = defaultCredentialsDir("dashboard-review-20261005");
 const bypass = fs.readFileSync(path.join(credDir, "vercel-bypass.txt"), "utf8").trim();
 const accounts = loadCurrentCredentials();
 const manifest = loadCurrentManifest();
-const ledger = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), "vecta-uat-fixtures", `${runId}.json`), "utf8"));
+const ledgerPath = path.join(os.tmpdir(), "vecta-uat-fixtures", `${runId}.json`);
+let ledger = JSON.parse(fs.readFileSync(ledgerPath, "utf8"));
+const reloadLedger = () => { ledger = JSON.parse(fs.readFileSync(ledgerPath, "utf8")); };
 const CHROME = ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"].find((p) => fs.existsSync(p));
 const VIEWPORTS = { mobile: { width: 390, height: 844 }, tablet: { width: 768, height: 1024 }, desktop: { width: 1366, height: 850 } };
 const evDir = path.join(os.tmpdir(), "vecta-uat-evidence", `${runId}-${phase}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
@@ -45,6 +49,8 @@ const totals = {};
 const failures = [];
 const hosts = new Set();
 const netIssues = new Map();
+/** Sanitized diagnostics of every failed request (no query string, token, body, e-mail or signed URL is ever recorded). */
+const netDiag = [];
 function check(section, label, cond, note = "") {
   totals[section] ??= { pass: 0, fail: 0 };
   totals[section][cond ? "pass" : "fail"] += 1;
@@ -80,6 +86,22 @@ async function newSession(browser, vp, tag) {
     }
   };
   const issues = [];
+  issues.recoveredFailures = [];
+  page.on("requestfailed", async (req) => {
+    let u; try { u = new URL(req.url()); } catch { return; }
+    const failure = req.failure()?.errorText ?? "unknown";
+    const d = { section: tag, method: req.method(), host: u.hostname, path: u.pathname.slice(0, 120), type: req.resourceType(), failure, attempt: 1, at: new Date().toISOString(), outcome: "failed" };
+    netDiag.push(d);
+    if (/ERR_ABORTED/.test(failure)) { d.outcome = "benign-aborted (navigation/prefetch cancelled)"; return; }
+    if (req.method() !== "GET" && req.method() !== "HEAD") { d.outcome = "failed (write, not retried)"; return; }
+    // one bounded retry of the exact READ-ONLY request
+    await sleep(2500);
+    d.attempt = 2;
+    try {
+      const r = await ctx.request.fetch(req.url(), { method: req.method(), headers: req.headers(), timeout: 20000, failOnStatusCode: false });
+      if (r.status() < 500) { d.outcome = `recovered (retry HTTP ${r.status()})`; issues.recoveredFailures.push(failure); } else d.outcome = `failed (retry HTTP ${r.status()})`;
+    } catch (e) { d.outcome = `failed (retry: ${String(e.message).split("\n")[0].slice(0, 80)})`; }
+  });
   page.on("pageerror", (e) => issues.push({ kind: "pageerror", msg: String(e.message).slice(0, 140) }));
   page.on("console", (m) => { if (m.type() === "error" && !/vercel\.live|feedback\.js/.test(m.text())) issues.push({ kind: "console", msg: m.text().slice(0, 140) }); });
   page.on("response", (r) => {
@@ -111,7 +133,13 @@ async function headingOf(page) {
   return (await page.locator("h1, h2").first().textContent({ timeout: 4000 }).catch(() => ""))?.trim() ?? "";
 }
 function recordIssues(label, issues) {
+  const recovered = [...(issues.recoveredFailures ?? [])];
   for (const i of issues) {
+    // a console line for a request that failed and then recovered on the bounded retry is an environmental event, already in netDiag
+    if (i.kind === "console") {
+      const k = recovered.findIndex((f) => i.msg === `Failed to load resource: ${f}`);
+      if (k >= 0) { recovered.splice(k, 1); continue; }
+    }
     // 307/308 are redirects, not errors; intended denials are never HTTP errors in this app
     const key = `${i.kind}: ${i.msg}`;
     netIssues.set(key, [...(netIssues.get(key) ?? []), label]);
@@ -169,6 +197,56 @@ const rpc = async (label, fn, params = {}) => {
 };
 
 // =============================================================================================== sections
+/** The clock guard: the Malaysia date (from the STAGING DATABASE) must still be the fixtures' date. A change aborts the run as inconclusive. */
+async function assertDutyWindow(where) {
+  const { client } = await connectVerified();
+  try {
+    const clock = await dbClock(client);
+    const manifestNow = manifest;
+    const bad = ledger.duty.length ? await inactiveDutyLabels(client, ledger.duty, manifestNow) : [];
+    const dateOk = ledger.duty.every((d) => d.date === clock.myDate);
+    console.log(`INFO: duty window check (${where}): staging Malaysia date ${clock.myDate}; ${Math.floor(clock.secondsLeft / 60)} min to midnight; ${ledger.duty.length} fixtures; inactive ${bad.length}`);
+    if (!dateOk || bad.length) {
+      console.log(`INCONCLUSIVE: the duty fixtures are no longer valid at "${where}" (date changed or a fixture became inactive). Aborting; fixtures are NOT recreated during a run.`);
+      check("duty", `duty fixtures valid at ${where}`, false, !dateOk ? "Malaysia date changed" : `inactive: ${bad.join(",")}`);
+      fs.writeFileSync(path.join(evDir, "INCONCLUSIVE.txt"), `duty window invalid at ${where}\n`);
+      process.exit(3);
+    }
+    check("duty", `duty fixtures are active for the current Malaysia date at ${where}`, true);
+  } finally { await client.end(); }
+}
+
+/** Before any duty fixture exists: every rostered officer is held at the duty gate on its direct routes. */
+async function sectionDutyGate(browser) {
+  console.log("\n=== B0. Duty-gate behaviour BEFORE duty (no duty fixture exists yet) ===");
+  if (ledger.duty.length) { check("duty", "no duty fixture exists before the gate section", false, `${ledger.duty.length} present`); return; }
+  for (const label of DUTY_LABELS) {
+    const a = acct(label);
+    const s = await newSession(browser, VIEWPORTS.desktop, `${label}/gate`);
+    try {
+      await login(s.page, a);
+      check("duty", `${label}: before duty, sign-in lands on the duty check-in gate`, pathOf(s.page) === "/avsec/duty", pathOf(s.page));
+      for (const route of ["/avsec/reports/lookup", "/avsec/discussions", "/avsec/bay-board"]) {
+        await s.page.goto(`${base}${route}`, { waitUntil: "domcontentloaded" });
+        await s.page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+        check("duty", `${label}: before duty, ${route} redirects to the duty gate`, pathOf(s.page) === "/avsec/duty" && s.page.url().includes("next="), pathOf(s.page));
+      }
+    } catch (e) { check("duty", `${label} gate session`, false, String(e.message).slice(0, 100)); }
+    recordIssues(`${label}/gate`, s.issues);
+    await s.ctx.close();
+  }
+}
+
+/** Creates the one active duty row per required account through the fixture tool (staging clock, window check, RLS-verified), then reloads the ledger. */
+function createDutyFixtures() {
+  console.log("\n--- creating the tagged duty fixtures (controlled step; the clock window is checked first) ---");
+  const r = child_process.spawnSync(process.execPath, ["--env-file=.env.local", "scripts/staging/uat-fixtures.mjs", "--action=create-duty", `--run-id=${runId}`, "--live", "--max-run-minutes=360", "--margin-minutes=45"], { encoding: "utf8", cwd: process.cwd() });
+  console.log((r.stdout || "").split("\n").filter(Boolean).slice(-4).join("\n"));
+  check("duty", "duty fixtures created and verified active through the duty-gate predicate", r.status === 0, (r.stderr || "").slice(0, 160));
+  reloadLedger();
+  if (r.status !== 0 || ledger.duty.length !== DUTY_LABELS.length) { console.log("INCONCLUSIVE: could not establish the duty fixtures"); process.exit(3); }
+}
+
 async function sectionAuthAndRoutes(browser) {
   console.log("\n=== A/B. Authentication, landing and route authorization (desktop) ===");
   const phase8 = {};
@@ -227,6 +305,13 @@ async function sectionAuthAndRoutes(browser) {
         }
         check("routes", `${label}: ${opened}/${hrefs.length} navigation destinations open with a heading${gatedHere ? ` (+${gatedHere} behind the duty check-in gate)` : ""}`, bad.length === 0, bad.slice(0, 4).join(" "));
         if (gatedHere) { totals.inconclusive = totals.inconclusive ?? { pass: 0, fail: 0 }; totals.inconclusive.pass += gatedHere; }
+        if (isRostered(m.roleCode) && ledger.duty.some((d) => d.label === label)) {
+          for (const route of ["/avsec/admin/users", "/super-admin", "/avsec/entity-reports", "/icms/admin/final-pdfs", "/avsec/dashboard"]) {
+            await s.page.goto(`${base}${route}`, { waitUntil: "domcontentloaded" });
+            await s.page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+            check("routes", `${label}: active duty grants no authority over ${route}`, pathOf(s.page) !== route, pathOf(s.page));
+          }
+        }
         for (const [route, allowed] of Object.entries(DENY)) {
           await s.page.goto(`${base}${route}`, { waitUntil: "domcontentloaded" });
           await s.page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
@@ -523,13 +608,19 @@ async function main() {
   const browser = await chromium.launch({ executablePath: CHROME, headless: true, args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] });
   try {
     const run = async (name, fn) => { try { await fn(); } catch (e) { check("sections", `${name} ran to completion`, false, String(e.message).slice(0, 120)); } };
+    const want = (n) => !argVal("sections") || argVal("sections").split(",").includes(n);
     if (phase === "pre-duty") { await run("stations", () => sectionStations(browser)); }
     else {
-      const want = (n) => !argVal("sections") || argVal("sections").split(",").includes(n);
+      // 1) the gate before any duty fixture exists, 2) controlled fixture creation, 3) everything else on duty
+      if (!argVal("sections")) {
+        await run("duty gate (before duty)", () => sectionDutyGate(browser));
+        createDutyFixtures();
+        await assertDutyWindow("start of the on-duty sections");
+      }
       if (want("auth")) await run("auth+routes", () => sectionAuthAndRoutes(browser));
       if (want("rw")) await run("read+write", () => sectionReadWrite());
       if (want("seg")) await run("segregation", () => sectionSegregation(browser));
-      if (want("stations")) await run("stations", () => sectionStations(browser));
+      if (want("stations")) { if (ledger.duty.length) await assertDutyWindow("immediately before the station section"); await run("stations", () => sectionStations(browser)); }
       if (want("resp")) await run("responsive", () => sectionResponsive(browser));
     }
   } finally { await browser.close(); }
@@ -552,14 +643,21 @@ async function main() {
   check("integrity", "no browser console / page errors", consoleErrs.length === 0, consoleErrs.slice(0, 5).map(([k, v]) => `${k} x${v.length}`).join(" | "));
   const httpErrs = unexpected.filter(([k]) => /^http/.test(k));
   check("integrity", "no unexpected HTTP error responses", httpErrs.length === 0, httpErrs.slice(0, 6).map(([k, v]) => `${k} x${v.length}`).join(" | "));
+  const recovered = netDiag.filter((d) => d.outcome.startsWith("recovered"));
+  const benign = netDiag.filter((d) => d.outcome.startsWith("benign"));
+  const unrecovered = netDiag.filter((d) => !d.outcome.startsWith("recovered") && !d.outcome.startsWith("benign"));
+  check("integrity", `no unrecovered network failure (${netDiag.length} requestfailed events: ${recovered.length} recovered on the bounded read-only retry, ${benign.length} benign aborts, ${unrecovered.length} unrecovered)`, unrecovered.length === 0, unrecovered.slice(0, 3).map((d) => `${d.method} ${d.host}${d.path} ${d.failure} [${d.section}]`).join(" | "));
+  console.log("\n--- sanitized network diagnostics ---");
+  for (const d of netDiag) console.log(`  ${d.at} [${d.section}] ${d.method} ${d.host}${d.path} (${d.type}) ${d.failure} attempt=${d.attempt} => ${d.outcome}`);
   console.log("\n--- unexpected issues (unique) ---");
   unexpected.forEach(([k, v]) => console.log(`  ${k}  x${v.length}  e.g. ${v[0]}`));
 
   console.log("\n=== TOTALS ===");
   for (const [sec, t] of Object.entries(totals)) console.log(`${sec.padEnd(14)} pass=${t.pass} fail=${t.fail}`);
+  if (!argVal("sections") && phase === "main") check("routes", "zero route checks remained inconclusive", (totals.inconclusive?.pass ?? 0) === 0, `${totals.inconclusive?.pass ?? 0} inconclusive`);
   const f = Object.values(totals).reduce((n, t) => n + t.fail, 0); const p = Object.values(totals).reduce((n, t) => n + t.pass, 0);
   console.log(`ALL            pass=${p} fail=${f}`);
-  fs.writeFileSync(path.join(evDir, "results.json"), JSON.stringify({ base, runId, phase, totals, failures, issues: unexpected.map(([k, v]) => ({ k, n: v.length })) }, null, 2));
+  fs.writeFileSync(path.join(evDir, "results.json"), JSON.stringify({ base, runId, phase, totals, failures, netDiag, issues: unexpected.map(([k, v]) => ({ k, n: v.length })) }, null, 2));
   console.log(`evidence: ${evDir}`);
   process.exit(f ? 1 : 0);
 }
