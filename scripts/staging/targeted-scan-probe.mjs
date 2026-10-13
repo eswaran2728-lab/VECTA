@@ -23,10 +23,11 @@ if (JSON.stringify(process.env).includes(FORBIDDEN_REF)) throw new Error("produc
 const ledger = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), "vecta-uat-fixtures", `${runId}.json`), "utf8"));
 const manifest = loadCurrentManifest();
 const creds = loadCurrentCredentials();
-const CASES = [
+const ALL_CASES = [
   { label: "aso", station: "PEN", own: "ICMS-2026-990001", other: "ICMS-2026-990002" },
   { label: "aso-jhb", station: "JHB", own: "ICMS-2026-990002", other: "ICMS-2026-990001" },
 ];
+const CASES = argVal("only-sat") ? [] : ALL_CASES;
 let fails = 0;
 const ok = (label, cond, note = "") => { if (!cond) fails += 1; console.log(`${cond ? "PASS" : "FAIL"}: ${label}${note ? " -- " + note : ""}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -131,7 +132,7 @@ if (argVal("sat-run-id")) {
   const satRun = argVal("sat-run-id");
   console.log(String.fromCharCode(10) + "=== SAT ASO duty gate ===");
   const a = creds.find((x) => x.label === "sat_aso");
-  const route = async (page, r) => { await page.goto(`${base}${r}`, { waitUntil: "domcontentloaded" }); await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {}); return new URL(page.url()).pathname; };
+  const route = async (page, r) => { await page.goto(`${base}${r}`, { waitUntil: "load", timeout: 60000 }); await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {}); await sleep(1500); return new URL(page.url()).pathname; };
   const signIn = async () => {
     const ctx = await browser.newContext({ viewport: { width: 1366, height: 850 } });
     const page = await ctx.newPage();
@@ -142,6 +143,7 @@ if (argVal("sat-run-id")) {
     await page.fill('input[name="password"]', a.password);
     await page.getByRole("button", { name: /Sign in with Credentials/i }).click();
     await page.waitForURL((u) => !/\/login$/.test(u.pathname), { timeout: 45000 }).catch(() => {});
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
     return { ctx, page };
   };
   let { ctx, page } = await signIn();
