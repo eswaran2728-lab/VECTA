@@ -92,6 +92,9 @@ async function newSession(browser, vp, tag) {
     const failure = req.failure()?.errorText ?? "unknown";
     const d = { section: tag, method: req.method(), host: u.hostname, path: u.pathname.slice(0, 120), type: req.resourceType(), failure, attempt: 1, at: new Date().toISOString(), outcome: "failed" };
     netDiag.push(d);
+    // EXACT match only: the Vercel preview toolbar script. It is injected by the preview platform, never by the application, and is
+    // blocked by the application's CSP. Any other host/path (including every application and Supabase request) is never excluded.
+    if (u.hostname === "vercel.live" && u.pathname === "/_next-live/feedback/feedback.js") { d.outcome = "preview-infrastructure (Vercel toolbar script blocked by CSP; excluded, still recorded)"; return; }
     if (/ERR_ABORTED/.test(failure)) { d.outcome = "benign-aborted (navigation/prefetch cancelled)"; return; }
     if (req.method() !== "GET" && req.method() !== "HEAD") { d.outcome = "failed (write, not retried)"; return; }
     // one bounded retry of the exact READ-ONLY request
@@ -112,20 +115,34 @@ async function newSession(browser, vp, tag) {
   return { ctx, page, issues, tag };
 }
 let lastBrowserLogin = 0;
-async function login(page, a) {
-  // Supabase Auth rate-limits sign-ins per IP: pace them and retry (a refused sign-in leaves the page on /login)
-  for (let i = 0; i < 6; i++) {
+/** Sanitized sign-in failure stages (never a credential, e-mail or token): label, stage, attempt. */
+const loginFailures = [];
+async function login(page, a, label = "?") {
+  // Waits for the real form fields, submits exactly once per attempt, and retries a bounded number of times. Supabase Auth rate-limits
+  // sign-ins per IP, so attempts are paced; a refused sign-in leaves the page on /login.
+  for (let i = 0; i < 5; i++) {
     const wait = lastBrowserLogin + 8000 - Date.now();
     if (wait > 0) await sleep(wait);
     lastBrowserLogin = Date.now();
-    await page.goto(`${base}/login`, { waitUntil: "domcontentloaded" });
-    await page.fill('input[name="email"]', a.email);
-    await page.fill('input[name="password"]', a.password);
-    await page.getByRole("button", { name: /Sign in with Credentials/i }).click();
-    await page.waitForURL((u) => !/\/login$/.test(u.pathname), { timeout: 25000 }).catch(() => {});
-    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
-    if (!/\/login$/.test(new URL(page.url()).pathname) || /[?&]error=/.test(page.url())) return;
-    await sleep(30000 * (i + 1));
+    let stage = "load";
+    try {
+      await page.goto(`${base}/login`, { waitUntil: "domcontentloaded" });
+      stage = "fields";
+      await page.waitForSelector('input[name="email"]', { state: "visible", timeout: 45000 });
+      await page.waitForSelector('input[name="password"]', { state: "visible", timeout: 45000 });
+      stage = "submit";
+      await page.fill('input[name="email"]', a.email);
+      await page.fill('input[name="password"]', a.password);
+      await page.getByRole("button", { name: /Sign in with Credentials/i }).click();
+      stage = "redirect";
+      await page.waitForURL((u) => !/\/login$/.test(u.pathname), { timeout: 25000 }).catch(() => {});
+      await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+      if (!/\/login$/.test(new URL(page.url()).pathname) || /[?&]error=/.test(page.url())) return;
+      loginFailures.push({ label, stage: "still-on-login-after-submit", attempt: i + 1 });
+    } catch (e) {
+      loginFailures.push({ label, stage, attempt: i + 1, error: String(e.message).split(String.fromCharCode(10))[0].slice(0, 60) });
+    }
+    await sleep(20000 * (i + 1));
   }
 }
 const pathOf = (page) => new URL(page.url()).pathname;
@@ -224,7 +241,7 @@ async function sectionDutyGate(browser) {
     const a = acct(label);
     const s = await newSession(browser, VIEWPORTS.desktop, `${label}/gate`);
     try {
-      await login(s.page, a);
+      await login(s.page, a, label);
       console.log(`INFO: ${label} signs in (before duty) and lands on ${pathOf(s.page)}; the gate is asserted on its protected routes below`);
       for (const route of ["/avsec/reports/lookup", "/avsec/discussions", "/avsec/bay-board"]) {
         await s.page.goto(`${base}${route}`, { waitUntil: "domcontentloaded" });
@@ -263,7 +280,7 @@ async function sectionAuthAndRoutes(browser) {
     if (!a) { check("auth", `${label} has credentials`, false); continue; }
     const s = await newSession(browser, VIEWPORTS.desktop, label);
     try {
-      await login(s.page, a);
+      await login(s.page, a, label);
       const landed = pathOf(s.page);
       // A rostered officer without an open duty check-in is sent to the duty check-in page: that gate must stay in force.
       const rostered = m.kind !== "negative" && isRostered(m.roleCode);
@@ -431,7 +448,7 @@ async function sectionSegregation(browser) {
     const a = acct(label);
     const s = await newSession(browser, VIEWPORTS.desktop, label);
     try {
-      await login(s.page, a);
+      await login(s.page, a, label);
       const go = async (u) => {
         const resp = await s.page.goto(`${base}${u}`, { waitUntil: "domcontentloaded" });
         await s.page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
@@ -481,7 +498,7 @@ async function sectionStations(browser) {
     check("stations", `${x.label} (${x.st}): receipt capability = ${expRecv}`, capRecv === expRecv);
     const s = await newSession(browser, VIEWPORTS.desktop, x.label);
     try {
-      await login(s.page, a);
+      await login(s.page, a, label);
       if (phase === "pre-duty") {
         // no open duty check-in: the application sends every station officer to the duty check-in page (the gate must stay in force)
         for (const route of ["/avsec/scan", "/avsec/caterlink/receipt"]) {
@@ -543,7 +560,7 @@ async function sectionResponsive(browser) {
     for (const [vpName, vp] of Object.entries(VIEWPORTS)) {
       const s = await newSession(browser, vp, `${label}/${vpName}`);
       try {
-        await login(s.page, a);
+        await login(s.page, a, label);
         await s.page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
         const m = await s.page.evaluate(() => {
           const vis = (el) => { const r = el.getBoundingClientRect(); const st = getComputedStyle(el); return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && st.display !== "none"; };
@@ -645,8 +662,10 @@ async function main() {
   check("integrity", "no unexpected HTTP error responses", httpErrs.length === 0, httpErrs.slice(0, 6).map(([k, v]) => `${k} x${v.length}`).join(" | "));
   const recovered = netDiag.filter((d) => d.outcome.startsWith("recovered"));
   const benign = netDiag.filter((d) => d.outcome.startsWith("benign"));
-  const unrecovered = netDiag.filter((d) => !d.outcome.startsWith("recovered") && !d.outcome.startsWith("benign"));
-  check("integrity", `no unrecovered network failure (${netDiag.length} requestfailed events: ${recovered.length} recovered on the bounded read-only retry, ${benign.length} benign aborts, ${unrecovered.length} unrecovered)`, unrecovered.length === 0, unrecovered.slice(0, 3).map((d) => `${d.method} ${d.host}${d.path} ${d.failure} [${d.section}]`).join(" | "));
+  const infra = netDiag.filter((d) => d.outcome.startsWith("preview-infrastructure"));
+  const unrecovered = netDiag.filter((d) => !d.outcome.startsWith("recovered") && !d.outcome.startsWith("benign") && !d.outcome.startsWith("preview-infrastructure"));
+  check("integrity", `no sign-in attempt needed a retry (${loginFailures.length} sanitized sign-in failure stage(s): ${loginFailures.map((f) => `${f.label}:${f.stage}#${f.attempt}`).join(",") || "none"})`, loginFailures.length === 0);
+  check("integrity", `no unrecovered network failure (${netDiag.length} requestfailed events: ${recovered.length} recovered on the bounded read-only retry, ${benign.length} benign aborts, ${infra.length} preview-infrastructure, ${unrecovered.length} unrecovered)`, unrecovered.length === 0, unrecovered.slice(0, 3).map((d) => `${d.method} ${d.host}${d.path} ${d.failure} [${d.section}]`).join(" | "));
   console.log("\n--- sanitized network diagnostics ---");
   for (const d of netDiag) console.log(`  ${d.at} [${d.section}] ${d.method} ${d.host}${d.path} (${d.type}) ${d.failure} attempt=${d.attempt} => ${d.outcome}`);
   console.log("\n--- unexpected issues (unique) ---");

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Html5Qrcode } from "html5-qrcode";
+import { stopScannerSafely } from "@/lib/icms/scanner-stop";
 import { scanTransaction } from "@/lib/icms/actions/scan";
 
 const REGION_ID = "vecta-scan-reader";
@@ -36,7 +37,7 @@ export function UnifiedScanner() {
         handledRef.current = false;
         return;
       }
-      scannerRef.current?.stop().catch(() => undefined);
+      await stopScannerSafely(scannerRef.current);
       router.push(result.redirectPath);
     } catch {
       setError("Validation failed — check your connection and try again.");

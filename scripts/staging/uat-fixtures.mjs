@@ -75,7 +75,9 @@ async function main() {
       if (clock.secondsLeft < need) fail("not enough time before Malaysia midnight for the configured run plus margin; refusing to create duty fixtures");
       if (ledger.duty.length) fail("this run already holds duty fixtures; clean them up first (idempotent: nothing is created twice)");
       const plan = [];
-      for (const label of DUTY_LABELS) {
+      const only = argVal("labels")?.split(",");
+      if (only && !only.every((l) => DUTY_LABELS.includes(l))) fail("--labels may only name fixture accounts");
+      for (const label of (only ?? DUTY_LABELS)) {
         const a = account(label);
         const p = (await q("select id, station, status from public.profiles where id = $1", [a.authUserId]))[0] ?? fail(`${label}: no profile`);
         if (p.status !== "approved" || !p.station) fail(`${label}: profile is not an approved station officer`);
@@ -147,7 +149,7 @@ async function main() {
 
     if (action === "create-tx") {
       const aoc = (await q("select id from public.aocs where code = 'MY'"))[0]?.id ?? fail("no MY aoc");
-      const creator = account("aso").authUserId;
+      const creator = account("caterlink-driver").authUserId; // a neutral creator: no station officer may see a movement merely by having created it
       const plan = [{ station: "PEN", number: "ICMS-2026-990001" }, { station: "JHB", number: "ICMS-2026-990002" }];
       for (const x of plan) if ((await q("select 1 from public.transactions where transaction_number = $1", [x.number])).length) fail(`${x.number} already exists`);
       console.log(`plan: ${plan.map((x) => `${x.number}@${x.station}`).join(", ")} (CREATED, OUTBOUND, AIRCRAFT)`);

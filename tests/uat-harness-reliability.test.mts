@@ -89,3 +89,25 @@ test("dbClock and inactiveDutyLabels behave as specified (fake database client)"
   assert.deepEqual(await inactiveDutyLabels(client, [{ label: "a" }, { label: "b" }], manifest), ["b"]);
   assert.ok(calls.filter((c) => c === "BEGIN").length === 2 && calls.filter((c) => c === "ROLLBACK").length === 2, "each probe runs in a rolled-back transaction");
 });
+
+test("sign-in helper waits for the real fields, submits once per attempt, is bounded and records only sanitized stages", () => {
+  const body = UAT.slice(UAT.indexOf("async function login("), UAT.indexOf("const pathOf = "));
+  assert.match(body, /waitForSelector\('input\[name="email"\]', \{ state: "visible"/);
+  assert.match(body, /waitForSelector\('input\[name="password"\]', \{ state: "visible"/);
+  assert.equal((body.match(/\.click\(\)/g) ?? []).length, 1, "a single submit per attempt (sequential awaits, never concurrent)");
+  assert.match(body, /for \(let i = 0; i < 5; i\+\+\)/, "bounded attempts");
+  assert.match(body, /loginFailures\.push\(\{ label, stage/);
+  assert.doesNotMatch(body.slice(body.indexOf("loginFailures.push")), /a\.email|a\.password/, "no credential in the failure record");
+});
+
+test("preview-infrastructure exclusion is exact; every other host/path and the dangerous error names stay recorded and counted", () => {
+  assert.match(UAT, /u\.hostname === "vercel\.live" && u\.pathname === "\/_next-live\/feedback\/feedback\.js"/);
+  assert.equal((UAT.match(/preview-infrastructure/g) ?? []).length >= 3, true);
+  // the exclusion may not be broadened to a wildcard, a suffix or all third parties
+  assert.doesNotMatch(UAT, /hostname\.(endsWith|includes|startsWith)\("vercel\.live"\)|\/vercel\\.live\/\.test\(u\.hostname\)/);
+  // benign aborts are separate and ONLY ERR_ABORTED; the three connectivity failures are never in that bucket
+  assert.match(UAT, /if \(\/ERR_ABORTED\/\.test\(failure\)\)/);
+  assert.doesNotMatch(UAT, /ERR_(NETWORK_IO_SUSPENDED|INTERNET_DISCONNECTED|CONNECTION_CLOSED)[^\n]*benign/);
+  assert.match(UAT, /no unrecovered network failure/);
+  assert.match(UAT, /req\.method\(\) !== "GET" && req\.method\(\) !== "HEAD"/);
+});
