@@ -112,17 +112,17 @@ export function CheckpointForm({
       <CardContent className="space-y-5 pt-6">
         {/* What the officer must verify against the physical vehicle */}
         <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted p-4 text-sm sm:grid-cols-3">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs text-muted-foreground">{t(lang, "vehicle")}</p>
-            <p className="font-mono text-lg font-bold">{transaction.vehicle_number}</p>
+            <p className="break-words font-mono text-lg font-bold">{transaction.vehicle_number}</p>
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs text-muted-foreground">{t(lang, "driver")}</p>
-            <p className="text-lg font-bold">{transaction.driver_name}</p>
+            <p className="break-words text-lg font-bold">{transaction.driver_name}</p>
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs text-muted-foreground">{t(lang, "driver_id")}</p>
-            <p className="font-mono text-lg font-bold">{transaction.driver_id}</p>
+            <p className="break-words font-mono text-lg font-bold">{transaction.driver_id}</p>
           </div>
         </div>
 

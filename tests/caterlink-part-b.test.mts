@@ -45,6 +45,9 @@ test("outcomes: every escalation outcome shows the safe bilingual instruction; a
 
 test("the form: server-side date/time, server decides the whitelist, no dead-end incident link, accessible fields", () => {
   assert.doesNotMatch(FORM, /name="checkpoint_date"|name="checkpoint_time"/);
+  // long unbroken driver / vehicle values must wrap inside their grid cell (a 375px phone must not scroll sideways)
+  assert.equal((FORM.match(/<div className="min-w-0">/g) ?? []).length, 3);
+  assert.equal((FORM.match(/className="break-words /g) ?? []).length, 3);
   assert.match(FORM, /vehicles\?: /);
   assert.match(FORM, /if \(!vehicles \|\| !drivers\) return true/);
   assert.doesNotMatch(FORM, /\/incident`/);
