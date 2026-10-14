@@ -23,7 +23,8 @@ const HOUR_MS = 60 * 60 * 1000;
 // Thresholds confirmed with Eswar 2026-09-14 — do not change without re-confirming.
 const SEC_REPORT_OVERDUE_HOURS = 2; // after shift/flight end
 const INCIDENT_OVERDUE_HOURS = 24; // unactioned
-const CATERING_OVERDUE_HOURS = 2; // past expected clearance
+/** Catering-movement overdue needs owner-defined SLA durations (and a status-entry timestamp); until then it is suppressed, not zero. */
+export const CATERING_OVERDUE_SLA_STATUS = "SLA configuration pending";
 const OT_LEAVE_OVERDUE_HOURS = 24; // pending
 
 function hoursAgo(iso: string): number {
@@ -243,24 +244,9 @@ async function getIcmsActionItems(profile: UserProfile): Promise<ActionItem[]> {
     });
   }
 
-  const { data: transactions } = await supabase
-    .from("transactions")
-    .select("id, transaction_number, status, status_entered_at")
-    .eq("archived", false)
-    .in("status", ["CREATED", "INFLIGHT_POST_APPROVED", "AIRPORT_POST_APPROVED"]);
-  for (const tx of transactions ?? []) {
-    const hoursInStatus = hoursAgo(tx.status_entered_at);
-    if (hoursInStatus < CATERING_OVERDUE_HOURS) continue;
-    items.push({
-      id: `tx-${tx.id}`,
-      source: "icms",
-      category: "Catering Movement Overdue",
-      title: tx.transaction_number,
-      detail: `${tx.status.replaceAll("_", " ")} · ${hoursInStatus.toFixed(1)}h past expected clearance`,
-      href: `/icms/transactions/${tx.id}`,
-      overdue: true,
-    });
-  }
+  // Catering movement overdue is intentionally NOT reported: the legacy query read a column (status_entered_at) that does not exist on the
+  // canonical model, and the process owner has not yet defined SLA durations per status. Nothing is shown rather than a false zero.
+  // Status: see CATERING_OVERDUE_SLA_STATUS.
 
   return items;
 }

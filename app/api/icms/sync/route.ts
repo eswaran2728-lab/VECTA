@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import {
-  completePartB,
-  completePartC,
-  completePartD,
-  reportIncident,
-} from "@/lib/icms/actions/transactions";
+import { completePartB } from "@/lib/icms/actions/transactions";
 
 export const dynamic = "force-dynamic";
 
+// Only Part B has a canonical write path. The other legacy kinds (Part C/D, incident) wrote to tables that do not exist on this
+// environment and were removed; a queued item of an unknown kind is rejected (400) and surfaces for resolution on the device.
 const ACTIONS = {
   part_b: completePartB,
-  part_c: completePartC,
-  part_d: completePartD,
-  incident: reportIncident,
 } as const;
 
 function isNextRedirect(e: unknown): boolean {

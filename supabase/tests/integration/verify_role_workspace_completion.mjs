@@ -227,7 +227,7 @@ async function main() {
   await db.query("reset role;");
   await db.query("set session_replication_role = replica;");
   await db.query(`insert into public.transactions (id, transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, seal_number, status, route, origin_station_id, destination_station_id, flight_number, created_by)
-    values ($1,'TX-RC-1',$2,'OUTBOUND','WXX1','Driver','D1','S-100','CREATED','AIRCRAFT',$3,$4,'AK703',$5);`, [tx, myAoc, kul.id, bki.id, asoKul]);
+    values ($1,'TX-RC-1',$2,'OUTBOUND','WXX1','Driver','D1','S-100','AIRPORT_POST_APPROVED','AIRCRAFT',$3,$4,'AK703',$5);`, [tx, myAoc, kul.id, bki.id, asoKul]);
   await db.query("set session_replication_role = origin;");
   await sup();
   const pendingBki = await ok(asoBki, "select * from public.list_caterlink_pending_receipts_secure('BKI');");

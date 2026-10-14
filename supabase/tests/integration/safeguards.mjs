@@ -19,7 +19,7 @@ export const ALLOWED_DISPOSABLE_DATABASES = new Set([
   'vecta_phase9_whitelist_concurrency_run',
   'vecta_pdf_jobs_concurrency_run',
   'vecta_report_index_security_run',
-  'vecta_part_b_run',
+  'vecta_part_b_run', 'vecta_containment_run', 'vecta_containment_concurrency_run',
   'vecta_part_b_concurrency_run',
   'vecta_phase9_txn_concurrency_run',
   'vecta_phase9_legacy_collision_run',

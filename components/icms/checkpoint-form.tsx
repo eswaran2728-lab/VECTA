@@ -4,7 +4,6 @@ import { useActionState, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   completePartB,
-  completePartC,
   type ActionState,
 } from "@/lib/icms/actions/transactions";
 import { Button } from "@/components/icms/ui/button";
@@ -22,7 +21,7 @@ import type { DriverRecord, Seal, Transaction, VehicleRecord } from "@/lib/icms/
 const initialState: ActionState = { error: null };
 
 interface CheckpointFormProps {
-  part: "part_b" | "part_c";
+  part: "part_b";
   transaction: Transaction;
   seals: Pick<Seal, "id" | "seal_number" | "seal_type" | "seal_color">[];
   officerName: string;
@@ -50,7 +49,7 @@ export function CheckpointForm({
   finalizes = false,
   lang = "en",
 }: CheckpointFormProps) {
-  const action = part === "part_b" ? completePartB : completePartC;
+  const action = completePartB; // Part B is the only checkpoint with a canonical write path
   const [state, formAction, pending] = useActionState(action, initialState);
   const [vehicle, setVehicle] = useState(false);
   const [driver, setDriver] = useState(false);

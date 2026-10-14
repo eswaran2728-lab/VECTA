@@ -572,19 +572,27 @@ async function main() {
   `, [tx2Id]));
   assert(crossIncFailed, 'Cross-AOC incident raising denied');
 
-  // Test 5.2: Raise incident on transaction 2
+  // Test 5.2: the direct incident RPC is closed to every browser role (containment 20261108000001); the open incident the following
+  // tests need is seeded as the service role, exactly the shape the internal Part B escalation path writes.
   await simulateUser(kulAvsecId);
-  const incRes = await db.query(`
-    select incident_id, transaction_status
-    from public.raise_caterlink_incident_secure(
+  const directIncidentFailed = await expectFail(() => db.query(`
+    select * from public.raise_caterlink_incident_secure(
       p_transaction_id => $1,
       p_incident_type => 'BROKEN_SEAL',
       p_description => 'Broken seal detected at Post 2',
       p_severity => 'high'
     );
-  `, [tx2Id]);
-  const incId = incRes.rows[0].incident_id;
-  assert(incRes.rows[0].transaction_status === 'ESCALATED', 'Incident raised -> transaction escalated to ESCALATED');
+  `, [tx2Id]));
+  assert(directIncidentFailed, 'Direct raise_caterlink_incident_secure is denied to an ordinary officer');
+  await simulateServiceRole();
+  const incId = (await db.query(`
+    insert into public.caterlink_incidents (transaction_id, aoc_id, operating_entity_id, station_id, incident_type, severity, description, reported_by, status)
+    select t.id, t.aoc_id, t.operating_entity_id, t.origin_station_id, 'BROKEN_SEAL', 'high', 'Broken seal detected at Post 2', $2, 'OPEN'
+    from public.transactions t where t.id = $1 returning id;
+  `, [tx2Id, kulAvsecId])).rows[0].id;
+  await db.query("update public.transactions set status = 'ESCALATED' where id = $1;", [tx2Id]);
+  assert((await db.query('select status from public.transactions where id = $1;', [tx2Id])).rows[0].status === 'ESCALATED', 'Seeded incident -> transaction ESCALATED');
+  await simulateUser(kulAvsecId);
 
   // Test 5.3: Transaction completion blocked while incident is open
   const blockedCompletionFailed = await expectFail(() => db.query(`
@@ -1025,7 +1033,7 @@ async function main() {
   const auditedActions = new Set(audits.map((a) => a.action));
   assert(auditedActions.has('caterlink_transaction_create'), 'Audit recorded for transaction creation');
   assert(auditedActions.has('caterlink_receipt_confirm'), 'Audit recorded for destination receipt confirmation');
-  assert(auditedActions.has('caterlink_incident_raise'), 'Audit recorded for incident creation');
+  assert(!auditedActions.has('caterlink_incident_raise'), 'No direct incident-raise audit entry exists: the direct RPC is closed (the internal Part B escalation audits caterlink_checkpoint_escalate)');
   assert(auditedActions.has('caterlink_incident_resolve'), 'Audit recorded for incident resolution');
   assert(auditedActions.has('caterlink_incident_reopen'), 'Audit recorded for incident reopening');
   assert(auditedActions.has('caterlink_transaction_archive'), 'Audit recorded for transaction archiving');

@@ -101,3 +101,14 @@ raised incident notify Management and the Operation Manager as the Part B escala
 * Five VECTA incident readers (and the handover summary's movement list) re-pointed to canonical tables; tests added.
 * Read-only probe `scripts/staging/workflow-gap-probe.mjs`.
 * Part B is untouched.
+
+## 6. Fail-closed containment (migration `20261108000001`, prepared locally; not yet applied to staging)
+
+* `skip_part_d` and `raise_caterlink_incident_secure` become fail-closed stubs and lose EXECUTE for PUBLIC, anon, authenticated and
+  service_role. No verified internal process calls either: the Part B automatic escalation uses `caterlink_checkpoint_escalate_internal()`.
+  The application Skip form and action, the legacy incident report and un-escalate actions/forms and the offline-sync kinds that wrote to
+  absent tables were removed.
+* The destination receipt locks the row, then accepts it only from the final-step state of the existing state machine (HUB / MAINTENANCE:
+  `INFLIGHT_POST_APPROVED`; AIRCRAFT / REDQ / inbound: `AIRPORT_POST_APPROVED`, or its Phase 9 name `POST6_APPROVED`). Consequence for the
+  trial: until Part C exists, only HUB and MAINTENANCE movements can be received; the other routes wait for the owner's answers (Q1–Q5).
+* The "catering movement overdue" indicator is suppressed — **SLA configuration pending** (Q7) — rather than shown as zero.

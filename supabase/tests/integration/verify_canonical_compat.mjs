@@ -374,6 +374,8 @@ async function main() {
     assert(anonTables.length === 0, `anon holds no privilege on any public table${anonTables.length ? ' (' + anonTables.map((r) => r.relname).join(',') + ')' : ''}`);
     const anonFns = (await db.query("select p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind='f' and has_function_privilege('anon', p.oid, 'execute') and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype='e');")).rows;
     assert(anonFns.length === 0, `anon can execute no public function${anonFns.length ? ' (' + anonFns.map((r) => r.proname).join(',') + ')' : ''}`);
+    const closedFns = (await db.query("select p.proname, has_function_privilege('authenticated', p.oid, 'execute') au, has_function_privilege('service_role', p.oid, 'execute') sv, exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x where x.grantee = 0 and x.privilege_type = 'EXECUTE') pub from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('skip_part_d', 'raise_caterlink_incident_secure');")).rows;
+    assert(closedFns.length === 2 && closedFns.every((r) => !r.au && !r.sv && !r.pub), 'skip_part_d and raise_caterlink_incident_secure: no role (PUBLIC, anon, authenticated, service_role) can execute them (containment 20261108000001)');
     await db.exec('set role anon;');
     const anonRead = await expectFail(() => db.query('select count(*) from public.profiles;'));
     await simulateService();

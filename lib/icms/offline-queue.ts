@@ -5,7 +5,7 @@
  * Items are replayed through POST /api/sync by <PwaProvider> on reconnect.
  */
 
-export type QueuedKind = "part_b" | "part_c" | "part_d" | "incident";
+export type QueuedKind = "part_b";
 
 export interface QueuedItem {
   id: string;

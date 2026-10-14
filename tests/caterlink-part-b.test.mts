@@ -4,7 +4,7 @@ import fs from "node:fs";
 
 const read = (p: string) => fs.readFileSync(p, "utf8");
 const ACTION = read("lib/icms/actions/transactions.ts");
-const PART_B = ACTION.slice(ACTION.indexOf("export async function completePartB("), ACTION.indexOf("export async function completePartC("));
+const PART_B = ACTION.slice(ACTION.indexOf("export async function completePartB("));
 const HOLD = fs.readFileSync("lib/icms/checkpoint-hold-messages.ts", "utf8");
 const DETAIL = fs.readFileSync("app/(icms)/icms/transactions/[id]/page.tsx", "utf8");
 const PAGE = read("app/(icms)/icms/transactions/[id]/part-b/page.tsx");
