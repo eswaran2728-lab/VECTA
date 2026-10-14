@@ -5328,6 +5328,24 @@ export type Database = {
         Args: { p_transaction_id: string }
         Returns: { state: string; version: number | null }[]
       }
+      record_caterlink_part_b_secure: {
+        Args: {
+          p_transaction_id: string
+          p_vehicle_verified: boolean
+          p_driver_verified: boolean
+          p_seal_entries: Json
+          p_seal_colors: Json
+          p_observed_vehicle: string
+          p_observed_driver_name: string
+          p_observed_driver_id: string
+          p_signature_url: string
+          p_signature_hash: string
+          p_remarks: string
+          p_result: string
+          p_escalation_reason: string
+        }
+        Returns: { part_id: string | null; outcome: string; transaction_status: string; is_new: boolean }[]
+      }
       unescalate_transaction: {
         Args: { p_transaction_id: string; p_notes?: string }
         Returns: string

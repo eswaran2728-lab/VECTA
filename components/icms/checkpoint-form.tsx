@@ -27,9 +27,9 @@ interface CheckpointFormProps {
   seals: Pick<Seal, "id" | "seal_number" | "seal_type" | "seal_color">[];
   officerName: string;
   officerStaffId: string;
-  /** Active whitelist, for the secondary whitelist check on the observed vehicle/driver. */
-  vehicles: Pick<VehicleRecord, "vehicle_number">[];
-  drivers: Pick<DriverRecord, "staff_id">[];
+  /** Optional client-side whitelist hint. When omitted the server decides (record_caterlink_part_b_secure re-checks the observed vehicle and driver). */
+  vehicles?: Pick<VehicleRecord, "vehicle_number">[];
+  drivers?: Pick<DriverRecord, "staff_id">[];
   /** True when this checkpoint is the final step (inbound Part B). */
   finalizes?: boolean;
   lang?: Lang;
@@ -73,6 +73,7 @@ export function CheckpointForm({
   // is not on the active whitelist, Pass is disabled — Escalate only.
   const whitelisted = useMemo(() => {
     if (!touched) return false;
+    if (!vehicles || !drivers) return true; // unknown here: the server enforces the whitelist and escalates
     const v = observedVehicleNumber.trim().toUpperCase();
     const d = observedDriverId.trim().toUpperCase();
     const vehicleOk = vehicles.some((x) => x.vehicle_number.toUpperCase() === v);
@@ -85,12 +86,6 @@ export function CheckpointForm({
     !whitelisted && touched && !escalationReason
       ? "WHITELIST_VIOLATION: observed vehicle/driver not on the active whitelist."
       : escalationReason;
-
-  const malaysiaNow = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" })
-  );
-  const defaultDate = `${malaysiaNow.getFullYear()}-${String(malaysiaNow.getMonth() + 1).padStart(2, "0")}-${String(malaysiaNow.getDate()).padStart(2, "0")}`;
-  const defaultTime = `${String(malaysiaNow.getHours()).padStart(2, "0")}:${String(malaysiaNow.getMinutes()).padStart(2, "0")}`;
 
   const allSealsEntered = seals.every(
     (s) => (entries[s.id] ?? "").trim() !== "" && (colors[s.id] ?? "").trim() !== ""
@@ -154,14 +149,9 @@ export function CheckpointForm({
                 {officerStaffId}
               </p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="checkpoint_date">Date</Label>
-              <Input id="checkpoint_date" name="checkpoint_date" type="date" defaultValue={defaultDate} required />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="checkpoint_time">Time</Label>
-              <Input id="checkpoint_time" name="checkpoint_time" type="time" defaultValue={defaultTime} required />
-            </div>
+            <p className="text-xs text-muted-foreground sm:col-span-2">
+              The date and time are recorded by the server when you submit. / Tarikh dan masa direkodkan oleh pelayan semasa penghantaran.
+            </p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
@@ -314,9 +304,9 @@ export function CheckpointForm({
                     ? t(lang, "approve_complete")
                     : t(lang, "approve_release")}
             </Button>
-            <Link href={`/icms/transactions/${transaction.id}/incident`} className="w-full">
-              <Button type="button" variant="destructive" size="lg" className="w-full">
-                {t(lang, "verification_failed")}
+            <Link href={`/icms/transactions/${transaction.id}`} className="w-full">
+              <Button type="button" variant="outline" size="lg" className="w-full">
+                Back to the transaction
               </Button>
             </Link>
           </div>

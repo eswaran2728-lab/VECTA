@@ -49,7 +49,8 @@ test("the CaterLink pages and actions read no legacy ICMS workflow table", () =>
 });
 
 test("the blocked checkpoint pages query no table and keep the scan permission untouched", () => {
-  for (const slug of ["part-b", "part-c", "part-d", "part-hub", "part-redq", "skip-part-d", "incident"]) {
+  // Part B is activated (tests/caterlink-part-b.test.mts); every other checkpoint stays BLOCKED until it has a canonical write path
+  for (const slug of ["part-c", "part-d", "part-hub", "part-redq", "skip-part-d", "incident"]) {
     const src = read(`app/(icms)/icms/transactions/[id]/${slug}/page.tsx`);
     assert.ok(!/\.from\(|\.rpc\(/.test(src), `${slug}: a blocked page must not query the database`);
     assert.match(src, /BLOCKED/, slug);

@@ -14,7 +14,7 @@ const sql = [MIG_DIR, path.join(MIG_DIR, "icms")]
   .join("\n");
 const types = fs.readFileSync("lib/supabase/database.types.ts", "utf8");
 
-const TS: Record<string, string> = { uuid: "string", text: "string", integer: "number", boolean: "boolean", timestamptz: "string" };
+const TS: Record<string, string> = { uuid: "string", text: "string", integer: "number", boolean: "boolean", timestamptz: "string", jsonb: "Json" };
 
 function splitTop(list: string): string[] {
   const out: string[] = []; let depth = 0; let cur = "";
@@ -56,6 +56,7 @@ const RPCS = [
   "list_caterlink_pdf_jobs_secure",
   "get_caterlink_pdf_state_secure",
   "unescalate_transaction",
+  "record_caterlink_part_b_secure",
 ];
 
 for (const name of RPCS) {
@@ -64,7 +65,7 @@ for (const name of RPCS) {
     const entry = typesEntry(name);
     const argsBlock = /Args:\s*\{([\s\S]*?)\}\s*\n\s*Returns:/.exec(entry);
     assert.ok(argsBlock, "Args block");
-    const tsArgs = [...argsBlock![1].matchAll(/(\w+)(\??):\s*(string|number|boolean)/g)].map((m) => ({ name: m[1], optional: m[2] === "?", type: m[3].trim() }));
+    const tsArgs = [...argsBlock![1].matchAll(/(\w+)(\??):\s*(string|number|boolean|Json)/g)].map((m) => ({ name: m[1], optional: m[2] === "?", type: m[3].trim() }));
     assert.deepEqual(tsArgs.map((a) => a.name), sig.args.map((a) => a.name), "argument names and order");
     sig.args.forEach((a, i) => {
       assert.equal(tsArgs[i].optional, a.optional, `${a.name} optionality`);

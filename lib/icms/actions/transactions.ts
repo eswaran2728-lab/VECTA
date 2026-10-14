@@ -584,8 +584,89 @@ async function completeChecklistPart(
   redirect(`/icms/transactions/${transactionId}?${finalizes ? "completed" : "approved"}=1`);
 }
 
-export async function completePartB(_prev: ActionState, formData: FormData) {
-  return completeChecklistPart("part_b", formData);
+/**
+ * Part B (In-flight Security Post). The ONLY write path is record_caterlink_part_b_secure(): it derives the actor from the session,
+ * authorises the station / capability / duty, validates the workflow state, verifies seals and the observed whitelist, records the
+ * checkpoint, advances (or freezes) the transaction, audits and notifies -- atomically. This action only validates the shape of the
+ * input, uploads the signature and maps the result to a safe message. The officer's identity, date and time are never taken from the form.
+ */
+const PART_B_MESSAGES: Record<string, string> = {
+  SEAL_MISMATCH:
+    "SEAL MISMATCH — the transaction has been escalated and the administrators notified. Do not release the vehicle. / KETIDAKPADANAN SIL — transaksi telah dieskalasi. Jangan lepaskan kenderaan.",
+  WRONG_SEAL_COLOR:
+    "WRONG SEAL COLOUR — the transaction has been escalated and the administrators notified. Do not release the vehicle. / WARNA SIL TIDAK BETUL — transaksi telah dieskalasi. Jangan lepaskan kenderaan.",
+  WHITELIST_VIOLATION:
+    "WHITELIST VIOLATION — the observed vehicle/driver is not on the active whitelist. The transaction has been escalated and the administrators notified. Do not release the vehicle. / PELANGGARAN SENARAI PUTIH — transaksi telah dieskalasi.",
+};
+
+export async function completePartB(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireCheckpointRole("post2_avsec");
+
+  const transactionId = str(formData, "transaction_id");
+  const result = str(formData, "result");
+  const escalationReason = str(formData, "escalation_reason");
+  const signature = str(formData, "signature");
+  const observedVehicle = str(formData, "observed_vehicle_number");
+  const observedDriverName = str(formData, "observed_driver_name");
+  const observedDriverId = str(formData, "observed_driver_id");
+  let sealEntries: unknown;
+  let sealColors: unknown;
+  try {
+    sealEntries = JSON.parse(str(formData, "seal_entries") || "{}");
+    sealColors = JSON.parse(str(formData, "seal_colors") || "{}");
+  } catch {
+    return { error: "Seal entries missing. Enter every seal number and colour. / Masukkan setiap nombor dan warna sil." };
+  }
+
+  if (!transactionId) return { error: "Missing transaction reference." };
+  if (!observedVehicle || !observedDriverName || !observedDriverId) return { error: "Vehicle and driver details are required." };
+  if (result !== "PASS" && result !== "ESCALATE") return { error: "Select Pass or Escalate." };
+  if (result === "ESCALATE" && !escalationReason) return { error: "An escalation reason is required." };
+  if (result === "PASS" && (!bool(formData, "vehicle_verified") || !bool(formData, "driver_verified"))) {
+    return { error: "Vehicle and driver checks must pass. If a check fails, choose Escalate instead of approving." };
+  }
+  if (!signature) return { error: "Signature is required." };
+
+  let sig: { path: string; sha256: string };
+  try {
+    sig = await uploadDataUrl("signatures", signature, "part-b");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Signature upload failed." };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("record_caterlink_part_b_secure", {
+    p_transaction_id: transactionId,
+    p_vehicle_verified: bool(formData, "vehicle_verified"),
+    p_driver_verified: bool(formData, "driver_verified"),
+    p_seal_entries: sealEntries as never,
+    p_seal_colors: sealColors as never,
+    p_observed_vehicle: observedVehicle,
+    p_observed_driver_name: observedDriverName,
+    p_observed_driver_id: observedDriverId,
+    p_signature_url: sig.path,
+    p_signature_hash: sig.sha256,
+    p_remarks: str(formData, "remarks"),
+    p_result: result,
+    p_escalation_reason: escalationReason,
+  });
+  if (error) {
+    // The function's own messages are written for the officer (uniform for authorization failures); anything that looks like
+    // a database internal (constraint, relation, permission, syntax) is replaced by a generic message.
+    const internal = /violates|constraint|relation|column|syntax|permission denied|function|schema|duplicate key/i.test(error.message);
+    return { error: internal ? "The checkpoint could not be recorded." : error.message.slice(0, 200) };
+  }
+  const row = data?.[0];
+  if (!row) return { error: "The checkpoint could not be recorded." };
+
+  revalidatePath(`/icms/transactions/${transactionId}`);
+  revalidatePath("/icms/transactions");
+  revalidatePath("/icms/dashboard");
+  if (PART_B_MESSAGES[row.outcome]) {
+    return { error: PART_B_MESSAGES[row.outcome] };
+  }
+  if (row.outcome === "ESCALATED") redirect(`/icms/transactions/${transactionId}?escalated=1`);
+  redirect(`/icms/transactions/${transactionId}?${row.outcome === "COMPLETED" ? "completed" : "approved"}=1`);
 }
 
 export async function completePartC(_prev: ActionState, formData: FormData) {
