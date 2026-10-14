@@ -202,7 +202,7 @@ export async function getFlightDetail(flight: string, date: string, station: str
   const { data: incidentRows } =
     txIds.length > 0
       ? await supabase
-          .from("incidents")
+          .from("caterlink_incidents" as never)
           .select("id, incident_type, status, created_at, transaction_id, transactions(transaction_number)")
           .in("transaction_id", txIds)
       : { data: [] };

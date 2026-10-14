@@ -431,9 +431,9 @@ async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
       .not("status", "in", "(COMPLETED,ESCALATED)")
       .limit(500),
     supabase
-      .from("incidents")
+      .from("caterlink_incidents" as never)
       .select("id")
-      .is("resolved_at", null)
+      .in("status", ["OPEN", "UNDER_REVIEW"])
       .limit(500),
     getOpenBayBoard(),
     ...AVSEC_REPORT_TYPES.map((t) =>
@@ -493,9 +493,9 @@ async function getActivityFeed(): Promise<ActivityRow[]> {
     // incidents were previously counted in alerts but never shown here,
     // which is what let a scoped dashboard show alerts with an empty feed.
     supabase
-      .from("incidents")
+      .from("caterlink_incidents" as never)
       .select("id, incident_type, created_at, transactions(transaction_number)")
-      .is("resolved_at", null)
+      .in("status", ["OPEN", "UNDER_REVIEW"])
       .order("created_at", { ascending: false })
       .limit(20),
   ]);

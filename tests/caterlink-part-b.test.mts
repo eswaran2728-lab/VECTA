@@ -82,6 +82,6 @@ test("workflow mirror: outbound CREATED -> INFLIGHT_POST_APPROVED; inbound AIRPO
   assert.match(CODE, /v_required := 'CREATED'; v_next := 'INFLIGHT_POST_APPROVED'/);
 });
 
-test("Parts C, D, Hub and REDQ remain BLOCKED stubs (this change activates Part B only)", () => {
-  for (const f of ["part-c", "part-d", "part-hub", "part-redq"]) assert.match(read(`app/(icms)/icms/transactions/[id]/${f}/page.tsx`), /ModuleNotActivated/, f);
+test("Parts C, D and REDQ remain BLOCKED stubs (Part Hub redirects to the destination receipt)", () => {
+  for (const f of ["part-c", "part-d", "part-redq"]) assert.match(read(`app/(icms)/icms/transactions/[id]/${f}/page.tsx`), /ModuleNotActivated/, f);
 });

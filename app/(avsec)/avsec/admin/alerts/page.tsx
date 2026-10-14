@@ -33,11 +33,11 @@ export default async function AlertsPage() {
   const [bays, incidentsRes] = await Promise.all([
     getOpenBayBoard(),
     supabase
-      .from("incidents")
+      .from("caterlink_incidents" as never)
       .select(
         "id, transaction_id, incident_type, description, reported_by, created_at, transactions(transaction_number)"
       )
-      .is("resolved_at", null)
+      .in("status", ["OPEN", "UNDER_REVIEW"])
       .limit(500),
   ]);
 

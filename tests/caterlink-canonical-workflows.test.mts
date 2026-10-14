@@ -48,9 +48,17 @@ test("the CaterLink pages and actions read no legacy ICMS workflow table", () =>
   }
 });
 
+test("Part Hub has no page of its own: it redirects to the destination receipt, which decides access from the station capability", () => {
+  const src = read("app/(icms)/icms/transactions/[id]/part-hub/page.tsx");
+  assert.match(src, /redirect\("\/avsec\/caterlink\/receipt"\)/);
+  assert.doesNotMatch(src, /\.from\(|\.rpc\(|ModuleNotActivated/);
+  const rcpt = read("supabase/migrations/20261022000001_phase9_caterlink_kch_bki_final_receipt.sql");
+  assert.match(rcpt, /insert into public\.caterlink_checkpoint_hub/, "the receipt records the hub checkpoint");
+});
+
 test("the blocked checkpoint pages query no table and keep the scan permission untouched", () => {
-  // Part B is activated (tests/caterlink-part-b.test.mts); every other checkpoint stays BLOCKED until it has a canonical write path
-  for (const slug of ["part-c", "part-d", "part-hub", "part-redq", "skip-part-d", "incident"]) {
+  // Part B is activated (tests/caterlink-part-b.test.mts); Part Hub is superseded by the destination receipt (redirect, below); every other checkpoint stays BLOCKED until it has a canonical write path
+  for (const slug of ["part-c", "part-d", "part-redq", "skip-part-d", "incident"]) {
     const src = read(`app/(icms)/icms/transactions/[id]/${slug}/page.tsx`);
     assert.ok(!/\.from\(|\.rpc\(/.test(src), `${slug}: a blocked page must not query the database`);
     assert.match(src, /BLOCKED/, slug);

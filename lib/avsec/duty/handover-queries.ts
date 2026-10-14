@@ -19,19 +19,27 @@ export async function getUnfinishedWorkSummary(station: string, team?: string): 
   const supabase = await createClient();
   const items: UnfinishedWorkItem[] = [];
 
+  // Canonical CaterLink model: movements and incidents belong to a station by id (origin_station_id / station_id), not by a station text.
+  const { data: stationRow } = await supabase.from("org_stations").select("id").eq("code", station).maybeSingle();
+  const stationId = stationRow?.id ?? null;
+
   const [{ data: transactions }, { data: incidents }, compliance] = await Promise.all([
-    supabase
-      .from("transactions")
-      .select("transaction_number, status, driver_name, escort_officer_name")
-      .eq("archived", false)
-      .eq("station", station)
-      .in("status", ["CREATED", "INFLIGHT_POST_APPROVED", "AIRPORT_POST_APPROVED"]),
-    supabase
-      .from("incidents")
-      .select("id, incident_type, status, transactions!inner(transaction_number, station, archived)")
-      .eq("transactions.station", station)
-      .eq("transactions.archived", false)
-      .in("status", ["OPEN", "UNDER_REVIEW"]),
+    stationId
+      ? supabase
+          .from("transactions")
+          .select("transaction_number, status, driver_name")
+          .eq("archived", false)
+          .eq("origin_station_id" as never, stationId)
+          .in("status", ["CREATED", "INFLIGHT_POST_APPROVED", "AIRPORT_POST_APPROVED", "REDQ_RESEALED"])
+      : Promise.resolve({ data: [] as { transaction_number: string; status: string; driver_name: string }[] }),
+    stationId
+      ? supabase
+          .from("caterlink_incidents" as never)
+          .select("id, incident_type, status, transactions!inner(transaction_number, archived)")
+          .eq("station_id", stationId)
+          .eq("transactions.archived", false)
+          .in("status", ["OPEN", "UNDER_REVIEW"])
+      : Promise.resolve({ data: [] }),
     getShiftCompliance(station, todayISODateMY(), team),
   ]);
 
@@ -39,7 +47,7 @@ export async function getUnfinishedWorkSummary(station: string, team?: string): 
     items.push({
       category: "Catering Movement",
       summary: `${t.transaction_number} — ${t.status.replaceAll("_", " ")}`,
-      responsibleOfficer: t.driver_name || t.escort_officer_name || "Unassigned",
+      responsibleOfficer: t.driver_name || "Unassigned",
       nextAction: "Awaiting next checkpoint clearance",
     });
   }

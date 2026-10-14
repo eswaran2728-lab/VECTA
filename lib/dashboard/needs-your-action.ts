@@ -220,7 +220,7 @@ async function getIcmsActionItems(profile: UserProfile): Promise<ActionItem[]> {
   const items: ActionItem[] = [];
 
   const { data: incidents } = await supabase
-    .from("incidents")
+    .from("caterlink_incidents" as never)
     .select("id, incident_type, created_at, transaction_id, transactions!inner(transaction_number, archived)")
     .eq("status", "OPEN")
     .eq("transactions.archived", false);
