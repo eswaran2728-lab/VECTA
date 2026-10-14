@@ -120,7 +120,7 @@ for (const c of CASES) {
   ok(`${c.label}: own reference opens the checkpoint route (/icms/transactions/:id/part-b)`, own.nav && /part-b$/.test(own.p), `${own.ms}ms`);
   if (own.nav) {
     const heading = (await page.locator("h1, h2").first().textContent({ timeout: 10000 }).catch(() => ""))?.trim();
-    ok(`${c.label}: the checkpoint page renders (documented "not activated" state for Part B)`, /Part B checkpoint/.test(heading ?? ""), heading);
+    ok(`${c.label}: the Part B checkpoint page renders as a functional form (not the retired placeholder)`, /Part B/.test(heading ?? "") && !/not activated/i.test((await page.textContent("body")) ?? ""), heading);
   }
   if (failed.length) console.log(`  requestfailed (sanitized): ${failed.slice(0, 6).join(" | ")}`);
   await ctx.close();

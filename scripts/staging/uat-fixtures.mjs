@@ -9,6 +9,7 @@
 //   node --env-file=.env.local scripts/staging/uat-fixtures.mjs --action=cleanup-duty    --run-id=<id> [--live]
 //   node --env-file=.env.local scripts/staging/uat-fixtures.mjs --action=create-reports  --run-id=<id> [--live]
 //   node --env-file=.env.local scripts/staging/uat-fixtures.mjs --action=cleanup-reports --run-id=<id> [--live]
+//   node --env-file=.env.local scripts/staging/uat-fixtures.mjs --action=create-partb|cleanup-partb --run-id=<id> [--live]   (tagged Part B movements WITH seals plus a tagged whitelisted vehicle/driver; cleanup deletes the recorded ids, their cascading checkpoint rows and their escalation notifications)
 //   node --env-file=.env.local scripts/staging/uat-fixtures.mjs --action=create-tx|cleanup-tx --run-id=<id> [--live]   (two synthetic CaterLink movements, origin PEN and JHB, for the scanner / duty-gate probe)
 import fs from "node:fs";
 import os from "node:os";
@@ -34,13 +35,13 @@ const TAG = `[UAT:${runId}]`;
 const ledgerDir = path.join(os.tmpdir(), "vecta-uat-fixtures");
 fs.mkdirSync(ledgerDir, { recursive: true });
 const ledgerPath = path.join(ledgerDir, `${runId}.json`);
-const readLedger = () => ({ duty: [], reports: [], tx: [], notifications: [], ...(fs.existsSync(ledgerPath) ? JSON.parse(fs.readFileSync(ledgerPath, "utf8")) : { runId }) });
+const readLedger = () => ({ duty: [], reports: [], tx: [], partb: null, notifications: [], ...(fs.existsSync(ledgerPath) ? JSON.parse(fs.readFileSync(ledgerPath, "utf8")) : { runId }) });
 const writeLedger = (l) => fs.writeFileSync(ledgerPath, JSON.stringify(l, null, 2), { mode: 0o600 });
 const fail = (m) => { throw new Error(m); };
 const redact = (m) => String(m).replace(/postgres(ql)?:\/\/[^@\s]+@/g, "postgres://[REDACTED]@");
 
 async function main() {
-  if (!["status", "create-duty", "cleanup-duty", "create-reports", "cleanup-reports", "create-tx", "cleanup-tx", "create-notifications", "cleanup-notifications", "verify-duty"].includes(action)) fail("unknown --action");
+  if (!["status", "create-duty", "cleanup-duty", "create-reports", "cleanup-reports", "create-tx", "cleanup-tx", "create-partb", "cleanup-partb", "create-notifications", "cleanup-notifications", "verify-duty"].includes(action)) fail("unknown --action");
   environmentGates();
   if (JSON.stringify(process.env).includes(FORBIDDEN_REF)) fail("production reference present");
   const manifest = loadCurrentManifest();
@@ -171,6 +172,85 @@ async function main() {
       } catch (e) { await client.query("ROLLBACK"); throw e; }
       writeLedger(ledger);
       console.log(`created ${ledger.tx.length} synthetic movements: ${ledger.tx.map((t) => t.id).join(", ")}`);
+      return;
+    }
+
+    if (action === "create-partb") {
+      if (ledger.partb) fail("this run already holds Part B fixtures");
+      const aoc = (await q("select id from public.aocs where code = 'MY'"))[0]?.id ?? fail("no MY aoc");
+      const creator = account("caterlink-driver").authUserId;
+      const k = runId.replace(/[^a-z0-9]/gi, "").slice(-6).toUpperCase();
+      const VEH = `UATPB${k}`;
+      const DRV = `UATPD${k}`;
+      const plan = [
+        { key: "pen-pass", station: "PEN", status: "CREATED" },
+        { key: "pen-escalate", station: "PEN", status: "CREATED" },
+        { key: "jhb-pass", station: "JHB", status: "CREATED" },
+        { key: "pen-wrong-state", station: "PEN", status: "INFLIGHT_POST_APPROVED" },
+        { key: "pen-concurrent", station: "PEN", status: "CREATED" },
+        { key: "jhb-denial", station: "JHB", status: "CREATED" },
+        { key: "pen-layout", station: "PEN", status: "CREATED" },
+      ];
+      console.log(`plan: tagged caterer + vehicle ${VEH} + driver ${DRV}; ${plan.length} OUTBOUND movements (${plan.map((x) => `${x.key}@${x.station}/${x.status}`).join(", ")}), one tagged TRUCK_SEAL each`);
+      if (!LIVE) return console.log("DRY RUN: nothing written");
+      await client.query("BEGIN");
+      try {
+        const co = (await q("insert into public.catering_companies (name, code, aoc_id, status, is_active, effective_from) values ($1,$2,$3,'active',true,current_date - 1) returning id", [`${TAG} PartB caterer`, `UPB${k}`, aoc]))[0].id;
+        const veh = (await q("insert into public.vehicles (vehicle_number, catering_company_id, aoc_id, status, is_active, effective_from) values ($1,$2,$3,'active',true,current_date - 1) returning id", [VEH, co, aoc]))[0].id;
+        const drv = (await q("insert into public.drivers (name, staff_id, catering_company_id, aoc_id, status, is_active, effective_from) values ($1,$2,$3,$4,'active',true,current_date - 1) returning id", [`${TAG} PartB driver`, DRV, co, aoc]))[0].id;
+        ledger.partb = { company: co, vehicle: veh, driver: drv, vehicleNumber: VEH, driverName: `${TAG} PartB driver`, driverStaffId: DRV, sealNumber: `UATSEAL${k}`, sealColor: "BLUE" };
+        await client.query("set local session_replication_role = replica");
+        let n = 990100;
+        for (const x of plan) {
+          n += 1;
+          const number = `ICMS-2026-${n}`;
+          if ((await q("select 1 from public.transactions where transaction_number = $1", [number])).length) fail(`${number} already exists`);
+          const st = (await q("select id from public.org_stations where code = $1", [x.station]))[0]?.id ?? fail(`no station ${x.station}`);
+          const r = (await q(
+            `insert into public.transactions (transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, seal_number, status, route, origin_station_id, flight_number, created_by)
+             values ($1,$2,'OUTBOUND',$3,$4,$5,$6,$7,'AIRCRAFT',$8,'AK9001',$9) returning id`,
+            [number, aoc, VEH, `${TAG} SYNTHETIC`, DRV, ledger.partb.sealNumber, x.status, st, creator],
+          ))[0];
+          const seal = (await q("insert into public.seals (transaction_id, seal_number, seal_type, seal_color) values ($1,$2,'TRUCK_SEAL',$3) returning id", [r.id, ledger.partb.sealNumber, "BLUE"]))[0].id;
+          ledger.tx.push({ id: r.id, number, station: x.station, key: x.key, sealId: seal });
+        }
+        await client.query("COMMIT");
+      } catch (e) { await client.query("ROLLBACK"); ledger.partb = null; ledger.tx = []; throw e; }
+      writeLedger(ledger);
+      console.log(`created Part B fixtures: ${ledger.tx.length} movements, ${ledger.tx.length} seals, 1 caterer, 1 vehicle, 1 driver`);
+      return;
+    }
+
+    if (action === "cleanup-partb") {
+      const ids = ledger.tx.map((t) => t.id);
+      console.log(`ledger: ${ids.length} movements; whitelist rows: ${ledger.partb ? 3 : 0}`);
+      if (!LIVE) return console.log("DRY RUN: nothing deleted");
+      await client.query("BEGIN");
+      try {
+        // counts BEFORE deletion, by recorded ids only (children cascade from the transaction row)
+        const cnt = async (sql, p) => (await q(sql, p))[0].n;
+        const before = {
+          partB: await cnt("select count(*)::int n from public.part_b_c where transaction_id = any($1::uuid[])", [ids]),
+          sealVerifications: await cnt("select count(*)::int n from public.seal_verifications where seal_id in (select id from public.seals where transaction_id = any($1::uuid[]))", [ids]),
+          seals: await cnt("select count(*)::int n from public.seals where transaction_id = any($1::uuid[])", [ids]),
+          incidents: await cnt("select count(*)::int n from public.caterlink_incidents where transaction_id = any($1::uuid[])", [ids]),
+        };
+        // notifications raised by those movements' escalations (dedup key cp_esc:<tx>:<incident>:<profile>) -- only the recorded transactions
+        const nIds = ids.length ? (await q("select id from public.user_notifications where " + ids.map((_, i) => `dedup_key like $${i + 1}`).join(" or "), ids.map((i) => `cp_esc:${i}:%`))).map((r) => r.id) : [];
+        const delN = nIds.length ? (await q("delete from public.user_notifications where id = any($1::uuid[]) returning id", [nIds])).length : 0;
+        const delTx = (await q("delete from public.transactions where id = any($1::uuid[]) and driver_name like $2 returning id", [ids, `${TAG}%`])).length;
+        let delWl = 0;
+        if (ledger.partb) {
+          delWl += (await q("delete from public.vehicles where id = $1 and vehicle_number = $2 returning id", [ledger.partb.vehicle, ledger.partb.vehicleNumber])).length;
+          delWl += (await q("delete from public.drivers where id = $1 and staff_id = $2 returning id", [ledger.partb.driver, ledger.partb.driverStaffId])).length;
+          delWl += (await q("delete from public.catering_companies where id = $1 and name like $2 returning id", [ledger.partb.company, `${TAG}%`])).length;
+        }
+        await client.query("COMMIT");
+        const left = await cnt("select count(*)::int n from public.transactions where id = any($1::uuid[])", [ids]);
+        if (left === 0) { ledger.tx = []; ledger.partb = null; }
+        writeLedger(ledger);
+        console.log(`deleted: transactions=${delTx}/${ids.length}; cascaded part_b_c=${before.partB}, seal_verifications=${before.sealVerifications}, seals=${before.seals}, incidents=${before.incidents}; notifications=${delN}; whitelist rows=${delWl}/3 (audit-log entries are append-only and remain); transactions left=${left}`);
+      } catch (e) { await client.query("ROLLBACK"); throw e; }
       return;
     }
 
