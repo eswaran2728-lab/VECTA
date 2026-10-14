@@ -1,3 +1,4 @@
+import { partBHoldMessage } from "@/lib/icms/checkpoint-hold-messages";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
@@ -150,7 +151,7 @@ export default async function TransactionDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ created?: string; approved?: string; completed?: string; escalated?: string }>;
+  searchParams: Promise<{ created?: string; approved?: string; completed?: string; escalated?: string; hold?: string }>;
 }) {
   const { id } = await params;
   const flags = await searchParams;
@@ -194,6 +195,7 @@ export default async function TransactionDetailPage({
     signedUrl("signatures", partRedq?.signature_url ?? null),
   ]);
 
+  const holdMessage = partBHoldMessage(flags.hold);
   const banner = flags.created
     ? "Transaction created. Show the QR pass at the security checkpoint."
     : flags.approved
@@ -206,6 +208,11 @@ export default async function TransactionDetailPage({
 
   return (
     <div className="space-y-4">
+      {holdMessage ? (
+        <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm font-semibold text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
+          {holdMessage}
+        </p>
+      ) : null}
       {banner ? (
         <p className="rounded-md bg-emerald-100 p-3 text-sm font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">{banner}</p>
       ) : null}

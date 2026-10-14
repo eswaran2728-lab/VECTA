@@ -16,7 +16,8 @@ Third-Party Vendor workflow gets new tables. The 14 legacy tables are **not** re
 | `transactions` (list) | `transactions`, `seals` | unchanged (already canonical) + new `seals` read policy so the creator can read its seals | works once the migration is applied |
 | `transactions/new` | `catering_companies`, `vehicles`, `drivers` (RLS hides them from a Driver) | `list_caterlink_driver_options_secure()` | re-pointed |
 | `transactions/[id]` | `part_a..d`, `part_hub`, `part_redq`, `incidents`, `segment_timeouts`, 15 absent `transactions` columns | rewritten read-only on `caterlink_checkpoint_*`, `part_b_c`, `caterlink_incidents`, `seals` | re-pointed (read-only) |
-| `transactions/[id]/part-b, part-c, part-d, part-hub, part-redq, skip-part-d, incident` | legacy tables | none exists | **BLOCKED** (explicit stub; no checkpoint-write RPC in the canonical model) |
+| `transactions/[id]/part-b` | legacy `part_b` | `part_b_c` (stage B) + `seals` / `seal_verifications` + `caterlink_incidents`, written ONLY by `record_caterlink_part_b_secure()` (migration `20261107000001`) | **ACTIVATED**: actor from `auth.uid()`; approved profile + active station-operator assignment (ASO/SO/SSO/DSE, not Staff Profiling) at the movement's origin station with the station `scan` capability; open duty row for the Malaysia date; movement must be waiting for Part B; row-locked, idempotent for the same officer, one record per (transaction, stage); seal number/colour and observed vehicle/driver verified server-side (mismatch / wrong colour / not whitelisted freezes the movement behind an incident and notifies CaterLink Management + Operation Manager of the AOC); completed record immutable; audited; no client-supplied officer, date or time |
+| `transactions/[id]/part-c, part-d, part-hub, part-redq, skip-part-d, incident` | legacy tables | none exists | **BLOCKED** (explicit stub; no checkpoint-write RPC in the canonical model yet) |
 | `incidents` | `incidents`, `incident_photos` | `caterlink_incidents`; `resolve_caterlink_incident_secure`, `reopen_caterlink_incident_secure` | re-pointed; photo PDF export dropped |
 | `reports` | `transactions` embeds, `incidents`, `segment_timeouts`, `catering_companies` embed | canonical sources; company names read separately; no SLA | re-pointed |
 | `admin/archive` | `transactions` (archived), legacy `archive_all_pending` RPC | `transactions`; `archive_caterlink_transaction_secure` per transaction | re-pointed |
@@ -85,8 +86,8 @@ capability values and the scan/receipt functions are byte-identical (asserted by
 
 ## Unresolved gaps
 
-- AVSEC checkpoint progression (Parts B/C/D, Hub, REDQ, skip, incident raising from a checkpoint) has no canonical
-  write path. Those pages are BLOCKED stubs. Only transaction creation, vendor deliveries, receipt (existing RPC),
+- AVSEC checkpoint progression other than Part B (Parts C/D, Hub, REDQ, skip, incident raising from a checkpoint) has no canonical
+  write path. Those pages are BLOCKED stubs. (Part B has one: `record_caterlink_part_b_secure()`.) Only transaction creation, vendor deliveries, receipt (existing RPC),
   incident resolve/reopen, archive, export, whitelist and audit are functional.
 - Final PDF RPCs exist but nothing in the UI calls them.
 - No segment time limits / SLA reporting.

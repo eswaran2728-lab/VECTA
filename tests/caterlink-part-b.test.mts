@@ -4,7 +4,9 @@ import fs from "node:fs";
 
 const read = (p: string) => fs.readFileSync(p, "utf8");
 const ACTION = read("lib/icms/actions/transactions.ts");
-const PART_B = ACTION.slice(ACTION.indexOf("const PART_B_MESSAGES"), ACTION.indexOf("export async function completePartC("));
+const PART_B = ACTION.slice(ACTION.indexOf("export async function completePartB("), ACTION.indexOf("export async function completePartC("));
+const HOLD = fs.readFileSync("lib/icms/checkpoint-hold-messages.ts", "utf8");
+const DETAIL = fs.readFileSync("app/(icms)/icms/transactions/[id]/page.tsx", "utf8");
 const PAGE = read("app/(icms)/icms/transactions/[id]/part-b/page.tsx");
 const FORM = read("components/icms/checkpoint-form.tsx");
 const MIG = read("supabase/migrations/20261107000001_caterlink_part_b_checkpoint.sql");
@@ -30,8 +32,14 @@ test("the server action writes ONLY through the secured RPC and takes no identit
 });
 
 test("outcomes: every escalation outcome shows the safe bilingual instruction; approval redirects with approved/completed", () => {
-  for (const k of ["SEAL_MISMATCH", "WRONG_SEAL_COLOR", "WHITELIST_VIOLATION"]) assert.match(PART_B, new RegExp(k));
+  for (const k of ["SEAL_MISMATCH", "WRONG_SEAL_COLOR", "WHITELIST_VIOLATION"]) assert.match(HOLD, new RegExp(k));
+  assert.match(HOLD, /Do not release the vehicle/);
+  assert.match(PART_B, /partBHoldMessage\(row\.outcome\)\) redirect\(`\/icms\/transactions\/\$\{transactionId\}\?escalated=1&hold=\$\{row\.outcome\}`\)/);
   assert.match(PART_B, /redirect\(`\/icms\/transactions\/\$\{transactionId\}\?escalated=1`\)/);
+  // the page shows the instruction from the whitelisted table only; it never echoes the query string
+  assert.match(DETAIL, /partBHoldMessage\(flags\.hold\)/);
+  assert.match(DETAIL, /role="alert"[\s\S]{0,200}\{holdMessage\}/);
+  assert.match(HOLD, /hasOwnProperty\.call\(PART_B_HOLD_MESSAGES, code\)/);
   assert.match(PART_B, /"completed" : "approved"/);
 });
 

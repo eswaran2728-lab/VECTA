@@ -1,5 +1,6 @@
 "use server";
 
+import { partBHoldMessage } from "@/lib/icms/checkpoint-hold-messages";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
@@ -590,15 +591,6 @@ async function completeChecklistPart(
  * checkpoint, advances (or freezes) the transaction, audits and notifies -- atomically. This action only validates the shape of the
  * input, uploads the signature and maps the result to a safe message. The officer's identity, date and time are never taken from the form.
  */
-const PART_B_MESSAGES: Record<string, string> = {
-  SEAL_MISMATCH:
-    "SEAL MISMATCH — the transaction has been escalated and the administrators notified. Do not release the vehicle. / KETIDAKPADANAN SIL — transaksi telah dieskalasi. Jangan lepaskan kenderaan.",
-  WRONG_SEAL_COLOR:
-    "WRONG SEAL COLOUR — the transaction has been escalated and the administrators notified. Do not release the vehicle. / WARNA SIL TIDAK BETUL — transaksi telah dieskalasi. Jangan lepaskan kenderaan.",
-  WHITELIST_VIOLATION:
-    "WHITELIST VIOLATION — the observed vehicle/driver is not on the active whitelist. The transaction has been escalated and the administrators notified. Do not release the vehicle. / PELANGGARAN SENARAI PUTIH — transaksi telah dieskalasi.",
-};
-
 export async function completePartB(_prev: ActionState, formData: FormData): Promise<ActionState> {
   await requireCheckpointRole("post2_avsec");
 
@@ -662,9 +654,9 @@ export async function completePartB(_prev: ActionState, formData: FormData): Pro
   revalidatePath(`/icms/transactions/${transactionId}`);
   revalidatePath("/icms/transactions");
   revalidatePath("/icms/dashboard");
-  if (PART_B_MESSAGES[row.outcome]) {
-    return { error: PART_B_MESSAGES[row.outcome] };
-  }
+  // an automatic escalation freezes the movement: the form is gone on the next render, so the officer is sent to the transaction page,
+  // which shows the hold instruction for this (whitelisted) outcome code
+  if (partBHoldMessage(row.outcome)) redirect(`/icms/transactions/${transactionId}?escalated=1&hold=${row.outcome}`);
   if (row.outcome === "ESCALATED") redirect(`/icms/transactions/${transactionId}?escalated=1`);
   redirect(`/icms/transactions/${transactionId}?${row.outcome === "COMPLETED" ? "completed" : "approved"}=1`);
 }
