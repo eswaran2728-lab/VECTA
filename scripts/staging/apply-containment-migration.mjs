@@ -121,8 +121,8 @@ async function main() {
           const body = (await q(`select pg_get_functiondef('${sig}'::regprocedure) d`))[0].d;
           if (!/raise exception 'Not available\./.test(body) || /current_user_role|insert into|update public/i.test(body)) fail(`${sig} is not a bare fail-closed stub`);
         }
-        const rbody = (await q(`select pg_get_functiondef('${RECEIPT}'::regprocedure) d`))[0].d;
-        const lock = rbody.indexOf("FOR UPDATE"); const gate = rbody.indexOf("caterlink_receipt_ready_statuses"); const write = rbody.search(/INSERT INTO public\.caterlink_checkpoint_hub|UPDATE public\.transactions/);
+        const rbody = (await q(`select pg_get_functiondef('${RECEIPT}'::regprocedure) d`))[0].d.toLowerCase();
+        const lock = rbody.indexOf("for update"); const gate = rbody.indexOf("caterlink_receipt_ready_statuses"); const write = rbody.search(/insert into public\.caterlink_checkpoint_hub|update public\.transactions/);
         if (!(lock > 0 && gate > lock && write > gate)) fail("the receipt does not lock, then gate on state, before writing");
         if (!/caterlink_receipt_ready_statuses/.test((await q(`select pg_get_functiondef('${LIST}'::regprocedure) d`))[0].d)) fail("the pending list does not use the state rule");
         const states = (await q("select public.caterlink_receipt_ready_statuses('OUTBOUND','HUB') h, public.caterlink_receipt_ready_statuses('OUTBOUND','MAINTENANCE') m, public.caterlink_receipt_ready_statuses('OUTBOUND','AIRCRAFT') a, public.caterlink_receipt_ready_statuses('INBOUND','AIRCRAFT') i, public.caterlink_receipt_ready_statuses('OUTBOUND','REDQ') r"))[0];
