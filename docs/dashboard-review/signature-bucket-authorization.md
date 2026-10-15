@@ -74,7 +74,10 @@ signature workflow (Part C, Part D, REDQ) rejects any signature reference.
 * The path is server-derived; a refused upload leaves nothing (Storage RLS rejects the insert).
 * A **returned** database refusal (or a Part B result that did not create a new record) removes exactly that object (`settleSignature`,
   service role, only if no checkpoint references it).
-* A **thrown** failure is ambiguous (the transaction may still commit), so the object is kept; the scheduled reconciliation decides.
+* A **thrown** failure, or a transport failure returned as an error object (status 0 / no SQLSTATE, e.g. a timeout), is ambiguous (the
+  transaction may still commit), so the object is kept; the scheduled reconciliation decides.
+* An officer who already recorded Part B may submit again: the upload is accepted, the RPC answers `ALREADY_RECORDED`, and the new object is
+  discarded because that result did not create a new record. Any other officer is refused once Part B exists.
 * `GET /api/icms/vendor-signature-reconcile` (daily Vercel Cron, `CRON_SECRET`, fails closed) lists objects older than 30 minutes under any
   approved prefix that no checkpoint references (`list_orphan_signatures_secure`, service role only), re-checks every path
   (`caterlink_signature_referenced`) and removes them.

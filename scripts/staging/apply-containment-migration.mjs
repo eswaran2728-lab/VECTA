@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Applies ONLY the five frozen forward migrations 20261108000001..20261112000001 (see MIGRATIONS) to the approved staging project, as one unit.
+// Applies ONLY the six frozen forward migrations 20261108000001..20261113000001 (see MIGRATIONS) to the approved staging project, as one unit.
 // A complete transactional DRY RUN (apply, verify, behavioural probe, ROLLBACK) always comes first; only with --live and the exact phrase is
 // the real application committed (migration + history row atomically). Prints names and counts only.
 //
@@ -25,7 +25,7 @@ export const MIGRATIONS = [
   { version: "20261110000001", name: "registration_throttle", sha256: "3a2ea12506231afe272e4e04c803c6fd0b439a129b8268f532afe32490709369" },
   { version: "20261111000001", name: "vendor_check_signature_authorization", sha256: "7a130b188908e4cd73b75cabab7baef9efc9a6ec84664571ebb4b62c584fdc7e" },
   { version: "20261112000001", name: "block_unusable_driver_routes", sha256: "ae0ecb5ac2a2565385e542e56777c343fcf2684887717b955a75cec52b271ea2" },
-  { version: "20261113000001", name: "signature_upload_authorization", sha256: "d887f5e8c2b65799f48f1ed9424c8d565e2a14da6332e834a43e951f35bd8cf3" },
+  { version: "20261113000001", name: "signature_upload_authorization", sha256: "6ceb24360b2600060a466e8161c5ae15e78d1c78d939299af3f6b8a51f862499" },
 ];
 export const PRE_COUNT = 83;
 export const LAST_PRE = "20261107000001";
@@ -181,27 +181,30 @@ async function main() {
         const tx = (await q(`insert into public.transactions (transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, seal_number, status, route, origin_station_id, destination_station_id, flight_number, created_by)
           values ('ICMS-2026-990999', $1, 'OUTBOUND', 'UAT-VEH', '[CONTAINMENT-DRYRUN]', 'UAT-DRV', 'S', 'CREATED', 'AIRCRAFT', $2, $3, 'AK9001', $4) returning id`, [aoc, pen, kch, acct("caterlink-driver")]))[0].id;
         await client.query("set local session_replication_role = origin");
-        const rcpt = async () => asUser("aso-kch-receipt", async () => { await client.query(`select * from ${RECEIPT.replace(/\(.*$/, "")}($1, 'KCH', 'receipt/dryrun.png', 'dry run')`, [tx]); return "ACCEPTED"; });
+        // the receipt signature is the bound, existing, fresh object the destination officer would have uploaded (20261113000001)
+        const rSig = `receipt/${tx}/${crypto.randomUUID()}.png`;
+        await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [rSig, acct("aso-kch-receipt")]);
+        const rcpt = async () => asUser("aso-kch-receipt", async () => { await client.query(`select * from ${RECEIPT.replace(/\(.*$/, "")}($1, 'KCH', '${rSig}', 'dry run')`, [tx]); return "ACCEPTED"; });
         const denied = await rcpt();
         if (!/not ready for receipt/i.test(denied)) fail(`a CREATED movement was not refused by the state gate (${denied})`);
         const leak = (await q("select (select count(*) from public.caterlink_checkpoint_hub where transaction_id = $1)::int + (select count(*) from public.caterlink_pdf_jobs where transaction_id = $1)::int + (select count(*) from public.phase8_audit_log where entity_id = $1)::int n", [tx]))[0].n;
         if (leak !== 0) fail("a refused receipt wrote a hub record, PDF job or audit row");
         probe("receipt: a CREATED movement is refused by the state gate and the refusal writes no hub record, PDF job or audit row");
         await client.query("update public.transactions set status = 'AIRPORT_POST_APPROVED' where id = $1", [tx]);
-        const okRcpt = await asUser("aso-kch-receipt", async () => { const r = await client.query(`select * from ${RECEIPT.replace(/\(.*$/, "")}($1, 'KCH', 'receipt/dryrun.png', 'dry run')`, [tx]); return `ACCEPTED:${r.rows[0].status}`; });
+        const okRcpt = await asUser("aso-kch-receipt", async () => { const r = await client.query(`select * from ${RECEIPT.replace(/\(.*$/, "")}($1, 'KCH', '${rSig}', 'dry run')`, [tx]); return `ACCEPTED:${r.rows[0].status}`; });
         if (okRcpt !== "ACCEPTED:COMPLETED") fail(`the final-step state was not accepted (${okRcpt})`);
         probe("receipt: the destination officer completes a movement at its final-step state");
-        await client.query("ROLLBACK TO SAVEPOINT rc");
 
         // wrong-station receipt: an officer at BKI cannot receive a KCH movement (destination binding), rolled back
         {
           await client.query("SAVEPOINT bind");
           await client.query("update public.transactions set status = 'AIRPORT_POST_APPROVED' where id = $1", [tx]);
-          const wrong = await asUser("aso-bki-receipt", async () => { await client.query(`select * from ${RECEIPT.replace(/\(.*$/, "")}($1, 'BKI', 'receipt/dryrun.png', 'dry run')`, [tx]); return "ACCEPTED"; });
+          const wrong = await asUser("aso-bki-receipt", async () => { await client.query(`select * from ${RECEIPT.replace(/\(.*$/, "")}($1, 'BKI', '${rSig}', 'dry run')`, [tx]); return "ACCEPTED"; });
           if (!/not available for receipt confirmation at this station/i.test(wrong)) fail(`a wrong-station receipt was not refused uniformly (${wrong})`);
-          probe("wrong-station receipt: a BKI officer cannot receive a KCH movement (uniform refusal, rolled back)");
+          probe("wrong-station receipt: a BKI officer cannot receive a KCH movement that exists (uniform refusal, rolled back)");
           await client.query("ROLLBACK TO SAVEPOINT bind");
         }
+        await client.query("ROLLBACK TO SAVEPOINT rc");
         // leave RPC and registration throttle: grants, policy, and a rolled-back behavioural probe
         const LEAVE = "public.submit_leave_application_secure(text, date, date, text)";
         const THROTTLE = "public.registration_throttle_hit(text, integer, integer)";
@@ -304,7 +307,7 @@ async function main() {
           expectDenied("cross-user: a Vendor cannot upload under a Driver's id", await accepted("caterlink-vendor", `vendor-signatures/${uidOf("caterlink-driver")}/${U()}.png`));
           // Part B: the officer's station, capability, duty and the movement's state
           if (dutyOk) expectAccepted("Part B: the PEN officer on duty uploads for a PEN movement waiting for Part B", await accepted("aso", `part-b/${penTx}-${U()}.png`));
-          else probe("Part B success precondition NOT exercised: the PEN officer has no usable duty row on staging (denial probes below still run)");
+          else fail("the Part B success precondition could not be set up: no usable duty check-in could be created for the PEN officer on staging");
           expectDenied("cross-station: a KUL officer cannot upload for a PEN movement", await accepted("aso-kul", `part-b/${penTx}-${U()}.png`));
           expectDenied("cross-station: a JHB officer (scan capability, other station) cannot upload for a PEN movement", await accepted("aso-jhb", `part-b/${penTx}-${U()}.png`));
           expectDenied("a pending profile is refused", await accepted("neg-pending-profile", `part-b/${penTx}-${U()}.png`));
@@ -337,13 +340,13 @@ async function main() {
             const r = await asUser("caterlink-driver", async () => {
               await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [name, acct("caterlink-driver")]);
               await client.query("SAVEPOINT ow");
-              const dup = await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [name, acct("caterlink-driver")]).then(() => "ALLOWED").catch((e) => String(e.message).slice(0, 60));
+              const dup = await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [name, acct("caterlink-driver")]).then(() => "ALLOWED").catch((e) => (/duplicate key|row-level security/i.test(String(e.message)) ? "REFUSED" : "OTHER:" + String(e.message).slice(0, 50)));
               await client.query("ROLLBACK TO SAVEPOINT ow");
               const upd = await client.query("update storage.objects set name = $1 where bucket_id = 'signatures' and name = $2", [`part-a/${uidOf("caterlink-driver")}/${U()}.png`, name]).then((x) => x.rowCount).catch(() => 0);
               const del = await client.query("delete from storage.objects where bucket_id = 'signatures' and name = $1", [name]).then((x) => x.rowCount).catch(() => 0);
               return `${dup}|${upd}|${del}`;
             });
-            if (/^ALLOWED/.test(r) || !/\|0\|0$/.test(r)) fail(`an overwrite, move or delete by a client was not refused (${r})`);
+            if (!/^REFUSED[|]0[|]0$/.test(r)) fail(`an overwrite, move or delete by a client was not refused (${r})`);
             probe("no overwrite, move or delete: a duplicate insert is refused and UPDATE/DELETE by the uploader affect no row");
           }
           // finalisation binds the stored reference
@@ -357,7 +360,23 @@ async function main() {
             const missing = await client.query("insert into public.caterlink_checkpoint_part_a (transaction_id, pic_name, pic_staff_id, signature_url, completed_by) values ($1,'x','x',$2,$3)", [penTx, `part-a/${acct("caterlink-driver")}/${U()}.png`, acct("caterlink-driver")]).then(() => "ALLOWED").catch((e) => String(e.message));
             await client.query("ROLLBACK TO SAVEPOINT fin");
             if (!/was not uploaded by this account/i.test(missing)) fail(`a reference to a non-existent object was accepted at finalisation (${missing.slice(0, 80)})`);
-            probe("finalisation: a checkpoint cannot reference an object that does not exist or is not the actor's");
+            probe("finalisation: a checkpoint cannot reference an object that does not exist");
+            const finTry = async (name, owner, ageSql) => {
+              await client.query("SAVEPOINT fin2");
+              await client.query(`insert into storage.objects (bucket_id, name, owner, created_at) values ('signatures', $1, $2, ${ageSql})`, [name, owner]);
+              const r = await client.query("insert into public.caterlink_checkpoint_part_a (transaction_id, pic_name, pic_staff_id, signature_url, completed_by) values ($1,'x','x',$2,$3)", [penTx, name, acct("caterlink-driver")]).then(() => "ACCEPTED").catch((e) => String(e.message));
+              await client.query("ROLLBACK TO SAVEPOINT fin2");
+              return r;
+            };
+            const foreign = await finTry(`part-a/${acct("caterlink-driver")}/${U()}.png`, acct("aso"), "now()");
+            if (!/was not uploaded by this account/i.test(foreign)) fail(`an object owned by another account was accepted at finalisation (${foreign.slice(0, 80)})`);
+            probe("finalisation: a checkpoint cannot reference an object owned by a different account");
+            const stale = await finTry(`part-a/${acct("caterlink-driver")}/${U()}.png`, acct("caterlink-driver"), "now() - interval '2 hours'");
+            if (!/was not uploaded by this account/i.test(stale)) fail(`a stale object (older than 20 minutes) was accepted at finalisation (${stale.slice(0, 80)})`);
+            probe("finalisation: a checkpoint cannot adopt an object older than the 20-minute freshness limit");
+            const good = await finTry(`part-a/${acct("caterlink-driver")}/${U()}.png`, acct("caterlink-driver"), "now()");
+            if (good !== "ACCEPTED") fail(`the bound, fresh, own object was refused at finalisation (${good.slice(0, 80)})`);
+            probe("finalisation: the caller's own bound, fresh, existing object is accepted");
           }
           const og2 = (await q("select has_function_privilege('authenticated', 'public.list_orphan_signatures_secure(integer)', 'execute') au, has_function_privilege('service_role', 'public.list_orphan_signatures_secure(integer)', 'execute') sv"))[0];
           if (og2.au || !og2.sv) fail("the signature orphan listing is not service-role only");

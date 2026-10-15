@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
-  SIGNATURE_PATH_RE, SIGNATURE_KINDS, signaturePath, uploadSignature, discardSignature, reconcileSignatureOrphans, settleSignature,
+  SIGNATURE_PATH_RE, SIGNATURE_KINDS, signaturePath, uploadSignature, discardSignature, reconcileSignatureOrphans, settleSignature, captureOutcome, isAmbiguousTransportError,
 } from "../lib/icms/signature-storage.ts";
 
 const U1 = "11111111-2222-4333-8444-555555555555";
@@ -185,4 +185,33 @@ test("migration: the single INSERT policy replaces the broad one and nothing gra
     assert.match(d, /security definer/i);
   }
   assert.ok(!/grant execute on function public\.(caterlink_signature_referenced|list_orphan_signatures_secure)[^;]*to[^;]*(authenticated|anon|public)/i.test(sql), "reference check and orphan listing are service-role only");
+});
+
+test("a transport failure returned as an error object (status 0 / no SQLSTATE) is ambiguous exactly like a throw; a database refusal is not", async () => {
+  const fetchFailure = await captureOutcome(async () => ({ error: { message: "FetchError: network request failed" }, status: 0 }));
+  assert.equal(fetchFailure.thrown, true);
+  const timeout = await captureOutcome(async () => ({ error: { message: "The operation was aborted due to timeout" }, status: 0 }));
+  assert.equal(timeout.thrown, true);
+  const refusal = await captureOutcome(async () => ({ error: { message: "Not authorised", code: "P0001" }, status: 400 }));
+  assert.equal(refusal.thrown, false);
+  const rls = await captureOutcome(async () => ({ error: { message: "new row violates row-level security policy", code: "42501" }, status: 403 }));
+  assert.equal(rls.thrown, false);
+  const ok = await captureOutcome(async () => ({ error: null, status: 200 }));
+  assert.deepEqual([ok.thrown, ok.error], [false, null]);
+  const thrownOutcome = await captureOutcome(async () => { throw new Error("boom"); });
+  assert.equal(thrownOutcome.thrown, true);
+  assert.equal(isAmbiguousTransportError(null), false);
+  assert.equal(isAmbiguousTransportError({ message: "x", code: "23505" }, 0), false);
+});
+
+test("an ambiguous outcome keeps the object for reconciliation; a database refusal discards it", async () => {
+  const path = `part-b/${U1}-${U2}.png`;
+  const ambiguous = await captureOutcome(async () => ({ error: { message: "FetchError: socket hang up" }, status: 0 }));
+  const a = deps();
+  assert.equal(await settleSignature(path, a.d, ambiguous), "kept-for-reconciliation");
+  assert.deepEqual(a.calls.removed, []);
+  const refused = await captureOutcome(async () => ({ error: { message: "Out of order", code: "P0001" }, status: 400 }));
+  const b = deps();
+  assert.equal(await settleSignature(path, b.d, refused), "removed");
+  assert.deepEqual(b.calls.removed, [[path]]);
 });

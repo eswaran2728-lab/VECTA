@@ -58,13 +58,17 @@ begin
              where a.profile_id = v_uid and d.code in ('profiling_so', 'profiling_aso') and a.revoked_at is null and a.starts_at <= now() and (a.ends_at is null or a.ends_at > now())) then
     return false;
   end if;
-  -- workflow state: outbound Part B waits at CREATED, inbound (final) Part B at AIRPORT_POST_APPROVED; never an escalated movement
-  v_required := case when v_tx.direction = 'INBOUND' then 'AIRPORT_POST_APPROVED' else 'CREATED' end;
-  if v_tx.status is distinct from v_required then
-    return false;
-  end if;
-  if exists (select 1 from public.part_b_c b where b.transaction_id = p_transaction_id and b.checkpoint_stage = 'B') then
-    return false;
+  -- The officer who ALREADY recorded Part B may submit again: the RPC answers ALREADY_RECORDED (idempotent) and the new object is discarded.
+  -- Everyone else needs the movement to be waiting for Part B: outbound at CREATED, inbound (final) at AIRPORT_POST_APPROVED, never
+  -- escalated, and no Part B recorded yet.
+  if not exists (select 1 from public.part_b_c b where b.transaction_id = p_transaction_id and b.checkpoint_stage = 'B' and b.completed_by = v_uid) then
+    v_required := case when v_tx.direction = 'INBOUND' then 'AIRPORT_POST_APPROVED' else 'CREATED' end;
+    if v_tx.status is distinct from v_required then
+      return false;
+    end if;
+    if exists (select 1 from public.part_b_c b where b.transaction_id = p_transaction_id and b.checkpoint_stage = 'B') then
+      return false;
+    end if;
   end if;
   select a.station_id, s.code into v_station, v_station_code
   from public.user_role_assignments a

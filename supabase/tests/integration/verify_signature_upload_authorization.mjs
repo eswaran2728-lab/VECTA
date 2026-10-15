@@ -217,7 +217,8 @@ async function main() {
   await db.exec('reset role; set session_replication_role = replica;');
   await db.query(`insert into public.part_b_c (transaction_id, checkpoint_stage, avsec_name, avsec_staff_id, signature_url, completed_by, result) values ($1,'B','x','y','part-b/legacy.png',$2,'PASS');`, [tDone, aoPen]);
   await db.exec('set session_replication_role = origin;'); await sup();
-  await denied('Part B already recorded for this movement', aoPen, pb(tDone));
+  await allowed('the officer who ALREADY recorded Part B may submit again (the RPC answers idempotently; the new object is discarded)', aoPen, pb(tDone));
+  await denied('a DIFFERENT officer once Part B is recorded', aoPen2, pb(tDone));
   const tJhb = await makeTx(await station('JHB'));
   await denied('PEN officer on a JHB-only movement (cross-station)', aoPen, pb(tJhb));
 

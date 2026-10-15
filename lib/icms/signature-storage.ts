@@ -149,8 +149,21 @@ export async function captureOutcome<T extends { error: unknown }>(
 ): Promise<{ result: T | null; error: unknown; thrown: boolean }> {
   try {
     const result = await run();
-    return { result, error: result.error ?? null, thrown: false };
+    const error = result.error ?? null;
+    // PostgREST/fetch transport failures (timeout, abort, dropped connection) come back as an error object with status 0 or no SQLSTATE
+    // code: the transaction may still commit, so they are ambiguous exactly like a throw. A database refusal always carries a SQLSTATE code.
+    return { result, error, thrown: isAmbiguousTransportError(error, (result as { status?: number }).status) };
   } catch (e) {
     return { result: null, error: e instanceof Error ? e : new Error("The request failed."), thrown: true };
   }
+}
+
+/** A transport-level failure (no database verdict): status 0, or an error without a SQLSTATE code whose message names a network/timeout fault. */
+export function isAmbiguousTransportError(error: unknown, status?: number): boolean {
+  if (!error) return false;
+  const e = error as { code?: unknown; message?: unknown };
+  const hasSqlState = typeof e.code === "string" && /^[0-9A-Z]{5}$/.test(e.code);
+  if (hasSqlState) return false;
+  if (status === 0) return true;
+  return /fetch|abort|timeout|timed out|network|socket|ECONN|ETIMEDOUT|terminated/i.test(String(e.message ?? ""));
 }

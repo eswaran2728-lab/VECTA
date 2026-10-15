@@ -36,8 +36,11 @@ test("a DO block runs at migration time, so a destructive statement inside it is
 test("the dry run prints an explicit PASS marker for every behavioural probe, including each signature-storage probe", () => {
   const src = fs.readFileSync("scripts/staging/apply-containment-migration.mjs", "utf8");
   assert.ok(src.includes("const probe = (name) => { probeLog.push(name); log(`PROBE PASS: ${name}`); };"), "one helper prints every PASS marker");
-  const markers = src.split("probe(").length + src.split("PROBE PASS:").length + src.split("expectDenied(").length + src.split("expectAccepted(").length - 4;
-  assert.ok(markers >= 50, `expected at least 50 probe markers, found ${markers}`);
+  // call sites only (statements that begin with the helper), not the helper definitions
+  const callSites = (src.match(/^\s+(?:probe|expectDenied|expectAccepted)\("/gm) ?? []).length;
+  assert.ok(callSites >= 50, `expected at least 50 probe call sites, found ${callSites}`);
+  assert.ok(!/probe\("[^"]*NOT exercised/.test(src), "a skipped precondition must fail the run, never print a PASS marker");
+  assert.match(src, /the Part B success precondition could not be set up/);
   for (const must of [
     "the unrestricted 'signatures: authenticated upload' policy is absent after the migration",
     "regression: an approved unrelated officer cannot upload signatures/arbitrary-test/<random>.png",
