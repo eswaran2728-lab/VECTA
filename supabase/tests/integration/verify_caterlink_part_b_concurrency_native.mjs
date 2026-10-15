@@ -3,6 +3,7 @@
 // workflow state, seal / whitelist verification, escalation, idempotency, immutability, audit, notification, direct-write denial.
 import pg from 'pg';
 import { assertDisposableLocalTarget } from './safeguards.mjs';
+import { sigPaths } from './sigfixtures.mjs';
 
 const { Client } = pg;
 let failures = 0;
@@ -104,6 +105,8 @@ async function makeTx(st, { direction = 'OUTBOUND', status = 'CREATED' } = {}) {
   await sup();
   return { id, sealId };
 }
+// every session's signature is its own bound, existing, fresh object (migration 20261113000001); the committed objects are visible to all sessions
+const putSig = async (p, owner) => { await db.query('reset role;'); await db.query("insert into storage.buckets (id, name, public) values ('signatures','signatures', false) on conflict (id) do nothing"); await db.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [p, owner]); await sup(); return p; };
 const SIG = 'part-b/sig-test.png';
 const HASH = 'a'.repeat(64);
 const call = async (user, tx, o = {}) => {
@@ -132,7 +135,7 @@ const pbCount = async (tx) => (await one('select count(*)::int n from public.par
 const mk = async () => { const c = new Client({ ...pgConfig, database: runDb, statement_timeout: 20000, query_timeout: 25000 }); await c.connect(); return c; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sql = 'select * from public.record_caterlink_part_b_secure($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13);';
-const argsFor = (tx, o = {}) => [tx.id, true, true, JSON.stringify({ [tx.sealId]: SEAL.number }), JSON.stringify({ [tx.sealId]: SEAL.color }), 'PB1234A', 'PB Driver', 'PBD001', SIG, HASH, 'ok', o.result ?? 'PASS', o.reason ?? null];
+const argsFor = (tx, o = {}, sig = SIG) => [tx.id, true, true, JSON.stringify({ [tx.sealId]: SEAL.number }), JSON.stringify({ [tx.sealId]: SEAL.color }), 'PB1234A', 'PB Driver', 'PBD001', sig, HASH, 'ok', o.result ?? 'PASS', o.reason ?? null];
 async function session(user) {
   const c = await mk();
   await c.query('begin;');
@@ -140,10 +143,11 @@ async function session(user) {
   return c;
 }
 async function race(label, userA, userB, tx, oA = {}, oB = {}) {
+  const sigA = await putSig(sigPaths.partB(tx.id), userA); const sigB = await putSig(sigPaths.partB(tx.id), userB);
   const a = await session(userA); const b = await session(userB);
-  const ra = await a.query(sql, argsFor(tx, oA));
+  const ra = await a.query(sql, argsFor(tx, oA, sigA));
   let bDone = false; let bRes = null; let bErr = null;
-  const bp = b.query(sql, argsFor(tx, oB)).then((r) => { bRes = r.rows[0]; }).catch((e) => { bErr = e.message; }).finally(() => { bDone = true; });
+  const bp = b.query(sql, argsFor(tx, oB, sigB)).then((r) => { bRes = r.rows[0]; }).catch((e) => { bErr = e.message; }).finally(() => { bDone = true; });
   await sleep(500);
   assert(!bDone, `${label}: the second session is BLOCKED on the transaction row while the first holds its uncommitted Part B`);
   await a.query('commit;');
@@ -178,8 +182,10 @@ assert(await cnt(t3) === 1 && await st(t3) === 'INFLIGHT_POST_APPROVED' && (awai
 
 console.log('=== ten concurrent attempts on one movement ===');
 const t4 = await makeTx(pen);
+const sigs4 = [];
+for (let i = 0; i < 10; i += 1) sigs4.push(await putSig(sigPaths.partB(t4.id), i % 2 ? asoPen : asoPen2));
 const cs = await Promise.all(Array.from({ length: 10 }, (_, i) => session(i % 2 ? asoPen : asoPen2)));
-const results = await Promise.allSettled(cs.map(async (c) => { const r = await c.query(sql, argsFor(t4)); await c.query('commit;'); return r.rows[0]; }));
+const results = await Promise.allSettled(cs.map(async (c, i) => { const r = await c.query(sql, argsFor(t4, {}, sigs4[i])); await c.query('commit;'); return r.rows[0]; }));
 await Promise.all(cs.map((c) => c.query('rollback;').catch(() => {}).then(() => c.end())));
 const created = results.filter((r) => r.status === 'fulfilled' && r.value.is_new === true).length;
 assert(created === 1, `exactly one of ten concurrent submissions created the record (found ${created})`);

@@ -5,6 +5,7 @@
 //     writes nothing (no hub checkpoint, audit, notification or PDF job); a valid receipt is single-shot.
 import pg from 'pg';
 import { assertDisposableLocalTarget } from './safeguards.mjs';
+import { sigPaths } from './sigfixtures.mjs';
 
 const { Client } = pg;
 let failures = 0;
@@ -103,9 +104,13 @@ async function session(user) {
   const c = await mk();
   await c.query('begin;');
   await c.query("select set_config('request.jwt.claims', json_build_object('sub', $1::text, 'role', 'authenticated')::text, false), set_config('role', 'authenticated', false);", [user]);
+  c.__user = user;
   return c;
 }
-const RSQL = "select * from public.confirm_caterlink_destination_receipt_secure($1, 'KCH', 'receipt/ct.png', 'ok');";
+// every receipt carries its own bound, existing, fresh signature object (migration 20261113000001); objects are committed on the autocommit control connection
+const putSig = async (p, owner) => { await db.query('reset role;'); await db.query("insert into storage.buckets (id, name, public) values ('signatures','signatures', false) on conflict (id) do nothing"); await db.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [p, owner]); await sup(); return p; };
+const rq = async (c, sql, txId) => c.query(sql, [txId, await putSig(sigPaths.receipt(txId), c.__user)]);
+const RSQL = "select * from public.confirm_caterlink_destination_receipt_secure($1, 'KCH', $2, 'ok');";
 const q = async (s, p) => (await db.query(s, p)).rows;
 const counts = async (tx) => ({
   status: (await q('select status from public.transactions where id = $1', [tx.id]))[0].status,
@@ -119,9 +124,9 @@ console.log('=== same officer, two sessions: the second is blocked, then refused
 const t1 = await makeTx('AIRPORT_POST_APPROVED');
 {
   const a = await session(asoKch); const b = await session(asoKch);
-  const ra = await a.query(RSQL, [t1.id]);
+  const ra = await rq(a, RSQL, t1.id);
   let done = false; let err = null;
-  const bp = b.query(RSQL, [t1.id]).catch((e) => { err = e.message; }).finally(() => { done = true; });
+  const bp = rq(b, RSQL, t1.id).catch((e) => { err = e.message; }).finally(() => { done = true; });
   await sleep(500);
   assert(!done, 'the second session is BLOCKED on the transaction row while the first holds its uncommitted receipt');
   await a.query('commit;'); await bp; await b.query('rollback;').catch(() => {});
@@ -135,7 +140,7 @@ console.log('=== ten simultaneous receipts by two officers ===');
 const t2 = await makeTx('AIRPORT_POST_APPROVED');
 {
   const cs = await Promise.all(Array.from({ length: 10 }, (_, i) => session(i % 2 ? asoKch : asoKch2)));
-  const res = await Promise.allSettled(cs.map(async (c) => { const r = await c.query(RSQL, [t2.id]); await c.query('commit;'); return r.rows[0]; }));
+  const res = await Promise.allSettled(cs.map(async (c) => { const r = await rq(c, RSQL, t2.id); await c.query('commit;'); return r.rows[0]; }));
   await Promise.all(cs.map((c) => c.query('rollback;').catch(() => {}).then(() => c.end())));
   const won = res.filter((r) => r.status === 'fulfilled').length;
   const c = await counts(t2);
@@ -147,7 +152,7 @@ console.log('=== a premature receipt storm writes nothing ===');
 const t3 = await makeTx('CREATED');
 {
   const cs = await Promise.all(Array.from({ length: 6 }, () => session(asoKch)));
-  const res = await Promise.allSettled(cs.map(async (c) => { const r = await c.query(RSQL, [t3.id]); await c.query('commit;'); return r.rows[0]; }));
+  const res = await Promise.allSettled(cs.map(async (c) => { const r = await rq(c, RSQL, t3.id); await c.query('commit;'); return r.rows[0]; }));
   await Promise.all(cs.map((c) => c.query('rollback;').catch(() => {}).then(() => c.end())));
   const c = await counts(t3);
   assert(res.every((r) => r.status === 'rejected'), 'every receipt on a CREATED movement is denied');
@@ -161,7 +166,7 @@ const t4 = await makeTx('INFLIGHT_POST_APPROVED');
   const mover = await mk(); await mover.query('begin;'); await mover.query("update public.transactions set status = 'AIRPORT_POST_APPROVED' where id = $1;", [t4.id]);
   const r = await session(asoKch);
   let done = false; let out = null;
-  const rp = r.query(RSQL, [t4.id]).then((x) => { out = x.rows[0]; }).catch(() => {}).finally(() => { done = true; });
+  const rp = rq(r, RSQL, t4.id).then((x) => { out = x.rows[0]; }).catch(() => {}).finally(() => { done = true; });
   await sleep(500);
   assert(!done, 'the receipt waits for the row lock instead of judging a stale state');
   await mover.query('commit;'); await rp; await r.query('commit;').catch(() => {}); await r.end(); await mover.end();
@@ -172,7 +177,7 @@ const t5 = await makeTx('AIRPORT_POST_APPROVED');
   const mover = await mk(); await mover.query('begin;'); await mover.query("update public.transactions set status = 'ESCALATED' where id = $1;", [t5.id]);
   const r = await session(asoKch);
   let done = false; let err = null;
-  const rp = r.query(RSQL, [t5.id]).catch((e) => { err = e.message; }).finally(() => { done = true; });
+  const rp = rq(r, RSQL, t5.id).catch((e) => { err = e.message; }).finally(() => { done = true; });
   await sleep(500);
   assert(!done, 'the receipt waits while the movement is being escalated');
   await mover.query('commit;'); await rp; await r.query('rollback;').catch(() => {}); await r.end(); await mover.end();
@@ -186,9 +191,9 @@ const asoBki = await person('asobki', 'aso', { st: bki });
 const t6 = await makeTx('AIRPORT_POST_APPROVED');
 {
   const destBefore = (await q('select destination_station_id d from public.transactions where id = $1', [t6.id]))[0].d;
-  const RB = "select * from public.confirm_caterlink_destination_receipt_secure($1, 'BKI', 'receipt/ct.png', 'ok');";
+  const RB = "select * from public.confirm_caterlink_destination_receipt_secure($1, 'BKI', $2, 'ok');";
   const cs = await Promise.all(Array.from({ length: 8 }, (_, i) => session(i % 2 ? asoKch : asoBki)));
-  const res = await Promise.allSettled(cs.map(async (c, i) => { const r = await c.query(i % 2 ? RSQL : RB, [t6.id]); await c.query('commit;'); return r.rows[0]; }));
+  const res = await Promise.allSettled(cs.map(async (c, i) => { const r = await rq(c, i % 2 ? RSQL : RB, t6.id); await c.query('commit;'); return r.rows[0]; }));
   await Promise.all(cs.map((c) => c.query('rollback;').catch(() => {}).then(() => c.end())));
   const winners = res.map((r, i) => (r.status === 'fulfilled' ? i : -1)).filter((i) => i >= 0);
   const c = await counts(t6);
@@ -199,9 +204,9 @@ const t6 = await makeTx('AIRPORT_POST_APPROVED');
 console.log('=== only wrong-station officers: nothing is written ===');
 const t7 = await makeTx('AIRPORT_POST_APPROVED');
 {
-  const RB = "select * from public.confirm_caterlink_destination_receipt_secure($1, 'BKI', 'receipt/ct.png', 'ok');";
+  const RB = "select * from public.confirm_caterlink_destination_receipt_secure($1, 'BKI', $2, 'ok');";
   const cs = await Promise.all(Array.from({ length: 6 }, () => session(asoBki)));
-  const res = await Promise.allSettled(cs.map(async (c) => { const r = await c.query(RB, [t7.id]); await c.query('commit;'); return r.rows[0]; }));
+  const res = await Promise.allSettled(cs.map(async (c) => { const r = await rq(c, RB, t7.id); await c.query('commit;'); return r.rows[0]; }));
   await Promise.all(cs.map((c) => c.query('rollback;').catch(() => {}).then(() => c.end())));
   const c = await counts(t7);
   const dest = (await q('select destination_station_id d from public.transactions where id = $1', [t7.id]))[0].d;

@@ -16,10 +16,13 @@ export interface UploadResult {
  * RLS applies. Returns the storage object path and content hash.
  */
 export async function uploadDataUrl(
-  bucket: "signatures" | "incident-photos" | "completed-forms",
+  bucket: "incident-photos" | "completed-forms",
   dataUrl: string,
   prefix: string
 ): Promise<UploadResult> {
+  // Signatures are never uploaded by a caller-chosen name: use uploadSignature() (lib/icms/signature-storage.ts), whose bound paths the
+  // database authorises at Storage RLS. This guard keeps a stray call from reaching the signatures bucket.
+  if ((bucket as string) === "signatures") throw new Error("Signatures must be uploaded with uploadSignature().");
   const match = dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/);
   if (!match) {
     throw new Error("Invalid image data");

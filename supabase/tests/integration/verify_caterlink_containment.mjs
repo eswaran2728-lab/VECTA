@@ -5,6 +5,7 @@
 //     writes nothing (no hub checkpoint, audit, notification or PDF job); a valid receipt is single-shot.
 import pg from 'pg';
 import { assertDisposableLocalTarget } from './safeguards.mjs';
+import { sigPaths } from './sigfixtures.mjs';
 
 const { Client } = pg;
 let failures = 0;
@@ -167,7 +168,9 @@ assert(JSON.stringify(rcpt) === JSON.stringify([clMgmt, opMgr].sort()), 'CaterLi
 
 // ================================================================== 3. receipt state gate
 console.log('=== destination receipt: only the final-step state of the existing state machine ===');
-const receive = (u, tx, station = 'KCH') => tryKeep(asUser(u), 'select * from public.confirm_caterlink_destination_receipt_secure($1, $2, $3, $4);', [tx.id, station, 'receipt/ct.png', 'ok']);
+// the receipt's signature must be the bound, existing, fresh object the officer uploaded (migration 20261113000001)
+const putSig = async (p, owner) => { await db.query('reset role'); await db.query("insert into storage.buckets (id, name, public) values ('signatures','signatures', false) on conflict (id) do nothing"); await db.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [p, owner]); await sup(); return p; };
+const receive = async (u, tx, station = 'KCH') => tryKeep(asUser(u), 'select * from public.confirm_caterlink_destination_receipt_secure($1, $2, $3, $4);', [tx.id, station, await putSig(sigPaths.receipt(tx.id), u), 'ok']);
 const matrix = [
   // direction, route, status, accepted?
   ['OUTBOUND', 'AIRCRAFT', 'CREATED', false], ['OUTBOUND', 'AIRCRAFT', 'INFLIGHT_POST_APPROVED', false], ['OUTBOUND', 'AIRCRAFT', 'AIRPORT_POST_APPROVED', true], ['OUTBOUND', 'AIRCRAFT', 'POST6_APPROVED', true],
@@ -227,7 +230,7 @@ const full = async (tx) => ({
   incidents: (await one('select count(*)::int n from public.caterlink_incidents where transaction_id = $1', [tx.id])).n,
   pbc: (await one('select count(*)::int n from public.part_b_c where transaction_id = $1', [tx.id])).n,
 });
-const call = (u, tx, stationCode) => tryKeep(asUser(u), 'select * from public.confirm_caterlink_destination_receipt_secure($1, $2, $3, $4);', [tx.id, stationCode, 'receipt/ct.png', 'ok']);
+const call = async (u, tx, stationCode) => tryKeep(asUser(u), 'select * from public.confirm_caterlink_destination_receipt_secure($1, $2, $3, $4);', [tx.id, stationCode, await putSig(sigPaths.receipt(tx.id), u), 'ok']);
 const UNIFORM = /not available for receipt confirmation at this station/i;
 const routes = [
   ['HUB OUTBOUND', 'OUTBOUND', 'HUB', 'INFLIGHT_POST_APPROVED', 'KCH'],

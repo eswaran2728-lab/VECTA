@@ -1,12 +1,11 @@
 "use server";
 
-import { discardVendorSignature, uploadVendorCheckSignature } from "@/lib/icms/vendor-signature";
-import { vendorSignatureDeps } from "@/lib/icms/vendor-signature-runtime";
+import { captureOutcome, settleSignature, uploadSignature } from "@/lib/icms/signature-storage";
+import { signatureDeps } from "@/lib/icms/signature-runtime";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/icms/auth";
-import { uploadDataUrl } from "@/lib/icms/storage";
 import { callCaterlinkRpc } from "@/lib/caterlink/vendor";
 
 export interface ActionState {
@@ -48,15 +47,18 @@ export async function createVendorTransaction(
     return { error: "Signature is required." };
   }
 
+  // The path is derived here (vendor-signatures/<this Vendor's id>/<random>); Storage RLS lets only an active Vendor write under their own id.
+  const sigDeps = await signatureDeps();
+  const vendor = await requireRole(["vendor"]);
   let sig: { path: string; sha256: string };
   try {
-    sig = await uploadDataUrl("signatures", signature, "vendor-signatures");
+    sig = await uploadSignature("vendor-signatures", vendor.id, signature, sigDeps);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Signature upload failed." };
   }
 
   const supabase = await createClient();
-  const { data, error } = await callCaterlinkRpc(supabase, "create_caterlink_vendor_delivery_secure", {
+  const outcomeA = await captureOutcome(() => callCaterlinkRpc(supabase, "create_caterlink_vendor_delivery_secure", {
     p_station_code: stationCode,
     p_driver_name: driverName,
     p_driver_nric: nricNumber,
@@ -65,8 +67,11 @@ export async function createVendorTransaction(
     p_signature_url: sig.path,
     p_signature_hash: sig.sha256,
     p_supplies_description: supplies || undefined,
-  });
+  }));
+  const data = outcomeA.result?.data;
+  const error = outcomeA.result?.error ?? null;
   const created = Array.isArray(data) ? data[0] : data;
+  await settleSignature(sig.path, sigDeps, { error: outcomeA.error ?? (created?.delivery_id ? null : new Error("not created")), thrown: outcomeA.thrown });
   if (error || !created?.delivery_id) {
     return { error: `Could not create the delivery: ${rpcMessage(error)}` };
   }
@@ -103,10 +108,10 @@ export async function submitVendorPartB(
 
   // The path is derived here from the delivery id (never from the browser) and the Storage policy asks the database whether this caller
   // may security-check this delivery right now; an unauthorised caller's upload is refused and leaves nothing behind.
-  const sigDeps = await vendorSignatureDeps();
+  const sigDeps = await signatureDeps();
   let sig: { path: string; sha256: string };
   try {
-    sig = await uploadVendorCheckSignature(deliveryId, signature, sigDeps);
+    sig = await uploadSignature("vendor-part-b", deliveryId, signature, sigDeps);
   } catch (e) {
     return { error: e instanceof Error && /Invalid image|5MB|could not be uploaded|delivery/i.test(e.message) ? e.message : "The signature could not be uploaded." };
   }
@@ -138,7 +143,7 @@ export async function submitVendorPartB(
     // A returned database refusal means nothing was recorded, so the object this request uploaded is removed now. A THROWN failure (timeout,
     // dropped connection) is ambiguous - the transaction may still commit - so the object is kept and the durable reconciliation, which
     // re-checks the checkpoint reference, decides after the threshold.
-    if (!thrown) await discardVendorSignature(sig.path, sigDeps);
+    await settleSignature(sig.path, sigDeps, { error, thrown });
     return { error: `The security check could not be saved: ${rpcMessage(error)}` };
   }
 
@@ -163,19 +168,24 @@ export async function submitVendorPartC(
   if (!deliveryId) return { error: "Missing delivery reference." };
   if (!signature) return { error: "The Vendor Driver signature is required." };
 
+  // The path is derived here (vendor-part-c/<delivery>/<random>); Storage RLS lets only the owning Vendor of a security-verified delivery write it.
+  const sigDeps = await signatureDeps();
   let sig: { path: string; sha256: string };
   try {
-    sig = await uploadDataUrl("signatures", signature, "vendor-part-c");
+    sig = await uploadSignature("vendor-part-c", deliveryId, signature, sigDeps);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Signature upload failed." };
   }
 
   const supabase = await createClient();
-  const { error } = await callCaterlinkRpc(supabase, "complete_caterlink_vendor_delivery_secure", {
+  const outcomeC = await captureOutcome(() => callCaterlinkRpc(supabase, "complete_caterlink_vendor_delivery_secure", {
     p_delivery_id: deliveryId,
     p_signature_url: sig.path,
     p_signature_hash: sig.sha256,
-  });
+  }));
+  const error = outcomeC.result?.error ?? null;
+  await settleSignature(sig.path, sigDeps, { error: outcomeC.error, thrown: outcomeC.thrown });
+  if (outcomeC.thrown) return { error: "The delivery could not be completed." };
   if (error) {
     return { error: `The delivery could not be completed: ${rpcMessage(error)}` };
   }

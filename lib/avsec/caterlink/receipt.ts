@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requireProfile } from "@/lib/avsec/auth";
 import { createClient } from "@/lib/supabase/server";
-import { uploadDataUrl } from "@/lib/icms/storage";
+import { captureOutcome, settleSignature, uploadSignature } from "@/lib/icms/signature-storage";
+import { signatureDeps } from "@/lib/icms/signature-runtime";
 import { runCaterlinkPdfJobs } from "@/lib/icms/completed-form-pdf";
 
 /**
@@ -72,9 +73,11 @@ export async function confirmFinalReceipt(formData: FormData): Promise<ReceiptRe
   const { data: allowed } = await supabase.rpc("can_user_confirm_caterlink_receipt", { p_station_code: station });
   if (allowed !== true) return { ok: false, error: "Not authorized to confirm CaterLink receipts at this station." };
 
+  // The path is derived here (receipt/<this movement>/<random>); Storage RLS lets only an officer who may confirm receipt of THIS movement now write it.
+  const sigDeps = await signatureDeps();
   let sig: { path: string };
   try {
-    sig = await uploadDataUrl("signatures", signature, "receipt");
+    sig = await uploadSignature("receipt", transactionId, signature, sigDeps);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Signature upload failed." };
   }
@@ -83,12 +86,15 @@ export async function confirmFinalReceipt(formData: FormData): Promise<ReceiptRe
     ? "Receipt verified: route, seal and delivery details confirmed."
     : `DISCREPANCY (route ${routeOk ? "ok" : "NOT confirmed"}; seal ${sealOk ? "ok" : "NOT confirmed"}; delivery ${deliveryOk ? "ok" : "NOT confirmed"}): ${discrepancy}`;
 
-  const { error } = await supabase.rpc("confirm_caterlink_destination_receipt_secure", {
+  const outcome = await captureOutcome(() => supabase.rpc("confirm_caterlink_destination_receipt_secure", {
     p_transaction_id: transactionId,
     p_station_code: station,
     p_signature_url: sig.path,
     p_remarks: remarks,
-  });
+  }));
+  await settleSignature(sig.path, sigDeps, { error: outcome.error, thrown: outcome.thrown });
+  if (outcome.thrown) return { ok: false, error: "The receipt could not be confirmed." };
+  const error = outcome.result?.error ?? null;
   if (error) return { ok: false, error: error.message };
 
   // The receipt committed together with a durable PDF job (database trigger). Try it now; if it fails the job stays queued and is retried, and

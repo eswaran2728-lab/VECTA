@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { assertDisposableLocalTarget } from './safeguards.mjs';
+import { sigPaths } from './sigfixtures.mjs';
 
 const { Client } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -170,10 +171,13 @@ async function main() {
       [n, myAoc, myEntity, `VEH-${txSeq}`, extra.status ?? 'POST6_APPROVED', extra.route ?? 'AIRCRAFT', KUL.id, sender, extra.dest?.id ?? null],
     )); } finally { await db.exec('set session_replication_role = origin;'); await simulateService(); }
   };
+  // a receipt's signature must be the bound, existing, fresh object its officer uploaded (migration 20261113000001)
+  const putSig = async (p, owner) => { await db.query('reset role;'); await db.query("insert into storage.buckets (id, name, public) values ('signatures','signatures', false) on conflict (id) do nothing"); await db.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [p, owner]); return p; };
   const receipt = async (id, txId, station) => {
+    const sig = await putSig(sigPaths.receipt(txId), id);
     await simulateUser(id);
     // NOTE: on error the caller's expectFail rolls back the savepoint; the role is restored by that caller.
-    const r = await one("select * from public.confirm_caterlink_destination_receipt_secure($1, $2, 'sig_fixture.png', 'fixture');", [txId, station]);
+    const r = await one("select * from public.confirm_caterlink_destination_receipt_secure($1, $2, $3, 'fixture');", [txId, station, sig]);
     await simulateService();
     return r;
   };

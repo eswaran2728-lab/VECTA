@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { destructiveStatement, MIGRATIONS } from "../scripts/staging/apply-containment-migration.mjs";
 
-/** The guarded runner refuses a migration that contains a top-level destructive statement, but must accept all five reviewed files. */
+/** The guarded runner refuses a migration that contains a top-level destructive statement, but must accept all six reviewed files. */
 test("the destructive-statement gate accepts every reviewed migration (bounded clean-up inside a function body is not a top-level statement)", () => {
-  assert.equal(MIGRATIONS.length, 5);
+  assert.equal(MIGRATIONS.length, 6);
   for (const m of MIGRATIONS) {
     const sql = fs.readFileSync(`supabase/migrations/${m.version}_${m.name}.sql`, "utf8");
     assert.equal(destructiveStatement(sql), null, `${m.version} must pass the gate`);
@@ -23,7 +23,7 @@ test("the gate still stops top-level destructive statements, however they are wr
 test("the dry run needs no live phrase and the live phase needs --live and the exact phrase", () => {
   const src = fs.readFileSync("scripts/staging/apply-containment-migration.mjs", "utf8");
   assert.match(src, /if \(LIVE && argVal\("confirm"\) !== LIVE_PHRASE\) fail/);
-  assert.match(src, /await pass\(false\);[\s\S]{0,700}if \(!LIVE\) return;[\s\S]{0,200}await pass\(true\)/);
+  assert.match(src, /await pass\(false\);[\s\S]{0,2500}if \(!LIVE\) return;[\s\S]{0,200}await pass\(true\)/);
   assert.match(src, /if \(!real\) \{ await client\.query\("ROLLBACK"\)/);
 });
 
@@ -31,4 +31,29 @@ test("a DO block runs at migration time, so a destructive statement inside it is
   assert.notEqual(destructiveStatement("do $$ begin delete from public.t; end $$;"), null);
   assert.notEqual(destructiveStatement("DO $body$ begin drop table public.t; end $body$;"), null);
   assert.equal(destructiveStatement("create or replace function f() returns void language plpgsql as $$ begin delete from public.t where x; end $$;"), null);
+});
+
+test("the dry run prints an explicit PASS marker for every behavioural probe, including each signature-storage probe", () => {
+  const src = fs.readFileSync("scripts/staging/apply-containment-migration.mjs", "utf8");
+  assert.ok(src.includes("const probe = (name) => { probeLog.push(name); log(`PROBE PASS: ${name}`); };"), "one helper prints every PASS marker");
+  const markers = src.split("probe(").length + src.split("PROBE PASS:").length + src.split("expectDenied(").length + src.split("expectAccepted(").length - 4;
+  assert.ok(markers >= 50, `expected at least 50 probe markers, found ${markers}`);
+  for (const must of [
+    "the unrestricted 'signatures: authenticated upload' policy is absent after the migration",
+    "regression: an approved unrelated officer cannot upload signatures/arbitrary-test/<random>.png",
+    "cross-user: a Driver cannot upload under another account's id",
+    "cross-station: a KUL officer cannot upload for a PEN movement",
+    "a valid authorised prefix succeeds",
+    "Vendor Part B success precondition",
+    "Vendor Part B denial",
+    "no overwrite, move or delete",
+    "finalisation: a checkpoint cannot reference a path that is not bound to its row and actor",
+    "after rollback every original public/storage policy is exactly as before",
+  ]) assert.ok(src.includes(must), "missing probe: " + must);
+});
+
+test("the runner verifies the original policies are restored after the rolled-back dry run and the legacy upload policy was present beforehand", () => {
+  const src = fs.readFileSync("scripts/staging/apply-containment-migration.mjs", "utf8");
+  assert.match(src, /policiesAll/);
+  assert.ok(src.includes("polname = 'signatures: authenticated upload'"), "the legacy policy's return is checked");
 });

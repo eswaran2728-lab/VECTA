@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { assertDisposableLocalTarget } from './safeguards.mjs';
+import { sigPaths } from './sigfixtures.mjs';
 
 const { Client } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -94,7 +95,13 @@ async function main() {
   await db.query('reset role;');
   await db.query(read('migrations', '20261025000001_caterlink_external_workflows.sql'));
   await simulateService();
-  const tx = await asUser(driver, () => one("select * from public.create_caterlink_driver_transaction_secure('KUL - MAA','OUTBOUND','HUB','PS9999A','PS Driver Name','PSD001','PS-SEAL','part-a/ps.png', p_hub_destination => 'NILAI');"));
+  // the Driver's Part A signature must be the bound, existing, fresh object it uploaded (migration 20261113000001)
+  await db.query('reset role;');
+  await db.query("insert into storage.buckets (id, name, public) values ('signatures','signatures', false) on conflict (id) do nothing");
+  const psSig = sigPaths.partA(driver);
+  await db.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [psSig, driver]);
+  await simulateService();
+  const tx = await asUser(driver, () => one("select * from public.create_caterlink_driver_transaction_secure('KUL - MAA','OUTBOUND','HUB','PS9999A','PS Driver Name','PSD001','PS-SEAL',$1, p_hub_destination => 'NILAI');", [psSig]));
 
   const view = (id) => asUser(id, async () => ({
     t: (await db.query('select 1 from public.transactions where id = $1;', [tx.transaction_id])).rows.length === 1,

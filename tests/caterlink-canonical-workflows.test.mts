@@ -82,8 +82,11 @@ test("no action supplies an identity: the database derives it from the session",
   for (const src of [vendor, tx]) {
     assert.ok(!/p_(user|profile|actor|vendor|pic|caller)_?(id|name|staff)/i.test(src.replace(/p_driver_/g, "")), "an RPC argument carries an identity");
   }
-  const create = tx.slice(tx.indexOf("create_caterlink_driver_transaction_secure") - 200, tx.indexOf("create_caterlink_driver_transaction_secure") + 1400);
-  assert.ok(!/profile\.(name|staff_id|id)/.test(create), "the Driver creation call must not send the signed-in profile's details");
+  // the RPC ARGUMENTS carry no identity; the Driver's id only scopes the signature's storage path (part-a/<own id>/...), which Storage RLS verifies
+  const start = tx.indexOf('callCaterlinkRpc(supabase, "create_caterlink_driver_transaction_secure"');
+  const create = tx.slice(start, tx.indexOf("}));", start));
+  assert.ok(create.length > 200 && !/profile\.(name|staff_id|id)/.test(create), "the Driver creation call must not send the signed-in profile's details");
+  assert.ok(/uploadSignature\("part-a", profile\.id,/.test(tx), "the Driver's own id only scopes the signature path");
   for (const t of ["create_caterlink_vendor_delivery_secure", "record_caterlink_vendor_security_check_secure", "complete_caterlink_vendor_delivery_secure"]) {
     assert.match(vendor, new RegExp(t));
   }

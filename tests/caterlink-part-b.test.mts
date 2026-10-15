@@ -27,7 +27,7 @@ test("the server action writes ONLY through the secured RPC and takes no identit
   assert.doesNotMatch(PART_B, /\.from\("(part_b|part_b_c|transactions|seals|seal_verifications|incidents|caterlink_incidents)"\)/, "no direct table write");
   assert.doesNotMatch(PART_B, /officer_name|officer_staff_id|checkpoint_date|checkpoint_time|completed_by|profile\.id/, "no client-supplied officer or time; no actor id sent");
   assert.doesNotMatch(PART_B, /as unknown as/, "typed RPC call");
-  assert.match(PART_B, /uploadDataUrl\("signatures", signature, "part-b"\)/, "the signature goes to the prefix the database requires");
+  assert.match(PART_B, /uploadSignature\("part-b", transactionId, signature, sigDeps\)/, "the signature goes to the prefix the database requires, bound to this movement");
   assert.match(PART_B, /violates\|constraint\|relation/, "database internals are never shown to the officer");
 });
 

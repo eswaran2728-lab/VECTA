@@ -21,6 +21,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { assertDisposableLocalTarget } from './safeguards.mjs';
+import { sigPaths } from './sigfixtures.mjs';
 
 const { Client } = pg;
 
@@ -502,16 +503,21 @@ async function main() {
   assert(aorConfirmFailed, 'Disabled station (AOR) cannot confirm CaterLink destination receipt');
 
   // Test 4.5: Valid receipt confirmation by assigned destination officer at PEN
+  // (the receipt's signature must be the bound, existing, fresh object the officer uploaded -- migration 20261113000001)
+  await db.query('reset role;');
+  await db.query("insert into storage.buckets (id, name, public) values ('signatures','signatures', false) on conflict (id) do nothing");
+  const penReceiptSig = sigPaths.receipt(txId);
+  await db.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [penReceiptSig, penAvsecId]);
   await simulateUser(penAvsecId);
   const rcptRes = await db.query(`
     select transaction_id, status
     from public.confirm_caterlink_destination_receipt_secure(
       p_transaction_id => $1,
       p_station_code => 'PEN',
-      p_signature_url => 'sig_pen_valid.png',
+      p_signature_url => $2,
       p_remarks => 'Arrived intact at PEN'
     );
-  `, [txId]);
+  `, [txId, penReceiptSig]);
   assert(rcptRes.rows[0].status === 'COMPLETED', 'Destination receipt confirmed at PEN -> status COMPLETED');
 
   // Verify caterlink_checkpoint_hub record was written (renamed from the colliding

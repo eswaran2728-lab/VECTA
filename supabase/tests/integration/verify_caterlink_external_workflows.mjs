@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { assertDisposableLocalTarget } from './safeguards.mjs';
+import { sigPaths } from './sigfixtures.mjs';
 
 const { Client } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -72,6 +73,8 @@ async function main() {
     catch (e) { await db.exec('rollback to savepoint sp_x; release savepoint sp_x;'); return { failed: true, error: e }; }
   }
   const asUser = async (id, fn) => { await simulateUser(id); try { return await fn(); } finally { await simulateService(); } };
+  // a checkpoint's signature must be the bound, existing, fresh object its actor uploaded (migration 20261113000001)
+  const putSig = async (p, owner) => { await db.query('reset role;'); await db.query("insert into storage.buckets (id, name, public) values ('signatures','signatures', false) on conflict (id) do nothing"); await db.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [p, owner]); await simulateService(); return p; };
   const asUserFail = async (id, fn) => { await simulateUser(id); try { return await expectFail(fn); } finally { await simulateService(); } };
   await simulateService();
 
@@ -213,7 +216,8 @@ async function main() {
   console.log('\n--- SECTION 2: CaterLink Driver workflow ---');
   let txA;
   {
-    const r = await asUser(driverA, () => createTx(DRV_ARGS()));
+    const sigPA = await putSig(sigPaths.partA(driverA), driverA);
+    const r = await asUser(driverA, () => createTx(DRV_ARGS({ sig: sigPA })));
     txA = r.rows[0];
     assert(!!txA?.transaction_id && /^CL-\d{4}-\d{6}$/.test(txA.transaction_number), `Driver creates a movement (${txA?.transaction_number})`);
     const row = await one('select created_by, status, aoc_id, route, direction from public.transactions where id = $1;', [txA.transaction_id]);
@@ -282,7 +286,8 @@ async function main() {
   const DEL = (over = {}) => ({ station: 'PEN', driver: 'V Driver', nric: 'S1234567A', vehicle: 'VND1234', seal: 'VS-001', sig: 'signatures/vendor-a.png', ...over });
   let delA;
   {
-    delA = (await asUser(vendorA, () => createDel(DEL()))).rows[0];
+    const sigVA = await putSig(sigPaths.vendorA(vendorA), vendorA);
+    delA = (await asUser(vendorA, () => createDel(DEL({ sig: sigVA })))).rows[0];
     assert(!!delA?.delivery_id && /^CLV-\d{4}-\d{6}$/.test(delA.delivery_number), `Vendor creates a delivery (${delA?.delivery_number})`);
     const d = await one('select status, vendor_user_id, aoc_id from public.caterlink_vendor_deliveries where id = $1;', [delA.delivery_id]);
     assert(d.status === 'CREATED' && d.vendor_user_id === vendorA && d.aoc_id === myAoc, 'the delivery is CREATED, owned by the Vendor, in the station AOC');
@@ -314,7 +319,7 @@ async function main() {
     const vTx = await asUser(vendorA, async () => (await db.query('select 1 from public.caterlink_checkpoint_part_a;')).rows.length);
     assert(vTx === 0, 'the Vendor reads no catering Part A either');
 
-    const check = (id, delivery, result = 'PASS', reason = null) => db.query('select public.record_caterlink_vendor_security_check_secure($1,$2,$3,$4,$5,$6);', [delivery, 'signatures/sec.png', null, result, null, reason]);
+    const check = (id, delivery, result = 'PASS', reason = null, sig = 'signatures/sec.png') => db.query('select public.record_caterlink_vendor_security_check_secure($1,$2,$3,$4,$5,$6);', [delivery, sig, null, result, null, reason]);
     for (const [label, id] of [['the Vendor owner', vendorA], ['another Vendor', vendorB], ['a Driver', driverA], ['CaterLink Management', mgmt], ['Operation Manager', ops], ['a PEN-incapable KUL officer', asoKul], ['a KCH officer', asoKch], ['a JHB officer on a PEN delivery', asoJhb], ['an account with no role', noAccount]]) {
       const r = await asUserFail(id, () => check(id, delA.delivery_id));
       assert(r.failed, `${label} cannot record the security check (scanning is not granted to them)`);
@@ -323,7 +328,8 @@ async function main() {
     const early = await asUserFail(vendorA, () => db.query('select public.complete_caterlink_vendor_delivery_secure($1,$2);', [delA.delivery_id, 'signatures/done.png']));
     assert(early.failed, 'the Vendor cannot complete before the security check');
 
-    await asUser(asoPen, () => check(asoPen, delA.delivery_id));
+    const sigB = await putSig(sigPaths.vendorB(delA.delivery_id), asoPen);
+    await asUser(asoPen, () => check(asoPen, delA.delivery_id, 'PASS', null, sigB));
     assert((await one('select status from public.caterlink_vendor_deliveries where id = $1;', [delA.delivery_id])).status === 'SECURITY_VERIFIED', 'the PEN officer records the check -> SECURITY_VERIFIED');
     const twice = await asUserFail(asoPen, () => check(asoPen, delA.delivery_id));
     assert(twice.failed, 'the security check cannot be recorded twice');
@@ -334,7 +340,8 @@ async function main() {
       const r = await asUserFail(id, () => db.query('select public.complete_caterlink_vendor_delivery_secure($1,$2);', [delA.delivery_id, 'signatures/x.png']));
       assert(r.failed, `${label} cannot complete someone else's delivery`);
     }
-    await asUser(vendorA, () => db.query('select public.complete_caterlink_vendor_delivery_secure($1,$2);', [delA.delivery_id, 'signatures/done.png']));
+    const sigC = await putSig(sigPaths.vendorC(delA.delivery_id), vendorA);
+    await asUser(vendorA, () => db.query('select public.complete_caterlink_vendor_delivery_secure($1,$2);', [delA.delivery_id, sigC]));
     const fin = await one('select status, completed_at from public.caterlink_vendor_deliveries where id = $1;', [delA.delivery_id]);
     assert(fin.status === 'COMPLETED' && fin.completed_at !== null, 'the owning Vendor completes after the check -> COMPLETED');
     const again = await asUserFail(vendorA, () => db.query('select public.complete_caterlink_vendor_delivery_secure($1,$2);', [delA.delivery_id, 'signatures/done2.png']));
@@ -353,7 +360,8 @@ async function main() {
       const mem = (await one("insert into public.user_entity_memberships (profile_id, aoc_id, operating_entity_id, status, is_primary) values ($1,$2,$3,'active',true) returning id;", [profAso, myAoc, myEntity])).id;
       await db.query("insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, department_id, unit_id, hub_id, station_id, team_id, entity_membership_id, starts_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9, now() - interval '1 day');", [profAso, roleMap.get('profiling_aso'), myAoc, enfDept, unit, PEN.hub_id, PEN.id, await teamFor(PEN), mem]);
     }
-    const delP = (await asUser(vendorA, () => createDel(DEL({ seal: 'VS-PROF' })))).rows[0];
+    const sigVP = await putSig(sigPaths.vendorA(vendorA), vendorA);
+    const delP = (await asUser(vendorA, () => createDel(DEL({ seal: 'VS-PROF', sig: sigVP })))).rows[0];
     assert((await asUserFail(profAso, () => check(profAso, delP.delivery_id))).failed, 'a Staff Profiling officer cannot record the security check');
     const asoRevoked = await authUser('aso-revoked'); await assign(asoRevoked, 'aso', PEN);
     await db.query('update public.user_role_assignments set revoked_at = now() where profile_id = $1;', [asoRevoked]);
@@ -362,10 +370,12 @@ async function main() {
     assert((await asUserFail(asoPending, () => check(asoPending, delP.delivery_id))).failed, 'an unapproved profile cannot record the security check');
 
     // escalation path
-    const delE = (await asUser(vendorA, () => createDel(DEL({ station: 'JHB', seal: 'VS-ESC' })))).rows[0];
+    const sigVE = await putSig(sigPaths.vendorA(vendorA), vendorA);
+    const delE = (await asUser(vendorA, () => createDel(DEL({ station: 'JHB', seal: 'VS-ESC', sig: sigVE })))).rows[0];
     const noReason = await asUserFail(asoJhb, () => check(asoJhb, delE.delivery_id, 'ESCALATE', null));
     assert(noReason.failed, 'an escalation needs a reason');
-    await asUser(asoJhb, () => check(asoJhb, delE.delivery_id, 'ESCALATE', 'Seal mismatch'));
+    const sigE = await putSig(sigPaths.vendorB(delE.delivery_id), asoJhb);
+    await asUser(asoJhb, () => check(asoJhb, delE.delivery_id, 'ESCALATE', 'Seal mismatch', sigE));
     assert((await one('select status from public.caterlink_vendor_deliveries where id = $1;', [delE.delivery_id])).status === 'ESCALATED', 'an escalated check -> ESCALATED');
     const blocked = await asUserFail(vendorA, () => db.query('select public.complete_caterlink_vendor_delivery_secure($1,$2);', [delE.delivery_id, 'signatures/x.png']));
     assert(blocked.failed, 'an escalated delivery cannot be completed by the Vendor');

@@ -4,6 +4,7 @@
 // Manager and Main Enforcement. Native PostgreSQL only. Synthetic fixtures in a disposable local database.
 import pg from 'pg';
 import { assertDisposableLocalTarget } from './safeguards.mjs';
+import { sigPaths } from './sigfixtures.mjs';
 
 const { Client } = pg;
 let failures = 0;
@@ -380,18 +381,19 @@ async function main() {
 
   // ---------- 9b. durable post-receipt PDF jobs
   const jobsOf = (tx) => rows('select * from public.caterlink_pdf_jobs where transaction_id = $1 order by created_at;', [tx]);
-  const sigPath = 'receipt/job.png';
+  // a receipt's signature must be the bound, existing, fresh object its officer uploaded (migration 20261113000001)
+  const putSig = async (p, owner) => { await db.query('reset role;'); await db.query("insert into storage.buckets (id, name, public) values ('signatures','signatures', false) on conflict (id) do nothing"); await db.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [p, owner]); await sup(); return p; };
   const bkiTx = await insertTx('jobBKI', 'HUB', 'BKI', 'INFLIGHT_POST_APPROVED');
   const kchTx = await insertTx('jobKCH', 'HUB', 'KCH', 'INFLIGHT_POST_APPROVED');
-  const r1 = await ok(asoBki, "select * from public.confirm_caterlink_destination_receipt_secure($1, 'BKI', $2, null);", [bkiTx.id, sigPath]);
-  const r2 = await ok(asoKch, "select * from public.confirm_caterlink_destination_receipt_secure($1, 'KCH', $2, null);", [kchTx.id, sigPath]);
+  const r1 = await ok(asoBki, "select * from public.confirm_caterlink_destination_receipt_secure($1, 'BKI', $2, null);", [bkiTx.id, await putSig(sigPaths.receipt(bkiTx.id), asoBki)]);
+  const r2 = await ok(asoKch, "select * from public.confirm_caterlink_destination_receipt_secure($1, 'KCH', $2, null);", [kchTx.id, await putSig(sigPaths.receipt(kchTx.id), asoKch)]);
   assert(r1.ok && r2.ok, 'BKI and KCH officers confirm their final receipts through the real RPC');
   const jb = await jobsOf(bkiTx.id);
   const hubRow = await one('select id from public.caterlink_checkpoint_hub where transaction_id = $1;', [bkiTx.id]);
   assert(jb.length === 1 && jb[0].status === 'pending' && jb[0].attempt_count === 0, 'the receipt created exactly one PENDING job atomically with the completion');
   assert(jb[0].idempotency_key === `${bkiTx.id}:${hubRow.id}:1` && jb[0].receiver === asoBki, 'idempotency key = transaction : receipt : source version; receiver recorded');
   assert((await jobsOf(kchTx.id)).length === 1, 'a KCH receipt creates its job too');
-  const again2 = await ok(asoBki, "select * from public.confirm_caterlink_destination_receipt_secure($1, 'BKI', $2, null);", [bkiTx.id, sigPath]);
+  const again2 = await ok(asoBki, "select * from public.confirm_caterlink_destination_receipt_secure($1, 'BKI', $2, null);", [bkiTx.id, await putSig(sigPaths.receipt(bkiTx.id), asoBki)]);
   assert(again2.ok === false && (await jobsOf(bkiTx.id)).length === 1, 'a repeated receipt is refused and never duplicates the job');
   let dupErr = null;
   try { await db.query('savepoint dj'); await db.query('insert into public.caterlink_pdf_jobs (transaction_id, receipt_id, receiver, idempotency_key) values ($1,$2,$3,$4);', [bkiTx.id, hubRow.id, asoBki, jb[0].idempotency_key]); await db.query('release savepoint dj'); } catch (e) { dupErr = e.message; await db.query('rollback to savepoint dj'); }

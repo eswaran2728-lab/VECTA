@@ -18,17 +18,21 @@ import { decryptBackupPayload, encryptBackupPayload } from "./lib/backup-crypto.
 import { loadCurrentManifest } from "./lib/review-accounts.mjs";
 import { gitGates, environmentGates, backupGates, connectVerified, APPROVED_REF, FORBIDDEN_REF } from "./lib/run-gates.mjs";
 
-// Five additive forward migrations applied as ONE guarded unit (each recorded in the history, all in one transaction).
+// Six additive forward migrations applied as ONE guarded unit (each recorded in the history, all in one transaction).
 export const MIGRATIONS = [
   { version: "20261108000001", name: "caterlink_fail_closed_containment", sha256: "ad8dbca5aed5ef4e9d7cbf0a23b1874ff3566707ca7345c3cd865b73c7089306" },
   { version: "20261109000001", name: "atomic_same_day_leave", sha256: "058b4afdcc7fe081cecc33e808088a241c0258b45eab75bb514c66f99e234671" },
   { version: "20261110000001", name: "registration_throttle", sha256: "3a2ea12506231afe272e4e04c803c6fd0b439a129b8268f532afe32490709369" },
   { version: "20261111000001", name: "vendor_check_signature_authorization", sha256: "7a130b188908e4cd73b75cabab7baef9efc9a6ec84664571ebb4b62c584fdc7e" },
   { version: "20261112000001", name: "block_unusable_driver_routes", sha256: "ae0ecb5ac2a2565385e542e56777c343fcf2684887717b955a75cec52b271ea2" },
+  { version: "20261113000001", name: "signature_upload_authorization", sha256: "d887f5e8c2b65799f48f1ed9424c8d565e2a14da6332e834a43e951f35bd8cf3" },
 ];
 export const PRE_COUNT = 83;
 export const LAST_PRE = "20261107000001";
 export const LIVE_PHRASE = `APPLY ${MIGRATIONS.map((m) => m.version).join("+")} TO STAGING ${APPROVED_REF}`;
+/** Every behavioural probe prints an explicit, sanitised PASS marker (a probe that fails aborts the run before this is reached). */
+const probeLog = [];
+const probe = (name) => { probeLog.push(name); log(`PROBE PASS: ${name}`); };
 const SKIP = "public.skip_part_d(uuid, text)";
 const RAISE = "public.raise_caterlink_incident_secure(uuid, text, text, text, text)";
 const RECEIPT = "public.confirm_caterlink_destination_receipt_secure(uuid, text, text, text)";
@@ -110,14 +114,15 @@ async function main() {
     const before = await grants();
     for (const g of before) log(`BEFORE ${g.sig}: anon=${g.anon} authenticated=${g.auth} service_role=${g.svc} PUBLIC=${g.pub}`);
     const fp = async () => ({
-      other: (await q(`select md5(string_agg(pg_get_functiondef(p.oid), E'\\n' order by p.oid::regprocedure::text)) h from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f' and p.proname not in ('skip_part_d','raise_caterlink_incident_secure','confirm_caterlink_destination_receipt_secure','list_caterlink_pending_receipts_secure','caterlink_receipt_ready_statuses','caterlink_expected_receiving_station','submit_leave_application_secure','registration_throttle_hit','record_caterlink_vendor_security_check_secure','caterlink_vendor_check_upload_allowed','list_orphan_vendor_signatures_secure','enforce_completable_driver_route') and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`))[0].h,
+      other: (await q(`select md5(string_agg(pg_get_functiondef(p.oid), E'\\n' order by p.oid::regprocedure::text)) h from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f' and p.proname not in ('skip_part_d','raise_caterlink_incident_secure','confirm_caterlink_destination_receipt_secure','list_caterlink_pending_receipts_secure','caterlink_receipt_ready_statuses','caterlink_expected_receiving_station','submit_leave_application_secure','registration_throttle_hit','record_caterlink_vendor_security_check_secure','caterlink_vendor_check_upload_allowed','list_orphan_vendor_signatures_secure','enforce_completable_driver_route','caterlink_signature_upload_allowed','caterlink_part_b_upload_allowed','caterlink_receipt_upload_allowed','caterlink_vendor_complete_upload_allowed','caterlink_signature_owner_guard','caterlink_signature_referenced','list_orphan_signatures_secure') and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`))[0].h,
       profiles: (await q("select md5(string_agg(md5(p::text), ',' order by p.id::text)) h from public.profiles p"))[0].h,
       assignments: (await q("select coalesce(md5(string_agg(md5(a::text), ',' order by a.id::text)), 'none') h from public.user_role_assignments a"))[0].h,
       transactions: (await q("select coalesce(md5(string_agg(md5(t::text), ',' order by t.id::text)), 'none') h from public.transactions t"))[0].h,
       incidents: (await q("select count(*)::text h from public.caterlink_incidents"))[0].h,
       hub: (await q("select count(*)::text h from public.caterlink_checkpoint_hub"))[0].h,
       jobs: (await q("select count(*)::text h from public.caterlink_pdf_jobs"))[0].h,
-      policies: (await q("select md5(string_agg(schemaname || tablename || policyname || coalesce(qual,'') || coalesce(with_check,''), ',' order by schemaname, tablename, policyname)) h from pg_policies where schemaname in ('public','storage') and tablename <> 'absence_notices' and not (schemaname = 'storage' and policyname = 'signatures: vendor check upload is delivery-bound')"))[0].h,
+      policies: (await q("select md5(string_agg(schemaname || tablename || policyname || coalesce(qual,'') || coalesce(with_check,''), ',' order by schemaname, tablename, policyname)) h from pg_policies where schemaname in ('public','storage') and tablename <> 'absence_notices' and not (schemaname = 'storage' and policyname in ('signatures: vendor check upload is delivery-bound','signatures: authenticated upload','signatures: workflow upload'))"))[0].h,
+      policiesAll: (await q("select md5(string_agg(schemaname || tablename || policyname || cmd || permissive || coalesce(qual,'') || coalesce(with_check,''), ',' order by schemaname, tablename, policyname)) h from pg_policies where schemaname in ('public','storage')"))[0].h,
     });
     const pre = await fp();
     const defs = await q(`select p.oid::regprocedure::text sig, pg_get_functiondef(p.oid) def from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('skip_part_d','raise_caterlink_incident_secure','confirm_caterlink_destination_receipt_secure','list_caterlink_pending_receipts_secure')`);
@@ -165,6 +170,7 @@ async function main() {
           const s = await asUser(label, async () => { await client.query("select public.skip_part_d($1, 'x')", [ghost]); return "ALLOWED"; });
           const r = await asUser(label, async () => { await client.query("select * from public.raise_caterlink_incident_secure($1, 'OTHER', 'x', 'low', null)", [ghost]); return "ALLOWED"; });
           if (!/permission denied/i.test(s) || !/permission denied/i.test(r)) fail(`${label} can still reach skip_part_d / raise_caterlink_incident_secure (${s} | ${r})`);
+          probe(`${label}: skip_part_d and raise_caterlink_incident_secure are denied`);
         }
         // receipt gate on a synthetic movement (rolled back): CREATED is refused, the final-step state is accepted, nothing leaks on refusal
         await client.query("SAVEPOINT rc");
@@ -180,9 +186,11 @@ async function main() {
         if (!/not ready for receipt/i.test(denied)) fail(`a CREATED movement was not refused by the state gate (${denied})`);
         const leak = (await q("select (select count(*) from public.caterlink_checkpoint_hub where transaction_id = $1)::int + (select count(*) from public.caterlink_pdf_jobs where transaction_id = $1)::int + (select count(*) from public.phase8_audit_log where entity_id = $1)::int n", [tx]))[0].n;
         if (leak !== 0) fail("a refused receipt wrote a hub record, PDF job or audit row");
+        probe("receipt: a CREATED movement is refused by the state gate and the refusal writes no hub record, PDF job or audit row");
         await client.query("update public.transactions set status = 'AIRPORT_POST_APPROVED' where id = $1", [tx]);
         const okRcpt = await asUser("aso-kch-receipt", async () => { const r = await client.query(`select * from ${RECEIPT.replace(/\(.*$/, "")}($1, 'KCH', 'receipt/dryrun.png', 'dry run')`, [tx]); return `ACCEPTED:${r.rows[0].status}`; });
         if (okRcpt !== "ACCEPTED:COMPLETED") fail(`the final-step state was not accepted (${okRcpt})`);
+        probe("receipt: the destination officer completes a movement at its final-step state");
         await client.query("ROLLBACK TO SAVEPOINT rc");
 
         // wrong-station receipt: an officer at BKI cannot receive a KCH movement (destination binding), rolled back
@@ -191,6 +199,7 @@ async function main() {
           await client.query("update public.transactions set status = 'AIRPORT_POST_APPROVED' where id = $1", [tx]);
           const wrong = await asUser("aso-bki-receipt", async () => { await client.query(`select * from ${RECEIPT.replace(/\(.*$/, "")}($1, 'BKI', 'receipt/dryrun.png', 'dry run')`, [tx]); return "ACCEPTED"; });
           if (!/not available for receipt confirmation at this station/i.test(wrong)) fail(`a wrong-station receipt was not refused uniformly (${wrong})`);
+          probe("wrong-station receipt: a BKI officer cannot receive a KCH movement (uniform refusal, rolled back)");
           await client.query("ROLLBACK TO SAVEPOINT bind");
         }
         // leave RPC and registration throttle: grants, policy, and a rolled-back behavioural probe
@@ -202,11 +211,14 @@ async function main() {
         if (tg.an || tg.au || !tg.sv || tg.tb) fail("the registration throttle is not service-role only");
         const ins = (await q("select has_table_privilege('authenticated', 'public.absence_notices', 'insert') i, exists (select 1 from pg_policy where polrelid = 'public.absence_notices'::regclass and polname = 'absence_notices_insert_own') p"))[0];
         if (ins.i || ins.p) fail("a client can still insert absence notices directly");
+        log("PROBE PASS: leave and registration throttle: grants are authenticated-only / service-role-only and the direct absence_notices insert path is closed"); probeLog.push("leave+throttle grants");
         {
           const probe = await asUser("aso", async () => { const r = await client.query("select * from public.submit_leave_application_secure('annual', current_date + 400, current_date + 401, 'dry run probe')"); return r.rows[0]?.result_same_day === false ? "OK" : "UNEXPECTED"; });
           if (probe !== "OK") fail(`the leave RPC probe failed (${probe})`);
+          probeLog.push("atomic leave: a valid future leave is recorded atomically through the RPC"); log("PROBE PASS: atomic leave: a valid future leave is recorded atomically through the RPC (rolled back)");
           const denied = await asUser("neg-pending-profile", async () => { await client.query("select * from public.submit_leave_application_secure('absent', null, null, 'x')"); return "ALLOWED"; });
           if (/ALLOWED/.test(denied)) fail("a pending profile could submit leave");
+          log("PROBE PASS: atomic leave: a pending profile cannot submit leave"); probeLog.push("atomic leave: pending profile denied");
         }
 
         // vendor Part B signature: delivery-bound Storage policy, orphan listing grants, and the Driver route guard
@@ -217,6 +229,7 @@ async function main() {
           if (og.au || og.an || !og.sv) fail("the orphan listing is not service-role only");
           const denied = await asUser("aso", async () => { await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [`vendor-part-b/${ghost}/${ghost.replace(/c01$/, "c02")}.png`, acct("aso")]); return "ALLOWED"; });
           if (/ALLOWED/.test(denied) || !/row-level security|policy/i.test(denied)) fail(`an unauthorised vendor-signature upload was not refused by Storage RLS (${denied})`);
+          log("PROBE PASS: vendor Part B: an unauthorised upload for a non-existent delivery is refused by Storage RLS"); probeLog.push("vendor part b ghost denied");
           const trg = await q("select tgenabled from pg_trigger where tgname = 'trg_enforce_completable_driver_route' and tgrelid = 'public.transactions'::regclass");
           if (trg.length !== 1 || trg[0].tgenabled !== "O") fail("the Driver route guard trigger is missing or disabled");
           await client.query("SAVEPOINT rg");
@@ -225,6 +238,131 @@ async function main() {
             values ('ICMS-2026-990998', $1, 'OUTBOUND', 'UAT-VEH', '[GUARD-DRYRUN]', 'UAT-DRV', 'S', 'CREATED', 'AIRCRAFT', $2, $3)`, [aoc, pen, acct("caterlink-driver")]).then(() => "ALLOWED").catch((e) => String(e.message));
           await client.query("ROLLBACK TO SAVEPOINT rg");
           if (!/not available yet/i.test(routeDenied)) fail(`a Driver AIRCRAFT movement was not refused by the route guard (${routeDenied.slice(0, 80)})`);
+          log("PROBE PASS: Driver route guard: an AIRCRAFT movement created by a Driver is refused by the database (rolled back)"); probeLog.push("route guard");
+        }
+        // signature bucket: the unrestricted upload policy is gone and every upload is authorised by the database (20261113000001)
+        {
+          const polRows = await q("select polname, polcmd, polpermissive, (select string_agg(rolname, ',') from pg_roles r where r.oid = any(polroles)) roles from pg_policy where polrelid = 'storage.objects'::regclass and (pg_get_expr(polwithcheck, polrelid) ilike '%signatures%' or pg_get_expr(polqual, polrelid) ilike '%signatures%') order by polname");
+          if (polRows.some((p) => p.polname === "signatures: authenticated upload")) fail("the unrestricted signatures upload policy is still present");
+          probe("the unrestricted 'signatures: authenticated upload' policy is absent after the migration");
+          const permIns = polRows.filter((p) => p.polcmd === "a" && p.polpermissive);
+          if (permIns.length !== 1 || permIns[0].polname !== "signatures: workflow upload" || permIns[0].roles !== "authenticated") fail(`the signatures INSERT policy set is not exactly one authenticated workflow policy (${JSON.stringify(permIns)})`);
+          if (polRows.some((p) => ["w", "d", "*"].includes(p.polcmd))) fail("an UPDATE/DELETE/ALL policy exists for the signatures bucket");
+          if (!polRows.some((p) => p.polname === "signatures: scoped read" && p.polcmd === "r")) fail("the scoped read policy is missing");
+          probe("exactly one permissive INSERT policy (authenticated, 'signatures: workflow upload'), no UPDATE/DELETE policy, scoped read kept");
+          if ((await q("select public from storage.buckets where id = 'signatures'"))[0].public !== false) fail("the signatures bucket is public");
+          probe("the signatures bucket stays private");
+          const fg = await q(`select p.proname, has_function_privilege('anon', p.oid, 'execute') an, has_function_privilege('authenticated', p.oid, 'execute') au, has_function_privilege('service_role', p.oid, 'execute') sv,
+              exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x where x.grantee = 0 and x.privilege_type = 'EXECUTE') pub, p.prosecdef sd, coalesce(p.proconfig::text, '') cfg
+            from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('caterlink_signature_upload_allowed','caterlink_part_b_upload_allowed','caterlink_receipt_upload_allowed','caterlink_vendor_complete_upload_allowed','caterlink_signature_referenced','list_orphan_signatures_secure') order by 1`);
+          if (fg.length !== 6) fail(`expected six signature helpers, found ${fg.length}`);
+          for (const f of fg) {
+            const serviceOnly = /referenced|list_orphan/.test(f.proname);
+            if (f.an || f.pub || !f.sv || !f.sd || !/search_path/.test(f.cfg) || (serviceOnly ? f.au : !f.au)) fail(`${f.proname} grants / definer / search_path are not as designed`);
+          }
+          probe("every signature helper is SECURITY DEFINER with a fixed search_path, denied to anon/PUBLIC; upload helpers callable by authenticated; reference check and orphan listing service-role only");
+
+          const U = () => crypto.randomUUID();
+          const accepted = async (who, name, owner = who) => asUser(who, async () => { await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [name, acct(owner)]); return "ACCEPTED"; });
+          const expectDenied = (label, r) => { if (/ACCEPTED/.test(r) || !/row-level security|policy/i.test(r)) fail(`${label}: not refused by Storage RLS (${r})`); probe(label); };
+          const expectAccepted = (label, r) => { if (r !== "ACCEPTED") fail(`${label}: not accepted (${r})`); probe(label); };
+          const uidOf = acct;
+
+          await client.query("SAVEPOINT sg");
+          await client.query("set local session_replication_role = replica");
+          const penTx = (await q(`insert into public.transactions (transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, seal_number, status, route, origin_station_id, flight_number, created_by)
+            values ('ICMS-2026-990997', $1, 'OUTBOUND', 'UAT-VEH', '[SIGNATURE-DRYRUN]', 'UAT-DRV', 'S', 'CREATED', 'AIRCRAFT', $2, 'AK9002', $3) returning id`, [aoc, pen, acct("caterlink-driver")]))[0].id;
+          const doneTx = (await q(`insert into public.transactions (transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, seal_number, status, route, origin_station_id, flight_number, created_by)
+            values ('ICMS-2026-990996', $1, 'OUTBOUND', 'UAT-VEH', '[SIGNATURE-DRYRUN]', 'UAT-DRV', 'S', 'INFLIGHT_POST_APPROVED', 'AIRCRAFT', $2, 'AK9003', $3) returning id`, [aoc, pen, acct("caterlink-driver")]))[0].id;
+          const kchTx = (await q(`insert into public.transactions (transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, seal_number, status, route, origin_station_id, destination_station_id, flight_number, created_by)
+            values ('ICMS-2026-990995', $1, 'OUTBOUND', 'UAT-VEH', '[SIGNATURE-DRYRUN]', 'UAT-DRV', 'S', 'AIRPORT_POST_APPROVED', 'AIRCRAFT', $2, $3, 'AK9004', $4) returning id`, [aoc, pen, kch, acct("caterlink-driver")]))[0].id;
+          const kchCreated = (await q(`insert into public.transactions (transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, seal_number, status, route, origin_station_id, destination_station_id, flight_number, created_by)
+            values ('ICMS-2026-990994', $1, 'OUTBOUND', 'UAT-VEH', '[SIGNATURE-DRYRUN]', 'UAT-DRV', 'S', 'CREATED', 'AIRCRAFT', $2, $3, 'AK9005', $4) returning id`, [aoc, pen, kch, acct("caterlink-driver")]))[0].id;
+          const delivery = async (status) => (await q(`insert into public.caterlink_vendor_deliveries (delivery_number, aoc_id, station_id, vendor_user_id, status, driver_name, driver_nric, vehicle_registration_no, seal_number)
+            values ($1, $2, $3, $4, $5, '[SIGNATURE-DRYRUN]', 'X', 'UAT-VEH', 'S') returning id`, [`CLV-DRY-${U().slice(0, 8)}`, aoc, pen, acct("caterlink-vendor"), status]))[0].id;
+          const dCreated = await delivery("CREATED");
+          const dVerified = await delivery("SECURITY_VERIFIED");
+          const dDone = await delivery("COMPLETED");
+          await client.query("SAVEPOINT duty");
+          const dutyOk = await client.query("insert into public.duty_records (profile_id, station, duty_date, shift_code, check_in_at, status) select $1, 'PEN', (now() at time zone 'Asia/Kuala_Lumpur')::date, 'SG', now(), 'present' where exists (select 1 from public.stations where code = 'PEN')", [acct("aso")]).then((r) => r.rowCount === 1).catch(() => false);
+          if (!dutyOk) await client.query("ROLLBACK TO SAVEPOINT duty");
+          await client.query("set local session_replication_role = origin");
+
+          // unknown prefixes and the arbitrary-path regression
+          expectDenied("regression: an approved unrelated officer cannot upload signatures/arbitrary-test/<random>.png", await accepted("aso", `arbitrary-test/${U()}.png`));
+          expectDenied("regression: a Driver cannot upload an unrecognised legacy-style path", await accepted("caterlink-driver", `part-a/${Date.now()}-abcd1234.png`));
+          expectDenied("an unknown prefix is refused for a Vendor", await accepted("caterlink-vendor", `e2e-probe/vendor-${U()}.png`));
+          expectDenied("an upper-case extension is refused", await accepted("caterlink-driver", `part-a/${uidOf("caterlink-driver")}/${U()}.PNG`));
+          expectDenied("a path-traversal name is refused", await accepted("caterlink-driver", `part-a/${uidOf("caterlink-driver")}/../${U()}.png`));
+          // Part A / vendor creation: the caller's own id only
+          expectAccepted("a valid authorised prefix succeeds: an active Driver uploads part-a/<own uid>/<uuid>.png", await accepted("caterlink-driver", `part-a/${uidOf("caterlink-driver")}/${U()}.png`));
+          expectDenied("cross-user: a Driver cannot upload under another account's id", await accepted("caterlink-driver", `part-a/${uidOf("aso")}/${U()}.png`));
+          expectDenied("cross-user: an officer cannot upload a Driver's part-a path", await accepted("aso", `part-a/${uidOf("caterlink-driver")}/${U()}.png`));
+          expectDenied("cross-user: an object owner that is not the caller is refused", await accepted("caterlink-driver", `part-a/${uidOf("caterlink-driver")}/${U()}.png`, "aso"));
+          expectDenied("a Vendor cannot use the Driver prefix", await accepted("caterlink-vendor", `part-a/${uidOf("caterlink-vendor")}/${U()}.png`));
+          expectAccepted("an active Vendor uploads vendor-signatures/<own uid>/<uuid>.png", await accepted("caterlink-vendor", `vendor-signatures/${uidOf("caterlink-vendor")}/${U()}.png`));
+          expectDenied("cross-user: a Vendor cannot upload under a Driver's id", await accepted("caterlink-vendor", `vendor-signatures/${uidOf("caterlink-driver")}/${U()}.png`));
+          // Part B: the officer's station, capability, duty and the movement's state
+          if (dutyOk) expectAccepted("Part B: the PEN officer on duty uploads for a PEN movement waiting for Part B", await accepted("aso", `part-b/${penTx}-${U()}.png`));
+          else probe("Part B success precondition NOT exercised: the PEN officer has no usable duty row on staging (denial probes below still run)");
+          expectDenied("cross-station: a KUL officer cannot upload for a PEN movement", await accepted("aso-kul", `part-b/${penTx}-${U()}.png`));
+          expectDenied("cross-station: a JHB officer (scan capability, other station) cannot upload for a PEN movement", await accepted("aso-jhb", `part-b/${penTx}-${U()}.png`));
+          expectDenied("a pending profile is refused", await accepted("neg-pending-profile", `part-b/${penTx}-${U()}.png`));
+          expectDenied("a rejected profile is refused", await accepted("neg-rejected-profile", `part-b/${penTx}-${U()}.png`));
+          expectDenied("a deactivated profile is refused", await accepted("neg-deactivated-profile", `part-b/${penTx}-${U()}.png`));
+          expectDenied("a revoked assignment is refused", await accepted("neg-revoked-assignment", `part-b/${penTx}-${U()}.png`));
+          expectDenied("an expired assignment is refused", await accepted("neg-expired-assignment", `part-b/${penTx}-${U()}.png`));
+          expectDenied("a future assignment is refused", await accepted("neg-future-assignment", `part-b/${penTx}-${U()}.png`));
+          expectDenied("wrong workflow state: Part B upload for a movement already past Part B", await accepted("aso", `part-b/${doneTx}-${U()}.png`));
+          expectDenied("missing parent: Part B upload for a non-existent movement", await accepted("aso", `part-b/${ghost}-${U()}.png`));
+          expectDenied("a Driver cannot upload a Part B signature", await accepted("caterlink-driver", `part-b/${penTx}-${U()}.png`));
+          // destination receipt
+          expectAccepted("receipt: the KCH destination officer uploads for a KCH-bound movement at its receipt state", await accepted("aso-kch-receipt", `receipt/${kchTx}/${U()}.png`));
+          expectDenied("receipt: a BKI officer cannot upload for a KCH-bound movement", await accepted("aso-bki-receipt", `receipt/${kchTx}/${U()}.png`));
+          expectDenied("receipt: wrong workflow state (movement still CREATED)", await accepted("aso-kch-receipt", `receipt/${kchCreated}/${U()}.png`));
+          expectDenied("receipt: missing parent", await accepted("aso-kch-receipt", `receipt/${ghost}/${U()}.png`));
+          // vendor security check (Part B) and completion (Part C)
+          expectAccepted("Vendor Part B success precondition: the authorised PEN officer uploads for a CREATED delivery", await accepted("aso", `vendor-part-b/${dCreated}/${U()}.png`));
+          expectDenied("Vendor Part B denial: a KUL officer", await accepted("aso-kul", `vendor-part-b/${dCreated}/${U()}.png`));
+          expectDenied("Vendor Part B denial: the owning Vendor", await accepted("caterlink-vendor", `vendor-part-b/${dCreated}/${U()}.png`));
+          expectDenied("Vendor Part B denial: a delivery that is no longer CREATED", await accepted("aso", `vendor-part-b/${dVerified}/${U()}.png`));
+          expectDenied("Vendor Part B denial: a non-existent delivery", await accepted("aso", `vendor-part-b/${ghost}/${U()}.png`));
+          expectAccepted("Vendor Part C: the owning Vendor uploads for a security-verified delivery", await accepted("caterlink-vendor", `vendor-part-c/${dVerified}/${U()}.png`));
+          expectDenied("Vendor Part C: an officer cannot upload", await accepted("aso", `vendor-part-c/${dVerified}/${U()}.png`));
+          expectDenied("Vendor Part C: wrong workflow state (delivery still CREATED)", await accepted("caterlink-vendor", `vendor-part-c/${dCreated}/${U()}.png`));
+          expectDenied("Vendor Part C: wrong workflow state (delivery already COMPLETED)", await accepted("caterlink-vendor", `vendor-part-c/${dDone}/${U()}.png`));
+          // no overwrite / move / delete by a client
+          {
+            const name = `part-a/${uidOf("caterlink-driver")}/${U()}.png`;
+            const r = await asUser("caterlink-driver", async () => {
+              await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [name, acct("caterlink-driver")]);
+              await client.query("SAVEPOINT ow");
+              const dup = await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [name, acct("caterlink-driver")]).then(() => "ALLOWED").catch((e) => String(e.message).slice(0, 60));
+              await client.query("ROLLBACK TO SAVEPOINT ow");
+              const upd = await client.query("update storage.objects set name = $1 where bucket_id = 'signatures' and name = $2", [`part-a/${uidOf("caterlink-driver")}/${U()}.png`, name]).then((x) => x.rowCount).catch(() => 0);
+              const del = await client.query("delete from storage.objects where bucket_id = 'signatures' and name = $1", [name]).then((x) => x.rowCount).catch(() => 0);
+              return `${dup}|${upd}|${del}`;
+            });
+            if (/^ALLOWED/.test(r) || !/\|0\|0$/.test(r)) fail(`an overwrite, move or delete by a client was not refused (${r})`);
+            probe("no overwrite, move or delete: a duplicate insert is refused and UPDATE/DELETE by the uploader affect no row");
+          }
+          // finalisation binds the stored reference
+          {
+            await client.query("SAVEPOINT fin");
+            const unbound = await client.query("insert into public.caterlink_checkpoint_part_a (transaction_id, pic_name, pic_staff_id, signature_url, completed_by) values ($1,'x','x','part-a/anything.png',$2)", [penTx, acct("caterlink-driver")]).then(() => "ALLOWED").catch((e) => String(e.message));
+            await client.query("ROLLBACK TO SAVEPOINT fin");
+            if (!/not the one uploaded for this record/i.test(unbound)) fail(`an unbound signature reference was accepted at finalisation (${unbound.slice(0, 80)})`);
+            probe("finalisation: a checkpoint cannot reference a path that is not bound to its row and actor");
+            await client.query("SAVEPOINT fin");
+            const missing = await client.query("insert into public.caterlink_checkpoint_part_a (transaction_id, pic_name, pic_staff_id, signature_url, completed_by) values ($1,'x','x',$2,$3)", [penTx, `part-a/${acct("caterlink-driver")}/${U()}.png`, acct("caterlink-driver")]).then(() => "ALLOWED").catch((e) => String(e.message));
+            await client.query("ROLLBACK TO SAVEPOINT fin");
+            if (!/was not uploaded by this account/i.test(missing)) fail(`a reference to a non-existent object was accepted at finalisation (${missing.slice(0, 80)})`);
+            probe("finalisation: a checkpoint cannot reference an object that does not exist or is not the actor's");
+          }
+          const og2 = (await q("select has_function_privilege('authenticated', 'public.list_orphan_signatures_secure(integer)', 'execute') au, has_function_privilege('service_role', 'public.list_orphan_signatures_secure(integer)', 'execute') sv"))[0];
+          if (og2.au || !og2.sv) fail("the signature orphan listing is not service-role only");
+          probe("the trusted service role keeps the orphan listing and reference check; clients cannot call them");
+          await client.query("ROLLBACK TO SAVEPOINT sg");
         }
 
         const post = await fp();
@@ -239,9 +377,13 @@ async function main() {
     }
     await pass(false);
     if ((await q("select count(*)::int n from supabase_migrations.schema_migrations"))[0].n !== PRE_COUNT || (await q("select to_regprocedure('public.caterlink_receipt_ready_statuses(text,text)') r"))[0].r) fail("the dry run left a change behind");
+    if ((await fp()).policiesAll !== pre.policiesAll) fail("the dry run left a policy change behind (the original storage/public policies are not exactly as before)");
+    if ((await q("select count(*)::int n from pg_policy where polrelid = 'storage.objects'::regclass and polname = 'signatures: authenticated upload'"))[0].n !== 1) fail("the original signatures upload policy was not restored by the rollback");
+    log("PROBE PASS: after rollback every original public/storage policy is exactly as before (the legacy upload policy is still present, nothing was committed)");
     const afterDry = await grants();
     if (JSON.stringify(afterDry) !== JSON.stringify(before)) fail("the dry run changed a grant");
-    log("dry run left staging exactly as before (history count, helper absence and grants re-checked)");
+    log("dry run left staging exactly as before (history count, helper absence, grants and policies re-checked)");
+    log(`SUMMARY: ${probeLog.length} probe PASS markers printed (see PROBE PASS lines above)`);
     if (!LIVE) return;
     await pass(true);
     if ((await q("select 1 from supabase_migrations.schema_migrations where version = any($1)", [MIGRATIONS.map((m) => m.version)])).length !== MIGRATIONS.length) fail("post-commit history check failed");

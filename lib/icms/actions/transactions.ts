@@ -6,7 +6,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireRole, requireCheckpointRole } from "@/lib/icms/auth";
-import { uploadDataUrl } from "@/lib/icms/storage";
+import { captureOutcome, settleSignature, uploadSignature } from "@/lib/icms/signature-storage";
+import { signatureDeps } from "@/lib/icms/signature-runtime";
 import { callCaterlinkRpc } from "@/lib/caterlink/vendor";
 import { CARGO_TYPES, isHubDestination } from "@/lib/icms/constants";
 import type {
@@ -203,9 +204,11 @@ export async function createTransaction(
     return { error: "A truck seal is required. / Sil trak diperlukan." };
   }
 
+  // The path is derived here (part-a/<this Driver's id>/<random>); Storage RLS lets only an active Driver write under their own id.
+  const sigDeps = await signatureDeps();
   let sig: { path: string; sha256: string };
   try {
-    sig = await uploadDataUrl("signatures", signature, "part-a");
+    sig = await uploadSignature("part-a", profile.id, signature, sigDeps);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Signature upload failed." };
   }
@@ -224,7 +227,7 @@ export async function createTransaction(
   const partARemarks = [remarks, ...extra].filter(Boolean).join(" | ");
 
   const supabase = await createClient();
-  const { data, error } = await callCaterlinkRpc(supabase, "create_caterlink_driver_transaction_secure", {
+  const outcomeA = await captureOutcome(() => callCaterlinkRpc(supabase, "create_caterlink_driver_transaction_secure", {
     p_origin_station: station,
     p_direction: direction,
     p_route: effectiveRoute,
@@ -241,8 +244,11 @@ export async function createTransaction(
     p_aircraft_reg: aircraftRegistration || undefined,
     p_trolley_count: trolleyCount,
     p_cargo_types: cargoTypes,
-  });
+  }));
+  const data = outcomeA.result?.data;
+  const error = outcomeA.result?.error ?? null;
   const created = Array.isArray(data) ? data[0] : data;
+  await settleSignature(sig.path, sigDeps, { error: outcomeA.error ?? (created?.transaction_id ? null : new Error("not created")), thrown: outcomeA.thrown });
   if (error || !created?.transaction_id) {
     return {
       error: `Could not create the transaction: ${(error?.message ?? "unknown error").replace(/^ERROR:\s*/i, "")}`,
@@ -288,15 +294,17 @@ export async function completePartB(_prev: ActionState, formData: FormData): Pro
   }
   if (!signature) return { error: "Signature is required." };
 
+  // The path is derived here (part-b/<this movement>-<random>); Storage RLS lets only an officer who may record Part B of THIS movement now write it.
+  const sigDeps = await signatureDeps();
   let sig: { path: string; sha256: string };
   try {
-    sig = await uploadDataUrl("signatures", signature, "part-b");
+    sig = await uploadSignature("part-b", transactionId, signature, sigDeps);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Signature upload failed." };
   }
 
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("record_caterlink_part_b_secure", {
+  const outcomeB = await captureOutcome(() => supabase.rpc("record_caterlink_part_b_secure", {
     p_transaction_id: transactionId,
     p_vehicle_verified: bool(formData, "vehicle_verified"),
     p_driver_verified: bool(formData, "driver_verified"),
@@ -310,7 +318,13 @@ export async function completePartB(_prev: ActionState, formData: FormData): Pro
     p_remarks: str(formData, "remarks"),
     p_result: result,
     p_escalation_reason: escalationReason,
-  });
+  }));
+  const data = outcomeB.result?.data;
+  const error = outcomeB.result?.error ?? null;
+  // Only a NEWLY recorded checkpoint references this object. A refusal, an automatic whitelist hold (no part id) or an idempotent repeat
+  // (is_new = false, the earlier record keeps its own signature) leaves it unreferenced, so it is discarded now.
+  await settleSignature(sig.path, sigDeps, { error: outcomeB.error ?? (data?.[0]?.part_id && data[0].is_new ? null : new Error("not recorded")), thrown: outcomeB.thrown });
+  if (outcomeB.thrown) return { error: "The checkpoint could not be recorded." };
   if (error) {
     // The function's own messages are written for the officer (uniform for authorization failures); anything that looks like
     // a database internal (constraint, relation, permission, syntax) is replaced by a generic message.

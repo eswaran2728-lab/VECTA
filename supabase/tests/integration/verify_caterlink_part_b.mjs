@@ -3,6 +3,7 @@
 // workflow state, seal / whitelist verification, escalation, idempotency, immutability, audit, notification, direct-write denial.
 import pg from 'pg';
 import { assertDisposableLocalTarget } from './safeguards.mjs';
+import { sigPaths } from './sigfixtures.mjs';
 
 const { Client } = pg;
 let failures = 0;
@@ -105,12 +106,14 @@ async function makeTx(st, { direction = 'OUTBOUND', status = 'CREATED' } = {}) {
   await sup();
   return { id, sealId };
 }
-const SIG = 'part-b/sig-test.png';
+// a Part B signature must be the bound, existing, fresh object the officer uploaded (migration 20261113000001)
+const putSig = async (p, owner) => { await db.query('reset role;'); await db.query("insert into storage.buckets (id, name, public) values ('signatures','signatures', false) on conflict (id) do nothing"); await db.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [p, owner]); await sup(); return p; };
 const HASH = 'a'.repeat(64);
 const call = async (user, tx, o = {}) => {
+  const boundSig = 'sig' in o ? o.sig : await putSig(sigPaths.partB(tx.id), user);
   const args = {
     veh: true, drv: true, entries: { [tx.sealId]: SEAL.number }, colors: { [tx.sealId]: SEAL.color }, vehicle: 'pb1234a', dname: 'PB Driver', did: 'pbd001',
-    sig: SIG, hash: HASH, remarks: 'ok', result: 'PASS', reason: null, ...o,
+    sig: boundSig, hash: HASH, remarks: 'ok', result: 'PASS', reason: null, ...o,
   };
   return failsOrRows(user, args, tx);
 };
