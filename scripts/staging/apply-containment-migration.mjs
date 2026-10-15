@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Applies ONLY supabase/migrations/20261108000001_caterlink_fail_closed_containment.sql to the approved staging project.
+// Applies ONLY the five frozen forward migrations 20261108000001..20261112000001 (see MIGRATIONS) to the approved staging project, as one unit.
 // A complete transactional DRY RUN (apply, verify, behavioural probe, ROLLBACK) always comes first; only with --live and the exact phrase is
 // the real application committed (migration + history row atomically). Prints names and counts only.
 //
@@ -23,6 +23,8 @@ export const MIGRATIONS = [
   { version: "20261108000001", name: "caterlink_fail_closed_containment", sha256: "ad8dbca5aed5ef4e9d7cbf0a23b1874ff3566707ca7345c3cd865b73c7089306" },
   { version: "20261109000001", name: "atomic_same_day_leave", sha256: "058b4afdcc7fe081cecc33e808088a241c0258b45eab75bb514c66f99e234671" },
   { version: "20261110000001", name: "registration_throttle", sha256: "3a2ea12506231afe272e4e04c803c6fd0b439a129b8268f532afe32490709369" },
+  { version: "20261111000001", name: "vendor_check_signature_authorization", sha256: "f7e1f9741dc8a76c3ced1cabf873577896188cf367e6b78560fd14cae98d4b4f" },
+  { version: "20261112000001", name: "block_unusable_driver_routes", sha256: "ae0ecb5ac2a2565385e542e56777c343fcf2684887717b955a75cec52b271ea2" },
 ];
 export const PRE_COUNT = 83;
 export const LAST_PRE = "20261107000001";
@@ -31,6 +33,19 @@ const SKIP = "public.skip_part_d(uuid, text)";
 const RAISE = "public.raise_caterlink_incident_secure(uuid, text, text, text, text)";
 const RECEIPT = "public.confirm_caterlink_destination_receipt_secure(uuid, text, text, text)";
 const LIST = "public.list_caterlink_pending_receipts_secure(text)";
+
+/**
+ * First top-level destructive statement (DROP TABLE / TRUNCATE / DELETE FROM) in a migration, or null. Comments and the bodies of
+ * $function$ ... $function$ / $tag$ ... $tag$ blocks are ignored: a bounded clean-up statement inside a reviewed function is part of that
+ * function, not something the migration itself executes.
+ */
+export function destructiveStatement(sql) {
+  const code = String(sql)
+    .replace(/--.*$/gm, "")
+    .replace(/\$([A-Za-z_]*)\$[\s\S]*?\$\1\$/g, "''");
+  const m = /\b(drop\s+table|truncate|delete\s+from)\b/i.exec(code);
+  return m ? m[0].toLowerCase() : null;
+}
 
 export const normalisedSha256 = (buf) => crypto.createHash("sha256").update(buf.toString("utf8").replace(/\r\n/g, "\n")).digest("hex");
 
@@ -67,7 +82,8 @@ async function main() {
     const sha = normalisedSha256(buf);
     if (sha !== m.sha256) fail(`${file}: SHA-256 ${sha} differs from the frozen ${m.sha256}`);
     const text = buf.toString("utf8");
-    if (/drop table|truncate|delete from/i.test(text.replace(/--.*$/gm, ""))) fail(`${file} contains a destructive statement`);
+    const destructive = destructiveStatement(text);
+    if (destructive) fail(`${file} contains a destructive top-level statement: ${destructive}`);
     return { ...m, file, sql: text };
   });
   const migDir = fs.readdirSync(path.join(git.root, "supabase", "migrations")).filter((f) => /^\d{14}_.*\.sql$/.test(f)).sort();
@@ -94,14 +110,14 @@ async function main() {
     const before = await grants();
     for (const g of before) log(`BEFORE ${g.sig}: anon=${g.anon} authenticated=${g.auth} service_role=${g.svc} PUBLIC=${g.pub}`);
     const fp = async () => ({
-      other: (await q(`select md5(string_agg(pg_get_functiondef(p.oid), E'\\n' order by p.oid::regprocedure::text)) h from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f' and p.proname not in ('skip_part_d','raise_caterlink_incident_secure','confirm_caterlink_destination_receipt_secure','list_caterlink_pending_receipts_secure','caterlink_receipt_ready_statuses','caterlink_expected_receiving_station','submit_leave_application_secure','registration_throttle_hit') and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`))[0].h,
+      other: (await q(`select md5(string_agg(pg_get_functiondef(p.oid), E'\\n' order by p.oid::regprocedure::text)) h from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f' and p.proname not in ('skip_part_d','raise_caterlink_incident_secure','confirm_caterlink_destination_receipt_secure','list_caterlink_pending_receipts_secure','caterlink_receipt_ready_statuses','caterlink_expected_receiving_station','submit_leave_application_secure','registration_throttle_hit','record_caterlink_vendor_security_check_secure','caterlink_vendor_check_upload_allowed','list_orphan_vendor_signatures_secure','enforce_completable_driver_route') and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`))[0].h,
       profiles: (await q("select md5(string_agg(md5(p::text), ',' order by p.id::text)) h from public.profiles p"))[0].h,
       assignments: (await q("select coalesce(md5(string_agg(md5(a::text), ',' order by a.id::text)), 'none') h from public.user_role_assignments a"))[0].h,
       transactions: (await q("select coalesce(md5(string_agg(md5(t::text), ',' order by t.id::text)), 'none') h from public.transactions t"))[0].h,
       incidents: (await q("select count(*)::text h from public.caterlink_incidents"))[0].h,
       hub: (await q("select count(*)::text h from public.caterlink_checkpoint_hub"))[0].h,
       jobs: (await q("select count(*)::text h from public.caterlink_pdf_jobs"))[0].h,
-      policies: (await q("select md5(string_agg(schemaname || tablename || policyname || coalesce(qual,'') || coalesce(with_check,''), ',' order by schemaname, tablename, policyname)) h from pg_policies where schemaname in ('public','storage') and tablename <> 'absence_notices'"))[0].h,
+      policies: (await q("select md5(string_agg(schemaname || tablename || policyname || coalesce(qual,'') || coalesce(with_check,''), ',' order by schemaname, tablename, policyname)) h from pg_policies where schemaname in ('public','storage') and tablename <> 'absence_notices' and not (schemaname = 'storage' and policyname = 'signatures: vendor check upload is delivery-bound')"))[0].h,
     });
     const pre = await fp();
     const defs = await q(`select p.oid::regprocedure::text sig, pg_get_functiondef(p.oid) def from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('skip_part_d','raise_caterlink_incident_secure','confirm_caterlink_destination_receipt_secure','list_caterlink_pending_receipts_secure')`);
@@ -191,6 +207,24 @@ async function main() {
           if (probe !== "OK") fail(`the leave RPC probe failed (${probe})`);
           const denied = await asUser("neg-pending-profile", async () => { await client.query("select * from public.submit_leave_application_secure('absent', null, null, 'x')"); return "ALLOWED"; });
           if (/ALLOWED/.test(denied)) fail("a pending profile could submit leave");
+        }
+
+        // vendor Part B signature: delivery-bound Storage policy, orphan listing grants, and the Driver route guard
+        {
+          const pol = await q("select 1 from pg_policy where polrelid = 'storage.objects'::regclass and polname = 'signatures: vendor check upload is delivery-bound' and not polpermissive");
+          if (pol.length !== 1) fail("the restrictive vendor-signature Storage policy is missing");
+          const og = (await q("select has_function_privilege('authenticated', 'public.list_orphan_vendor_signatures_secure(integer)', 'execute') au, has_function_privilege('anon', 'public.list_orphan_vendor_signatures_secure(integer)', 'execute') an, has_function_privilege('service_role', 'public.list_orphan_vendor_signatures_secure(integer)', 'execute') sv"))[0];
+          if (og.au || og.an || !og.sv) fail("the orphan listing is not service-role only");
+          const denied = await asUser("aso", async () => { await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [`vendor-part-b/${ghost}/${ghost.replace(/c01$/, "c02")}.png`, acct("aso")]); return "ALLOWED"; });
+          if (/ALLOWED/.test(denied) || !/row-level security|policy/i.test(denied)) fail(`an unauthorised vendor-signature upload was not refused by Storage RLS (${denied})`);
+          const trg = await q("select tgenabled from pg_trigger where tgname = 'trg_enforce_completable_driver_route' and tgrelid = 'public.transactions'::regclass");
+          if (trg.length !== 1 || trg[0].tgenabled !== "O") fail("the Driver route guard trigger is missing or disabled");
+          await client.query("SAVEPOINT rg");
+          await client.query("select set_config('request.jwt.claims', $1, true), set_config('role', 'service_role', true)", [JSON.stringify({ sub: acct("caterlink-driver"), role: "authenticated" })]);
+          const routeDenied = await client.query(`insert into public.transactions (transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, seal_number, status, route, origin_station_id, created_by)
+            values ('ICMS-2026-990998', $1, 'OUTBOUND', 'UAT-VEH', '[GUARD-DRYRUN]', 'UAT-DRV', 'S', 'CREATED', 'AIRCRAFT', $2, $3)`, [aoc, pen, acct("caterlink-driver")]).then(() => "ALLOWED").catch((e) => String(e.message));
+          await client.query("ROLLBACK TO SAVEPOINT rg");
+          if (!/not available yet/i.test(routeDenied)) fail(`a Driver AIRCRAFT movement was not refused by the route guard (${routeDenied.slice(0, 80)})`);
         }
 
         const post = await fp();

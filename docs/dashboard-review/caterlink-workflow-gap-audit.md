@@ -135,3 +135,23 @@ raised incident notify Management and the Operation Manager as the Part B escala
 * **Not changed (recorded)**: Super Admin deployment and Storage-health placeholders, SAT combined-report PDF-byte upload, WOIS "own leave status",
   and the conditional "not activated" screens in §2 remain as listed; none was fabricated as complete. Vendor Part B uploads its signature
   before the database authorises the check (storage RLS still requires a signed-in caller).
+
+## 8. Final closure pass (local, not applied to staging)
+
+**CaterLink is not complete beyond the HUB route.** Movement completion matrix (derived from `lib/icms/workflow.ts` and the code that actually writes statuses; `tests/route-readiness.test.mts` fails if this changes without a deliberate update):
+
+| Route | Can it be created by a Driver? | Can it complete? | Why |
+|---|---|---|---|
+| OUTBOUND / HUB | Yes | **Yes** | Part B (certified), then the destination receipt, bound to the movement's own hub destination |
+| OUTBOUND / MAINTENANCE | No (UI, action, and database trigger `20261112000001`) | No | no Part C writer; no trusted destination for a receipt |
+| OUTBOUND / AIRCRAFT | No | No | no Part C / Part D writer |
+| OUTBOUND / REDQ | No | No | no REDQ / Part C / Part D writer |
+| INBOUND | No | No | the first step (Part C) has no writer |
+
+The creation form disables these options and says why; the server action and the database refuse them; direct RPC attempts by a Driver fail with "This movement type is not available yet." Management-created movements (not Drivers) are not blocked by the guard, but the receipt state rules still prevent them from completing out of order. The requirements gate remains `part-c-owner-questions.md`.
+
+**Vendor Part B signature (migration `20261111000001`).** Root cause: the signature was uploaded to the shared bucket under a client-chosen name before the database authorised the check; the legacy Storage policy let any signed-in user write any path; the RPC accepted any text as the path; nothing removed the object when the save was refused. Now: the path is server-derived (`vendor-part-b/<delivery>/<random>.<ext>`); a restrictive Storage policy asks the database whether the caller may security-check that delivery right now; the RPC accepts only a path bound to that delivery for an object the caller owns and is single-shot under its row lock; a refused save removes exactly that object (service role, only if unreferenced) and a failed removal is logged and found later by `list_orphan_vendor_signatures_secure()`. Downloads are unchanged (`caterlink_signature_visible`), the bucket stays private. Vendor Part C and Part A still use the generic upload path (recorded, not changed).
+
+**Registration residual risk.** Responses for existing and new emails are identical and now padded to a 1.5 s floor, so response times match whenever the Auth call finishes inside that floor. If the Auth call is slower than the floor the timing still differs; enumeration resistance is therefore not complete. Limiting factors: the per-address and per-email hourly throttles (10 and 5), the anti-automation check, and identical bodies.
+
+**Policy decision still required from the owner:** a leave application whose start date is in the past is accepted as a non-same-day application (no gap, no duty row). Whether retroactive leave is allowed, and how it should mark attendance, has not been decided and was not changed.

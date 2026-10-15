@@ -160,7 +160,7 @@ async function main() {
   const mk = (sig, owner, args) => ({ sig, owner, args });
   // fixtures: two movements (Driver A, Driver B), two deliveries (Vendor A, Vendor B), orphan objects
   async function txFor(uid, vehicle, staff, name, sigPath) {
-    return (await asUser(uid, () => one("select * from public.create_caterlink_driver_transaction_secure('KUL - MAA','OUTBOUND','AIRCRAFT',$1,$2,$3,$4,$5);", [vehicle, name, staff, `SEAL-${staff}`, sigPath])));
+    return (await asUser(uid, () => one("select * from public.create_caterlink_driver_transaction_secure('KUL - MAA','OUTBOUND','HUB',$1,$2,$3,$4,$5, p_hub_destination => 'NILAI');", [vehicle, name, staff, `SEAL-${staff}`, sigPath])));
   }
   await txFor(driverA, 'ST1111A', 'STD001', 'ST Driver A', 'part-a/driver-a.png');
   await txFor(driverB, 'ST2222B', 'STD002', 'ST Driver B', 'part-a/driver-b.png');
@@ -265,12 +265,12 @@ async function main() {
     }
     // a reference to someone else's signature cannot be used to read it (write-side guard)
     await ins('signatures', 'part-a/owned-by-b.png', driverB);
-    const steal = await asUserFail(driverA, () => db.query("select * from public.create_caterlink_driver_transaction_secure('KUL - MAA','OUTBOUND','AIRCRAFT','ST1111A','ST Driver A','STD001','SEAL-STEAL','part-a/owned-by-b.png');"));
+    const steal = await asUserFail(driverA, () => db.query("select * from public.create_caterlink_driver_transaction_secure('KUL - MAA','OUTBOUND','HUB','ST1111A','ST Driver A','STD001','SEAL-STEAL','part-a/owned-by-b.png', p_hub_destination => 'NILAI');"));
     assert(steal.failed && /different account/.test(steal.error.message), 'Driver A cannot create a record that references Driver B\'s signature object');
     const stealV = await asUserFail(vendorB, () => db.query("select * from public.create_caterlink_vendor_delivery_secure('PEN','D','N','V9','S9','vendor/vendor-a.png');"));
     assert(stealV.failed && /different account/.test(stealV.error.message), 'Vendor B cannot create a delivery that references Vendor A\'s signature object');
     assert(!(await vis('driverA', 'part-a/owned-by-b.png')), 'and the object stays unreadable to Driver A');
-    const fine = await asUser(driverB, () => one("select * from public.create_caterlink_driver_transaction_secure('KUL - MAA','OUTBOUND','AIRCRAFT','ST2222B','ST Driver B','STD002','SEAL-OWN','part-a/owned-by-b.png');"));
+    const fine = await asUser(driverB, () => one("select * from public.create_caterlink_driver_transaction_secure('KUL - MAA','OUTBOUND','HUB','ST2222B','ST Driver B','STD002','SEAL-OWN','part-a/owned-by-b.png', p_hub_destination => 'NILAI');"));
     assert(!!fine.transaction_id, 'the real owner can reference its own signature object (the legitimate workflow still works)');
     // repair 1 wrapper properties
     const w = await one("select p.prosecdef d, coalesce(p.proconfig,'{}') c, has_function_privilege('anon', p.oid, 'execute') a, has_function_privilege('authenticated', p.oid, 'execute') b, pg_get_function_result(p.oid) r from pg_proc p where p.proname = 'can_upload_report_attachment';");

@@ -207,8 +207,8 @@ async function main() {
     assert(exposed.length === 0, `anon can execute none of the functions this migration adds (${exposed.map((r) => r.proname).join(', ')})`);
   }
 
-  const DRV_ARGS = (over = {}) => ({ station: 'KUL - MAA', dir: 'OUTBOUND', route: 'AIRCRAFT', veh: 'WF1234A', name: 'WF Driver', id: 'WFD001', seal: 'SEAL-0001', sig: 'signatures/wf-part-a.png', ...over });
-  const createTx = (a) => db.query("select * from public.create_caterlink_driver_transaction_secure($1,$2,$3,$4,$5,$6,$7,$8);", [a.station, a.dir, a.route, a.veh, a.name, a.id, a.seal, a.sig]);
+  const DRV_ARGS = (over = {}) => ({ station: 'KUL - MAA', dir: 'OUTBOUND', route: 'HUB', hub: 'NILAI', veh: 'WF1234A', name: 'WF Driver', id: 'WFD001', seal: 'SEAL-0001', sig: 'signatures/wf-part-a.png', ...over });
+  const createTx = (a) => db.query("select * from public.create_caterlink_driver_transaction_secure($1,$2,$3,$4,$5,$6,$7,$8, p_hub_destination => $9);", [a.station, a.dir, a.route, a.veh, a.name, a.id, a.seal, a.sig, a.hub ?? null]);
 
   console.log('\n--- SECTION 2: CaterLink Driver workflow ---');
   let txA;

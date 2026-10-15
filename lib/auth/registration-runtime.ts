@@ -53,6 +53,7 @@ export function registrationDeps(): RegistrationDeps {
     verify: (token, ip) => verifyTurnstile(token, ip),
     throttle: databaseThrottle(admin),
     env: registrationEnv(),
+    minResponseMs: 1500,
     log: (event, detail) => console.error(`[register] ${event}`, detail ?? ""),
   };
 }

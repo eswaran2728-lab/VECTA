@@ -1,5 +1,7 @@
 "use server";
 
+import { discardVendorSignature, uploadVendorCheckSignature } from "@/lib/icms/vendor-signature";
+import { vendorSignatureDeps } from "@/lib/icms/vendor-signature-runtime";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
@@ -99,29 +101,40 @@ export async function submitVendorPartB(
   if (!signature) return { error: "Signature is required." };
   if (result === "ESCALATE" && !escalationReason) return { error: "An escalation reason is required." };
 
+  // The path is derived here from the delivery id (never from the browser) and the Storage policy asks the database whether this caller
+  // may security-check this delivery right now; an unauthorised caller's upload is refused and leaves nothing behind.
+  const sigDeps = await vendorSignatureDeps();
   let sig: { path: string; sha256: string };
   try {
-    sig = await uploadDataUrl("signatures", signature, "vendor-part-b");
+    sig = await uploadVendorCheckSignature(deliveryId, signature, sigDeps);
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Signature upload failed." };
+    return { error: e instanceof Error && /Invalid image|5MB|could not be uploaded|delivery/i.test(e.message) ? e.message : "The signature could not be uploaded." };
   }
 
   const supabase = await createClient();
-  const { error } = await callCaterlinkRpc(supabase, "record_caterlink_vendor_security_check_secure", {
-    p_delivery_id: deliveryId,
-    p_signature_url: sig.path,
-    p_signature_hash: sig.sha256,
-    p_result: result,
-    p_remarks: remarks || undefined,
-    p_escalation_reason: escalationReason || undefined,
-    p_observed: {
-      vehicle_registration_no: vehicleRegistrationNo,
-      driver_name: driverName,
-      driver_nric: driverNric,
-      seal_number: sealNumber,
-    },
-  });
+  let error: { message?: string } | null = null;
+  try {
+    const res = await callCaterlinkRpc(supabase, "record_caterlink_vendor_security_check_secure", {
+      p_delivery_id: deliveryId,
+      p_signature_url: sig.path,
+      p_signature_hash: sig.sha256,
+      p_result: result,
+      p_remarks: remarks || undefined,
+      p_escalation_reason: escalationReason || undefined,
+      p_observed: {
+        vehicle_registration_no: vehicleRegistrationNo,
+        driver_name: driverName,
+        driver_nric: driverNric,
+        seal_number: sealNumber,
+      },
+    });
+    error = res.error;
+  } catch (e) {
+    error = { message: e instanceof Error ? e.message : "The security check could not be saved." };
+  }
   if (error) {
+    // the save was refused or threw: remove exactly the object this request uploaded (a failed removal is logged and reconciled later)
+    await discardVendorSignature(sig.path, sigDeps);
     return { error: `The security check could not be saved: ${rpcMessage(error)}` };
   }
 

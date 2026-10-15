@@ -94,7 +94,7 @@ async function main() {
   await db.query('reset role;');
   await db.query(read('migrations', '20261025000001_caterlink_external_workflows.sql'));
   await simulateService();
-  const tx = await asUser(driver, () => one("select * from public.create_caterlink_driver_transaction_secure('KUL - MAA','OUTBOUND','AIRCRAFT','PS9999A','PS Driver Name','PSD001','PS-SEAL','part-a/ps.png');"));
+  const tx = await asUser(driver, () => one("select * from public.create_caterlink_driver_transaction_secure('KUL - MAA','OUTBOUND','HUB','PS9999A','PS Driver Name','PSD001','PS-SEAL','part-a/ps.png', p_hub_destination => 'NILAI');"));
 
   const view = (id) => asUser(id, async () => ({
     t: (await db.query('select 1 from public.transactions where id = $1;', [tx.transaction_id])).rows.length === 1,

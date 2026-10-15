@@ -1,0 +1,3 @@
+{
+  "crons": [{ "path": "/api/icms/vendor-signature-reconcile", "schedule": "17 * * * *" }]
+}

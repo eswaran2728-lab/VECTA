@@ -243,3 +243,45 @@ test("there is exactly one public registration path: no server action creates ac
     assert.doesNotMatch(fs.readFileSync(f, "utf8"), /auth\.signUp\(|admin\.createUser\(/, `${f} does not create accounts`);
   }
 });
+
+test("timing: an existing email and a new email take the same time when the work fits inside the response floor", async () => {
+  const run = async (existing: boolean, createMs: number) => {
+    let clock = 0;
+    const slept: number[] = [];
+    const f = fake({ existing });
+    const slowAdmin = {
+      ...f.admin,
+      auth: { admin: { ...f.admin.auth.admin, createUser: async (a: unknown) => { clock += createMs; return f.admin.auth.admin.createUser(a); } } },
+      from: (t: string) => ({ ...f.admin.from(t), select: (c: string) => { clock += 10; return f.admin.from(t).select(c); } }),
+    };
+    const r = await handleRegistration(req(baseBody), deps(f, { admin: slowAdmin as never, now: () => clock, sleep: async (ms: number) => { slept.push(ms); clock += ms; }, minResponseMs: 1000 } as never));
+    return { status: r.status, total: clock, slept };
+  };
+  const existing = await run(true, 400);
+  const fresh = await run(false, 400);
+  assert.equal(existing.status, 200);
+  assert.equal(fresh.status, 200);
+  assert.equal(existing.total, 1000, "existing-email responses are padded up to the floor");
+  assert.equal(fresh.total, 1000, "new-account responses end at the same floor");
+  assert.ok(existing.slept.length > 0 && fresh.slept.length > 0);
+});
+
+test("timing: when the real work exceeds the floor no padding is added (the residual difference is documented, not hidden)", async () => {
+  let clock = 0;
+  const f = fake();
+  const admin = { ...f.admin, auth: { admin: { ...f.admin.auth.admin, createUser: async (a: unknown) => { clock += 1500; return f.admin.auth.admin.createUser(a); } } } };
+  const slept: number[] = [];
+  await handleRegistration(req(baseBody), deps(f, { admin: admin as never, now: () => clock, sleep: async (ms: number) => { slept.push(ms); clock += ms; }, minResponseMs: 1000 } as never));
+  assert.deepEqual(slept, []);
+  const doc = fs.readFileSync("docs/dashboard-review/caterlink-workflow-gap-audit.md", "utf8");
+  assert.match(doc, /enumeration resistance is therefore not complete/i, "the documentation must not claim complete enumeration resistance");
+  assert.match(doc, /slower than the floor the timing still differs/i);
+});
+
+test("padding applies only to the account-exists / account-created outcomes, never to validation or rate-limit refusals", async () => {
+  const slept: number[] = [];
+  const common = { now: () => 0, sleep: async (ms: number) => { slept.push(ms); }, minResponseMs: 1000 } as never;
+  await handleRegistration(req({ ...baseBody, phone: "abc" }), deps(fake(), common));
+  await handleRegistration(req(baseBody), deps(fake(), { ...(common as object), throttle: async () => "limited" as const } as never));
+  assert.deepEqual(slept, []);
+});

@@ -37,6 +37,10 @@ export interface RegistrationDeps {
   env: { antibotRequired: boolean; antibotConfigured: boolean; /** Trust x-real-ip / x-forwarded-for (only behind a trusted proxy such as Vercel). Default true. */ trustProxyHeaders?: boolean };
   /** Sanitised diagnostics: an event name and optional non-personal detail (never an email, name, address or upstream message). */
   log: (event: string, detail?: Record<string, string | number>) => void;
+  /** Optional clock/sleep (tests) and a minimum response time for the account-exists / account-created outcomes (default: none). */
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+  minResponseMs?: number;
 }
 
 const reply = (status: number, body: Record<string, string>) =>
@@ -112,6 +116,15 @@ function clientAddress(request: Request, trustProxyHeaders: boolean): string {
 }
 
 export async function handleRegistration(request: Request, deps: RegistrationDeps): Promise<Response> {
+  const clock = deps.now ?? Date.now;
+  const t0 = clock();
+  // Existing and new emails get the same answer; padding both to one floor keeps their response TIMES equal whenever the real work fits
+  // inside it (if the Auth call is slower than the floor the difference is not hidden; see the audit document).
+  const padded = async (res: Response): Promise<Response> => {
+    const left = (deps.minResponseMs ?? 0) - (clock() - t0);
+    if (left > 0) await (deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))))(left);
+    return res;
+  };
   const unavailable = () => reply(503, { error: "Registration is temporarily unavailable." });
   try {
     const declared = Number.parseInt(request.headers.get("content-length") ?? "0", 10);
@@ -151,7 +164,7 @@ export async function handleRegistration(request: Request, deps: RegistrationDep
       admin.from("users").select("id").eq("email", v.email).maybeSingle(),
     ]);
     // identical answer for an existing account: the endpoint never confirms whether an email is registered
-    if (profileMatch.data || userMatch.data) return reply(200, { success: REGISTRATION_SUCCESS });
+    if (profileMatch.data || userMatch.data) return padded(reply(200, { success: REGISTRATION_SUCCESS }));
 
     const { data: created, error: authError } = await admin.auth.admin.createUser({
       email: v.email,
@@ -164,7 +177,7 @@ export async function handleRegistration(request: Request, deps: RegistrationDep
       },
     });
     if (authError || !created.user) {
-      if (/already (been )?registered|already in use|user already|already exists/i.test(authError?.message ?? "")) return reply(200, { success: REGISTRATION_SUCCESS });
+      if (/already (been )?registered|already in use|user already|already exists/i.test(authError?.message ?? "")) return padded(reply(200, { success: REGISTRATION_SUCCESS }));
       deps.log("registration_auth_failed");
       return unavailable();
     }
@@ -177,7 +190,7 @@ export async function handleRegistration(request: Request, deps: RegistrationDep
       try { await admin.auth.admin.deleteUser(created.user.id); } catch { deps.log("registration_rollback_failed", { target: v.systemType }); }
       return reply(500, { error: "Could not complete your registration. Please try again." });
     }
-    return reply(200, { success: REGISTRATION_SUCCESS });
+    return padded(reply(200, { success: REGISTRATION_SUCCESS }));
   } catch {
     deps.log("registration_unexpected_error");
     return reply(500, { error: "Could not complete your registration. Please try again." });
