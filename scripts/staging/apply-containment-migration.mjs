@@ -18,12 +18,15 @@ import { decryptBackupPayload, encryptBackupPayload } from "./lib/backup-crypto.
 import { loadCurrentManifest } from "./lib/review-accounts.mjs";
 import { gitGates, environmentGates, backupGates, connectVerified, APPROVED_REF, FORBIDDEN_REF } from "./lib/run-gates.mjs";
 
-export const VERSION = "20261108000001";
-export const NAME = "caterlink_fail_closed_containment";
-export const SHA256 = "40da2d9da4e9bbeaa75b4d3a3f991b830fa74cce43b10f4e8a25e902aaf11df9";
+// Three additive forward migrations applied as ONE guarded unit (each recorded in the history, all in one transaction).
+export const MIGRATIONS = [
+  { version: "20261108000001", name: "caterlink_fail_closed_containment", sha256: "ad8dbca5aed5ef4e9d7cbf0a23b1874ff3566707ca7345c3cd865b73c7089306" },
+  { version: "20261109000001", name: "atomic_same_day_leave", sha256: "058b4afdcc7fe081cecc33e808088a241c0258b45eab75bb514c66f99e234671" },
+  { version: "20261110000001", name: "registration_throttle", sha256: "3a2ea12506231afe272e4e04c803c6fd0b439a129b8268f532afe32490709369" },
+];
 export const PRE_COUNT = 83;
 export const LAST_PRE = "20261107000001";
-export const LIVE_PHRASE = `APPLY ${VERSION} TO STAGING ${APPROVED_REF}`;
+export const LIVE_PHRASE = `APPLY ${MIGRATIONS.map((m) => m.version).join("+")} TO STAGING ${APPROVED_REF}`;
 const SKIP = "public.skip_part_d(uuid, text)";
 const RAISE = "public.raise_caterlink_incident_secure(uuid, text, text, text, text)";
 const RECEIPT = "public.confirm_caterlink_destination_receipt_secure(uuid, text, text, text)";
@@ -58,15 +61,18 @@ async function main() {
   if (!nb.exportedAt || Date.now() - new Date(nb.exportedAt).getTime() > 6 * 3600 * 1000) fail("fresh backup is older than 6 hours");
   log(`existing backups authenticate (x${backups.length}); fresh backup authenticates (exportedAt=${nb.exportedAt}, authUsers=${nb.authUsers?.length})`);
 
-  const file = `${VERSION}_${NAME}.sql`;
-  const buf = fs.readFileSync(path.join(git.root, "supabase", "migrations", file));
-  const sha = normalisedSha256(buf);
-  if (sha !== SHA256) fail(`${file}: SHA-256 ${sha} differs from the frozen ${SHA256}`);
-  const sql = buf.toString("utf8");
+  const files = MIGRATIONS.map((m) => {
+    const file = `${m.version}_${m.name}.sql`;
+    const buf = fs.readFileSync(path.join(git.root, "supabase", "migrations", file));
+    const sha = normalisedSha256(buf);
+    if (sha !== m.sha256) fail(`${file}: SHA-256 ${sha} differs from the frozen ${m.sha256}`);
+    const text = buf.toString("utf8");
+    if (/drop table|truncate|delete from/i.test(text.replace(/--.*$/gm, ""))) fail(`${file} contains a destructive statement`);
+    return { ...m, file, sql: text };
+  });
   const migDir = fs.readdirSync(path.join(git.root, "supabase", "migrations")).filter((f) => /^\d{14}_.*\.sql$/.test(f)).sort();
-  if (migDir.filter((f) => f.slice(0, 14) > LAST_PRE).join() !== file) fail("the repository holds a migration after the last applied one that is not the frozen containment migration");
-  if (/drop table|truncate|delete from/i.test(sql.replace(/--.*$/gm, ""))) fail("the migration contains a destructive statement");
-  log(`${file} matches its frozen hash (${sql.length} bytes) and is the only migration after ${LAST_PRE}`);
+  if (migDir.filter((f) => f.slice(0, 14) > LAST_PRE).join() !== files.map((f) => f.file).join()) fail("the repository holds a migration after the last applied one that is not in the frozen list");
+  log(`${files.length} migrations match their frozen hashes and are the only ones after ${LAST_PRE}`);
 
   const manifest = loadCurrentManifest();
   const acct = (label) => manifest.find((a) => a.label === label)?.authUserId ?? fail(`manifest has no ${label}`);
@@ -77,7 +83,7 @@ async function main() {
     const mig = await q("select version, name from supabase_migrations.schema_migrations order by version");
     log(`recorded migrations=${mig.length} last=${mig[mig.length - 1]?.version}`);
     if (mig.length !== PRE_COUNT || mig[mig.length - 1].version !== LAST_PRE) fail(`history is not exactly ${PRE_COUNT} ending ${LAST_PRE}`);
-    if (mig.some((m) => m.version === VERSION)) fail("the containment migration is already recorded");
+    if (mig.some((m) => MIGRATIONS.some((x) => x.version === m.version))) fail("a frozen migration is already recorded");
     if (mig.some((m) => String(m.name).includes(FORBIDDEN_REF))) fail("production reference in migration history");
     if ((await q("select count(*)::int n from auth.users"))[0].n !== nb.authUsers?.length) fail("fresh backup Auth-user count differs from the live database");
     if ((await q("select to_regprocedure('public.caterlink_receipt_ready_statuses(text,text)') r"))[0].r) fail("the receipt state helper already exists on staging");
@@ -88,14 +94,14 @@ async function main() {
     const before = await grants();
     for (const g of before) log(`BEFORE ${g.sig}: anon=${g.anon} authenticated=${g.auth} service_role=${g.svc} PUBLIC=${g.pub}`);
     const fp = async () => ({
-      other: (await q(`select md5(string_agg(pg_get_functiondef(p.oid), E'\\n' order by p.oid::regprocedure::text)) h from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f' and p.proname not in ('skip_part_d','raise_caterlink_incident_secure','confirm_caterlink_destination_receipt_secure','list_caterlink_pending_receipts_secure','caterlink_receipt_ready_statuses') and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`))[0].h,
+      other: (await q(`select md5(string_agg(pg_get_functiondef(p.oid), E'\\n' order by p.oid::regprocedure::text)) h from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f' and p.proname not in ('skip_part_d','raise_caterlink_incident_secure','confirm_caterlink_destination_receipt_secure','list_caterlink_pending_receipts_secure','caterlink_receipt_ready_statuses','caterlink_expected_receiving_station','submit_leave_application_secure','registration_throttle_hit') and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`))[0].h,
       profiles: (await q("select md5(string_agg(md5(p::text), ',' order by p.id::text)) h from public.profiles p"))[0].h,
       assignments: (await q("select coalesce(md5(string_agg(md5(a::text), ',' order by a.id::text)), 'none') h from public.user_role_assignments a"))[0].h,
       transactions: (await q("select coalesce(md5(string_agg(md5(t::text), ',' order by t.id::text)), 'none') h from public.transactions t"))[0].h,
       incidents: (await q("select count(*)::text h from public.caterlink_incidents"))[0].h,
       hub: (await q("select count(*)::text h from public.caterlink_checkpoint_hub"))[0].h,
       jobs: (await q("select count(*)::text h from public.caterlink_pdf_jobs"))[0].h,
-      policies: (await q("select md5(string_agg(schemaname || tablename || policyname || coalesce(qual,'') || coalesce(with_check,''), ',' order by schemaname, tablename, policyname)) h from pg_policies where schemaname in ('public','storage')"))[0].h,
+      policies: (await q("select md5(string_agg(schemaname || tablename || policyname || coalesce(qual,'') || coalesce(with_check,''), ',' order by schemaname, tablename, policyname)) h from pg_policies where schemaname in ('public','storage') and tablename <> 'absence_notices'"))[0].h,
     });
     const pre = await fp();
     const defs = await q(`select p.oid::regprocedure::text sig, pg_get_functiondef(p.oid) def from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('skip_part_d','raise_caterlink_incident_secure','confirm_caterlink_destination_receipt_secure','list_caterlink_pending_receipts_secure')`);
@@ -107,9 +113,11 @@ async function main() {
     async function pass(real) {
       await client.query("BEGIN");
       try {
-        await client.query(sql);
-        await client.query("insert into supabase_migrations.schema_migrations (version, name, statements) values ($1, $2, $3)", [VERSION, NAME, [sql]]);
-        if ((await q("select count(*)::int n from supabase_migrations.schema_migrations"))[0].n !== PRE_COUNT + 1) fail("unexpected history count");
+        for (const f of files) {
+          await client.query(f.sql);
+          await client.query("insert into supabase_migrations.schema_migrations (version, name, statements) values ($1, $2, $3)", [f.version, f.name, [f.sql]]);
+        }
+        if ((await q("select count(*)::int n from supabase_migrations.schema_migrations"))[0].n !== PRE_COUNT + files.length) fail("unexpected history count");
 
         const after = await grants();
         for (const g of after) {
@@ -161,6 +169,30 @@ async function main() {
         if (okRcpt !== "ACCEPTED:COMPLETED") fail(`the final-step state was not accepted (${okRcpt})`);
         await client.query("ROLLBACK TO SAVEPOINT rc");
 
+        // wrong-station receipt: an officer at BKI cannot receive a KCH movement (destination binding), rolled back
+        {
+          await client.query("SAVEPOINT bind");
+          await client.query("update public.transactions set status = 'AIRPORT_POST_APPROVED' where id = $1", [tx]);
+          const wrong = await asUser("aso-bki-receipt", async () => { await client.query(`select * from ${RECEIPT.replace(/\(.*$/, "")}($1, 'BKI', 'receipt/dryrun.png', 'dry run')`, [tx]); return "ACCEPTED"; });
+          if (!/not available for receipt confirmation at this station/i.test(wrong)) fail(`a wrong-station receipt was not refused uniformly (${wrong})`);
+          await client.query("ROLLBACK TO SAVEPOINT bind");
+        }
+        // leave RPC and registration throttle: grants, policy, and a rolled-back behavioural probe
+        const LEAVE = "public.submit_leave_application_secure(text, date, date, text)";
+        const THROTTLE = "public.registration_throttle_hit(text, integer, integer)";
+        const lg = (await q(`select has_function_privilege('anon', '${LEAVE}', 'execute') an, has_function_privilege('authenticated', '${LEAVE}', 'execute') au, exists (select 1 from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x where p.oid = '${LEAVE}'::regprocedure and x.grantee = 0 and x.privilege_type = 'EXECUTE') pub`))[0];
+        if (lg.an || lg.pub || !lg.au) fail("the leave RPC grants are not authenticated-only");
+        const tg = (await q(`select has_function_privilege('anon', '${THROTTLE}', 'execute') an, has_function_privilege('authenticated', '${THROTTLE}', 'execute') au, has_function_privilege('service_role', '${THROTTLE}', 'execute') sv, has_table_privilege('authenticated', 'public.registration_throttle', 'select,insert,update,delete') tb`))[0];
+        if (tg.an || tg.au || !tg.sv || tg.tb) fail("the registration throttle is not service-role only");
+        const ins = (await q("select has_table_privilege('authenticated', 'public.absence_notices', 'insert') i, exists (select 1 from pg_policy where polrelid = 'public.absence_notices'::regclass and polname = 'absence_notices_insert_own') p"))[0];
+        if (ins.i || ins.p) fail("a client can still insert absence notices directly");
+        {
+          const probe = await asUser("aso", async () => { const r = await client.query("select * from public.submit_leave_application_secure('annual', current_date + 400, current_date + 401, 'dry run probe')"); return r.rows[0]?.result_same_day === false ? "OK" : "UNEXPECTED"; });
+          if (probe !== "OK") fail(`the leave RPC probe failed (${probe})`);
+          const denied = await asUser("neg-pending-profile", async () => { await client.query("select * from public.submit_leave_application_secure('absent', null, null, 'x')"); return "ALLOWED"; });
+          if (/ALLOWED/.test(denied)) fail("a pending profile could submit leave");
+        }
+
         const post = await fp();
         for (const k of ["other", "profiles", "assignments", "transactions", "incidents", "hub", "jobs", "policies"]) {
           if (post[k] !== pre[k]) fail(`an unrelated ${k} fingerprint changed`);
@@ -178,8 +210,8 @@ async function main() {
     log("dry run left staging exactly as before (history count, helper absence and grants re-checked)");
     if (!LIVE) return;
     await pass(true);
-    if ((await q("select 1 from supabase_migrations.schema_migrations where version = $1", [VERSION])).length !== 1) fail("post-commit history check failed");
-    log(`APPLIED ${VERSION} (committed, recorded once)`);
+    if ((await q("select 1 from supabase_migrations.schema_migrations where version = any($1)", [MIGRATIONS.map((m) => m.version)])).length !== MIGRATIONS.length) fail("post-commit history check failed");
+    log(`APPLIED ${MIGRATIONS.map((m) => m.version).join(", ")} (committed, each recorded once)`);
     log("RESULT: SUCCESS");
   } finally {
     await client.end();

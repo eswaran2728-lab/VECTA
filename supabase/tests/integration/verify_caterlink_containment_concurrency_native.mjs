@@ -180,6 +180,34 @@ const t5 = await makeTx('AIRPORT_POST_APPROVED');
   assert(err && /escalated/i.test(err) && c.status === 'ESCALATED' && c.hub === 0 && c.audit === 0 && c.jobs === 0, 'a movement escalated while the receipt waited is refused and nothing is written');
 }
 
+console.log('=== a wrong-station officer racing the correct one ===');
+const bki = await station('BKI');
+const asoBki = await person('asobki', 'aso', { st: bki });
+const t6 = await makeTx('AIRPORT_POST_APPROVED');
+{
+  const destBefore = (await q('select destination_station_id d from public.transactions where id = $1', [t6.id]))[0].d;
+  const RB = "select * from public.confirm_caterlink_destination_receipt_secure($1, 'BKI', 'receipt/ct.png', 'ok');";
+  const cs = await Promise.all(Array.from({ length: 8 }, (_, i) => session(i % 2 ? asoKch : asoBki)));
+  const res = await Promise.allSettled(cs.map(async (c, i) => { const r = await c.query(i % 2 ? RSQL : RB, [t6.id]); await c.query('commit;'); return r.rows[0]; }));
+  await Promise.all(cs.map((c) => c.query('rollback;').catch(() => {}).then(() => c.end())));
+  const winners = res.map((r, i) => (r.status === 'fulfilled' ? i : -1)).filter((i) => i >= 0);
+  const c = await counts(t6);
+  const destAfter = (await q('select destination_station_id d from public.transactions where id = $1', [t6.id]))[0].d;
+  assert(winners.length === 1 && winners[0] % 2 === 1, `exactly one receipt won, and it was the KCH officer's (winners: ${winners.join(',')})`);
+  assert(c.status === 'COMPLETED' && c.hub === 1 && c.audit === 1 && c.notif === 1 && c.jobs === 1 && destAfter === destBefore, 'one completion; the destination was never rewritten by a BKI call');
+}
+console.log('=== only wrong-station officers: nothing is written ===');
+const t7 = await makeTx('AIRPORT_POST_APPROVED');
+{
+  const RB = "select * from public.confirm_caterlink_destination_receipt_secure($1, 'BKI', 'receipt/ct.png', 'ok');";
+  const cs = await Promise.all(Array.from({ length: 6 }, () => session(asoBki)));
+  const res = await Promise.allSettled(cs.map(async (c) => { const r = await c.query(RB, [t7.id]); await c.query('commit;'); return r.rows[0]; }));
+  await Promise.all(cs.map((c) => c.query('rollback;').catch(() => {}).then(() => c.end())));
+  const c = await counts(t7);
+  const dest = (await q('select destination_station_id d from public.transactions where id = $1', [t7.id]))[0].d;
+  assert(res.every((r) => r.status === 'rejected') && c.status === 'AIRPORT_POST_APPROVED' && c.hub === 0 && c.audit === 0 && c.notif === 0 && c.jobs === 0 && dest === kch.id, 'six simultaneous wrong-station receipts are all refused and write nothing');
+}
+
 await db.end();
 console.log(`\nTOTAL: ${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

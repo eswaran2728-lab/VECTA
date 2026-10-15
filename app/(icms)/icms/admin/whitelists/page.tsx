@@ -95,7 +95,7 @@ function RowActions({ table, entry }: { table: string; entry: WhitelistEntry }) 
 export default async function WhitelistsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; error?: string }>;
 }) {
   const supabase = await createClient();
   const {
@@ -105,7 +105,7 @@ export default async function WhitelistsPage({
   // Whitelist management is a CaterLink Management function: other identities are redirected before any data call.
   await requireRole(["supervisor"]);
 
-  const { q, status } = await searchParams;
+  const { q, status, error: actionError } = await searchParams;
   const search = (q ?? "").trim() || undefined;
   const statusFilter = (status ?? "").trim() || undefined;
 
@@ -135,6 +135,11 @@ export default async function WhitelistsPage({
 
   return (
     <div className="space-y-6">
+      {actionError ? (
+        <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm font-medium text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+          {actionError === "The whitelist change could not be applied." ? actionError : "The requested change could not be applied."}
+        </p>
+      ) : null}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Whitelists</h1>
         <p className="text-sm text-muted-foreground">

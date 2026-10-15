@@ -1,6 +1,7 @@
 "use server";
 
 import { partBHoldMessage } from "@/lib/icms/checkpoint-hold-messages";
+import { movementCompletable, routeBlocker } from "@/lib/icms/route-readiness";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
@@ -156,6 +157,14 @@ export async function createTransaction(
     route === "AIRCRAFT" && direction === "OUTBOUND" && cargoTypes.includes("VEHICLE_MAINTENANCE")
       ? "MAINTENANCE"
       : route;
+  // A movement that can never reach COMPLETED (its route needs Part C / Part D / REDQ, which have no recording workflow yet) is not created.
+  const blocker = routeBlocker(direction, effectiveRoute);
+  if (blocker) {
+    return { error: blocker };
+  }
+  if (!movementCompletable(direction, effectiveRoute)) {
+    return { error: "This movement type is not available yet." };
+  }
   if (!seals) {
     return { error: "Add at least one seal with a number, type and color." };
   }

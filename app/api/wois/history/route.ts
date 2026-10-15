@@ -32,10 +32,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ conversations: conversations || [] });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to fetch history";
-    return NextResponse.json(
-      { error: message },
-      { status: 500 }
-    );
+    console.error("[wois/history] request failed:", error instanceof Error ? error.name : "unknown");
+    return NextResponse.json({ error: "Failed to fetch history." }, { status: 500 });
   }
 }

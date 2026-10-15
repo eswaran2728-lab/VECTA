@@ -15,6 +15,8 @@ const nextConfig: NextConfig = {
   // otherwise reachable by static import-tracing).
   outputFileTracingIncludes: {
     "/**": ["./templates/forms/**/*.pdf"],
+    // the private WOIS source document is read from disk by the authorised download route only
+    "/api/wois/documents/[id]": ["./private/wois/**/*"],
   },
   async redirects() {
     return [

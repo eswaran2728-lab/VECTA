@@ -13,6 +13,7 @@ import { Label } from "@/components/icms/ui/label";
 import { Select } from "@/components/icms/ui/select";
 import { Textarea } from "@/components/icms/ui/textarea";
 import { SignatureField } from "@/components/icms/signature-pad";
+import { movementCompletable, routeBlocker } from "@/lib/icms/route-readiness";
 import { SealEditor, type SealDraft } from "@/components/icms/seal-editor";
 import type {
   CargoType,
@@ -206,6 +207,8 @@ export function PartAForm({
       : null;
 
   const hubDestinationReady = movement !== "HUB" || hubDestination !== "";
+  // An outbound movement tagged Vehicle Maintenance becomes the MAINTENANCE route, which ends at Part C (no recording workflow yet).
+  const routeUnavailable = direction && effectiveRoute && !movementCompletable(direction, effectiveRoute) ? routeBlocker(direction, effectiveRoute) ?? "This movement type is not available yet." : null;
 
   return (
     <div className="space-y-4">
@@ -222,17 +225,23 @@ export function PartAForm({
           <div className="grid gap-3 sm:grid-cols-2">
             {MOVEMENT_OPTIONS.map((opt) => {
               const active = movement === opt.value;
+              const unavailable = routeBlocker(opt.direction, opt.route);
               return (
                 <button
                   key={opt.value}
                   type="button"
+                  disabled={unavailable !== null}
+                  aria-disabled={unavailable !== null}
                   onClick={() => {
+                    if (unavailable) return;
                     setMovement(opt.value);
                     if (opt.value !== "HUB") setHubDestination("");
                   }}
                   aria-pressed={active}
                   className={
-                    active
+                    unavailable
+                      ? "flex cursor-not-allowed items-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/40 p-4 text-left opacity-70"
+                      : active
                       ? "flex items-center gap-3 rounded-xl border-2 border-primary bg-primary/10 p-4 text-left transition-all"
                       : "flex items-center gap-3 rounded-xl border-2 border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:bg-accent"
                   }
@@ -249,6 +258,7 @@ export function PartAForm({
                   <div>
                     <p className="font-heading font-bold">{opt.title}</p>
                     <p className="text-xs text-muted-foreground">{opt.subtitle}</p>
+                    {unavailable ? <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-300">Unavailable: {unavailable}</p> : null}
                   </div>
                 </button>
               );
@@ -598,11 +608,16 @@ export function PartAForm({
             </label>
           ) : null}
 
+              {routeUnavailable ? (
+                <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
+                  {routeUnavailable}
+                </p>
+              ) : null}
               <Button
                 type="submit"
                 size="xl"
                 className="w-full"
-                disabled={pending}
+                disabled={pending || routeUnavailable !== null}
                 onClick={(e) => {
                   if (
                     !station.trim() ||

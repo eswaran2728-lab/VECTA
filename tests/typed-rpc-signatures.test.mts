@@ -14,7 +14,7 @@ const sql = [MIG_DIR, path.join(MIG_DIR, "icms")]
   .join("\n");
 const types = fs.readFileSync("lib/supabase/database.types.ts", "utf8");
 
-const TS: Record<string, string> = { uuid: "string", text: "string", integer: "number", boolean: "boolean", timestamptz: "string", jsonb: "Json" };
+const TS: Record<string, string> = { uuid: "string", text: "string", integer: "number", boolean: "boolean", timestamptz: "string", jsonb: "Json", date: "string" };
 
 function splitTop(list: string): string[] {
   const out: string[] = []; let depth = 0; let cur = "";
@@ -57,6 +57,7 @@ const RPCS = [
   "get_caterlink_pdf_state_secure",
   "unescalate_transaction",
   "record_caterlink_part_b_secure",
+  "submit_leave_application_secure",
 ];
 
 for (const name of RPCS) {

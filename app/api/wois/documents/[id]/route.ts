@@ -1,31 +1,13 @@
-import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+import { handleWoisDocument, WOIS_PRIVATE_DIR } from "@/lib/wois/documents";
+import { getWoisEligibility } from "@/lib/wois/eligibility";
 
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const filename = id.endsWith(".pdf") ? id : `${id}.pdf`;
-    const filePath = path.join(process.cwd(), "public", "docs", filename);
+export const dynamic = "force-dynamic";
 
-    if (!fs.existsSync(filePath)) {
-      return NextResponse.json({ error: "Document not found" }, { status: 404 });
-    }
-
-    const fileBuffer = fs.readFileSync(filePath);
-    return new NextResponse(fileBuffer, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "Content-Length": fileBuffer.length.toString(),
-      },
-    });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to download document";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+/**
+ * WOIS source document download. Authorization (authenticated, approved profile, active Malaysia-AOC assignment) is decided by the
+ * same database function as WOIS chat and history; the id is matched against a fixed allowlist and never used as a path.
+ */
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return handleWoisDocument(id, { eligibility: getWoisEligibility, root: WOIS_PRIVATE_DIR });
 }

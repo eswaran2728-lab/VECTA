@@ -1,5 +1,6 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { TruckType } from "@/lib/icms/database.types";
@@ -196,6 +197,8 @@ export async function addDriver(
   return { error: null, success: `Driver ${name} submitted for approval.` };
 }
 
+const WHITELIST_FAILURE = "The whitelist change could not be applied.";
+
 function entryTypeFromTable(table: string): "vendor" | "vehicle" | "driver" | null {
   if (table === "catering_companies") return "vendor";
   if (table === "vehicles") return "vehicle";
@@ -209,7 +212,8 @@ export async function approveWhitelistEntry(fd: FormData): Promise<void> {
   const entryType = entryTypeFromTable(s(fd, "table"));
   const id = s(fd, "id");
   if (!entryType || !id) return;
-  await supabase.rpc("approve_caterlink_whitelist_entry_secure", { p_entry_type: entryType, p_id: id });
+  const { error } = await supabase.rpc("approve_caterlink_whitelist_entry_secure", { p_entry_type: entryType, p_id: id });
+  if (error) redirect(`${PATH}?error=${encodeURIComponent(WHITELIST_FAILURE)}`);
   revalidatePath(PATH);
 }
 
@@ -261,7 +265,8 @@ export async function activateWhitelistEntry(fd: FormData): Promise<void> {
   const entryType = entryTypeFromTable(s(fd, "table"));
   const id = s(fd, "id");
   if (!entryType || !id) return;
-  await supabase.rpc("activate_caterlink_whitelist_entry_secure", { p_entry_type: entryType, p_id: id });
+  const { error } = await supabase.rpc("activate_caterlink_whitelist_entry_secure", { p_entry_type: entryType, p_id: id });
+  if (error) redirect(`${PATH}?error=${encodeURIComponent(WHITELIST_FAILURE)}`);
   revalidatePath(PATH);
 }
 
@@ -297,10 +302,11 @@ export async function updatePassExpiry(fd: FormData): Promise<void> {
   if (entryType !== "vehicle" && entryType !== "driver") return;
   if (!id) return;
 
-  await supabase.rpc("update_caterlink_whitelist_pass_expiry_secure", {
+  const { error } = await supabase.rpc("update_caterlink_whitelist_pass_expiry_secure", {
     p_entry_type: entryType,
     p_id: id,
     p_pass_expiry_date: date || null,
   });
+  if (error) redirect(`${PATH}?error=${encodeURIComponent(WHITELIST_FAILURE)}`);
   revalidatePath(PATH);
 }

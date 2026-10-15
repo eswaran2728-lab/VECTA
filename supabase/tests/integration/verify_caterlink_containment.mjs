@@ -200,6 +200,138 @@ assert((await receive(asoKul, stray)) !== null && (await state(stray)).status ==
 const g = await one("select has_function_privilege('anon', 'public.confirm_caterlink_destination_receipt_secure(uuid, text, text, text)', 'execute') a, has_function_privilege('authenticated', 'public.confirm_caterlink_destination_receipt_secure(uuid, text, text, text)', 'execute') b;");
 assert(!g.a && g.b, 'receipt grants unchanged: authenticated yes, anon no');
 
+// ================================================================== 4. destination binding (direct RPC, behavioural)
+console.log('=== destination binding: the receiving station comes from the movement, never from the caller ===');
+const bki = await station('BKI');
+const asoBki = await person('asobki', 'aso', { st: bki });
+const asoPenRcpt = await person('asopenrcpt', 'aso', { st: pen });
+const asoKchPending = await person('kchpending', 'aso', { st: kch, status: 'pending' });
+const asoKchRejected = await person('kchrejected', 'aso', { st: kch, status: 'rejected' });
+let asoKchDeactivated = null;
+try { await db.query('savepoint dd'); asoKchDeactivated = await person('kchdeact', 'aso', { st: kch, status: 'deactivated' }); await db.query('release savepoint dd'); } catch { await db.query('rollback to savepoint dd'); }
+const asoKchRevoked = await person('kchrevoked', 'aso', { st: kch });
+const asoKchExpired = await person('kchexpired', 'aso', { st: kch });
+const asoKchFuture = await person('kchfuture', 'aso', { st: kch });
+await db.query("update public.user_role_assignments set revoked_at = now() where profile_id = $1;", [asoKchRevoked]);
+await db.query("update public.user_role_assignments set ends_at = now() - interval '1 hour' where profile_id = $1;", [asoKchExpired]);
+await db.query("update public.user_role_assignments set starts_at = now() + interval '1 day' where profile_id = $1;", [asoKchFuture]);
+const asoKchSender = await person('kchsender', 'aso', { st: kch });
+
+const full = async (tx) => ({
+  status: (await one('select status from public.transactions where id = $1', [tx.id])).status,
+  dest: (await one('select destination_station_id d from public.transactions where id = $1', [tx.id])).d,
+  hub: (await one('select count(*)::int n from public.caterlink_checkpoint_hub where transaction_id = $1', [tx.id])).n,
+  audit: (await one('select count(*)::int n from public.phase8_audit_log where entity_id = $1', [tx.id])).n,
+  notif: (await one("select count(*)::int n from public.user_notifications where payload ->> 'transaction_id' = $1", [tx.id])).n,
+  jobs: (await one('select count(*)::int n from public.caterlink_pdf_jobs where transaction_id = $1', [tx.id])).n,
+  incidents: (await one('select count(*)::int n from public.caterlink_incidents where transaction_id = $1', [tx.id])).n,
+  pbc: (await one('select count(*)::int n from public.part_b_c where transaction_id = $1', [tx.id])).n,
+});
+const call = (u, tx, stationCode) => tryKeep(asUser(u), 'select * from public.confirm_caterlink_destination_receipt_secure($1, $2, $3, $4);', [tx.id, stationCode, 'receipt/ct.png', 'ok']);
+const UNIFORM = /not available for receipt confirmation at this station/i;
+const routes = [
+  ['HUB OUTBOUND', 'OUTBOUND', 'HUB', 'INFLIGHT_POST_APPROVED', 'KCH'],
+  ['MAINTENANCE OUTBOUND', 'OUTBOUND', 'MAINTENANCE', 'INFLIGHT_POST_APPROVED', 'KCH'],
+  ['AIRCRAFT OUTBOUND', 'OUTBOUND', 'AIRCRAFT', 'AIRPORT_POST_APPROVED', 'KCH'],
+  ['REDQ OUTBOUND', 'OUTBOUND', 'REDQ', 'AIRPORT_POST_APPROVED', 'KCH'],
+  ['INBOUND', 'INBOUND', 'AIRCRAFT', 'AIRPORT_POST_APPROVED', 'KCH'],
+];
+for (const [label, direction, route, status, destCode] of routes) {
+  const dest = destCode === 'KCH' ? kch : bki;
+  const mk2 = () => makeTx({ station: pen, direction, route, status, dest, hub: route === 'HUB' ? destCode : null });
+  // the officer of ANOTHER station in the same AOC, calling with its own station code
+  const t1 = await mk2(); const b1 = await full(t1);
+  const e1 = await call(asoBki, t1, 'BKI');
+  assert(e1 && UNIFORM.test(e1) && same(b1, await full(t1)), `${label}: an officer at another station (BKI) cannot receive a KCH movement, uniform denial, zero mutation (destination unchanged)`);
+  const e1b = await call(asoPenRcpt, t1, 'PEN');
+  assert(e1b && UNIFORM.test(e1b) && same(b1, await full(t1)), `${label}: an officer at the origin station (PEN) cannot receive it either, zero mutation`);
+  // the correct station succeeds exactly once and keeps its destination
+  const t2 = await mk2(); const b2 = await full(t2);
+  const ok1 = await call(asoKch, t2, 'KCH');
+  const a2 = await full(t2);
+  assert(ok1 === null && a2.status === 'COMPLETED' && a2.dest === b2.dest && a2.hub === 1 && a2.audit === 1 && a2.notif === 1 && a2.jobs === 1, `${label}: the officer at the expected station receives it once (destination preserved)`);
+  // no trusted destination at all -> denied for every route
+  const t3 = await makeTx({ station: pen, direction, route, status, dest: null, hub: null });
+  const b3 = await full(t3);
+  const e3 = await call(asoKch, t3, 'KCH');
+  assert(e3 && UNIFORM.test(e3) && same(b3, await full(t3)) && b3.dest === null, `${label}: a movement with no trusted destination cannot be received by a caller-named station, destination stays NULL`);
+}
+// inconsistent trusted data (hub_destination and destination station disagree) fails closed
+{
+  const t = await makeTx({ station: pen, route: 'HUB', status: 'INFLIGHT_POST_APPROVED', dest: kch, hub: 'BKI' });
+  const b = await full(t);
+  const e1 = await call(asoKch, t, 'KCH'); const e2 = await call(asoBki, t, 'BKI');
+  assert(e1 && e2 && UNIFORM.test(e1) && UNIFORM.test(e2) && same(b, await full(t)), 'a movement whose hub_destination and destination station disagree is received by nobody');
+}
+// uniform message: nonexistent, foreign AOC, wrong destination are indistinguishable
+{
+  const wrong = await makeTx({ station: pen, status: 'AIRPORT_POST_APPROVED', dest: kch });
+  const foreignAoc = (await one("insert into public.aocs (code, name) values ('ZZR', 'Foreign receipt AOC') on conflict (code) do update set name = excluded.name returning id;")).id;
+  const foreign = await makeTx({ station: pen, status: 'AIRPORT_POST_APPROVED', dest: kch });
+  await db.query('reset role;'); await db.query('set session_replication_role = replica;');
+  await db.query('update public.transactions set aoc_id = $1 where id = $2;', [foreignAoc, foreign.id]);
+  await db.query('set session_replication_role = origin;'); await sup();
+  const bf = await full(foreign);
+  const eWrong = await call(asoBki, wrong, 'BKI'); const eGhost = await call(asoBki, { id: nextId() }, 'BKI'); const eForeign = await call(asoKch, foreign, 'KCH');
+  assert(eWrong === eGhost && eGhost === eForeign && UNIFORM.test(eWrong), `wrong destination, nonexistent and foreign-AOC movements get the identical denial ("${(eWrong ?? '').slice(0, 70)}")`);
+  assert(same(bf, await full(foreign)), 'the foreign-AOC movement is untouched');
+}
+// ineligible actors at the CORRECT station: zero mutation
+const eligible = [['pending profile', asoKchPending], ['rejected profile', asoKchRejected], ['revoked assignment', asoKchRevoked], ['expired assignment', asoKchExpired], ['future assignment', asoKchFuture]];
+if (asoKchDeactivated) eligible.push(['deactivated profile', asoKchDeactivated]);
+for (const [label, u] of eligible) {
+  const t = await makeTx({ station: pen, status: 'AIRPORT_POST_APPROVED', dest: kch });
+  const b = await full(t);
+  const e = await call(u, t, 'KCH');
+  assert(e && /not authorized/i.test(e) && same(b, await full(t)), `${label}: denied at the correct station, zero mutation`);
+}
+// sender separation: the creator of a cross-station movement cannot receive it even when assigned to the destination
+{
+  const t = await makeTx({ station: pen, status: 'AIRPORT_POST_APPROVED', dest: kch });
+  await db.query('reset role;'); await db.query('set session_replication_role = replica;');
+  await db.query('update public.transactions set created_by = $1 where id = $2;', [asoKchSender, t.id]);
+  await db.query('set session_replication_role = origin;'); await sup();
+  const b = await full(t);
+  const e = await call(asoKchSender, t, 'KCH');
+  assert(e && /sender cannot confirm/i.test(e) && same(b, await full(t)), 'the sender of a cross-station movement cannot receive it, zero mutation');
+}
+// NULL-sensitive sender separation: a movement with no origin station is still not receivable by its own sender
+{
+  const t = await makeTx({ station: { id: null }, status: 'AIRPORT_POST_APPROVED', dest: kch });
+  await db.query('reset role;'); await db.query('set session_replication_role = replica;');
+  await db.query('update public.transactions set created_by = $1 where id = $2;', [asoKchSender, t.id]);
+  await db.query('set session_replication_role = origin;'); await sup();
+  const b = await full(t);
+  const e = await call(asoKchSender, t, 'KCH');
+  assert(e && /sender cannot confirm/i.test(e) && same(b, await full(t)), 'the sender of a movement with NO origin station cannot receive it (no NULL fail-open), zero mutation');
+}
+// an inactive destination station is not a trusted destination
+{
+  const t = await makeTx({ station: pen, status: 'AIRPORT_POST_APPROVED', dest: kch });
+  await db.query('reset role;'); await db.query('update public.org_stations set is_active = false where id = $1;', [kch.id]); await sup();
+  const expected = (await one('select public.caterlink_expected_receiving_station(null, $1) c', [kch.id])).c;
+  await db.query('reset role;'); await db.query('update public.org_stations set is_active = true where id = $1;', [kch.id]); await sup();
+  assert(expected === null, 'an inactive destination station yields no expected receiving station');
+}
+// repeat receipt and list parity
+{
+  const t = await makeTx({ station: pen, status: 'AIRPORT_POST_APPROVED', dest: kch });
+  assert((await call(asoKch, t, 'KCH')) === null, 'first receipt accepted');
+  const done = await full(t);
+  const again = await call(asoKch, t, 'KCH');
+  assert(again && /already completed/i.test(again) && same(done, await full(t)), 'a repeated receipt is refused with zero further mutation');
+}
+{
+  const listed = await makeTx({ station: pen, status: 'AIRPORT_POST_APPROVED', dest: kch });
+  const noDest = await makeTx({ station: pen, status: 'AIRPORT_POST_APPROVED', dest: null });
+  const mismatch = await makeTx({ station: pen, route: 'HUB', status: 'INFLIGHT_POST_APPROVED', dest: kch, hub: 'BKI' });
+  const atKch = (await callAs(asoKch, "select id from public.list_caterlink_pending_receipts_secure('KCH');")).map((r) => r.id);
+  const atBki = (await callAs(asoBki, "select id from public.list_caterlink_pending_receipts_secure('BKI');")).map((r) => r.id);
+  assert(atKch.includes(listed.id) && !atBki.includes(listed.id), 'the list offers a KCH movement at KCH and not at BKI');
+  assert(!atKch.includes(noDest.id) && !atBki.includes(noDest.id), 'the list offers nothing without a trusted destination');
+  assert(!atKch.includes(mismatch.id) && !atBki.includes(mismatch.id), 'the list offers nothing whose trusted destination data disagree');
+}
+
 await db.end();
 console.log(`\nTOTAL: ${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

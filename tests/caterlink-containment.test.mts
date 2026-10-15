@@ -51,7 +51,9 @@ test("the receipt locks the row, then gates on the final-step state of the exist
 
 test("the containment is one additive migration: later than every earlier one and the earlier files are unchanged on disk", () => {
   const files = fs.readdirSync("supabase/migrations").filter((f) => /^\d{14}_.*\.sql$/.test(f)).sort();
-  assert.equal(files.at(-1), path.basename(MIG));
+  const at = files.indexOf(path.basename(MIG));
+  assert.ok(at > 0, "the containment migration exists");
+  assert.equal(files[at - 1], "20261107000001_caterlink_part_b_checkpoint.sql", "it directly follows the Part B migration");
   assert.equal(files.filter((f) => f.startsWith("20261108")).length, 1);
   // the version is unique
   assert.equal(new Set(files.map((f) => f.slice(0, 14))).size, files.length, "no version collision");
@@ -92,4 +94,31 @@ test("the overdue catering indicator is suppressed (SLA configuration pending), 
   assert.match(src, /export const CATERING_OVERDUE_SLA_STATUS = "SLA configuration pending"/);
   const code = src.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
   assert.doesNotMatch(code, /status_entered_at|Catering Movement Overdue|CATERING_OVERDUE_HOURS/);
+});
+
+test("supplement (behaviour is proven by the database suites): the receipt binds the destination from the movement and never rewrites it", () => {
+  const fn = /create or replace function public\.confirm_caterlink_destination_receipt_secure\([\s\S]*?\$function\$([\s\S]*?)\$function\$/.exec(sql)![1];
+  const bind = fn.indexOf("v_expected <> p_station_code");
+  const firstWrite = fn.search(/insert into public\.caterlink_checkpoint_hub|update public\.transactions/);
+  assert.ok(bind > 0 && bind < firstWrite, "the destination equality check precedes every write");
+  assert.match(fn, /caterlink_expected_receiving_station\(v_tx\.hub_destination, v_tx\.destination_station_id\)/);
+  assert.doesNotMatch(fn, /destination_station_id\s*=\s*v_station_id/, "a caller-supplied station never overwrites the trusted destination");
+  assert.match(fn, /v_expected is null/, "no trusted destination fails closed");
+  const list = /create or replace function public\.list_caterlink_pending_receipts_secure\([\s\S]*?\$function\$([\s\S]*?)\$function\$/.exec(sql)![1];
+  assert.match(list, /caterlink_expected_receiving_station\(t\.hub_destination, t\.destination_station_id\) = p_station_code/, "the list uses the same binding");
+});
+
+test("frozen hashes: the staging runner pins exactly the three forward migrations, and the files match", () => {
+  const runner = fs.readFileSync("scripts/staging/apply-containment-migration.mjs", "utf8");
+  const entries = [...runner.matchAll(/\{ version: "(\d{14})", name: "([a-z_]+)", sha256: "([0-9a-f]{64})" \}/g)];
+  assert.deepEqual(entries.map((e) => e[1]), ["20261108000001", "20261109000001", "20261110000001"]);
+  for (const [, version, name, sha] of entries) {
+    const text = fs.readFileSync(`supabase/migrations/${version}_${name}.sql`, "utf8").replace(/\r\n/g, "\n");
+    assert.equal(crypto.createHash("sha256").update(text).digest("hex"), sha, `${version}_${name} differs from its frozen hash`);
+  }
+  assert.match(runner, /PRE_COUNT = 83/);
+  assert.match(runner, /LAST_PRE = "20261107000001"/);
+  const all = fs.readdirSync("supabase/migrations").filter((f) => /^\d{14}_.*\.sql$/.test(f)).sort();
+  assert.equal(new Set(all.map((f) => f.slice(0, 14))).size, all.length, "no migration version collision");
+  assert.deepEqual(all.filter((f) => f.slice(0, 14) > "20261107000001").map((f) => f.slice(0, 14)), ["20261108000001", "20261109000001", "20261110000001"], "migration order");
 });

@@ -5328,6 +5328,22 @@ export type Database = {
         Args: { p_transaction_id: string }
         Returns: { state: string; version: number | null }[]
       }
+      submit_leave_application_secure: {
+        Args: { p_leave_type?: string; p_start_date?: string; p_end_date?: string; p_remarks?: string }
+        Returns: {
+          notice_id: string
+          result_approval_status: string
+          result_status: string | null
+          result_gap_minutes: number | null
+          result_formatted_gap: string
+          result_submitted_at: string
+          result_start_date: string
+          result_end_date: string
+          result_leave_type: string
+          result_same_day: boolean
+          result_shift_code: string
+        }[]
+      }
       record_caterlink_part_b_secure: {
         Args: {
           p_transaction_id: string

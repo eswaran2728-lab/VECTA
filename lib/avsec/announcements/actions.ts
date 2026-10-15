@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentProfile } from "@/lib/avsec/auth";
 import type {
   AnnouncementScope,
   AnnouncementCategory,
@@ -231,99 +230,4 @@ export async function fetchAnnouncementReport(
   }
 
   return (data as unknown) as AnnouncementAcknowledgementReport;
-}
-
-/**
- * Legacy wrapper: createAnnouncement.
- * Delegates to createAnnouncementSecure while maintaining backward compatibility.
- */
-export async function createAnnouncement({
-  title,
-  body,
-  station,
-  photoUrl,
-  isPop,
-  team,
-}: {
-  title: string;
-  body: string;
-  station?: string | null;
-  photoUrl?: string | null;
-  isPop?: boolean;
-  team?: string | null;
-}): Promise<AnnouncementActionResult> {
-  const profile = await getCurrentProfile();
-  if (!profile) return { ok: false, error: "Not authenticated" };
-
-  const trimmedTitle = title.trim();
-  const trimmedBody = body.trim();
-  if (!trimmedTitle || !trimmedBody) {
-    return { ok: false, error: "Title and body are required." };
-  }
-
-  // Attempt using Phase 11 secure RPC first
-  try {
-    const res = await createAnnouncementSecure({
-      title: trimmedTitle,
-      body: trimmedBody,
-      scope: "aoc",
-      priority: isPop ? "urgent" : "normal",
-      status: "published",
-      requiresAcknowledgement: Boolean(isPop),
-    });
-    if (res.ok) {
-      // Phase 13 correction: this used to call the broken
-      // addAnnouncementAttachmentSecure() (wrong RPC parameter names --
-      // confirmed never actually invoked by anything, since this whole
-      // `createAnnouncement` function has zero callers anywhere in the
-      // app). A real photo/file attachment now goes through
-      // uploadAnnouncementAttachment() (lib/avsec/announcements/attachments.ts),
-      // which needs an actual File, not a caller-supplied URL string --
-      // callers of THIS function must upload separately after creation
-      // succeeds, the same two-step pattern every other attachment
-      // workflow in this phase uses.
-      return res;
-    }
-  } catch (err) {
-    console.warn("RPC create announcement fallback to direct table insert:", err);
-  }
-
-  // Fallback to table insert for legacy tests/flows. photo_url is
-  // intentionally never populated from a caller-supplied string here --
-  // see the comment above; base64/remote-URL persistence into this
-  // column is exactly what Phase 13 removed.
-  const supabase = await createClient();
-
-  const { data: announcement, error: annError } = await supabase
-    .from("announcements")
-    .insert({
-      created_by: profile.id,
-      title: trimmedTitle,
-      body: trimmedBody,
-      photo_url: null,
-      is_pop: Boolean(isPop),
-    })
-    .select("id")
-    .single();
-
-  if (annError || !announcement) {
-    return { ok: false, error: annError?.message || "Failed to create announcement" };
-  }
-
-  const targetStation = station?.trim() || null;
-  const targetTeam = team?.trim() || null;
-
-  await supabase.from("announcement_targets").insert({
-    announcement_id: announcement.id,
-    station: targetStation,
-    branch: null, // historical column; deprecated for audience selection
-    team: targetTeam,
-  });
-
-  revalidatePath("/");
-  revalidatePath("/avsec/home");
-  revalidatePath("/avsec/dashboard");
-  revalidatePath("/avsec/management/announcements");
-
-  return { ok: true, announcementId: announcement.id };
 }

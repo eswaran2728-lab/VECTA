@@ -105,7 +105,8 @@ async function main() {
   for (const [who, u] of [['Investigation ASO', invAso], ['Investigation SSO', invSso], ['Compliance', compliance], ['GHOD', ghod], ['AirAsia Management', airasia], ['GRC', grc]]) {
     for (const [t, sql] of attendance) {
       const e = await denied(u, sql, [u]);
-      assert(e !== null && /no roster/i.test(e), `${who}: cannot write ${t} (database refusal: ${(e ?? 'ALLOWED').slice(0, 50)})`);
+      // absence_notices: since 20261109000001 no client may insert directly at all (submit_leave_application_secure is the only path), which is stricter than the roster rule
+      assert(e !== null && (/no roster/i.test(e) || (t === 'absence_notices' && /permission denied/i.test(e))), `${who}: cannot write ${t} (database refusal: ${(e ?? 'ALLOWED').slice(0, 50)})`);
     }
   }
   for (const [t, sql] of attendance) {

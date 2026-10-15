@@ -220,7 +220,16 @@ export async function deactivateUser(formData: FormData) {
     redirect("/avsec/admin/users?error=" + encodeURIComponent("Cannot deactivate a Super Admin account."));
   }
 
-  await supabase.from("profiles").update({ status: "deactivated" }).eq("id", profileId);
+  const { data, error } = await supabase.from("profiles").update({ status: "deactivated" }).eq("id", profileId).select("id");
+  if (error) {
+    redirect("/avsec/admin/users?error=" + encodeURIComponent("The account could not be deactivated."));
+  }
+  if (!data || data.length === 0) {
+    redirect(
+      "/avsec/admin/users?error=" +
+        encodeURIComponent("Deactivation did not apply — you may not be authorized to deactivate this account."),
+    );
+  }
   revalidatePath("/avsec/admin/users");
 }
 

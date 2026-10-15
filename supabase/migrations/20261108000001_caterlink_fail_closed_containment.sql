@@ -22,7 +22,12 @@
 --     the certified receipt verifiers use), so it is accepted wherever AIRPORT_POST_APPROVED is. No new transition is introduced.
 --     A denied receipt raises before anything is written: no hub checkpoint, no audit row, no notification, no PDF job (the PDF job
 --     trigger only fires on the status update).
---   * The pending-receipt list applies the same rule, so an officer is never offered a movement that cannot be received.
+--   * DESTINATION BINDING. The receiving station is read from the movement itself, never from the caller: the expected station is
+--     transactions.hub_destination and/or the code of transactions.destination_station_id (when both are set they must agree). The
+--     caller-supplied station code must equal it exactly, for every route and direction, before any checkpoint, audit, notification, PDF
+--     job or transaction write. A movement with no trusted destination, or whose destination data disagree, is received by nobody. The
+--     receipt never rewrites destination_station_id. Nonexistent, foreign-AOC and wrong-destination movements get one identical denial.
+--   * The pending-receipt list applies the same rules, so an officer is never offered a movement that cannot be received.
 
 -- 1. skip_part_d: fail closed, nobody may execute
 create or replace function public.skip_part_d(p_transaction_id uuid, p_reason text)
@@ -72,7 +77,26 @@ $function$;
 revoke all on function public.caterlink_receipt_ready_statuses(text, text) from public, anon;
 grant execute on function public.caterlink_receipt_ready_statuses(text, text) to authenticated, service_role;
 
--- 4. destination receipt: lock, then check the state, then write
+-- 3b. the trusted expected receiving station of a movement (NULL when there is none or the data disagree)
+create or replace function public.caterlink_expected_receiving_station(p_hub_destination text, p_destination_station_id uuid)
+returns text
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select case
+    when p_hub_destination is not null and p_destination_station_id is not null
+      then (select s.code from public.org_stations s where s.id = p_destination_station_id and s.code = p_hub_destination and s.is_active)
+    when p_hub_destination is not null then p_hub_destination
+    when p_destination_station_id is not null
+      then (select s.code from public.org_stations s where s.id = p_destination_station_id and s.is_active)
+    else null
+  end;
+$function$;
+revoke all on function public.caterlink_expected_receiving_station(text, uuid) from public, anon, authenticated;
+
+-- 4. destination receipt: bind the destination, lock, then check the state, then write
 create or replace function public.confirm_caterlink_destination_receipt_secure(
   p_transaction_id uuid,
   p_station_code text,
@@ -90,6 +114,7 @@ declare
   v_station_id uuid;
   v_officer_name text;
   v_officer_staff_no text;
+  v_expected text;
 begin
   if v_caller is null then
     raise exception 'Must be signed in.';
@@ -104,11 +129,15 @@ begin
   select s.id into v_station_id from public.org_stations s where s.code = p_station_code and s.is_active = true;
 
   select * into v_tx from public.transactions t where t.id = p_transaction_id for update;
+  v_expected := public.caterlink_expected_receiving_station(v_tx.hub_destination, v_tx.destination_station_id);
 
-  -- One uniform answer for: not found, other AOC, or a different destination.
+  -- One uniform answer for: not found, other AOC, no trusted destination, or a different destination. The destination is the
+  -- movement's own; the caller's station code must equal it exactly, for every route and direction.
   if v_tx is null
+     or v_tx.id is null
      or not public.can_user_confirm_caterlink_receipt(p_station_code, v_tx.aoc_id)
-     or (v_tx.route = 'HUB' and v_tx.hub_destination is not null and v_tx.hub_destination <> p_station_code)
+     or v_expected is null
+     or v_expected <> p_station_code
   then
     raise exception 'Transaction is not available for receipt confirmation at this station.';
   end if;
@@ -131,7 +160,8 @@ begin
   end if;
 
   -- Sender cannot confirm own cross-station movement
-  if v_tx.created_by = v_caller and v_tx.origin_station_id <> v_station_id then
+  -- NULL-safe: a movement with no origin station (or an unresolved station) is still separated from its own sender
+  if v_tx.created_by = v_caller and v_tx.origin_station_id is distinct from v_station_id then
     raise exception 'Sender cannot confirm destination receipt for their own cross-station movement.';
   end if;
 
@@ -148,11 +178,10 @@ begin
     hub_avsec_name = excluded.hub_avsec_name,
     completed_at = now();
 
-  -- Only the final receipt state fields change; transaction content is never edited here.
+  -- Only the final receipt state fields change; transaction content (including its destination) is never edited here.
   update public.transactions
   set status = 'COMPLETED',
       completed_at = now(),
-      destination_station_id = v_station_id,
       updated_at = now()
   where id = p_transaction_id;
 
@@ -196,7 +225,7 @@ begin
   left join public.org_stations ds on ds.id = t.destination_station_id
   where coalesce(t.archived, false) = false
     and t.status = any (public.caterlink_receipt_ready_statuses(t.direction, t.route))
-    and (ds.code = p_station_code or t.hub_destination = p_station_code)
+    and public.caterlink_expected_receiving_station(t.hub_destination, t.destination_station_id) = p_station_code
     and public.can_user_confirm_caterlink_receipt(p_station_code, t.aoc_id)
   order by t.created_at desc
   limit 100;

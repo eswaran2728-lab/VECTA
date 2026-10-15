@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { getAttendanceProfile, requireAttendanceProfile } from "@/lib/avsec/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
+import { leaveRpcArgs, mapLeaveRpcResult, type LeaveSubmitInput, type LeaveSubmitResult } from "./leave-submit";
 import { todayISODateMY } from "@/lib/avsec/datetime";
 import { getTodayRoster, getTodayDutyRecord } from "./checkin-queries";
 import { scheduledWindow } from "./lateness";
@@ -16,24 +18,7 @@ import {
 import { ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { reviewLeaveRequestSecure } from "@/lib/phase8/workforce";
 
-export interface LeaveSubmitInput {
-  leaveType?: LeaveType;
-  startDate?: string;
-  endDate?: string;
-  remarks: string;
-}
-
-export interface LeaveSubmitResult {
-  error: string | null;
-  success: boolean;
-  leaveType?: LeaveType;
-  startDate?: string;
-  endDate?: string;
-  approvalStatus?: LeaveApprovalStatus;
-  status?: "green" | "red" | null;
-  formattedGap?: string;
-  submittedAt?: string;
-}
+export type { LeaveSubmitInput, LeaveSubmitResult };
 
 /**
  * Server action to submit an official Leave Application / Absence Notice.
@@ -53,128 +38,21 @@ export async function submitLeaveApplication(
     return { error: "You must be signed in to submit a leave application.", success: false };
   }
 
-  const remarks = (input.remarks ?? "").trim();
-  if (!remarks) {
-    return { error: "Remarks are required. Please provide an explanation for your leave.", success: false };
+  // One authenticated RPC records the notice AND the same-day absent duty state in a single database transaction. The caller, station,
+  // team, shift, three-hour gap, duplicate and already-checked-in checks are all decided inside the database; nothing here writes a table.
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("submit_leave_application_secure", leaveRpcArgs(input));
+  if (error) {
+    console.error("[submitLeaveApplication] RPC error:", error.code);
   }
+  const result = mapLeaveRpcResult(data, error);
 
-  const today = todayISODateMY();
-  const leaveType: LeaveType = input.leaveType ?? "absent";
-  const startDate = input.startDate || today;
-  const endDate = input.endDate || startDate;
-
-  // Validate date logic
-  if (endDate < startDate) {
-    return { error: "End date cannot be earlier than start date.", success: false };
+  if (result.success) {
+    revalidatePath("/avsec/duty");
+    revalidatePath("/avsec/duty/absences");
+    revalidatePath("/avsec/admin/absences");
   }
-
-  const isSameDay = isSameDayLeave(startDate, today);
-  const station = profile.station ?? "";
-  const team = profile.team ?? "";
-
-  const submittedAt = new Date();
-  let shiftCode = "DUTY";
-  let shiftStartTime: Date = new Date(`${today}T08:00:00+08:00`);
-  let gapMinutes: number | null = null;
-  let status: "green" | "red" | null = null;
-  let formattedGap = "Advance Planned Leave · Pending Review";
-
-  if (isSameDay) {
-    // 1. Fetch roster for scheduled shift time
-    const roster = station ? await getTodayRoster(station, team) : null;
-    shiftCode = roster?.shift_code ?? "DUTY";
-
-    // 2. Check if already checked in for today's shift (mutually exclusive)
-    const existingRecord = await getTodayDutyRecord(profile.id, shiftCode);
-    if (existingRecord?.check_in_at) {
-      return {
-        error: "Cannot apply for leave covering today after checking in. Check-in already confirms attendance for this shift.",
-        success: false,
-      };
-    }
-
-    // 3. Calculate 3-hour compliance gap
-    if (roster?.start_time && roster?.end_time) {
-      const window = scheduledWindow(today, roster.start_time, roster.end_time);
-      shiftStartTime = window.start;
-    }
-
-    const calcResult = calculateAbsenceGap(shiftStartTime, submittedAt);
-    gapMinutes = calcResult.gapMinutes;
-    status = calcResult.status;
-    formattedGap = calcResult.formattedGap;
-  } else {
-    shiftStartTime = new Date(`${startDate}T08:00:00+08:00`);
-  }
-
-  const supabase = createAdminClient();
-
-  // 4. Save to public.absence_notices
-  const { error: insertError } = await supabase.from("absence_notices").insert({
-    user_id: profile.id,
-    staff_name: profile.name,
-    staff_id: profile.staff_no,
-    role: profile.role,
-    station: profile.station,
-    team: profile.team,
-    ops_group: null /* historical column; deprecated for authorization */,
-    shift_code: shiftCode,
-    duty_date: today,
-    leave_type: leaveType,
-    start_date: startDate,
-    end_date: endDate,
-    shift_start_time: shiftStartTime.toISOString(),
-    submitted_at: submittedAt.toISOString(),
-    gap_minutes: gapMinutes,
-    status: status,
-    approval_status: "pending",
-    remarks: remarks,
-  });
-
-  if (insertError) {
-    console.error("[submitLeaveApplication] DB Error:", insertError);
-    return {
-      error: `Could not record leave application: ${insertError.message}`,
-      success: false,
-    };
-  }
-
-  // 5. If same-day, also mark duty record so reports & bay board know
-  if (isSameDay) {
-    try {
-      const typeLabel = LEAVE_TYPE_LABELS[leaveType] || leaveType;
-      await supabase.from("duty_records").upsert(
-        {
-          profile_id: profile.id,
-          duty_date: today,
-          shift_code: shiftCode,
-          station: station || "KUL",
-          team: team || null,
-          status: "absent",
-          late_remark: `Leave [${typeLabel}]: ${remarks} (${formattedGap})`,
-        },
-        { onConflict: "profile_id,duty_date,shift_code" }
-      );
-    } catch (err) {
-      console.warn("[submitLeaveApplication] duty_records update note:", err);
-    }
-  }
-
-  revalidatePath("/avsec/duty");
-  revalidatePath("/avsec/duty/absences");
-  revalidatePath("/avsec/admin/absences");
-
-  return {
-    error: null,
-    success: true,
-    leaveType,
-    startDate,
-    endDate,
-    approvalStatus: "pending",
-    status,
-    formattedGap,
-    submittedAt: submittedAt.toISOString(),
-  };
+  return result;
 }
 
 /**

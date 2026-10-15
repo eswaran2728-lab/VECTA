@@ -112,3 +112,26 @@ raised incident notify Management and the Operation Manager as the Part B escala
   `INFLIGHT_POST_APPROVED`; AIRCRAFT / REDQ / inbound: `AIRPORT_POST_APPROVED`, or its Phase 9 name `POST6_APPROVED`). Consequence for the
   trial: until Part C exists, only HUB and MAINTENANCE movements can be received; the other routes wait for the owner's answers (Q1–Q5).
 * The "catering movement overdue" indicator is suppressed — **SLA configuration pending** (Q7) — rather than shown as zero.
+
+## 7. Security and integrity corrections after the containment (local, not applied to staging)
+
+* **Receipt destination binding (in `20261108000001`).** The receiving station is read from the movement (`hub_destination` and/or the active
+  `destination_station_id`, which must agree) and must equal the station the caller names, for every route and direction, before any write.
+  No trusted destination means nobody can receive it. The receipt never rewrites the destination. Sender separation is NULL-safe
+  (`is distinct from`). Consequence: **only the HUB route (created with a hub destination) can complete today**; MAINTENANCE has no trusted
+  destination as well as no Part C. See `part-c-owner-questions.md`.
+* **WOIS source document**: authenticated + `is_wois_eligible_secure()`, fixed allowlist, served from `private/wois`, containment + realpath checks.
+* **Same-day leave (`20261109000001`)**: one RPC writes the notice and the absent duty row atomically; the direct client INSERT on
+  `absence_notices` is closed. Known behaviour kept: a start date in the past is accepted and treated as a non-same-day application (no gap,
+  no duty row); whether retroactive leave should be allowed is an owner decision.
+* **Public registration (`20261110000001`)**: explicit allowlists, anti-automation interface (Turnstile adapter, fail-closed when required in
+  production and not configured), durable hashed-key rate limit, identical response for existing emails, Auth rollback. Operational notes:
+  (a) production needs `TURNSTILE_SECRET_KEY` and `NEXT_PUBLIC_TURNSTILE_SITE_KEY` configured by the owner, otherwise registration answers 503
+  there; (b) client-address headers are trusted only when `VERCEL` (or `REGISTRATION_TRUST_PROXY=true`) is set; (c) response *timing* still
+  differs slightly between an existing and a new email.
+* **Announcements** read only through the secure RPCs (zero rows or an error never falls back to a legacy table); the unused `createAnnouncement`
+  direct-insert wrapper and the unused public `registerUser` server action were removed.
+* **Silent failures fixed**: user deactivation, zone toggle, whitelist approve/activate/expiry now report failures; bay-board linkage failures are logged.
+* **Not changed (recorded)**: Super Admin deployment and Storage-health placeholders, SAT combined-report PDF-byte upload, WOIS "own leave status",
+  and the conditional "not activated" screens in §2 remain as listed; none was fabricated as complete. Vendor Part B uploads its signature
+  before the database authorises the check (storage RLS still requires a signed-in caller).

@@ -41,10 +41,11 @@ import path from "node:path";
  * email_confirm: true, which is exactly the regression that must never
  * silently reappear.
  */
-const routeSource = readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "app", "api", "auth", "register", "route.ts"),
-  "utf8",
-);
+// The route is a thin wrapper; the boundary lives in lib/auth/registration.ts (rules) and lib/auth/registration-runtime.ts (real clients).
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const routeSource = ["app/api/auth/register/route.ts", "lib/auth/registration.ts", "lib/auth/registration-runtime.ts"]
+  .map((f) => readFileSync(path.join(root, f), "utf8"))
+  .join(String.fromCharCode(10));
 
 test("registration route uses the service-role admin client, not the session-bound client", () => {
   assert.match(routeSource, /createAdminClient/, "must import/use the admin client for this anonymous, pre-auth endpoint");
@@ -65,5 +66,5 @@ test("registration route surfaces a profile/user write failure instead of silent
     /console\.error\("\[api\/auth\/register\][\s\S]{0,80}profileError\.message/,
     "a failed profile write must not be only logged - it must be returned to the caller as a real error",
   );
-  assert.match(routeSource, /if \(profileError\) \{[\s\S]{0,350}status: 500/, "a failed profile write must return a 500 with the real error message");
+  assert.match(routeSource, /if \(write\.error\) \{[\s\S]{0,500}deleteUser[\s\S]{0,300}reply\(500/, "a failed profile write rolls the Auth user back and returns a 500 (never a reported success)");
 });

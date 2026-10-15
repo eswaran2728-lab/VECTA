@@ -165,9 +165,9 @@ async function main() {
     // fixture insert only: the whitelist trigger is bypassed for the row, never for the receipt RPC under test
     await db.exec('reset role; set session_replication_role = replica;');
     try { return (await one(
-      `insert into public.transactions (transaction_number, aoc_id, operating_entity_id, direction, vehicle_number, driver_name, driver_id, status, route, origin_station_id, created_by)
-       values ($1, $2, $3, 'OUTBOUND', $4, 'Fixture Driver', 'DRV-1', $5, $6, $7, $8) returning id, transaction_number;`,
-      [n, myAoc, myEntity, `VEH-${txSeq}`, extra.status ?? 'POST6_APPROVED', extra.route ?? 'AIRCRAFT', KUL.id, sender],
+      `insert into public.transactions (transaction_number, aoc_id, operating_entity_id, direction, vehicle_number, driver_name, driver_id, status, route, origin_station_id, created_by, destination_station_id)
+       values ($1, $2, $3, 'OUTBOUND', $4, 'Fixture Driver', 'DRV-1', $5, $6, $7, $8, $9) returning id, transaction_number;`,
+      [n, myAoc, myEntity, `VEH-${txSeq}`, extra.status ?? 'POST6_APPROVED', extra.route ?? 'AIRCRAFT', KUL.id, sender, extra.dest?.id ?? null],
     )); } finally { await db.exec('set session_replication_role = origin;'); await simulateService(); }
   };
   const receipt = async (id, txId, station) => {
@@ -212,7 +212,7 @@ async function main() {
       officers[`${role}-${label}`] = id;
       assert((await canConfirm(id, label)) === true, `${label} ${role}: receipt decision allowed`);
       assert((await canScan(id, label)) === false, `${label} ${role}: scan denied (receipt never grants scanning)`);
-      const tx = await newTx();
+      const tx = await newTx({ dest: st }); // the movement's own trusted destination is the station being received at
       const before = await one('select * from public.transactions where id = $1;', [tx.id]);
       const auditBefore = (await one("select count(*)::int n from public.phase8_audit_log where action = 'caterlink_receipt_confirm' and entity_id = $1;", [tx.id])).n;
       const r = await receipt(id, tx.id, label);

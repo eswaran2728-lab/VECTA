@@ -158,7 +158,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to process query";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[wois/chat] request failed:", error instanceof Error ? error.name : "unknown");
+    return NextResponse.json({ error: "Failed to process query." }, { status: 500 });
   }
 }

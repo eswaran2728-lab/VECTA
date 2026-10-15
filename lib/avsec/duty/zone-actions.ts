@@ -71,7 +71,10 @@ export async function toggleZoneActive(formData: FormData) {
   if (!id) return;
 
   const supabase = await createClient();
-  await supabase.from("duty_zones").update({ active: !active }).eq("id", id);
+  const { error } = await supabase.from("duty_zones").update({ active: !active }).eq("id", id);
+  if (error) {
+    redirect(backTo(station) + (backTo(station).includes("?") ? "&" : "?") + "error=" + encodeURIComponent("The zone could not be updated."));
+  }
 
   revalidatePath("/avsec/admin/zones");
   redirect(backTo(station));

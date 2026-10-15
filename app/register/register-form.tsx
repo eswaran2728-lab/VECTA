@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { TurnstileField } from "./turnstile-field";
 import {
   TriangleAlert,
   CheckCircle2,
@@ -21,6 +22,8 @@ export function RegisterForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  // remounting the challenge widget gives a fresh single-use token after any failed attempt (verificationResetKey)
+  const [verificationResetKey, setVerificationResetKey] = useState(0);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -49,6 +52,7 @@ export function RegisterForm() {
       const data = await res.json();
       if (!res.ok) {
         setErrorMsg(data.error ?? "Registration failed. Please check your details.");
+        setVerificationResetKey((k) => k + 1);
         setIsSubmitting(false);
         return;
       }
@@ -56,7 +60,8 @@ export function RegisterForm() {
       setSuccessMsg(data.success ?? "Registration submitted successfully!");
       setIsSubmitting(false);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Network error during registration.");
+      setErrorMsg("Network error during registration. Please try again.");
+      setVerificationResetKey((k) => k + 1);
       setIsSubmitting(false);
     }
   };
@@ -286,6 +291,8 @@ export function RegisterForm() {
           <span>{errorMsg}</span>
         </div>
       ) : null}
+
+      <TurnstileField key={verificationResetKey} />
 
       {successMsg ? (
         <div className="flex flex-col gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-300">

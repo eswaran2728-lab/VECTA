@@ -337,7 +337,7 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
   // One operational structure: every SEC016 maintains the Bay Board.
   {
     if (v.flight_type === "arrival") {
-      await supabase.from("bay_board").insert({
+      const { error: bayInsertError } = await supabase.from("bay_board").insert({
         station: v.station,
         reg_no: regNoUpper,
         aircraft_type: v.aircraft_type === "Other" ? v.aircraft_type_other : v.aircraft_type,
@@ -348,8 +348,9 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
         is_manual: false,
         created_by: profile.id,
       });
+      if (bayInsertError) console.error("[reports] bay_board linkage failed (arrival):", bayInsertError.code);
     } else if (v.flight_type === "departure") {
-      await supabase
+      const { error: bayClearError } = await supabase
         .from("bay_board")
         .update({
           cleared_at: new Date().toISOString(),
@@ -359,6 +360,7 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
         .eq("station", v.station)
         .eq("reg_no", regNoUpper)
         .is("cleared_at", null);
+      if (bayClearError) console.error("[reports] bay_board linkage failed (departure):", bayClearError.code);
     }
     revalidatePath("/avsec/bay-board");
   }
@@ -530,12 +532,13 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
   if (itemError) return { ok: false, error: itemError.message, id: report.id };
 
   // Clear any open Bay Board entry for this registration at this station.
-  await supabase
+  const { error: bayClearError2 } = await supabase
     .from("bay_board")
     .update({ cleared_by_report_id: report.id, cleared_at: new Date().toISOString() })
     .eq("station", v.station)
     .eq("reg_no", v.aircraft_registration)
     .is("cleared_at", null);
+  if (bayClearError2) console.error("[reports] bay_board linkage failed (clear):", bayClearError2.code);
 
   // Explicit indexing-readiness call, made only after the item child
   // rows above have already been written.
