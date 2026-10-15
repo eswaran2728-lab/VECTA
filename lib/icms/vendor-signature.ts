@@ -18,7 +18,8 @@ import { createHash } from "node:crypto";
  *     reconcileVendorSignatureOrphans().
  * Downloads are unchanged: caterlink_signature_visible() authorises them through the checkpoint row that references the path. The bucket stays private.
  */
-const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
+// the same shape the database policy, finalize RPC and orphan listing accept (any lowercase hex UUID), so nothing the database lists is unremovable here
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 export const VENDOR_SIGNATURE_PATH_RE = new RegExp(`^vendor-part-b/${UUID}/${UUID}\\.(png|jpg|webp)$`);
 const MAX_BYTES = 5 * 1024 * 1024;
 const EXT = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" } as const;
@@ -90,10 +91,19 @@ export async function reconcileVendorSignatureOrphans(deps: VendorSignatureDeps,
   }
   const valid = names.filter((n) => VENDOR_SIGNATURE_PATH_RE.test(n));
   let removed = 0;
-  if (valid.length > 0) {
+  // re-check every path immediately before removal: a checkpoint recorded since the listing keeps its object
+  const safe: string[] = [];
+  for (const n of valid) {
     try {
-      const { error } = await deps.removeAsService(valid);
-      if (!error) removed = valid.length;
+      if ((await deps.isReferenced(n)) === false) safe.push(n);
+    } catch {
+      /* unknown reference state: keep the object */
+    }
+  }
+  if (safe.length > 0) {
+    try {
+      const { error } = await deps.removeAsService(safe);
+      if (!error) removed = safe.length;
       else deps.log("vendor_signature_reconcile_failed");
     } catch {
       deps.log("vendor_signature_reconcile_failed");

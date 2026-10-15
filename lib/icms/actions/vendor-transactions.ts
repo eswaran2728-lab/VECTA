@@ -111,9 +111,10 @@ export async function submitVendorPartB(
     return { error: e instanceof Error && /Invalid image|5MB|could not be uploaded|delivery/i.test(e.message) ? e.message : "The signature could not be uploaded." };
   }
 
-  const supabase = await createClient();
   let error: { message?: string } | null = null;
+  let thrown = false;
   try {
+    const supabase = await createClient();
     const res = await callCaterlinkRpc(supabase, "record_caterlink_vendor_security_check_secure", {
       p_delivery_id: deliveryId,
       p_signature_url: sig.path,
@@ -130,11 +131,14 @@ export async function submitVendorPartB(
     });
     error = res.error;
   } catch (e) {
+    thrown = true;
     error = { message: e instanceof Error ? e.message : "The security check could not be saved." };
   }
   if (error) {
-    // the save was refused or threw: remove exactly the object this request uploaded (a failed removal is logged and reconciled later)
-    await discardVendorSignature(sig.path, sigDeps);
+    // A returned database refusal means nothing was recorded, so the object this request uploaded is removed now. A THROWN failure (timeout,
+    // dropped connection) is ambiguous - the transaction may still commit - so the object is kept and the durable reconciliation, which
+    // re-checks the checkpoint reference, decides after the threshold.
+    if (!thrown) await discardVendorSignature(sig.path, sigDeps);
     return { error: `The security check could not be saved: ${rpcMessage(error)}` };
   }
 

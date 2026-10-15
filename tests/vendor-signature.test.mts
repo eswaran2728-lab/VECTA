@@ -115,14 +115,6 @@ test("reconciliation survives a failing orphan listing (reported, never thrown)"
   assert.ok(calls.logs.includes("vendor_signature_reconcile_list_failed"));
 });
 
-test("source: the action also discards the object when the finalize RPC THROWS, not only when it returns an error", () => {
-  const src = fs.readFileSync("lib/icms/actions/vendor-transactions.ts", "utf8");
-  const fn = src.slice(src.indexOf("export async function submitVendorPartB("), src.indexOf("export async function submitVendorPartC("));
-  assert.match(fn, /try \{[\s\S]*callCaterlinkRpc\(supabase, "record_caterlink_vendor_security_check_secure"[\s\S]*\} catch/);
-  assert.match(fn, /\} catch \(e\) \{\s*error = \{/, "a thrown RPC is converted into the same failure path");
-  assert.match(fn, /if \(error\) \{[\s\S]*?await discardVendorSignature\(sig\.path, sigDeps\)/, "one discard serves both the returned and the thrown failure");
-});
-
 test("source: a CRON_SECRET-protected route runs durable reconciliation and fails closed without the secret", () => {
   const src = fs.readFileSync("app/api/icms/vendor-signature-reconcile/route.ts", "utf8");
   assert.match(src, /reconcileVendorSignatureOrphans\(/);
@@ -131,4 +123,28 @@ test("source: a CRON_SECRET-protected route runs durable reconciliation and fail
   assert.match(src, /timingSafeEqual/);
   const vercel = JSON.parse(fs.readFileSync("vercel.json", "utf8"));
   assert.ok((vercel.crons ?? []).some((c: { path: string }) => c.path === "/api/icms/vendor-signature-reconcile"));
+});
+
+test("reconciliation removes every object the database lists (any lowercase-hex UUID shape) and skips one a checkpoint now references", async () => {
+  const odd = `vendor-part-b/${DELIVERY}/00000000-0000-0000-0000-000000000001.png`;
+  const raced = `vendor-part-b/${DELIVERY}/aaaaaaaa-bbbb-4ccc-8ddd-0000000000ff.png`;
+  const { d, calls } = deps({ listOrphans: async () => [odd, raced], isReferenced: async (p: string) => p === raced });
+  const r = await reconcileVendorSignatureOrphans(d, 30);
+  assert.deepEqual(calls.removed, [[odd]]);
+  assert.deepEqual(r, { removed: 1, skipped: 1 });
+});
+
+test("reconciliation keeps an object whose reference state is unknown", async () => {
+  const p = `vendor-part-b/${DELIVERY}/aaaaaaaa-bbbb-4ccc-8ddd-0000000000aa.png`;
+  const { d, calls } = deps({ listOrphans: async () => [p], isReferenced: async () => null });
+  assert.deepEqual(await reconcileVendorSignatureOrphans(d, 30), { removed: 0, skipped: 1 });
+  assert.deepEqual(calls.removed, []);
+});
+
+test("source: a THROWN finalize is ambiguous, so the object is kept for reconciliation; only a returned refusal discards immediately", () => {
+  const src = fs.readFileSync("lib/icms/actions/vendor-transactions.ts", "utf8");
+  const fn = src.slice(src.indexOf("export async function submitVendorPartB("), src.indexOf("export async function submitVendorPartC("));
+  assert.match(fn, /thrown = true/);
+  assert.match(fn, /if \(!thrown\) await discardVendorSignature\(sig\.path, sigDeps\)/);
+  assert.match(fn, /try \{\s*const supabase = await createClient\(\)/, "client creation is inside the guarded block");
 });

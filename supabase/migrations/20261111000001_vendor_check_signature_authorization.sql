@@ -99,7 +99,9 @@ begin
   if p_signature_hash is not null and p_signature_hash !~ '^[0-9a-f]{64}$' then
     raise exception 'A valid signature is required.';
   end if;
-  if not exists (select 1 from storage.objects o where o.bucket_id = 'signatures' and o.name = p_signature_url and o.owner = v_caller) then
+  -- the object must be the caller's own and fresh: an object older than 20 minutes is eligible for orphan reconciliation (>= 30 minutes),
+  -- so it can never be adopted by a checkpoint while it is being removed
+  if not exists (select 1 from storage.objects o where o.bucket_id = 'signatures' and o.name = p_signature_url and o.owner = v_caller and o.created_at > now() - interval '20 minutes') then
     raise exception 'A valid signature is required.';
   end if;
   select p.name, p.staff_no into v_profile from public.profiles p where p.id = v_caller;

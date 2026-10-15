@@ -8,7 +8,7 @@
 // history is exactly 83 migrations ending 20261107000001; the migration matches its frozen SHA-256 (LF-normalised).
 //
 //   node --env-file=.env.local scripts/staging/apply-containment-migration.mjs --expected-head=<sha> --backup=<fresh.enc.json>            (dry run)
-//   node --env-file=.env.local scripts/staging/apply-containment-migration.mjs --expected-head=<sha> --backup=<fresh.enc.json> --live --confirm="APPLY 20261108000001 TO STAGING ddlctzbnqewubltcavkh"
+//   node --env-file=.env.local scripts/staging/apply-containment-migration.mjs --expected-head=<sha> --backup=<fresh.enc.json> --live --confirm="<LIVE_PHRASE: APPLY <five versions joined with +> TO STAGING <approved ref>>"
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -18,12 +18,12 @@ import { decryptBackupPayload, encryptBackupPayload } from "./lib/backup-crypto.
 import { loadCurrentManifest } from "./lib/review-accounts.mjs";
 import { gitGates, environmentGates, backupGates, connectVerified, APPROVED_REF, FORBIDDEN_REF } from "./lib/run-gates.mjs";
 
-// Three additive forward migrations applied as ONE guarded unit (each recorded in the history, all in one transaction).
+// Five additive forward migrations applied as ONE guarded unit (each recorded in the history, all in one transaction).
 export const MIGRATIONS = [
   { version: "20261108000001", name: "caterlink_fail_closed_containment", sha256: "ad8dbca5aed5ef4e9d7cbf0a23b1874ff3566707ca7345c3cd865b73c7089306" },
   { version: "20261109000001", name: "atomic_same_day_leave", sha256: "058b4afdcc7fe081cecc33e808088a241c0258b45eab75bb514c66f99e234671" },
   { version: "20261110000001", name: "registration_throttle", sha256: "3a2ea12506231afe272e4e04c803c6fd0b439a129b8268f532afe32490709369" },
-  { version: "20261111000001", name: "vendor_check_signature_authorization", sha256: "f7e1f9741dc8a76c3ced1cabf873577896188cf367e6b78560fd14cae98d4b4f" },
+  { version: "20261111000001", name: "vendor_check_signature_authorization", sha256: "7a130b188908e4cd73b75cabab7baef9efc9a6ec84664571ebb4b62c584fdc7e" },
   { version: "20261112000001", name: "block_unusable_driver_routes", sha256: "ae0ecb5ac2a2565385e542e56777c343fcf2684887717b955a75cec52b271ea2" },
 ];
 export const PRE_COUNT = 83;
@@ -42,7 +42,7 @@ const LIST = "public.list_caterlink_pending_receipts_secure(text)";
 export function destructiveStatement(sql) {
   const code = String(sql)
     .replace(/--.*$/gm, "")
-    .replace(/\$([A-Za-z_]*)\$[\s\S]*?\$\1\$/g, "''");
+    .replace(/(\bdo\s+)?\$([A-Za-z_]*)\$[\s\S]*?\$\2\$/gi, (whole, isDo) => (isDo ? whole : "''")); // DO blocks run at migration time: keep them in view
   const m = /\b(drop\s+table|truncate|delete\s+from)\b/i.exec(code);
   return m ? m[0].toLowerCase() : null;
 }

@@ -105,6 +105,8 @@ async function main() {
   const ins = (direction, route, hub) => `insert into public.transactions (transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, seal_number, status, route, hub_destination, origin_station_id, created_by)
     values ('RG-${Math.random().toString(36).slice(2, 8)}', '${myAoc}', '${direction}', 'RG1', 'RG', 'RG', 'S', 'CREATED', '${route}', ${hub ? `'${hub}'` : 'null'}, '${pen.id}', '${driver}');`;
   const BLOCK = /not available yet/i;
+  // a row that clears the route guard is then judged by the later whitelist trigger; that specific refusal proves the guard let it through
+  const passedGuard = (r) => r.ok || (/WHITELIST_VIOLATION/.test(r.err) && !BLOCK.test(r.err));
 
   console.log('--- a Driver cannot create a movement whose route cannot complete (direct insert / RPC path) ---');
   for (const [d, r] of [['OUTBOUND', 'AIRCRAFT'], ['OUTBOUND', 'REDQ'], ['OUTBOUND', 'MAINTENANCE'], ['INBOUND', 'AIRCRAFT']]) {
@@ -112,7 +114,7 @@ async function main() {
     assert(!res.ok && BLOCK.test(res.err), `Driver: ${d}/${r} is refused by the database`);
   }
   const hub = await asDriverDb(driver, ins('OUTBOUND', 'HUB', 'PEN'));
-  assert(hub.ok || !BLOCK.test(hub.err), 'Driver: OUTBOUND/HUB is not refused by the route guard');
+  assert(passedGuard(hub), 'Driver: OUTBOUND/HUB is not refused by the route guard' + (hub.ok ? '' : ' [' + String(hub.err).slice(0, 140) + ']'));
 
   console.log('--- a HUB movement must name a receiving hub, and any destination station must be that active station ---');
   const insDest = (hubDest, destId) => `insert into public.transactions (transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, seal_number, status, route, hub_destination, origin_station_id, created_by, destination_station_id)
@@ -133,13 +135,13 @@ async function main() {
   const unknown = await asDriverDb(driver, insDest('ZZZ', null));
   assert(!unknown.ok, 'Driver: HUB to an unknown hub code is refused (guard or table check)');
   const nilai = await asDriverDb(driver, insDest('NILAI', null));
-  assert(nilai.ok || !BLOCK.test(nilai.err), 'Driver: HUB to NILAI (a hub without its own station row) is not refused by the route guard');
+  assert(passedGuard(nilai), 'Driver: HUB to NILAI (a hub without its own station row) is not refused by the route guard' + (nilai.ok ? '' : ' [' + String(nilai.err).slice(0, 140) + ']'));
   const good = await asDriverDb(driver, insDest('PEN', pen.id));
-  assert(good.ok || !BLOCK.test(good.err), 'Driver: HUB to an active station, with a matching destination id, is not refused by the route guard');
+  assert(passedGuard(good), 'Driver: HUB to an active station, with a matching destination id, is not refused by the route guard' + (good.ok ? '' : ' [' + String(good.err).slice(0, 140) + ']'));
 
   console.log('--- other actors and the shared fixtures are unaffected ---');
   const off = await asDriverDb(officer, ins('OUTBOUND', 'AIRCRAFT'));
-  assert(off.ok || !BLOCK.test(off.err), 'a station officer / non-driver actor is not subject to the Driver route guard');
+  assert(passedGuard(off), 'a station officer / non-driver actor is not subject to the Driver route guard' + (off.ok ? '' : ' [' + String(off.err).slice(0, 140) + ']'));
   const fn = await one("select has_function_privilege('anon', p.oid, 'execute') an, has_function_privilege('authenticated', p.oid, 'execute') au from pg_proc p where p.proname = 'enforce_completable_driver_route' and p.pronamespace = 'public'::regnamespace;");
   assert(fn && !fn.an && !fn.au, 'the trigger function is not callable by clients');
 

@@ -26,3 +26,9 @@ test("the dry run needs no live phrase and the live phase needs --live and the e
   assert.match(src, /await pass\(false\);[\s\S]{0,700}if \(!LIVE\) return;[\s\S]{0,200}await pass\(true\)/);
   assert.match(src, /if \(!real\) \{ await client\.query\("ROLLBACK"\)/);
 });
+
+test("a DO block runs at migration time, so a destructive statement inside it is still stopped", () => {
+  assert.notEqual(destructiveStatement("do $$ begin delete from public.t; end $$;"), null);
+  assert.notEqual(destructiveStatement("DO $body$ begin drop table public.t; end $body$;"), null);
+  assert.equal(destructiveStatement("create or replace function f() returns void language plpgsql as $$ begin delete from public.t where x; end $$;"), null);
+});

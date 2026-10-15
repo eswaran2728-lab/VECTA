@@ -1,6 +1,5 @@
-// Vendor Part B signature authorization (20261111000001). Runs on PGlite (default) and on native PostgreSQL (--native).
-// One RPC records the absence notice AND the same-day absent duty state in one transaction, deriving identity, station and team inside the
-// database. Failure of either write leaves neither; the direct client write path to absence_notices is closed.
+// Vendor Part B signature authorization (20261111000001): Storage RLS binds uploads to the delivery and caller; finalize binds path, owner, freshness and state;
+// orphan listing is service-role only. Dual-mode (PGlite / native PostgreSQL).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -188,6 +187,8 @@ async function main() {
   await db.exec('reset role;'); await db.query("update storage.objects set created_at = now() - interval '2 hours' where bucket_id = 'signatures' and name like 'vendor-part-b/%';"); await sup();
   const listed = (await db.query('select name from public.list_orphan_vendor_signatures_secure(30);')).rows.map((r) => r.name);
   assert(listed.includes(lost) && !listed.includes(kept) && !listed.includes(p1), 'the unreferenced old object is listed; referenced signatures are never listed');
+  const stale = await finalize(officerPen, d2, lost);
+  assert(!stale.ok, 'an object old enough for orphan reconciliation can no longer be adopted by a checkpoint');
   const young = pathFor(d2);
   await db.exec('reset role;'); await db.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2);", [young, officerPen]); await sup();
   assert(!(await db.query('select name from public.list_orphan_vendor_signatures_secure(30);')).rows.some((r) => r.name === young), 'a recent object (upload still in flight) is not listed');
