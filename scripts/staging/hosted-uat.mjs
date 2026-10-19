@@ -498,7 +498,7 @@ async function sectionStations(browser) {
     check("stations", `${x.label} (${x.st}): receipt capability = ${expRecv}`, capRecv === expRecv);
     const s = await newSession(browser, VIEWPORTS.desktop, x.label);
     try {
-      await login(s.page, a, label);
+      await login(s.page, a, x.label);
       if (phase === "pre-duty") {
         // no open duty check-in: the application sends every station officer to the duty check-in page (the gate must stay in force)
         for (const route of ["/avsec/scan", "/avsec/caterlink/receipt"]) {

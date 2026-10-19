@@ -121,3 +121,9 @@ test("preview-infrastructure exclusion is exact; every other host/path and the d
   assert.match(UAT, /no unrecovered network failure/);
   assert.match(UAT, /req\.method\(\) !== "GET" && req\.method\(\) !== "HEAD"/);
 });
+
+test("station section: every login in the station loop names the loop variable (regression: undefined `label`)", () => {
+  const body = UAT.slice(UAT.indexOf("async function sectionStations"), UAT.indexOf("async function sectionResponsive"));
+  assert.match(body, /await login\(s\.page, a, x\.label\)/);
+  assert.doesNotMatch(body, /login\(s\.page, a, label\)/);
+});
