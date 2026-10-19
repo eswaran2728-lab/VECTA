@@ -536,7 +536,9 @@ async function main() {
             await client.query("select set_config('request.jwt.claims', '{}', true), set_config('role', 'anon', true)");
             const anonCf = await client.query("insert into storage.objects (bucket_id, name, owner) values ('completed-forms', $1, null)", [cfNames()[0]]).then(() => "ACCEPTED").catch((e) => String(e.message));
             await client.query("ROLLBACK TO SAVEPOINT cfanon");
-            expectDenied("completed-forms: anonymous cannot upload", anonCf);
+            // an anonymous insert may be refused by RLS or, because the public-role report-attachments policy calls a function anon cannot execute, by a permission error; either way nothing is stored
+            if (anonCf === "ACCEPTED" || !/row-level security|policy|permission denied/i.test(anonCf)) fail(`completed-forms: an anonymous upload was not refused (${anonCf.slice(0, 80)})`);
+            probe("completed-forms: anonymous cannot upload");
             // a stored object is invisible to every client and nothing a client does removes or moves it
             await client.query("set local session_replication_role = replica");
             const cfObj = `ICMS-2026-990002/${U()}.pdf`;
