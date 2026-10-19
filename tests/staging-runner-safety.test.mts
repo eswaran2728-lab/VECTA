@@ -75,3 +75,9 @@ test("the runner proves the incident-photos lockdown and the signature hardening
     "structure: the only permissive write policy that reaches either bucket",
   ]) assert.ok(src.includes(must), "missing probe: " + must);
 });
+
+test("no runner probe refers to a function signature that a later frozen migration replaces (the whole set is applied before any probe runs)", () => {
+  const src = fs.readFileSync("scripts/staging/apply-containment-migration.mjs", "utf8");
+  assert.ok(!src.includes("list_orphan_signatures_secure(integer)"), "20261115000001 replaces the one-argument orphan listing with the paged (integer, integer) form");
+  assert.ok(!src.includes("list_orphan_vendor_signatures_secure(integer)") || src.includes("list_orphan_vendor_signatures_secure"), "the vendor listing is unchanged");
+});

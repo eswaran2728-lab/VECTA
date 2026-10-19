@@ -380,7 +380,7 @@ async function main() {
             if (good !== "ACCEPTED") fail(`the bound, fresh, own object was refused at finalisation (${good.slice(0, 80)})`);
             probe("finalisation: the caller's own bound, fresh, existing object is accepted");
           }
-          const og2 = (await q("select has_function_privilege('authenticated', 'public.list_orphan_signatures_secure(integer)', 'execute') au, has_function_privilege('service_role', 'public.list_orphan_signatures_secure(integer)', 'execute') sv"))[0];
+          const og2 = (await q("select has_function_privilege('authenticated', 'public.list_orphan_signatures_secure(integer, integer)', 'execute') au, has_function_privilege('service_role', 'public.list_orphan_signatures_secure(integer, integer)', 'execute') sv"))[0];
           if (og2.au || !og2.sv) fail("the signature orphan listing is not service-role only");
           probe("the trusted service role keeps the orphan listing and reference check; clients cannot call them");
 
