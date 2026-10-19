@@ -41,7 +41,10 @@ const tag = Date.now().toString().slice(-7);
 const delArgs = (seal, sig) => ({ p_station_code: "PEN", p_driver_name: "E2E Vendor Driver", p_driver_nric: "E2E-NRIC-001", p_vehicle_registration_no: `E2EV${tag}`, p_seal_number: seal, p_signature_url: sig });
 const rpcResult = (r) => ({ outcome: classifyError(r.error, r.status), error: r.error ?? null });
 // a read/sign/remove counts as DENIED only for a genuine refusal; any other error is a setup fault (counted separately, never a pass)
-const denied = (r) => { const c = classifyError(r.error, r.error?.statusCode ?? r.status); if (c === "setup") rec.state.setupErrors += 1; return c === "authorization"; };
+// Storage answers a read/sign/move of an object the caller's RLS hides (or has no UPDATE policy for) with 404 "Object not found". That is a denial ONLY because this run has
+// already proven the objects exist (each owner uploaded its own and downloaded it back), so a 404 on a KNOWN object is credited; any other fault is counted as a setup error.
+let objectsKnownToExist = false;
+const denied = (r) => { const c = classifyError(r.error, r.error?.statusCode ?? r.status); if (c === "authorization") return true; if (c === "setup" && objectsKnownToExist && /not found/i.test(String(r.error?.message ?? ""))) return true; if (c === "setup") rec.state.setupErrors += 1; return false; };
 
 try {
   const drv = await S("caterlink-driver"), vnd = await S("caterlink-vendor"), aso = await S("aso"), kul = await S("aso-kul"), mgmt = await S("caterlink_management");
@@ -68,8 +71,12 @@ try {
   rec.expectAuthorizationDenied("Driver: overwriting its own object (upsert) is refused", { outcome: classifyError(overwrite.error, overwrite.error?.statusCode), error: overwrite.error });
   const rm = await drv.sb.storage.from(B).remove([pDrv]);
   rec.check("Driver: deleting its own object through the API removes nothing", rm.error ? denied(rm) : (rm.data ?? []).length === 0);
+
+  rec.check("Driver: its own object downloads (the object exists)", !(await drv.sb.storage.from(B).download(pDrv)).error);
+  rec.check("Vendor: its own object downloads (the object exists)", !(await vnd.sb.storage.from(B).download(pVnd)).error);
+  objectsKnownToExist = true;
   const mv = await drv.sb.storage.from(B).move(pDrv, track(bound.partA(drv.uid)));
-  rec.expectAuthorizationDenied("Driver: moving its own object is refused", { outcome: classifyError(mv.error, mv.error?.statusCode), error: mv.error });
+  rec.check("Driver: moving its own object is refused (no UPDATE policy)", mv.error ? denied(mv) : false);
 
   // ---------- list / download / signed URL across parties (reads are scoped: own upload or a visible referencing checkpoint) ----------
   const all = { driver: pDrv, vendor: pVnd };
@@ -94,8 +101,10 @@ try {
   rec.expectOk("Driver created a movement referencing its own uploaded signature", rpcResult(tx));
   if (!tx.error) referenced.add(pDrv);
   const can = async (label, p) => !(await (await S(label)).sb.storage.from(B).createSignedUrl(p, 60)).error;
-  rec.check("authorised: Driver (creator), Management and Operation Manager can sign the movement signature", (await can("caterlink-driver", pDrv)) && (await can("caterlink_management", pDrv)) && (await can("operation_manager", pDrv)));
-  rec.check("denied: Vendor, JHB officer and Staff Profiling cannot sign the movement signature", !(await can("caterlink-vendor", pDrv)) && !(await can("aso-jhb", pDrv)) && !(await can("profiling_aso", pDrv)));
+  rec.check("authorised: Driver (creator), Management, Operation Manager, the KUL origin officer and the PEN destination officer can sign the movement signature", (await can("caterlink-driver", pDrv)) && (await can("caterlink_management", pDrv)) && (await can("operation_manager", pDrv)) && (await can("aso-kul", pDrv)) && (await can("aso", pDrv)));
+  rec.check("denied: Vendor and the JHB officer (a station that is neither origin nor destination) cannot sign the movement signature", !(await can("caterlink-vendor", pDrv)) && !(await can("aso-jhb", pDrv)));
+  // OBSERVATION (pre-existing station read rule, unchanged by these migrations): any active assignment at the origin or destination station, Staff Profiling included, can read the movement and so its signature
+  console.log(`OBSERVATION: Staff Profiling at the destination station can sign the movement signature: ${await can("profiling_aso", pDrv)}`);
   const del = await vnd.sb.rpc("create_caterlink_vendor_delivery_secure", delArgs(`E2E-VS-${tag}`, pVnd));
   rec.expectOk("Vendor created a delivery referencing its own uploaded signature", rpcResult(del));
   if (!del.error) referenced.add(pVnd);

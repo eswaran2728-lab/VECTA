@@ -79,9 +79,11 @@ if (argVal("rest") !== "0") {
   const r = await call(anon, TX["pen-pass"]);
   ok("anonymous: the RPC is not callable", !!r.error && /permission denied|not authori|JWT/i.test(r.error.message), r.error?.code);
   const refusals = new Set();
+  // NOTE: "so" (a PEN supervisor with an open duty check-in) is an AUTHORISED Part B officer (roles sso/so/aso/dse at a scan-capable station), so it is not a denial case;
+  // every persona below lacks the scan capability, the station assignment, an approved profile or the role.
   const denials = [
     ["caterlink_management", "pen-pass"], ["operation_manager", "pen-pass"], ["hub_se", "pen-pass"], ["aso-kul", "pen-pass"], ["profiling_aso", "pen-pass"],
-    ["so", "pen-pass"], ["caterlink-driver", "pen-pass"], ["caterlink-vendor", "pen-pass"], ["aso-jhb", "pen-pass"], ["aso", "jhb-denial"], ["aso-no-caterlink", "pen-pass"],
+    ["caterlink-driver", "pen-pass"], ["caterlink-vendor", "pen-pass"], ["aso-jhb", "pen-pass"], ["aso", "jhb-denial"], ["aso-no-caterlink", "pen-pass"],
   ];
   for (const [label, key] of denials) {
     const c = await rest(label);

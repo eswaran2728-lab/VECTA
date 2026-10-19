@@ -126,12 +126,18 @@ async function driverFlow(browser, state) {
     ok(`${T}: lands in CaterLink`, /^\/(caterlink|icms)\/dashboard/.test(pathOf(page)), pathOf(page));
     await page.goto(`${base}/icms/transactions/new`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector("button[aria-pressed]", { timeout: 20000 });
+    // blocked unfinished routes: only the HUB movement can be completed today, so Inbound, Outbound-to-aircraft and REDQ are disabled and say why
+    for (const name of [/^Inbound/i, /^Outbound/i, /^REDQ/i]) {
+      const btn = page.getByRole("button", { name }).first();
+      ok(`${T}: the unfinished movement type ${name.source} is disabled in the UI`, (await btn.isDisabled().catch(() => false)) && /Unavailable/i.test(await btn.innerText().catch(() => "")));
+    }
     // a dev server hydrates late: a click before hydration is ignored, so retry until the form appears
     for (let i = 0; i < 8 && !(await page.locator("#station").count()); i += 1) {
-      await page.getByRole("button", { name: /Outbound/i }).first().click();
+      await page.getByRole("button", { name: /^Hub/i }).first().click();
       await page.waitForTimeout(1500);
     }
     await page.waitForSelector("#station", { timeout: 15000 });
+    await page.selectOption("#hub_destination", "PEN");
     const stations = await page.$$eval("#station option", (o) => o.map((x) => x.value).filter(Boolean).sort());
     ok(`${T}: allowed creation stations are exactly KUL - AAX and KUL - MAA`, stations.join("|") === "KUL - AAX|KUL - MAA", stations.join("|"));
     const vehicles = await page.$$eval("#vehicle_number option", (o) => o.map((x) => x.value).filter(Boolean));
@@ -432,9 +438,10 @@ async function managementFlow(browser, state) {
 }
 
 async function isolationFlow(browser, state) {
-  // an unrelated officer (not the creator, not at the origin station) cannot open the Driver's movement
+  // The Driver's movement is KUL - MAA -> HUB PEN. Staff at neither station (JHB, KCH receipt, BKI) and the Vendor cannot open it. (Station staff at the origin or destination
+  // station, Staff Profiling included, can: that is the pre-existing station read rule, asserted in verify-external-workflows-staging.mjs.)
   const T = "Isolation";
-  for (const label of ["aso", "aso-jhb", "profiling_aso"]) {
+  for (const label of ["aso-jhb", "aso-kch-receipt", "aso-bki-receipt", "caterlink-vendor"]) {
     const { ctx, page } = await newCtx(browser);
     try {
       await login(page, label);
