@@ -401,9 +401,9 @@ async function main() {
             probe("the single-use registry has RLS on and no client grant");
 
             await client.query("SAVEPOINT quota");
-            // same-account baseline first (this upload becomes the 1st unreferenced leftover), then fill to 30: only the 31st-state refusal can be the quota
+            // same-account baseline first (asUser rolls its own insert back, so it leaves nothing behind), then 30 leftovers are written directly: only the 31st-state refusal can be the quota
             expectAccepted("quota baseline: the same account can upload while below the limit", await accepted("caterlink-driver", `part-a/${drvUid}/${U()}.png`));
-            for (let k = 0; k < 29; k += 1) await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [`part-a/${drvUid}/${U()}.png`, drvUid]);
+            for (let k = 0; k < 30; k += 1) await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [`part-a/${drvUid}/${U()}.png`, drvUid]);
             expectDenied("quota: an account that already has 30 unreferenced signature objects in the hour is refused", await accepted("caterlink-driver", `part-a/${drvUid}/${U()}.png`));
             expectAccepted("quota: another account is unaffected", await accepted("caterlink-vendor", `vendor-signatures/${acct("caterlink-vendor")}/${U()}.png`));
             await client.query("ROLLBACK TO SAVEPOINT quota");
