@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// READ-ONLY inventory of the `incident-photos` Storage bucket, its policies and the tables that could reference it, on the approved staging
+// READ-ONLY inventory of a Storage bucket (default `incident-photos`; pass --bucket=completed-forms), its policies and the tables that could reference it, on the approved staging
 // project. Prints bucket facts, normalised prefixes and counts only -- never an object name, owner id or record content.
 // Guards: approved staging ref only (environmentGates rejects the production ref), verified TLS, and the whole session is a READ ONLY
 // transaction that is rolled back.
@@ -7,22 +7,25 @@
 import { environmentGates, connectVerified } from "./lib/run-gates.mjs";
 
 environmentGates();
+// bucket to inventory (default incident-photos); only a known private-bucket name is accepted
+const BUCKET = (process.argv.find((a) => a.startsWith("--bucket=")) ?? "--bucket=incident-photos").split("=")[1];
+if (!/^[a-z0-9-]{3,63}$/.test(BUCKET)) throw new Error("invalid bucket name");
 const { client } = await connectVerified();
 try {
   await client.query("begin read only");
-  console.log("=== incident-photos bucket inventory (staging, read-only, counts only) ===");
-  const b = (await client.query("select id, public, file_size_limit, allowed_mime_types from storage.buckets where id = 'incident-photos'")).rows[0];
+  console.log(`=== ${BUCKET} bucket inventory (staging, read-only, counts only) ===`);
+  const b = (await client.query("select id, public, file_size_limit, allowed_mime_types from storage.buckets where id = $1", [BUCKET])).rows[0];
   console.log(`bucket present=${Boolean(b)} public=${b?.public} file_size_limit=${b?.file_size_limit ?? "none"} allowed_mime_types=${JSON.stringify(b?.allowed_mime_types ?? null)}`);
   const norm = `regexp_replace(regexp_replace(regexp_replace(name,
       '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '<uuid>', 'g'),
       '[0-9]{10,}-[0-9a-f]{6,8}', '<ts>-<id>', 'g'),
       '\.[A-Za-z0-9]+$', '.<ext>')`;
-  const rows = (await client.query(`select ${norm} as shape, count(*)::int n, count(*) filter (where owner is null)::int owner_null from storage.objects where bucket_id = 'incident-photos' group by 1 order by 2 desc`)).rows;
+  const rows = (await client.query(`select ${norm} as shape, count(*)::int n, count(*) filter (where owner is null)::int owner_null from storage.objects where bucket_id = $1 group by 1 order by 2 desc`, [BUCKET])).rows;
   let total = 0;
   for (const r of rows) { total += r.n; console.log(`  ${String(r.shape).padEnd(48)} objects=${r.n} owner_null=${r.owner_null}`); }
   console.log(`  TOTAL objects=${total}`);
-  console.log("--- policies on storage.objects that mention the incident-photos bucket (names/commands only) ---");
-  const pol = (await client.query(`select policyname, cmd, permissive, roles::text from pg_policies where schemaname = 'storage' and tablename = 'objects' and (qual ilike '%incident-photos%' or with_check ilike '%incident-photos%') order by cmd, policyname`)).rows;
+  console.log("--- policies on storage.objects that mention the inventoried bucket (names/commands only) ---");
+  const pol = (await client.query(`select policyname, cmd, permissive, roles::text from pg_policies where schemaname = 'storage' and tablename = 'objects' and (qual ilike '%' || $1 || '%' or with_check ilike '%' || $1 || '%') order by cmd, policyname`, [BUCKET])).rows;
   for (const p of pol) console.log(`  [${p.cmd}] ${p.permissive} ${p.policyname} roles=${p.roles}`);
   console.log(`  total=${pol.length}`);
   console.log("--- every permissive INSERT/SELECT policy on storage.objects (names only) to spot unscoped hosted-only policies ---");

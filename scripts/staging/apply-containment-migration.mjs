@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Applies ONLY the eight frozen forward migrations 20261108000001..20261115000001 (see MIGRATIONS) to the approved staging project, as one unit.
+// Applies ONLY the nine frozen forward migrations 20261108000001..20261116000001 (see MIGRATIONS) to the approved staging project, as one unit.
 // A complete transactional DRY RUN (apply, verify, behavioural probe, ROLLBACK) always comes first; only with --live and the exact phrase is
 // the real application committed (migration + history row atomically). Prints names and counts only.
 //
@@ -18,7 +18,7 @@ import { decryptBackupPayload, encryptBackupPayload } from "./lib/backup-crypto.
 import { loadCurrentManifest } from "./lib/review-accounts.mjs";
 import { gitGates, environmentGates, backupGates, connectVerified, APPROVED_REF, FORBIDDEN_REF } from "./lib/run-gates.mjs";
 
-// Eight additive forward migrations applied as ONE guarded unit (each recorded in the history, all in one transaction).
+// Nine additive forward migrations applied as ONE guarded unit (each recorded in the history, all in one transaction).
 export const MIGRATIONS = [
   { version: "20261108000001", name: "caterlink_fail_closed_containment", sha256: "ad8dbca5aed5ef4e9d7cbf0a23b1874ff3566707ca7345c3cd865b73c7089306" },
   { version: "20261109000001", name: "atomic_same_day_leave", sha256: "058b4afdcc7fe081cecc33e808088a241c0258b45eab75bb514c66f99e234671" },
@@ -28,6 +28,7 @@ export const MIGRATIONS = [
   { version: "20261113000001", name: "signature_upload_authorization", sha256: "6ceb24360b2600060a466e8161c5ae15e78d1c78d939299af3f6b8a51f862499" },
   { version: "20261114000001", name: "incident_photos_lockdown", sha256: "7cdbdc27b712c03126d4eeef2b56692621967fc73965c79c0dae668601f75e95" },
   { version: "20261115000001", name: "signature_hardening", sha256: "397987ba9c8f9b6501eede0e1a3a156b0fff788c1a407efab1e2e4548efcd694" },
+  { version: "20261116000001", name: "completed_forms_lockdown", sha256: "743367dcf11e641981150552d82573bd792824ad33f0f23fcc025d3bf8fb8145" },
 ];
 export const PRE_COUNT = 83;
 export const LAST_PRE = "20261107000001";
@@ -118,12 +119,13 @@ async function main() {
     const fp = async () => ({
       other: (await q(`select md5(string_agg(pg_get_functiondef(p.oid), E'\\n' order by p.oid::regprocedure::text)) h from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f' and p.proname not in ('skip_part_d','raise_caterlink_incident_secure','confirm_caterlink_destination_receipt_secure','list_caterlink_pending_receipts_secure','caterlink_receipt_ready_statuses','caterlink_expected_receiving_station','submit_leave_application_secure','registration_throttle_hit','record_caterlink_vendor_security_check_secure','caterlink_vendor_check_upload_allowed','list_orphan_vendor_signatures_secure','enforce_completable_driver_route','caterlink_signature_upload_allowed','caterlink_part_b_upload_allowed','caterlink_receipt_upload_allowed','caterlink_vendor_complete_upload_allowed','caterlink_signature_owner_guard','caterlink_signature_referenced','list_orphan_signatures_secure','caterlink_incident_photo_visible') and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`))[0].h,
       profiles: (await q("select md5(string_agg(md5(p::text), ',' order by p.id::text)) h from public.profiles p"))[0].h,
+      objects: (await q("select coalesce(md5(string_agg(o.bucket_id || '/' || o.name || '/' || coalesce(o.owner::text, '-'), ',' order by o.bucket_id, o.name)), 'none') h from storage.objects o where o.bucket_id in ('signatures', 'incident-photos', 'completed-forms')"))[0].h,
       assignments: (await q("select coalesce(md5(string_agg(md5(a::text), ',' order by a.id::text)), 'none') h from public.user_role_assignments a"))[0].h,
       transactions: (await q("select coalesce(md5(string_agg(md5(t::text), ',' order by t.id::text)), 'none') h from public.transactions t"))[0].h,
       incidents: (await q("select count(*)::text h from public.caterlink_incidents"))[0].h,
       hub: (await q("select count(*)::text h from public.caterlink_checkpoint_hub"))[0].h,
       jobs: (await q("select count(*)::text h from public.caterlink_pdf_jobs"))[0].h,
-      policies: (await q("select md5(string_agg(schemaname || tablename || policyname || coalesce(qual,'') || coalesce(with_check,''), ',' order by schemaname, tablename, policyname)) h from pg_policies where schemaname in ('public','storage') and tablename <> 'absence_notices' and not (schemaname = 'storage' and policyname in ('signatures: vendor check upload is delivery-bound','signatures: authenticated upload','signatures: workflow upload','incident photos: authenticated upload','incident photos: authenticated read','incident photos: scoped read'))"))[0].h,
+      policies: (await q("select md5(string_agg(schemaname || tablename || policyname || coalesce(qual,'') || coalesce(with_check,''), ',' order by schemaname, tablename, policyname)) h from pg_policies where schemaname in ('public','storage') and tablename <> 'absence_notices' and not (schemaname = 'storage' and policyname in ('signatures: vendor check upload is delivery-bound','signatures: authenticated upload','signatures: workflow upload','incident photos: authenticated upload','incident photos: authenticated read','incident photos: scoped read','completed forms: authenticated upload','completed forms: authenticated read'))"))[0].h,
       policiesAll: (await q("select md5(string_agg(schemaname || tablename || policyname || cmd || permissive || coalesce(qual,'') || coalesce(with_check,''), ',' order by schemaname, tablename, policyname)) h from pg_policies where schemaname in ('public','storage')"))[0].h,
     });
     const pre = await fp();
@@ -135,6 +137,7 @@ async function main() {
 
     async function pass(real) {
       await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout = '15s'"); // fail fast instead of queueing behind a long query and stalling the app
       try {
         for (const f of files) {
           await client.query(f.sql);
@@ -224,6 +227,16 @@ async function main() {
           const denied = await asUser("neg-pending-profile", async () => { await client.query("select * from public.submit_leave_application_secure('absent', null, null, 'x')"); return "ALLOWED"; });
           if (/ALLOWED/.test(denied)) fail("a pending profile could submit leave");
           log("PROBE PASS: atomic leave: a pending profile cannot submit leave"); probeLog.push("atomic leave: pending profile denied");
+          const sameDay = await asUser("aso", async () => {
+            const r = await client.query("select * from public.submit_leave_application_secure('annual', null, null, 'dry run same-day probe')");
+            const first = r.rows[0]?.result_same_day === true && r.rows[0]?.result_status !== undefined;
+            await client.query("SAVEPOINT again");
+            const again = await client.query("select * from public.submit_leave_application_secure('annual', null, null, 'dry run second same-day probe')").then(() => "ALLOWED").catch((e) => String(e.message));
+            await client.query("ROLLBACK TO SAVEPOINT again");
+            return `${first ? "FIRST-OK" : "FIRST-WRONG"}|${/already submitted a leave application for today/i.test(again) ? "SECOND-REFUSED" : again.slice(0, 80)}`;
+          });
+          if (sameDay !== "FIRST-OK|SECOND-REFUSED") fail(`the same-day leave branch did not behave (${sameDay})`);
+          log("PROBE PASS: atomic leave: a same-day application is recorded through the locked duty-record upsert and a second one for the same shift is refused (rolled back)"); probeLog.push("atomic leave: same-day branch");
         }
 
         // vendor Part B signature: delivery-bound Storage policy, orphan listing grants, and the Driver route guard
@@ -237,13 +250,27 @@ async function main() {
           log("PROBE PASS: vendor Part B: an unauthorised upload for a non-existent delivery is refused by Storage RLS"); probeLog.push("vendor part b ghost denied");
           const trg = await q("select tgenabled from pg_trigger where tgname = 'trg_enforce_completable_driver_route' and tgrelid = 'public.transactions'::regclass");
           if (trg.length !== 1 || trg[0].tgenabled !== "O") fail("the Driver route guard trigger is missing or disabled");
-          await client.query("SAVEPOINT rg");
-          await client.query("select set_config('request.jwt.claims', $1, true), set_config('role', 'service_role', true)", [JSON.stringify({ sub: acct("caterlink-driver"), role: "authenticated" })]);
-          const routeDenied = await client.query(`insert into public.transactions (transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, seal_number, status, route, origin_station_id, created_by)
-            values ('ICMS-2026-990998', $1, 'OUTBOUND', 'UAT-VEH', '[GUARD-DRYRUN]', 'UAT-DRV', 'S', 'CREATED', 'AIRCRAFT', $2, $3)`, [aoc, pen, acct("caterlink-driver")]).then(() => "ALLOWED").catch((e) => String(e.message));
-          await client.query("ROLLBACK TO SAVEPOINT rg");
-          if (!/not available yet/i.test(routeDenied)) fail(`a Driver AIRCRAFT movement was not refused by the route guard (${routeDenied.slice(0, 80)})`);
-          log("PROBE PASS: Driver route guard: an AIRCRAFT movement created by a Driver is refused by the database (rolled back)"); probeLog.push("route guard");
+          // blocked unfinished routes: a Driver cannot create a movement whose route cannot complete; the one completable route is not refused by the guard
+          const driverUid = acct("caterlink-driver");
+          const guardInsert = async (direction, route, hub) => {
+            await client.query("SAVEPOINT rg");
+            await client.query("select set_config('request.jwt.claims', $1, true), set_config('role', 'service_role', true)", [JSON.stringify({ sub: driverUid, role: "authenticated" })]);
+            const r = await client.query(`insert into public.transactions (transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, seal_number, status, route, hub_destination, origin_station_id, created_by)
+              values ($1, $2, $3, 'UAT-VEH', '[GUARD-DRYRUN]', 'UAT-DRV', 'S', 'CREATED', $4, $5, $6, $7)`, [`ICMS-2026-99${Math.floor(Math.random() * 9000 + 1000)}`, aoc, direction, route, hub, pen, driverUid]).then(() => "ALLOWED").catch((e) => String(e.message));
+            await client.query("ROLLBACK TO SAVEPOINT rg");
+            return r;
+          };
+          for (const [direction, route] of [["OUTBOUND", "AIRCRAFT"], ["OUTBOUND", "REDQ"], ["OUTBOUND", "MAINTENANCE"], ["INBOUND", "AIRCRAFT"]]) {
+            const denied = await guardInsert(direction, route, null);
+            if (!/not available yet/i.test(denied)) fail(`a Driver ${direction}/${route} movement was not refused by the route guard (${denied.slice(0, 80)})`);
+            probe(`blocked unfinished route: a Driver ${direction}/${route} movement is refused by the database (rolled back)`);
+          }
+          const noHub = await guardInsert("OUTBOUND", "HUB", null);
+          if (!/not available yet/i.test(noHub)) fail(`a Driver HUB movement with no hub destination was not refused (${noHub.slice(0, 80)})`);
+          probe("Driver HUB route guard: a HUB movement with no hub destination is refused");
+          const hubOk = await guardInsert("OUTBOUND", "HUB", "PEN");
+          if (/not available yet/i.test(hubOk)) fail(`a Driver OUTBOUND/HUB movement to PEN was refused by the route guard (${hubOk.slice(0, 80)})`);
+          probe("Driver HUB route guard: OUTBOUND/HUB with a hub destination is NOT refused by the guard (the one completable route; any later refusal is the whitelist trigger)");
         }
         // signature bucket: the unrestricted upload policy is gone and every upload is authorised by the database (20261113000001)
         {
@@ -291,6 +318,11 @@ async function main() {
           await client.query("SAVEPOINT duty");
           const dutyOk = await client.query("insert into public.duty_records (profile_id, station, duty_date, shift_code, check_in_at, status) select $1, 'PEN', (now() at time zone 'Asia/Kuala_Lumpur')::date, 'SG', now(), 'present' where exists (select 1 from public.stations where code = 'PEN')", [acct("aso")]).then((r) => r.rowCount === 1).catch(() => false);
           if (!dutyOk) await client.query("ROLLBACK TO SAVEPOINT duty");
+          if (dutyOk) {
+            for (const who of ["aso-kul", "aso-jhb", "neg-revoked-assignment", "neg-expired-assignment", "neg-future-assignment"]) {
+              await client.query("insert into public.duty_records (profile_id, station, duty_date, shift_code, check_in_at, status) select $1, 'PEN', (now() at time zone 'Asia/Kuala_Lumpur')::date, 'SG', now(), 'present' where exists (select 1 from public.stations where code = 'PEN') on conflict do nothing", [acct(who)]);
+            }
+          }
           await client.query("set local session_replication_role = origin");
 
           // unknown prefixes and the arbitrary-path regression
@@ -430,7 +462,7 @@ async function main() {
               expectDenied(`incident-photos: ${who} cannot upload (no client upload workflow exists)`, await asIp(who, `incident-photos/${U()}/${U()}.png`));
             }
             await client.query("set local session_replication_role = replica");
-            await client.query("insert into storage.objects (bucket_id, name, owner) values ('incident-photos', $1, $2)", [incPhoto, acct("aso-kul")]);
+            await client.query("insert into storage.objects (bucket_id, name, owner) values ('incident-photos', $1, $2)", [incPhoto, acct("sso")]); // owned by a PEN supervisor who is NOT involved in the incident, so the reporter's read can only come from the incident
             await client.query("insert into storage.objects (bucket_id, name, owner) values ('incident-photos', $1, $2)", [lone, acct("aso")]);
             await client.query(`insert into public.caterlink_incidents (transaction_id, aoc_id, station_id, incident_type, severity, description, reported_by, status, photo_url)
               values ($1,$2,$3,'OTHER','low','[INCIDENT-PHOTO-DRYRUN]',$4,'OPEN',$5)`, [penTx, aoc, pen, acct("aso-kul"), incPhoto]);
@@ -443,6 +475,7 @@ async function main() {
             await exp("a JHB officer cannot read it", "aso-jhb", incPhoto, "HIDDEN");
             await exp("a Driver cannot read it", "caterlink-driver", incPhoto, "HIDDEN");
             await exp("a Vendor cannot read it", "caterlink-vendor", incPhoto, "HIDDEN");
+            await exp("the (uninvolved) uploader can read its own object", "sso", incPhoto, "READ");
             await exp("an unreferenced object is readable by its uploader", "aso", lone, "READ");
             await exp("and not by anyone else (Management)", "caterlink_management", lone, "HIDDEN");
           }
@@ -452,12 +485,20 @@ async function main() {
             const writes = await q("select polname, polcmd, pg_get_expr(polqual, polrelid) q, pg_get_expr(polwithcheck, polrelid) w from pg_policy where polrelid = 'storage.objects'::regclass and polpermissive and polcmd in ('a','w','d','*') order by polname");
             // a policy is "scoped" only if it names a bucket AND carries no escape hatch (`or true`, an always-true branch)
             const isScoped = (x) => { const t = `${x.q ?? ""} ${x.w ?? ""}`; return /bucket_id\s*=\s*'/.test(t) && !/\bor\s+(true|1\s*=\s*1)\b|\(\s*true\s*\)/i.test(t); };
+            const KNOWN_WRITE = ["report attachments object insert", "signatures: workflow upload"];
+            const unknownWrite = writes.filter((x) => !KNOWN_WRITE.includes(x.polname));
+            if (unknownWrite.length > 0) fail(`unknown permissive write policies on storage.objects (not in the reviewed allow-list): ${unknownWrite.map((x) => x.polname).join(", ")}`);
+            probe("structure: the permissive write policies on storage.objects are exactly the reviewed allow-list (report attachments insert, signatures: workflow upload)");
             const unscoped = writes.filter((x) => !isScoped(x));
             if (unscoped.length > 0) fail(`permissive write policies on storage.objects without a bucket restriction: ${unscoped.map((x) => x.polname).join(", ")}`);
             log(`write policies on storage.objects after the migrations (all bucket-scoped): ${writes.map((x) => x.polname).join(" | ")}`);
             probe("structure: every permissive INSERT/UPDATE/DELETE/ALL policy on storage.objects names a bucket and has no always-true branch (no unscoped hosted-only write policy)");
             // READ side: an unscoped permissive SELECT policy would make both buckets listable even though neither is named in it
             const reads = await q("select polname, pg_get_expr(polqual, polrelid) q from pg_policy where polrelid = 'storage.objects'::regclass and polpermissive and polcmd in ('r','*') order by polname");
+            const KNOWN_READ = ["incident photos: scoped read", "investigation evidence object select", "report attachments object select", "sat combined report object select", "signatures: scoped read"];
+            const unknownRead = reads.filter((x) => !KNOWN_READ.includes(x.polname));
+            if (unknownRead.length > 0) fail(`unknown permissive read policies on storage.objects (not in the reviewed allow-list): ${unknownRead.map((x) => x.polname).join(", ")}`);
+            probe("structure: the permissive read policies on storage.objects are exactly the reviewed allow-list");
             const unscopedReads = reads.filter((x) => !isScoped({ q: x.q, w: "" }));
             if (unscopedReads.length > 0) fail(`permissive SELECT policies on storage.objects without a bucket restriction: ${unscopedReads.map((x) => x.polname).join(", ")}`);
             log(`read policies on storage.objects after the migrations (all bucket-scoped): ${reads.map((x) => x.polname).join(" | ")}`);
@@ -474,11 +515,49 @@ async function main() {
             if (touching.join() !== "signatures: workflow upload") fail(`unexpected write policies reach the signatures or incident-photos buckets: ${touching.join(", ")}`);
             probe("structure: the only permissive write policy that reaches either bucket is 'signatures: workflow upload'");
           }
+
+          // ---- completed-forms bucket (20261116000001): no active producer/consumer, so NO client policy remains
+          {
+            const cf = await q("select polname from pg_policy where polrelid = 'storage.objects'::regclass and (pg_get_expr(polwithcheck, polrelid) ilike '%completed-forms%' or pg_get_expr(polqual, polrelid) ilike '%completed-forms%')");
+            if (cf.length !== 0) fail(`a policy still mentions the completed-forms bucket: ${cf.map((x) => x.polname).join(", ")}`);
+            probe("completed-forms: both historical broad authenticated policies are gone and no replacement exists (client upload/read/list/move/delete denied)");
+            if ((await q("select public from storage.buckets where id = 'completed-forms'"))[0].public !== false) fail("the completed-forms bucket is public");
+            probe("completed-forms: the bucket stays private");
+            const cfBefore = (await q("select count(*)::int n from storage.objects where bucket_id = 'completed-forms'"))[0].n;
+            const insCf = async (who, name) => asUser(who, async () => { await client.query("insert into storage.objects (bucket_id, name, owner) values ('completed-forms', $1, $2)", [name, acct(who)]); return "ACCEPTED"; });
+            const cfNames = () => [`ICMS-2026-990001/${U()}.pdf`, `arbitrary-probe/${U()}.pdf`];
+            for (const who of ["aso", "aso-kul", "caterlink-driver", "caterlink-vendor", "caterlink_management", "operation_manager", "super_admin", "neg-pending-profile", "neg-rejected-profile", "neg-deactivated-profile", "neg-revoked-assignment", "neg-expired-assignment", "neg-future-assignment"]) {
+              for (const name of cfNames()) expectDenied(`completed-forms: ${who} cannot upload (${name.split("/")[0].replace(/\d+$/, "<n>")})`, await insCf(who, name));
+            }
+            await client.query("SAVEPOINT cfanon");
+            await client.query("select set_config('request.jwt.claims', '{}', true), set_config('role', 'anon', true)");
+            const anonCf = await client.query("insert into storage.objects (bucket_id, name, owner) values ('completed-forms', $1, null)", [cfNames()[0]]).then(() => "ACCEPTED").catch((e) => String(e.message));
+            await client.query("ROLLBACK TO SAVEPOINT cfanon");
+            expectDenied("completed-forms: anonymous cannot upload", anonCf);
+            // a stored object is invisible to every client and nothing a client does removes or moves it
+            await client.query("set local session_replication_role = replica");
+            const cfObj = `ICMS-2026-990002/${U()}.pdf`;
+            await client.query("insert into storage.objects (bucket_id, name, owner) values ('completed-forms', $1, $2)", [cfObj, acct("aso")]);
+            await client.query("set local session_replication_role = origin");
+            for (const who of ["aso", "aso-kul", "caterlink-driver", "caterlink-vendor", "caterlink_management", "operation_manager", "super_admin", "neg-pending-profile"]) {
+              const seen = await asUser(who, async () => (await client.query("select count(*)::int n from storage.objects where bucket_id = 'completed-forms'")).rows[0].n);
+              if (seen !== 0) fail(`completed-forms: ${who} can see ${seen} object(s)`);
+              probe(`completed-forms: ${who} cannot read or list any object (even its own upload)`);
+            }
+            const mod = await asUser("aso", async () => { const d = await client.query("delete from storage.objects where bucket_id = 'completed-forms'"); const u = await client.query("update storage.objects set name = name || 'x' where bucket_id = 'completed-forms'"); return `${d.rowCount}|${u.rowCount}`; });
+            if (mod !== "0|0") fail(`a client changed or removed a completed-forms object (${mod})`);
+            probe("completed-forms: a client cannot delete or move an object");
+            const cfAfter = (await q("select count(*)::int n from storage.objects where bucket_id = 'completed-forms'"))[0].n;
+            if (cfAfter !== cfBefore + 1) fail("the completed-forms object count changed unexpectedly during the probes");
+            probe("completed-forms: a client cannot remove or move an object (the count changed only by this probe's own fixture)");
+          }
           await client.query("ROLLBACK TO SAVEPOINT sg");
         }
 
         const post = await fp();
-        for (const k of ["other", "profiles", "assignments", "transactions", "incidents", "hub", "jobs", "policies"]) {
+        if (post.objects !== pre.objects) fail("the stored objects of the signatures / incident-photos / completed-forms buckets differ from before the migrations (an object was deleted, moved or added)");
+        probe("no existing object was deleted, moved or added in the signatures, incident-photos or completed-forms buckets by the migrations (fingerprint of every stored object before = after)");
+        for (const k of ["other", "profiles", "assignments", "transactions", "incidents", "hub", "jobs", "policies", "objects"]) {
           if (post[k] !== pre[k]) fail(`an unrelated ${k} fingerprint changed`);
         }
         log(`${real ? "APPLY" : "DRY RUN"}: verification PASSED (history once; skip_part_d and raise_caterlink_incident_secure closed to PUBLIC/anon/authenticated/service_role and denied to eight personas; receipt locks then gates on state and writes nothing when refused; final-step receipt accepted; synthetic probe rolled back; no unrelated function, policy, profile, assignment, transaction, incident, hub or job row changed)`);

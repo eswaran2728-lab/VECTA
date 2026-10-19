@@ -41,7 +41,5 @@ There is no legitimate workflow to preserve and no historical object to strand.
 | Anonymous | denied | no | no |
 | `service_role` | allowed (trusted server workflows) | allowed | allowed |
 
-## Related finding not changed here
-The `completed-forms` bucket carries the same historical pattern (`completed forms: authenticated upload` / `authenticated read`). It holds 0 objects on
-staging and its only writer, `generateCompletedFormPdf`, is not called by any route; the live final-PDF flow uses the service role and the
-`caterlink-final-pdfs` bucket. It is outside this request and should receive its own additive migration.
+## Related bucket
+The `completed-forms` bucket carried the same historical pattern; it is locked down fail-closed by migration 20261116000001 (see `completed-forms-lockdown.md`).

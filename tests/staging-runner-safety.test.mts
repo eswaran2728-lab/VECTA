@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { destructiveStatement, MIGRATIONS } from "../scripts/staging/apply-containment-migration.mjs";
 
-/** The guarded runner refuses a migration that contains a top-level destructive statement, but must accept all eight reviewed files. */
+/** The guarded runner refuses a migration that contains a top-level destructive statement, but must accept all nine reviewed files. */
 test("the destructive-statement gate accepts every reviewed migration (bounded clean-up inside a function body is not a top-level statement)", () => {
-  assert.equal(MIGRATIONS.length, 8);
+  assert.equal(MIGRATIONS.length, 9);
   for (const m of MIGRATIONS) {
     const sql = fs.readFileSync(`supabase/migrations/${m.version}_${m.name}.sql`, "utf8");
     assert.equal(destructiveStatement(sql), null, `${m.version} must pass the gate`);
@@ -80,4 +80,31 @@ test("no runner probe refers to a function signature that a later frozen migrati
   const src = fs.readFileSync("scripts/staging/apply-containment-migration.mjs", "utf8");
   assert.ok(!src.includes("list_orphan_signatures_secure(integer)"), "20261115000001 replaces the one-argument orphan listing with the paged (integer, integer) form");
   assert.ok(!src.includes("list_orphan_vendor_signatures_secure(integer)") || src.includes("list_orphan_vendor_signatures_secure"), "the vendor listing is unchanged");
+});
+
+test("the runner proves the completed-forms lockdown and the blocked unfinished routes with named probes", () => {
+  const src = fs.readFileSync("scripts/staging/apply-containment-migration.mjs", "utf8");
+  for (const must of [
+    "completed-forms: both historical broad authenticated policies are gone",
+    "completed-forms: the bucket stays private",
+    "completed-forms: anonymous cannot upload",
+    "cannot read or list any object",
+    "completed-forms: a client cannot delete or move an object",
+    "no existing object was deleted, moved or added in the signatures, incident-photos or completed-forms buckets",
+    "blocked unfinished route: a Driver",
+    "Driver HUB route guard: OUTBOUND/HUB with a hub destination is NOT refused by the guard",
+  ]) assert.ok(src.includes(must), "missing probe: " + must);
+});
+
+test("the dry run exercises the same-day leave branch, isolates the Part B negatives and uses an allow-list for storage policies", () => {
+  const src = fs.readFileSync("scripts/staging/apply-containment-migration.mjs", "utf8");
+  for (const must of [
+    "atomic leave: a same-day application is recorded through the locked duty-record upsert",
+    'for (const who of ["aso-kul", "aso-jhb", "neg-revoked-assignment", "neg-expired-assignment", "neg-future-assignment"])',
+    "the permissive write policies on storage.objects are exactly the reviewed allow-list",
+    "the permissive read policies on storage.objects are exactly the reviewed allow-list",
+    "SET LOCAL lock_timeout",
+    "the (uninvolved) uploader can read its own object",
+    'if (post.objects !== pre.objects)',
+  ]) assert.ok(src.includes(must), "missing: " + must);
 });

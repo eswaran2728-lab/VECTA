@@ -84,8 +84,7 @@ signature workflow (Part C, Part D, REDQ) rejects any signature reference.
 
 ## Limitations
 
-* The `incident-photos` bucket still carries the same historical broad upload/read policies (`incident photos: authenticated upload/read`).
-  They are outside this change and should get the same treatment.
+* The `incident-photos` and `completed-forms` buckets that carried the same historical policies are locked down by migrations 20261114000001 and 20261116000001.
 * The nine unreferenced legacy `part-b/<ts>-<id>` objects on staging are not removed automatically.
 * Staging verification scripts that fabricate signature names (`verify-storage-staging.mjs`, `e2e-external-workflows.mjs`,
   `verify-external-workflows-staging.mjs`, `targeted-part-b-probe.mjs`) must switch to the bound paths before any post-application run.

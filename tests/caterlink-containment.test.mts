@@ -108,10 +108,10 @@ test("supplement (behaviour is proven by the database suites): the receipt binds
   assert.match(list, /caterlink_expected_receiving_station\(t\.hub_destination, t\.destination_station_id\) = p_station_code/, "the list uses the same binding");
 });
 
-test("frozen hashes: the staging runner pins exactly the eight forward migrations, and the files match", () => {
+test("frozen hashes: the staging runner pins exactly the nine forward migrations, and the files match", () => {
   const runner = fs.readFileSync("scripts/staging/apply-containment-migration.mjs", "utf8");
   const entries = [...runner.matchAll(/\{ version: "(\d{14})", name: "([a-z_]+)", sha256: "([0-9a-f]{64})" \}/g)];
-  assert.deepEqual(entries.map((e) => e[1]), ["20261108000001", "20261109000001", "20261110000001", "20261111000001", "20261112000001", "20261113000001", "20261114000001", "20261115000001"]);
+  assert.deepEqual(entries.map((e) => e[1]), ["20261108000001", "20261109000001", "20261110000001", "20261111000001", "20261112000001", "20261113000001", "20261114000001", "20261115000001", "20261116000001"]);
   for (const [, version, name, sha] of entries) {
     const text = fs.readFileSync(`supabase/migrations/${version}_${name}.sql`, "utf8").replace(/\r\n/g, "\n");
     assert.equal(crypto.createHash("sha256").update(text).digest("hex"), sha, `${version}_${name} differs from its frozen hash`);
@@ -120,5 +120,5 @@ test("frozen hashes: the staging runner pins exactly the eight forward migration
   assert.match(runner, /LAST_PRE = "20261107000001"/);
   const all = fs.readdirSync("supabase/migrations").filter((f) => /^\d{14}_.*\.sql$/.test(f)).sort();
   assert.equal(new Set(all.map((f) => f.slice(0, 14))).size, all.length, "no migration version collision");
-  assert.deepEqual(all.filter((f) => f.slice(0, 14) > "20261107000001").map((f) => f.slice(0, 14)), ["20261108000001", "20261109000001", "20261110000001", "20261111000001", "20261112000001", "20261113000001", "20261114000001", "20261115000001"], "migration order");
+  assert.deepEqual(all.filter((f) => f.slice(0, 14) > "20261107000001").map((f) => f.slice(0, 14)), ["20261108000001", "20261109000001", "20261110000001", "20261111000001", "20261112000001", "20261113000001", "20261114000001", "20261115000001", "20261116000001"], "migration order");
 });
