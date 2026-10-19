@@ -129,11 +129,14 @@ async function main() {
       policiesAll: (await q("select md5(string_agg(schemaname || tablename || policyname || cmd || permissive || coalesce(qual,'') || coalesce(with_check,''), ',' order by schemaname, tablename, policyname)) h from pg_policies where schemaname in ('public','storage')"))[0].h,
     });
     const pre = await fp();
-    const defs = await q(`select p.oid::regprocedure::text sig, pg_get_functiondef(p.oid) def from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('skip_part_d','raise_caterlink_incident_secure','confirm_caterlink_destination_receipt_secure','list_caterlink_pending_receipts_secure')`);
+    const defs = await q(`select p.oid::regprocedure::text sig, pg_get_functiondef(p.oid) def from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f' and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`);
+    // everything needed to restore the pre-change state by hand: every non-extension public function body, and every Storage / absence-notice policy definition
+    const policyDefs = await q("select schemaname, tablename, policyname, permissive, roles::text roles, cmd, qual, with_check from pg_policies where schemaname = 'storage' or (schemaname = 'public' and tablename = 'absence_notices') order by 1, 2, 3");
+    const bucketDefs = await q("select id, public, file_size_limit, allowed_mime_types from storage.buckets order by id");
     const snap = path.join(path.dirname(freshBackup), `${APPROVED_REF}-containment-prechange-${Date.now()}.enc.json`);
-    fs.writeFileSync(snap, JSON.stringify(encryptBackupPayload({ exportedAt: new Date().toISOString(), migrations: mig, grants: before, functionDefinitions: defs, fingerprints: pre }, process.env.VECTA_BACKUP_PASSPHRASE)), { mode: 0o600 });
+    fs.writeFileSync(snap, JSON.stringify(encryptBackupPayload({ exportedAt: new Date().toISOString(), migrations: mig, grants: before, functionDefinitions: defs, policyDefinitions: policyDefs, buckets: bucketDefs, fingerprints: pre }, process.env.VECTA_BACKUP_PASSPHRASE)), { mode: 0o600 });
     decryptBackupPayload(fs.readFileSync(snap, "utf8"), process.env.VECTA_BACKUP_PASSPHRASE);
-    log(`pre-change snapshot (grants, function definitions, fingerprints) written and re-authenticated (${path.basename(snap)})`);
+    log(`pre-change snapshot (grants, every public function body, Storage/absence policy definitions, bucket settings, fingerprints) written and re-authenticated (${path.basename(snap)})`);
 
     async function pass(real) {
       await client.query("BEGIN");
