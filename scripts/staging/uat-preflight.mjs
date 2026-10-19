@@ -8,6 +8,7 @@ import child_process from "node:child_process";
 import { environmentGates, connectVerified, FORBIDDEN_REF, APPROVED_REF } from "./lib/run-gates.mjs";
 import { DUTY_LABELS, dbClock, inactiveDutyLabels } from "./lib/uat-duty.mjs";
 import { loadCurrentManifest } from "./lib/review-accounts.mjs";
+import { EXPECTED_MIGRATION_COUNT, EXPECTED_LATEST_MIGRATION } from "./lib/expected-baseline.mjs";
 
 const args = process.argv.slice(2);
 const argVal = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split("=").slice(1).join("=");
@@ -46,7 +47,7 @@ const manifest = loadCurrentManifest();
 const ledger = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), "vecta-uat-fixtures", `${runId}.json`), "utf8"));
 try {
   const m = (await q("select count(*)::int n, max(version) v from supabase_migrations.schema_migrations"))[0];
-  check("staging has 82 migrations ending at 20261106000002", m.n === 82 && m.v === "20261106000002", `${m.n} / ${m.v}`);
+  check(`staging has ${EXPECTED_MIGRATION_COUNT} migrations ending at ${EXPECTED_LATEST_MIGRATION}`, m.n === EXPECTED_MIGRATION_COUNT && m.v === EXPECTED_LATEST_MIGRATION, `${m.n} / ${m.v}`);
   const clock = await dbClock(client);
   console.log(`INFO: staging clock ${clock.nowUtc}; Malaysia date ${clock.myDate}; ${Math.floor(clock.secondsLeft / 60)} min to Malaysia midnight`);
   const T = `[UAT:${runId}]%`;

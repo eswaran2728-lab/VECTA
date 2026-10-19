@@ -69,8 +69,18 @@ test("network diagnostics are sanitized, reads are retried once, writes never ar
   for (const k of ["section", "method", "host", "path", "type", "failure", "attempt", "at"]) assert.match(block, new RegExp(`\\b${k}\\b`), k);
 });
 
-test("preflight: production absent, staging target, 82 migrations, one fresh set, nothing else running", () => {
-  for (const needle of ["production reference absent", "approved staging project only", "82 migrations ending at 20261106000002", "ALL are unread", "no other UAT", "no disposable PostgreSQL", "only in scripts/tests/docs", "none from any other run"]) assert.ok(PRE.includes(needle), needle);
+test("preflight baseline: the expected migration count and latest version are explicit and tied to the guarded runner", () => {
+  const base = read("scripts/staging/lib/expected-baseline.mjs");
+  const runner = read("scripts/staging/apply-containment-migration.mjs");
+  const versions = [...runner.matchAll(/\{ version: "(\d{14})", name:/g)].map((m) => m[1]);
+  assert.equal(versions.length, 9);
+  assert.match(base, new RegExp(`EXPECTED_LATEST_MIGRATION = "${versions[versions.length - 1]}"`), "latest version equals the runner's last frozen migration");
+  assert.match(base, /EXPECTED_MIGRATION_COUNT = 92;/);
+  assert.ok(PRE.includes("EXPECTED_MIGRATION_COUNT") && PRE.includes("EXPECTED_LATEST_MIGRATION") && !/82/.test(PRE), "preflight uses the explicit baseline, no literal 82");
+});
+
+test("preflight: production absent, staging target, expected migrations, one fresh set, nothing else running", () => {
+  for (const needle of ["production reference absent", "approved staging project only", "migrations ending at", "ALL are unread", "no other UAT", "no disposable PostgreSQL", "only in scripts/tests/docs", "none from any other run"]) assert.ok(PRE.includes(needle), needle);
   assert.doesNotMatch(PRE, /\.query\(\s*["'`]\s*(insert|update|delete)/i, "preflight is read-only");
 });
 
