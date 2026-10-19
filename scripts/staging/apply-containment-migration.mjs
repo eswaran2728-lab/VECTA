@@ -379,8 +379,10 @@ async function main() {
               await client.query("SAVEPOINT ow");
               const dup = await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [name, acct("caterlink-driver")]).then(() => "ALLOWED").catch((e) => (/duplicate key|row-level security/i.test(String(e.message)) ? "REFUSED" : "OTHER:" + String(e.message).slice(0, 50)));
               await client.query("ROLLBACK TO SAVEPOINT ow");
-              const upd = await client.query("update storage.objects set name = $1 where bucket_id = 'signatures' and name = $2", [`part-a/${uidOf("caterlink-driver")}/${U()}.png`, name]).then((x) => x.rowCount).catch(() => 0);
-              const del = await client.query("delete from storage.objects where bucket_id = 'signatures' and name = $1", [name]).then((x) => x.rowCount).catch(() => 0);
+              // each statement in its own savepoint: hosted Storage also refuses a direct delete with a trigger, and an error must not poison the next statement
+              const tryRows = async (sql, params) => { await client.query("SAVEPOINT ow2"); const n = await client.query(sql, params).then((x) => x.rowCount).catch(() => 0); await client.query("ROLLBACK TO SAVEPOINT ow2"); return n; };
+              const upd = await tryRows("update storage.objects set name = $1 where bucket_id = 'signatures' and name = $2", [`part-a/${uidOf("caterlink-driver")}/${U()}.png`, name]);
+              const del = await tryRows("delete from storage.objects where bucket_id = 'signatures' and name = $1", [name]);
               return `${dup}|${upd}|${del}`;
             });
             if (!/^REFUSED[|]0[|]0$/.test(r)) fail(`an overwrite, move or delete by a client was not refused (${r})`);
@@ -549,7 +551,13 @@ async function main() {
               if (seen !== 0) fail(`completed-forms: ${who} can see ${seen} object(s)`);
               probe(`completed-forms: ${who} cannot read or list any object (even its own upload)`);
             }
-            const mod = await asUser("aso", async () => { const d = await client.query("delete from storage.objects where bucket_id = 'completed-forms'"); const u = await client.query("update storage.objects set name = name || 'x' where bucket_id = 'completed-forms'"); return `${d.rowCount}|${u.rowCount}`; });
+            // hosted Storage also blocks direct deletes with a trigger ("Direct deletion from storage tables is not allowed"); a refusal by error counts as 0 rows changed
+            const mod = await asUser("aso", async () => {
+              const run = async (sql) => { await client.query("SAVEPOINT mod1"); const r = await client.query(sql).then((x) => x.rowCount).catch(() => 0); await client.query("ROLLBACK TO SAVEPOINT mod1"); return r; };
+              const d = await run("delete from storage.objects where bucket_id = 'completed-forms'");
+              const u = await run("update storage.objects set name = name || 'x' where bucket_id = 'completed-forms'");
+              return `${d}|${u}`;
+            });
             if (mod !== "0|0") fail(`a client changed or removed a completed-forms object (${mod})`);
             probe("completed-forms: a client cannot delete or move an object");
             const cfAfter = (await q("select count(*)::int n from storage.objects where bucket_id = 'completed-forms'"))[0].n;
