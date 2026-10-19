@@ -42,7 +42,7 @@ export interface SignatureDeps {
   /** Whether any checkpoint references the path (service role). null = unknown. */
   isReferenced: (path: string) => Promise<boolean | null>;
   /** Orphan candidates older than N minutes (service role RPC). */
-  listOrphans: (olderThanMinutes: number) => Promise<string[]>;
+  listOrphans: (olderThanMinutes: number, offset: number) => Promise<string[]>;
   log: (event: string, detail?: Record<string, string | number>) => void;
   randomId: () => string;
 }
@@ -103,7 +103,17 @@ export async function settleSignature(
   deps: SignatureDeps,
   outcome: { error: unknown; thrown: boolean }
 ): Promise<"removed" | "kept" | "failed" | "kept-for-reconciliation" | "recorded"> {
-  if (!outcome.error) return "recorded";
+  if (!outcome.error) {
+    // The call reported success, but a retry/idempotent path can succeed WITHOUT referencing this object (e.g. ON CONFLICT DO UPDATE, an
+    // already-recorded checkpoint). Verify: a referenced object stays; an unreferenced one is removed; an unknown state is never deleted.
+    const referenced = await deps.isReferenced(path).catch(() => null);
+    if (referenced === true) return "recorded";
+    if (referenced === null) {
+      deps.log("signature_orphan", { reason: "reference-unknown-after-success" });
+      return "failed";
+    }
+    return discardSignature(path, deps);
+  }
   if (outcome.thrown) {
     deps.log("signature_orphan", { reason: "outcome-ambiguous" });
     return "kept-for-reconciliation";
@@ -111,36 +121,57 @@ export async function settleSignature(
   return discardSignature(path, deps);
 }
 
-/** Durable reconciliation: removes signatures older than N minutes that no checkpoint references. */
-export async function reconcileSignatureOrphans(deps: SignatureDeps, olderThanMinutes = 30): Promise<{ removed: number; skipped: number; failed?: boolean }> {
-  let names: string[];
-  try {
-    names = await deps.listOrphans(olderThanMinutes);
-  } catch {
-    deps.log("signature_reconcile_list_failed");
-    return { removed: 0, skipped: 0, failed: true };
-  }
-  const valid = names.filter((n) => SIGNATURE_PATH_RE.test(n));
+/**
+ * Durable reconciliation: removes signatures older than N minutes that no checkpoint references. Pages through the backlog (200 per page,
+ * at most `maxPages` pages per run); rows that could not be removed stay in the listing, so the offset advances past them and one stuck head
+ * cannot starve the rest.
+ */
+export async function reconcileSignatureOrphans(
+  deps: SignatureDeps,
+  olderThanMinutes = 30,
+  maxPages = 20
+): Promise<{ removed: number; skipped: number; failed?: boolean; pages: number }> {
+  const PAGE = 200;
   let removed = 0;
-  // re-check every path immediately before removal: a checkpoint recorded since the listing keeps its object
-  const safe: string[] = [];
-  for (const n of valid) {
+  let skipped = 0;
+  let offset = 0;
+  let pages = 0;
+  while (pages < maxPages) {
+    let names: string[];
     try {
-      if ((await deps.isReferenced(n)) === false) safe.push(n);
+      names = await deps.listOrphans(olderThanMinutes, offset);
     } catch {
-      /* unknown reference state: keep the object */
+      deps.log("signature_reconcile_list_failed");
+      return { removed, skipped, failed: true, pages };
     }
-  }
-  if (safe.length > 0) {
-    try {
-      const { error } = await deps.removeAsService(safe);
-      if (!error) removed = safe.length;
-      else deps.log("signature_reconcile_failed");
-    } catch {
-      deps.log("signature_reconcile_failed");
+    pages += 1;
+    if (names.length === 0) break;
+    const valid = names.filter((n) => SIGNATURE_PATH_RE.test(n));
+    // re-check every path immediately before removal: a checkpoint recorded since the listing keeps its object
+    const safe: string[] = [];
+    for (const n of valid) {
+      try {
+        if ((await deps.isReferenced(n)) === false) safe.push(n);
+      } catch {
+        /* unknown reference state: keep the object */
+      }
     }
+    let pageRemoved = 0;
+    if (safe.length > 0) {
+      try {
+        const { error } = await deps.removeAsService(safe);
+        if (!error) pageRemoved = safe.length;
+        else deps.log("signature_reconcile_failed");
+      } catch {
+        deps.log("signature_reconcile_failed");
+      }
+    }
+    removed += pageRemoved;
+    skipped += names.length - pageRemoved;
+    if (names.length < PAGE) break;
+    offset += names.length - pageRemoved; // removed rows left the listing; the rest are still there
   }
-  return { removed, skipped: names.length - removed };
+  return { removed, skipped, pages };
 }
 
 /** Runs the finalising database call and records whether it RETURNED a refusal or THREW, so settleSignature() can tell them apart. */
@@ -164,6 +195,8 @@ export function isAmbiguousTransportError(error: unknown, status?: number): bool
   const e = error as { code?: unknown; message?: unknown };
   const hasSqlState = typeof e.code === "string" && /^[0-9A-Z]{5}$/.test(e.code);
   if (hasSqlState) return false;
-  if (status === 0) return true;
-  return /fetch|abort|timeout|timed out|network|socket|ECONN|ETIMEDOUT|terminated/i.test(String(e.message ?? ""));
+  // no database verdict: status 0 (never reached the server), any 5xx (a gateway/proxy answered, the transaction may still be running or
+  // committed), or a message that names a network/timeout fault
+  if (status === 0 || (typeof status === "number" && status >= 500)) return true;
+  return /fetch|abort|timeout|timed out|time-out|network|socket|ECONN|ETIMEDOUT|terminated|upstream|gateway/i.test(String(e.message ?? ""));
 }

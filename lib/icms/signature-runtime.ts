@@ -24,8 +24,8 @@ export async function signatureDeps(): Promise<SignatureDeps> {
       if (error || typeof data !== "boolean") return null;
       return data;
     },
-    listOrphans: async (olderThanMinutes) => {
-      const { data, error } = await adminRpc.rpc("list_orphan_signatures_secure", { p_older_than_minutes: olderThanMinutes });
+    listOrphans: async (olderThanMinutes, offset) => {
+      const { data, error } = await adminRpc.rpc("list_orphan_signatures_secure", { p_older_than_minutes: olderThanMinutes, p_offset: offset });
       if (error) throw new Error("orphan listing failed");
       return ((data as { name: string }[] | null) ?? []).map((r) => r.name);
     },

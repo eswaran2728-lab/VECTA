@@ -12,10 +12,13 @@ import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { environmentGates, connectVerified } from "./lib/run-gates.mjs";
 import { loadCurrentCredentials, signInWithRetry } from "./lib/review-accounts.mjs";
+import { bound, uploadBound, uploadRequired, createRecorder, classifyError, cleanupOwnOrphans, SetupError } from "./lib/signature-fixtures.mjs";
+import { resolveStagingAdminContext } from "./lib/env-guard.mjs";
 
 const SKIP_WRITES = process.argv.includes("--skip-writes");
-let failures = 0;
-const check = (label, ok, note = "") => { if (!ok) failures += 1; console.log(`${ok ? "PASS" : "FAIL"}: ${label}${note ? " -- " + note : ""}`); return ok; };
+// Verdicts, fixture faults and failures are kept apart: a fixture/setup fault is INCONCLUSIVE (exit 2), never a pass.
+const rec = createRecorder();
+const check = (label, ok, note = "") => rec.check(label, ok, note);
 const FIXTURE_FILE = path.join(os.tmpdir(), "vecta-e2e-fixtures.json");
 
 const HARDENED = ["transactions", "seals", "seal_verifications", "catering_companies", "vehicles", "drivers", "caterlink_checkpoint_part_a", "part_b_c", "caterlink_checkpoint_part_d", "caterlink_checkpoint_hub", "caterlink_checkpoint_redq", "caterlink_incidents", "caterlink_incident_notes", "caterlink_archives", "caterlink_transaction_pdfs", "caterlink_station_capabilities", "users"];
@@ -60,7 +63,7 @@ async function main() {
     await pg.query("ROLLBACK");
   } finally { await pg.end(); }
 
-  if (SKIP_WRITES) { console.log(`\nTotal failures: ${failures}`); process.exit(failures ? 1 : 0); }
+  if (SKIP_WRITES) { console.log(`\n${rec.summary()}`); process.exit(rec.exitCode()); }
 
   console.log("\n=== PART 2: WORKFLOWS AND AUTHORIZATION (each identity's own session) ===");
   const sessions = new Map();
@@ -105,16 +108,25 @@ async function main() {
   check("Driver options: only usable entries and only create-capable stations", !opt.error && (o.vehicles ?? []).some((v) => v.vehicle_number === "E2E1234A") && (o.drivers ?? []).some((d) => d.staff_id === "E2ED001") && (o.stations ?? []).sort().join() === "KUL - AAX,KUL - MAA");
   check("Driver options expose only minimal fields", !JSON.stringify(o).match(/created_by|approved_by|revoked|aoc_id/));
   const tag = Date.now().toString().slice(-6);
-  const txArgs = { p_origin_station: "KUL - MAA", p_direction: "OUTBOUND", p_route: "AIRCRAFT", p_vehicle_number: "E2E1234A", p_driver_name: "E2E Test Driver", p_driver_id: "E2ED001", p_seal_number: `E2E-SEAL-${tag}`, p_signature_url: "signatures/e2e-driver.png" };
-  const created = await rpc(drv, "create_caterlink_driver_transaction_secure", txArgs);
+  const txBase = { p_origin_station: "KUL - MAA", p_direction: "OUTBOUND", p_route: "HUB", p_hub_destination: "PEN", p_vehicle_number: "E2E1234A", p_driver_name: "E2E Test Driver", p_driver_id: "E2ED001", p_seal_number: `E2E-SEAL-${tag}` };
+  // every record gets its OWN fresh object, uploaded through the Driver's own session to part-a/<uid>/<uuid>.png (an object is single-use)
+  const txArgsFor = async (over = {}) => ({ ...txBase, p_signature_url: await uploadRequired(await S(drv), bound.partA((await S(drv)).uid), "Driver Part A signature"), ...over });
+  // an actor that is not a Driver cannot upload under the Driver prefix at all; the RPC role check is what is under test for them
+  const noObject = (uid) => bound.partA(uid);
+  const driverRoleDenial = /only an active|not authori|must be signed in|permission denied/i;
+  const created = await rpc(drv, "create_caterlink_driver_transaction_secure", await txArgsFor());
   const tx = first(created.data);
   check("Driver created a movement (CL-YYYY-NNNNNN)", !created.error && /^CL-\d{4}-\d{6}$/.test(tx?.transaction_number ?? ""), created.error?.message ?? tx?.transaction_number);
   const txId = tx?.transaction_id;
-  check("Driver creation is rejected for an unlisted vehicle", !!(await rpc(drv, "create_caterlink_driver_transaction_secure", { ...txArgs, p_vehicle_number: "NOTLISTED9", p_seal_number: `E2E-X1-${tag}` })).error);
-  check("Driver creation is rejected for a mismatching driver name", !!(await rpc(drv, "create_caterlink_driver_transaction_secure", { ...txArgs, p_driver_name: "Someone Else", p_seal_number: `E2E-X2-${tag}` })).error);
-  check("Driver creation is rejected at a station without creation capability (PEN)", !!(await rpc(drv, "create_caterlink_driver_transaction_secure", { ...txArgs, p_origin_station: "PEN", p_seal_number: `E2E-X3-${tag}` })).error);
+  // each rejected variant carries a VALID fresh object, so the refusal is the rule under test and not a fixture fault
+  const rejected = async (label, over, matches) => { const r = await rpc(drv, "create_caterlink_driver_transaction_secure", await txArgsFor(over)); rec.expectAuthorizationDenied(label, { error: r.error, outcome: classifyError(r.error, r.status) }, matches); };
+  await rejected("Driver creation is rejected for an unlisted vehicle", { p_vehicle_number: "NOTLISTED9", p_seal_number: `E2E-X1-${tag}` }, /whitelist|not an active|not listed|not authori/i);
+  await rejected("Driver creation is rejected for a mismatching driver name", { p_driver_name: "Someone Else", p_seal_number: `E2E-X2-${tag}` }, /does not match|whitelist/i);
+  await rejected("Driver creation is rejected at a station without creation capability (PEN)", { p_origin_station: "PEN", p_seal_number: `E2E-X3-${tag}` }, /not configured|capab|not authori/i);
+  await rejected("Driver creation is rejected for a route that cannot complete (AIRCRAFT)", { p_route: "AIRCRAFT", p_hub_destination: null, p_seal_number: `E2E-X5-${tag}` }, /not available yet/i);
   for (const l of [vnd, mgmt, "aso", "operation_manager"]) {
-    check(`${l} cannot create a movement through the Driver function`, !!(await rpc(l, "create_caterlink_driver_transaction_secure", { ...txArgs, p_seal_number: `E2E-X4-${tag}` })).error);
+    const r = await rpc(l, "create_caterlink_driver_transaction_secure", { ...txBase, p_seal_number: `E2E-X4-${tag}`, p_signature_url: noObject((await S(l)).uid) });
+    rec.expectAuthorizationDenied(`${l} cannot create a movement through the Driver function`, { error: r.error, outcome: classifyError(r.error, r.status) }, driverRoleDenial);
   }
   check("Vendor and Management cannot list the Driver options", !!(await rpc(vnd, "list_caterlink_driver_options_secure")).error && !!(await rpc(mgmt, "list_caterlink_driver_options_secure")).error);
 
@@ -133,41 +145,62 @@ async function main() {
   // station staff at KUL - MAA see it by the pre-existing station policy; account-state negatives are discussed in the report
 
   // ---- Vendor workflow ----
-  const mkDel = (station, seal) => rpc(vnd, "create_caterlink_vendor_delivery_secure", { p_station_code: station, p_driver_name: "E2E Vendor Driver", p_driver_nric: "E2E-NRIC-001", p_vehicle_registration_no: "E2EV5678", p_seal_number: seal, p_signature_url: "signatures/e2e-vendor.png", p_supplies_description: "E2E supplies" });
+  const mkDel = async (station, seal) => rpc(vnd, "create_caterlink_vendor_delivery_secure", { p_station_code: station, p_driver_name: "E2E Vendor Driver", p_driver_nric: "E2E-NRIC-001", p_vehicle_registration_no: "E2EV5678", p_seal_number: seal, p_signature_url: await uploadRequired(await S(vnd), bound.vendorA((await S(vnd)).uid), "Vendor creation signature"), p_supplies_description: "E2E supplies" });
   const del = first((await mkDel("PEN", `E2E-VSEAL-${tag}`)).data);
   check("Vendor created a delivery at PEN (CLV-YYYY-NNNNNN)", /^CLV-\d{4}-\d{6}$/.test(del?.delivery_number ?? ""), del?.delivery_number);
   for (const st of ["KUL - MAA", "KUL - AAX", "KCH", "BKI", "AOR", "IPH", "LGK", "NOWHERE"]) {
-    check(`capability-off station ${st} accepts no vendor delivery`, !!(await mkDel(st, `E2E-VX-${st}-${tag}`)).error);
+    { const r = await mkDel(st, `E2E-VX-${st}-${tag}`); rec.expectAuthorizationDenied(`capability-off station ${st} accepts no vendor delivery`, { error: r.error, outcome: classifyError(r.error, r.status) }, /not configured|capab|not available|not authori|does not accept|vendor check/i); }
   }
   for (const l of [drv, mgmt, "aso", "operation_manager"]) {
-    const r = await rpc(l, "create_caterlink_vendor_delivery_secure", { p_station_code: "PEN", p_driver_name: "x", p_driver_nric: "x", p_vehicle_registration_no: "x", p_seal_number: "E2E-V-DENY", p_signature_url: "x" });
-    check(`${l} cannot create a vendor delivery (role check)`, !!r.error);
+    const r = await rpc(l, "create_caterlink_vendor_delivery_secure", { p_station_code: "PEN", p_driver_name: "x", p_driver_nric: "x", p_vehicle_registration_no: "x", p_seal_number: "E2E-V-DENY", p_signature_url: bound.vendorA((await S(l)).uid) });
+    rec.expectAuthorizationDenied(`${l} cannot create a vendor delivery (role check)`, { error: r.error, outcome: classifyError(r.error, r.status) }, /only an active|not authori|must be signed in|permission denied/i);
   }
   const seesDel = async (label) => (await rows(label, "caterlink_vendor_deliveries")).data?.some((r) => r.id === del.delivery_id) ?? false;
   const seesCp = async (label) => (await rows(label, "caterlink_vendor_checkpoints")).data?.some((r) => r.delivery_id === del.delivery_id) ?? false;
   for (const [label, want] of Object.entries({ [vnd]: true, [mgmt]: true, aso: true, "sso": true, [drv]: false, "aso-jhb": false, "aso-kul": false, operation_manager: false, profiling_aso: false })) {
     check(`${label}: vendor delivery + checkpoints ${want ? "visible" : "invisible"}`, (await seesDel(label)) === want && (await seesCp(label)) === want);
   }
-  const check_ = (label, id, result = "PASS", reason = null) => rpc(label, "record_caterlink_vendor_security_check_secure", { p_delivery_id: id, p_signature_url: "signatures/e2e-officer.png", p_result: result, p_escalation_reason: reason, p_observed: { seal_number: "E2E" } });
+  // The officer's own upload is the first authorization gate (Storage RLS asks the database); the RPC is the second. The result says which stage
+  // answered and whether the answer was a genuine authorization refusal or a fixture fault.
+  // When the Storage gate refuses, the RPC is STILL called with a well-formed parent-bound path that carries no object: the RPC authorises before it
+  // looks at the signature, so its own role/station/state check answers. Both gates are therefore credited separately (expectBothGatesDenied) and
+  // losing the RPC's own check can no longer hide behind a Storage refusal.
+  const rpcOutcome = (r) => ({ outcome: classifyError(r.error, r.status), error: r.error ?? null });
+  const check_ = async (label, id, result = "PASS", reason = null) => {
+    const sess = await S(label);
+    const up = await uploadBound(sess, bound.vendorB(id));
+    const call = (path) => sess.sb.rpc("record_caterlink_vendor_security_check_secure", { p_delivery_id: id, p_signature_url: path, p_result: result, p_escalation_reason: reason, p_observed: { seal_number: "E2E" } });
+    const r = await call(up.outcome === "ok" ? up.path : bound.vendorB(id));
+    return { stage: up.outcome === "ok" ? "rpc" : "upload", upload: up, rpc: rpcOutcome(r), ...(up.outcome === "ok" ? rpcOutcome(r) : { outcome: up.outcome, error: up.error }) };
+  };
+  const checkDenied = /not authori[sz]ed/i;
   for (const l of [vnd, drv, mgmt, "operation_manager", "aso-jhb", "aso-kul", "aso-kch-receipt", "profiling_aso", "profiling_so", "neg-pending-profile", "neg-rejected-profile", "neg-deactivated-profile", "neg-revoked-assignment", "neg-expired-assignment", "neg-future-assignment"]) {
-    check(`${l} cannot record the PEN security check`, !!(await check_(l, del.delivery_id)).error);
+    rec.expectBothGatesDenied(`${l} cannot record the PEN security check`, await check_(l, del.delivery_id), checkDenied);
   }
   check("the delivery is still CREATED after the denied attempts", ((await rows(vnd, "caterlink_vendor_deliveries")).data ?? []).find((r) => r.id === del.delivery_id)?.status === "CREATED");
-  check("the Vendor cannot complete before the security check", !!(await rpc(vnd, "complete_caterlink_vendor_delivery_secure", { p_delivery_id: del.delivery_id, p_signature_url: "x" })).error);
+  // completion: the owning Vendor uploads vendor-part-c/<delivery>/<uuid>.png first (Storage RLS), then calls the RPC
+  const complete_ = async (label, id) => {
+    const sess = await S(label);
+    const up = await uploadBound(sess, bound.vendorC(id));
+    const r = await sess.sb.rpc("complete_caterlink_vendor_delivery_secure", { p_delivery_id: id, p_signature_url: up.outcome === "ok" ? up.path : bound.vendorC(id) });
+    return { stage: up.outcome === "ok" ? "rpc" : "upload", upload: up, rpc: rpcOutcome(r), ...(up.outcome === "ok" ? rpcOutcome(r) : { outcome: up.outcome, error: up.error }) };
+  };
+  const completeDenied = /only an active|delivery not found|has not passed its security check/i;
+  rec.expectBothGatesDenied("the Vendor cannot complete before the security check", await complete_(vnd, del.delivery_id), /has not passed its security check/i);
   const ok = await check_("aso", del.delivery_id);
   check("the PEN officer recorded the security check -> SECURITY_VERIFIED", !ok.error && ((await rows(vnd, "caterlink_vendor_deliveries")).data ?? []).find((r) => r.id === del.delivery_id)?.status === "SECURITY_VERIFIED", ok.error?.message);
-  check("a second security check is refused", !!(await check_("aso", del.delivery_id)).error);
-  for (const l of [drv, mgmt, "aso"]) check(`${l} cannot complete the Vendor's delivery`, !!(await rpc(l, "complete_caterlink_vendor_delivery_secure", { p_delivery_id: del.delivery_id, p_signature_url: "x" })).error);
-  const done = await rpc(vnd, "complete_caterlink_vendor_delivery_secure", { p_delivery_id: del.delivery_id, p_signature_url: "signatures/e2e-vendor-c.png" });
+  rec.expectBothGatesDenied("a second security check is refused", await check_("aso", del.delivery_id), /only available for a newly created delivery/i);
+  for (const l of [drv, mgmt, "aso"]) rec.expectBothGatesDenied(`${l} cannot complete the Vendor's delivery`, await complete_(l, del.delivery_id), completeDenied);
+  const done = await complete_(vnd, del.delivery_id);
   check("the owning Vendor completed the delivery -> COMPLETED", !done.error && ((await rows(vnd, "caterlink_vendor_deliveries")).data ?? []).find((r) => r.id === del.delivery_id)?.status === "COMPLETED", done.error?.message);
   // escalation path at JHB
   const delE = first((await mkDel("JHB", `E2E-VESC-${tag}`)).data);
   check("Vendor created a delivery at JHB", /^CLV-/.test(delE?.delivery_number ?? ""));
-  check("an escalation without a reason is refused", !!(await check_("aso-jhb", delE.delivery_id, "ESCALATE", null)).error);
-  check("a PEN officer cannot check a JHB delivery", !!(await check_("aso", delE.delivery_id)).error);
+  rec.expectAuthorizationDenied("an escalation without a reason is refused", await check_("aso-jhb", delE.delivery_id, "ESCALATE", null), /escalation reason|reason is required/i);
+  rec.expectBothGatesDenied("a PEN officer cannot check a JHB delivery", await check_("aso", delE.delivery_id), checkDenied);
   const esc = await check_("aso-jhb", delE.delivery_id, "ESCALATE", "E2E seal mismatch");
   check("the JHB officer escalated the delivery -> ESCALATED", !esc.error && ((await rows(vnd, "caterlink_vendor_deliveries")).data ?? []).find((r) => r.id === delE.delivery_id)?.status === "ESCALATED");
-  check("an escalated delivery cannot be completed by the Vendor", !!(await rpc(vnd, "complete_caterlink_vendor_delivery_secure", { p_delivery_id: delE.delivery_id, p_signature_url: "x" })).error);
+  rec.expectBothGatesDenied("an escalated delivery cannot be completed by the Vendor", await complete_(vnd, delE.delivery_id), /has not passed its security check/i);
   for (const t of ["caterlink_vendor_deliveries", "caterlink_vendor_checkpoints"]) {
     const w = await (await S(vnd)).sb.from(t).update({ created_at: new Date().toISOString() }).neq("id", "00000000-0000-0000-0000-000000000000");
     const d = await (await S(vnd)).sb.from(t).delete().neq("id", "00000000-0000-0000-0000-000000000000");
@@ -204,8 +237,10 @@ async function main() {
 
   fs.writeFileSync(FIXTURE_FILE, JSON.stringify({ at: new Date().toISOString(), txId, txNumber: tx?.transaction_number, deliveryPen: del.delivery_id, deliveryJhb: delE.delivery_id, company: "E2EC", vehicle: "E2E1234A", driverStaffId: "E2ED001", driverName: "E2E Test Driver" }, null, 2), { mode: 0o600 });
   console.log(`\nfixture ids written outside the repository (${path.basename(FIXTURE_FILE)})`);
-  console.log(`Total failures: ${failures}`);
-  process.exit(failures ? 1 : 0);
+  await cleanupOwnOrphans(resolveStagingAdminContext().client); // this run's own unreferenced leftovers only, so the next run's hourly quota is not consumed
+  console.log(rec.summary());
+  process.exit(rec.exitCode());
 }
 
-main().catch((e) => { console.error("FAILED:", String(e.message).replace(/postgres(ql)?:\/\/[^@\s]+@/g, "postgres://[REDACTED]@")); process.exit(1); });
+main().catch((e) => {
+  if (e instanceof SetupError) { console.error("INCONCLUSIVE (fixture/setup fault, not an authorization verdict):", e.message); console.log(rec.summary()); process.exit(rec.state.failures > 0 ? 1 : 2); } console.error("FAILED:", String(e.message).replace(/postgres(ql)?:\/\/[^@\s]+@/g, "postgres://[REDACTED]@")); process.exit(1); });

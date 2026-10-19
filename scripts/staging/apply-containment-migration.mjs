@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Applies ONLY the six frozen forward migrations 20261108000001..20261113000001 (see MIGRATIONS) to the approved staging project, as one unit.
+// Applies ONLY the eight frozen forward migrations 20261108000001..20261115000001 (see MIGRATIONS) to the approved staging project, as one unit.
 // A complete transactional DRY RUN (apply, verify, behavioural probe, ROLLBACK) always comes first; only with --live and the exact phrase is
 // the real application committed (migration + history row atomically). Prints names and counts only.
 //
@@ -18,7 +18,7 @@ import { decryptBackupPayload, encryptBackupPayload } from "./lib/backup-crypto.
 import { loadCurrentManifest } from "./lib/review-accounts.mjs";
 import { gitGates, environmentGates, backupGates, connectVerified, APPROVED_REF, FORBIDDEN_REF } from "./lib/run-gates.mjs";
 
-// Six additive forward migrations applied as ONE guarded unit (each recorded in the history, all in one transaction).
+// Eight additive forward migrations applied as ONE guarded unit (each recorded in the history, all in one transaction).
 export const MIGRATIONS = [
   { version: "20261108000001", name: "caterlink_fail_closed_containment", sha256: "ad8dbca5aed5ef4e9d7cbf0a23b1874ff3566707ca7345c3cd865b73c7089306" },
   { version: "20261109000001", name: "atomic_same_day_leave", sha256: "058b4afdcc7fe081cecc33e808088a241c0258b45eab75bb514c66f99e234671" },
@@ -26,6 +26,8 @@ export const MIGRATIONS = [
   { version: "20261111000001", name: "vendor_check_signature_authorization", sha256: "7a130b188908e4cd73b75cabab7baef9efc9a6ec84664571ebb4b62c584fdc7e" },
   { version: "20261112000001", name: "block_unusable_driver_routes", sha256: "ae0ecb5ac2a2565385e542e56777c343fcf2684887717b955a75cec52b271ea2" },
   { version: "20261113000001", name: "signature_upload_authorization", sha256: "6ceb24360b2600060a466e8161c5ae15e78d1c78d939299af3f6b8a51f862499" },
+  { version: "20261114000001", name: "incident_photos_lockdown", sha256: "7cdbdc27b712c03126d4eeef2b56692621967fc73965c79c0dae668601f75e95" },
+  { version: "20261115000001", name: "signature_hardening", sha256: "397987ba9c8f9b6501eede0e1a3a156b0fff788c1a407efab1e2e4548efcd694" },
 ];
 export const PRE_COUNT = 83;
 export const LAST_PRE = "20261107000001";
@@ -114,14 +116,14 @@ async function main() {
     const before = await grants();
     for (const g of before) log(`BEFORE ${g.sig}: anon=${g.anon} authenticated=${g.auth} service_role=${g.svc} PUBLIC=${g.pub}`);
     const fp = async () => ({
-      other: (await q(`select md5(string_agg(pg_get_functiondef(p.oid), E'\\n' order by p.oid::regprocedure::text)) h from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f' and p.proname not in ('skip_part_d','raise_caterlink_incident_secure','confirm_caterlink_destination_receipt_secure','list_caterlink_pending_receipts_secure','caterlink_receipt_ready_statuses','caterlink_expected_receiving_station','submit_leave_application_secure','registration_throttle_hit','record_caterlink_vendor_security_check_secure','caterlink_vendor_check_upload_allowed','list_orphan_vendor_signatures_secure','enforce_completable_driver_route','caterlink_signature_upload_allowed','caterlink_part_b_upload_allowed','caterlink_receipt_upload_allowed','caterlink_vendor_complete_upload_allowed','caterlink_signature_owner_guard','caterlink_signature_referenced','list_orphan_signatures_secure') and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`))[0].h,
+      other: (await q(`select md5(string_agg(pg_get_functiondef(p.oid), E'\\n' order by p.oid::regprocedure::text)) h from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f' and p.proname not in ('skip_part_d','raise_caterlink_incident_secure','confirm_caterlink_destination_receipt_secure','list_caterlink_pending_receipts_secure','caterlink_receipt_ready_statuses','caterlink_expected_receiving_station','submit_leave_application_secure','registration_throttle_hit','record_caterlink_vendor_security_check_secure','caterlink_vendor_check_upload_allowed','list_orphan_vendor_signatures_secure','enforce_completable_driver_route','caterlink_signature_upload_allowed','caterlink_part_b_upload_allowed','caterlink_receipt_upload_allowed','caterlink_vendor_complete_upload_allowed','caterlink_signature_owner_guard','caterlink_signature_referenced','list_orphan_signatures_secure','caterlink_incident_photo_visible') and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`))[0].h,
       profiles: (await q("select md5(string_agg(md5(p::text), ',' order by p.id::text)) h from public.profiles p"))[0].h,
       assignments: (await q("select coalesce(md5(string_agg(md5(a::text), ',' order by a.id::text)), 'none') h from public.user_role_assignments a"))[0].h,
       transactions: (await q("select coalesce(md5(string_agg(md5(t::text), ',' order by t.id::text)), 'none') h from public.transactions t"))[0].h,
       incidents: (await q("select count(*)::text h from public.caterlink_incidents"))[0].h,
       hub: (await q("select count(*)::text h from public.caterlink_checkpoint_hub"))[0].h,
       jobs: (await q("select count(*)::text h from public.caterlink_pdf_jobs"))[0].h,
-      policies: (await q("select md5(string_agg(schemaname || tablename || policyname || coalesce(qual,'') || coalesce(with_check,''), ',' order by schemaname, tablename, policyname)) h from pg_policies where schemaname in ('public','storage') and tablename <> 'absence_notices' and not (schemaname = 'storage' and policyname in ('signatures: vendor check upload is delivery-bound','signatures: authenticated upload','signatures: workflow upload'))"))[0].h,
+      policies: (await q("select md5(string_agg(schemaname || tablename || policyname || coalesce(qual,'') || coalesce(with_check,''), ',' order by schemaname, tablename, policyname)) h from pg_policies where schemaname in ('public','storage') and tablename <> 'absence_notices' and not (schemaname = 'storage' and policyname in ('signatures: vendor check upload is delivery-bound','signatures: authenticated upload','signatures: workflow upload','incident photos: authenticated upload','incident photos: authenticated read','incident photos: scoped read'))"))[0].h,
       policiesAll: (await q("select md5(string_agg(schemaname || tablename || policyname || cmd || permissive || coalesce(qual,'') || coalesce(with_check,''), ',' order by schemaname, tablename, policyname)) h from pg_policies where schemaname in ('public','storage')"))[0].h,
     });
     const pre = await fp();
@@ -381,6 +383,97 @@ async function main() {
           const og2 = (await q("select has_function_privilege('authenticated', 'public.list_orphan_signatures_secure(integer)', 'execute') au, has_function_privilege('service_role', 'public.list_orphan_signatures_secure(integer)', 'execute') sv"))[0];
           if (og2.au || !og2.sv) fail("the signature orphan listing is not service-role only");
           probe("the trusted service role keeps the orphan listing and reference check; clients cannot call them");
+
+          // ---- hardening (20261115000001): single-use objects, per-account quota, registry, paged listing, bucket limits
+          {
+            const drvUid = acct("caterlink-driver");
+            await client.query("SAVEPOINT su");
+            const objA = `part-a/${drvUid}/${U()}.png`;
+            await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [objA, drvUid]);
+            const first = await client.query("insert into public.caterlink_checkpoint_part_a (transaction_id, pic_name, pic_staff_id, signature_url, completed_by) values ($1,'x','x',$2,$3)", [penTx, objA, drvUid]).then(() => "ACCEPTED").catch((e) => String(e.message));
+            const second = await client.query("insert into public.caterlink_checkpoint_part_a (transaction_id, pic_name, pic_staff_id, signature_url, completed_by) values ($1,'x','x',$2,$3)", [doneTx, objA, drvUid]).then(() => "ACCEPTED").catch((e) => String(e.message));
+            await client.query("ROLLBACK TO SAVEPOINT su");
+            if (first !== "ACCEPTED") fail(`the first reference to a fresh own object was refused (${first.slice(0, 80)})`);
+            if (!/already been used/i.test(second)) fail(`a second reference to the same object was not refused as already used (${second.slice(0, 80)})`);
+            probe("single use: an object backs ONE checkpoint row; a second row referencing it is refused");
+            const reg = (await q("select has_table_privilege('authenticated', 'public.caterlink_signature_refs', 'select') s, has_table_privilege('anon', 'public.caterlink_signature_refs', 'select') a, has_table_privilege('authenticated', 'public.caterlink_signature_refs', 'insert') i, (select relrowsecurity from pg_class where oid = 'public.caterlink_signature_refs'::regclass) r"))[0];
+            if (reg.s || reg.a || reg.i || !reg.r) fail("the single-use registry is reachable by a client");
+            probe("the single-use registry has RLS on and no client grant");
+
+            await client.query("SAVEPOINT quota");
+            // same-account baseline first (this upload becomes the 1st unreferenced leftover), then fill to 30: only the 31st-state refusal can be the quota
+            expectAccepted("quota baseline: the same account can upload while below the limit", await accepted("caterlink-driver", `part-a/${drvUid}/${U()}.png`));
+            for (let k = 0; k < 29; k += 1) await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [`part-a/${drvUid}/${U()}.png`, drvUid]);
+            expectDenied("quota: an account that already has 30 unreferenced signature objects in the hour is refused", await accepted("caterlink-driver", `part-a/${drvUid}/${U()}.png`));
+            expectAccepted("quota: another account is unaffected", await accepted("caterlink-vendor", `vendor-signatures/${acct("caterlink-vendor")}/${U()}.png`));
+            await client.query("ROLLBACK TO SAVEPOINT quota");
+
+            const pg = (await q("select has_function_privilege('authenticated', 'public.list_orphan_signatures_secure(integer, integer)', 'execute') au, has_function_privilege('anon', 'public.list_orphan_signatures_secure(integer, integer)', 'execute') an, has_function_privilege('service_role', 'public.list_orphan_signatures_secure(integer, integer)', 'execute') sv, (select count(*)::int from pg_proc where proname = 'list_orphan_signatures_secure' and pronamespace = 'public'::regnamespace) n"))[0];
+            if (pg.au || pg.an || !pg.sv || pg.n !== 1) fail("the paged orphan listing is not a single service-role-only function");
+            probe("the paged orphan listing is a single service-role-only function");
+            const lim = (await q("select file_size_limit, allowed_mime_types from storage.buckets where id = 'signatures'"))[0];
+            if (Number(lim.file_size_limit) !== 5242880 || [...(lim.allowed_mime_types ?? [])].sort().join() !== "image/jpeg,image/png,image/webp") fail(`the signatures bucket limits are not 5 MB and image/png|jpeg|webp (${JSON.stringify(lim)})`);
+            probe("the signatures bucket accepts at most 5 MB and image/png|jpeg|webp only");
+          }
+
+          // ---- incident-photos bucket (20261114000001): no client upload, reads follow the incident
+          {
+            const ip = await q("select polname, polcmd, polpermissive, (select string_agg(rolname, ',') from pg_roles r where r.oid = any(polroles)) roles from pg_policy where polrelid = 'storage.objects'::regclass and (pg_get_expr(polwithcheck, polrelid) ilike '%incident-photos%' or pg_get_expr(polqual, polrelid) ilike '%incident-photos%') order by polname");
+            if (ip.some((x) => /authenticated (upload|read)$/.test(x.polname))) fail("a historical unrestricted incident-photos policy is still present");
+            if (ip.some((x) => x.polcmd === "a" || x.polcmd === "w" || x.polcmd === "d" || x.polcmd === "*")) fail("a client write policy exists for the incident-photos bucket");
+            if (ip.length !== 1 || ip[0].polname !== "incident photos: scoped read" || ip[0].polcmd !== "r" || ip[0].roles !== "authenticated") fail(`the incident-photos policy set is not exactly the scoped read (${JSON.stringify(ip)})`);
+            probe("incident-photos: both unrestricted policies are gone; only the scoped SELECT for authenticated remains and no client write policy exists");
+            const incPhoto = `incident-photos/${U()}/${U()}.png`;
+            const lone = `incident-photos/${U()}/${U()}.png`;
+            const asIp = async (who, name, owner = who) => asUser(who, async () => { await client.query("insert into storage.objects (bucket_id, name, owner) values ('incident-photos', $1, $2)", [name, acct(owner)]); return "ACCEPTED"; });
+            for (const who of ["aso", "aso-kul", "caterlink-driver", "caterlink-vendor", "caterlink_management"]) {
+              expectDenied(`incident-photos: ${who} cannot upload (no client upload workflow exists)`, await asIp(who, `incident-photos/${U()}/${U()}.png`));
+            }
+            await client.query("set local session_replication_role = replica");
+            await client.query("insert into storage.objects (bucket_id, name, owner) values ('incident-photos', $1, $2)", [incPhoto, acct("aso-kul")]);
+            await client.query("insert into storage.objects (bucket_id, name, owner) values ('incident-photos', $1, $2)", [lone, acct("aso")]);
+            await client.query(`insert into public.caterlink_incidents (transaction_id, aoc_id, station_id, incident_type, severity, description, reported_by, status, photo_url)
+              values ($1,$2,$3,'OTHER','low','[INCIDENT-PHOTO-DRYRUN]',$4,'OPEN',$5)`, [penTx, aoc, pen, acct("aso-kul"), incPhoto]);
+            await client.query("set local session_replication_role = origin");
+            const readObj = async (who, name) => asUser(who, async () => (await client.query("select count(*)::int n from storage.objects where bucket_id = 'incident-photos' and name = $1", [name])).rows[0].n === 1 ? "READ" : "HIDDEN");
+            const exp = async (label, who, name, want) => { const r = await readObj(who, name); if (r !== want) fail(`incident-photos read: ${label} expected ${want}, got ${r}`); probe(`incident-photos read: ${label} -> ${want}`); };
+            await exp("the reporter can read the photo of their incident", "aso-kul", incPhoto, "READ");
+            await exp("CaterLink Management of the AOC can read it (visible incident)", "caterlink_management", incPhoto, "READ");
+            await exp("an unrelated PEN officer cannot read it", "aso", incPhoto, "HIDDEN");
+            await exp("a JHB officer cannot read it", "aso-jhb", incPhoto, "HIDDEN");
+            await exp("a Driver cannot read it", "caterlink-driver", incPhoto, "HIDDEN");
+            await exp("a Vendor cannot read it", "caterlink-vendor", incPhoto, "HIDDEN");
+            await exp("an unreferenced object is readable by its uploader", "aso", lone, "READ");
+            await exp("and not by anyone else (Management)", "caterlink_management", lone, "HIDDEN");
+          }
+
+          // ---- structure: no permissive write policy on storage.objects lacks a bucket restriction (catches hosted-only policies that never mention 'signatures')
+          {
+            const writes = await q("select polname, polcmd, pg_get_expr(polqual, polrelid) q, pg_get_expr(polwithcheck, polrelid) w from pg_policy where polrelid = 'storage.objects'::regclass and polpermissive and polcmd in ('a','w','d','*') order by polname");
+            // a policy is "scoped" only if it names a bucket AND carries no escape hatch (`or true`, an always-true branch)
+            const isScoped = (x) => { const t = `${x.q ?? ""} ${x.w ?? ""}`; return /bucket_id\s*=\s*'/.test(t) && !/\bor\s+(true|1\s*=\s*1)\b|\(\s*true\s*\)/i.test(t); };
+            const unscoped = writes.filter((x) => !isScoped(x));
+            if (unscoped.length > 0) fail(`permissive write policies on storage.objects without a bucket restriction: ${unscoped.map((x) => x.polname).join(", ")}`);
+            log(`write policies on storage.objects after the migrations (all bucket-scoped): ${writes.map((x) => x.polname).join(" | ")}`);
+            probe("structure: every permissive INSERT/UPDATE/DELETE/ALL policy on storage.objects names a bucket and has no always-true branch (no unscoped hosted-only write policy)");
+            // READ side: an unscoped permissive SELECT policy would make both buckets listable even though neither is named in it
+            const reads = await q("select polname, pg_get_expr(polqual, polrelid) q from pg_policy where polrelid = 'storage.objects'::regclass and polpermissive and polcmd in ('r','*') order by polname");
+            const unscopedReads = reads.filter((x) => !isScoped({ q: x.q, w: "" }));
+            if (unscopedReads.length > 0) fail(`permissive SELECT policies on storage.objects without a bucket restriction: ${unscopedReads.map((x) => x.polname).join(", ")}`);
+            log(`read policies on storage.objects after the migrations (all bucket-scoped): ${reads.map((x) => x.polname).join(" | ")}`);
+            probe("structure: every permissive SELECT policy on storage.objects names a bucket and has no always-true branch (neither bucket can be listed through an unscoped read policy)");
+            // behavioural proof of the same thing: an unreferenced object of another account is invisible to an unrelated officer in BOTH buckets
+            await client.query("set local session_replication_role = replica");
+            const hiddenSig = `part-a/${acct("caterlink-driver")}/${U()}.png`;
+            await client.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [hiddenSig, acct("caterlink-driver")]);
+            await client.query("set local session_replication_role = origin");
+            const seen = await asUser("aso-jhb", async () => (await client.query("select count(*)::int n from storage.objects where bucket_id in ('signatures','incident-photos') and name = $1", [hiddenSig])).rows[0].n);
+            if (seen !== 0) fail("an unrelated officer can read another account's unreferenced signature object");
+            probe("structure (behavioural): an unrelated officer cannot read or list another account's unreferenced signature object");
+            const touching = writes.filter((x) => /signatures|incident-photos/.test(`${x.q ?? ""} ${x.w ?? ""}`)).map((x) => x.polname);
+            if (touching.join() !== "signatures: workflow upload") fail(`unexpected write policies reach the signatures or incident-photos buckets: ${touching.join(", ")}`);
+            probe("structure: the only permissive write policy that reaches either bucket is 'signatures: workflow upload'");
+          }
           await client.query("ROLLBACK TO SAVEPOINT sg");
         }
 

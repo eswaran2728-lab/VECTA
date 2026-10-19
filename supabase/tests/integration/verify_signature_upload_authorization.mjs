@@ -96,6 +96,8 @@ async function main() {
   // re-run the migration under test (idempotent) on top of the legacy policy, exactly as staging will see it
   const MIGRATION = fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '20261113000001_signature_upload_authorization.sql'), 'utf8');
   await db.exec(MIGRATION);
+  const MIGRATION2 = fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '20261115000001_signature_hardening.sql'), 'utf8');
+  await db.exec(MIGRATION2);
   await sup();
 
   // ---- personas
@@ -373,6 +375,61 @@ async function main() {
   assert(!denyList.ok && /permission denied/i.test(denyList.err), 'a signed-in user cannot list orphans');
   const denyAnon = await attempt(asAnon, () => db.query('select * from public.list_orphan_signatures_secure(30);'));
   assert(!denyAnon.ok && /permission denied/i.test(denyAnon.err), 'anonymous cannot list orphans');
+
+
+  console.log('--- hardening (20261115000001): single-use objects, per-account quota, paged orphan listing, bucket limits ---');
+  {
+    // single use: an object can be referenced by ONE checkpoint row
+    const t1x = await makeTx(pen); const t2x = await makeTx(pen);
+    const reused = await (async () => { await db.exec('reset role;'); const n = png('part-a/', driverB, '/', uuid()); await db.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [n, driverB]); await sup(); return n; })();
+    const PAx = 'insert into public.caterlink_checkpoint_part_a (transaction_id, pic_name, pic_staff_id, signature_url, completed_by) values ($1,$2,$3,$4,$5)';
+    assert((await insertRow(PAx, [t1x, 'n', 's', reused, driverB])).ok, 'single use: the first row that references a fresh own object is accepted');
+    const second = await insertRow(PAx, [t2x, 'n', 's', reused, driverB]);
+    assert(!second.ok && /already been used/i.test(second.err || ''), 'single use: a second row cannot reference the same object (same actor, different movement)');
+    const vreused = await (async () => { await db.exec('reset role;'); const n = png('vendor-signatures/', vendorB, '/', uuid()); await db.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [n, vendorB]); await sup(); return n; })();
+    const dA = await delivery(vendorB, 'CREATED'); const dB = await delivery(vendorB, 'CREATED');
+    const VCx = "insert into public.caterlink_vendor_checkpoints (delivery_id, stage, actor_id, actor_name, actor_staff_id, signature_url) values ($1,'A',$2,'n','s',$3)";
+    assert((await insertRow(VCx, [dA, vendorB, vreused])).ok && !(await insertRow(VCx, [dB, vendorB, vreused])).ok, 'single use: a vendor-creation object cannot start two deliveries');
+    const regGrants = await one("select has_table_privilege('authenticated', 'public.caterlink_signature_refs', 'select') s, has_table_privilege('anon', 'public.caterlink_signature_refs', 'select') a, has_table_privilege('authenticated', 'public.caterlink_signature_refs', 'insert') i, (select relrowsecurity from pg_class where oid = 'public.caterlink_signature_refs'::regclass) r");
+    assert(regGrants && !regGrants.s && !regGrants.a && !regGrants.i && regGrants.r, 'the single-use registry is invisible to clients (RLS on, no grants)');
+
+    // per-account hourly quota: bounds what one authorised account can leave behind
+    const quotaUser = await external('quota', 'warehouse_pic');
+    let accepted = 0; let firstDenied = -1;
+    for (let i = 0; i < 40; i += 1) {
+      const r = await upload(quotaUser, png('part-a/', quotaUser, '/', uuid()));
+      if (r.ok) accepted += 1; else if (firstDenied < 0) firstDenied = i;
+    }
+    assert(accepted === 30 && firstDenied === 30, 'quota: an account can create 30 signature objects per hour, the 31st and later are refused by Storage RLS (accepted ' + accepted + ')');
+    const other = await upload(driverA, png('part-a/', driverA, '/', uuid()));
+    assert(other.ok, 'quota: another account is unaffected');
+    // only UNREFERENCED leftovers count: once one of the 30 backs a real checkpoint, the account may upload again (a busy officer is never blocked by valid work)
+    const qTx = await makeTx(pen);
+    const qObj = (await rows("select name from storage.objects where bucket_id = 'signatures' and owner = $1 order by created_at limit 1", [quotaUser]))[0].name;
+    assert((await insertRow(PAx, [qTx, 'n', 's', qObj, quotaUser])).ok, 'quota: one of the account\'s objects is referenced by a real checkpoint row');
+    const again = await upload(quotaUser, png('part-a/', quotaUser, '/', uuid()));
+    assert(again.ok, 'quota: with 29 unreferenced leftovers the account can upload again (referenced objects are not counted)');
+    const full = await upload(quotaUser, png('part-a/', quotaUser, '/', uuid()));
+    assert(!full.ok && /row-level security|policy/i.test(full.err), 'quota: back at 30 unreferenced leftovers, the next upload is refused');
+
+    // paged orphan listing: a deterministic order and an offset, so a stuck head cannot starve the rest; the old one-argument form is gone
+    await db.exec('reset role;');
+    await db.query("update storage.objects set created_at = now() - interval '3 hours' where bucket_id = 'signatures' and name like 'part-a/' || $1 || '/%'", [quotaUser]);
+    await sup();
+    const all = (await rows('select name from public.list_orphan_signatures_secure(30, 0)')).map((r) => r.name);
+    const page2 = (await rows('select name from public.list_orphan_signatures_secure(30, 5)')).map((r) => r.name);
+    assert(all.length >= 30 && page2.length === all.length - 5 && page2.every((n, i) => n === all[i + 5]), 'paging: an offset skips exactly that many rows and keeps the same order');
+    assert(!(await one("select 1 x from pg_proc where proname = 'list_orphan_signatures_secure' and pronargs = 1 and pronamespace = 'public'::regnamespace")), 'only one orphan-listing signature exists (the paged one)');
+    const pg = await one("select has_function_privilege('authenticated', 'public.list_orphan_signatures_secure(integer, integer)', 'execute') au, has_function_privilege('anon', 'public.list_orphan_signatures_secure(integer, integer)', 'execute') an, has_function_privilege('service_role', 'public.list_orphan_signatures_secure(integer, integer)', 'execute') sv");
+    assert(!pg.au && !pg.an && pg.sv, 'the paged listing is service-role only');
+
+    // bucket limits (only where the platform exposes them)
+    const cols = (await rows("select column_name from information_schema.columns where table_schema = 'storage' and table_name = 'buckets'")).map((r) => r.column_name);
+    if (cols.includes('file_size_limit') && cols.includes('allowed_mime_types')) {
+      const b = await one("select file_size_limit, allowed_mime_types from storage.buckets where id = 'signatures'");
+      assert(Number(b.file_size_limit) === 5242880 && JSON.stringify([...b.allowed_mime_types].sort()) === JSON.stringify(['image/jpeg', 'image/png', 'image/webp']), 'bucket limits: 5 MB and image/png|jpeg|webp only');
+    } else console.log('NOTE: this platform stub has no bucket size/mime columns; the limit statement is skipped there and exercised on hosted Storage by the runner probe');
+  }
 
   await db.exec('rollback;');
   await db.close();

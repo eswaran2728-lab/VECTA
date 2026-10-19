@@ -11,6 +11,7 @@ import path from "node:path";
 import { chromium } from "playwright";
 import { createClient } from "@supabase/supabase-js";
 import { loadCurrentCredentials, signInWithRetry } from "./lib/review-accounts.mjs";
+import { bound, uploadBound, uploadRequired, classifyError, SetupError } from "./lib/signature-fixtures.mjs";
 
 const args = process.argv.slice(2);
 const argVal = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split("=").slice(1).join("=");
@@ -84,12 +85,36 @@ function loadFixtures() {
   const f = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), "vecta-e2e-fixtures.json"), "utf8"));
   return { txId: f.txId, txNumber: f.txNumber, vendorDeliveryId: f.deliveryPen, escalatedId: f.deliveryJhb, fromFixture: true };
 }
-async function rpcAs(label, fn, args) {
+const rpcSessions = new Map();
+async function sessionAs(label) {
+  if (rpcSessions.has(label)) return rpcSessions.get(label);
   const a = acct(label);
   const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
-  const { error } = await signInWithRetry(sb, a.email, a.password);
-  if (error) throw new Error(`rpc sign-in failed for ${label}`);
-  return sb.rpc(fn, args);
+  const { data, error } = await signInWithRetry(sb, a.email, a.password);
+  if (error) throw new SetupError(`rpc sign-in failed for ${label}`);
+  const sess = { sb, uid: data.user.id };
+  rpcSessions.set(label, sess);
+  return sess;
+}
+async function rpcAs(label, fn, args) {
+  return (await sessionAs(label)).sb.rpc(fn, args);
+}
+// A fixture delivery created through the Vendor's OWN session: its signature is a fresh vendor-signatures/<uid>/<uuid>.png object (single-use).
+async function createVendorDeliveryFixture(over) {
+  const sess = await sessionAs("caterlink-vendor");
+  const sig = await uploadRequired(sess, bound.vendorA(sess.uid), "Vendor creation signature");
+  return rpcAs("caterlink-vendor", "create_caterlink_vendor_delivery_secure", { p_driver_name: "E2E Vendor Driver", p_driver_nric: "E2E-NRIC-001", ...over, p_signature_url: sig });
+}
+// An officer's security check through their OWN session: the upload (Storage RLS) is the first gate, the RPC the second. A genuine
+// authorization refusal and a fixture/setup fault are reported separately.
+async function officerSecurityCheck(label, deliveryId, result = "PASS") {
+  const sess = await sessionAs(label);
+  const up = await uploadBound(sess, bound.vendorB(deliveryId));
+  // When the Storage gate refuses, the RPC is still asked (with a parent-bound path that carries no object) so ITS role/station/state check is
+  // proven too; losing either gate is visible (both are reported).
+  const r = await sess.sb.rpc("record_caterlink_vendor_security_check_secure", { p_delivery_id: deliveryId, p_signature_url: up.outcome === "ok" ? up.path : bound.vendorB(deliveryId), p_result: result });
+  const rpc = { outcome: classifyError(r.error, r.status), error: r.error ?? null };
+  return { stage: up.outcome === "ok" ? "rpc" : "upload", upload: up, rpc };
 }
 
 async function driverFlow(browser, state) {
@@ -243,7 +268,7 @@ async function vendorFlow(browser, state) {
       const msg = ((await page.locator('[role="alert"]').allInnerTexts().catch(() => [])).join(" | ") || "none").slice(0, 300);
       if (STORAGE_DEFECT.test(msg)) blocked(`${T}: PEN delivery created from the UI`, "signature upload refused by the storage policy");
       else ok(`${T}: PEN delivery created from the UI`, false, msg);
-      const fresh = await rpcAs("caterlink-vendor", "create_caterlink_vendor_delivery_secure", { p_station_code: "PEN", p_driver_name: "E2E Vendor Driver", p_driver_nric: "E2E-NRIC-001", p_vehicle_registration_no: `E2EV${tag}`, p_seal_number: `E2E-VRPC-${tag}`, p_signature_url: "signatures/e2e-vendor.png" });
+      const fresh = await createVendorDeliveryFixture({ p_station_code: "PEN", p_vehicle_registration_no: `E2EV${tag}`, p_seal_number: `E2E-VRPC-${tag}` });
       penId = (Array.isArray(fresh.data) ? fresh.data[0] : fresh.data)?.delivery_id;
     }
     state.vendorDeliveryId = penId;
@@ -284,7 +309,7 @@ async function vendorFlow(browser, state) {
     if (jhbId) ok(`${T}: JHB delivery created from the UI`, true);
     else {
       blocked(`${T}: JHB delivery created from the UI`, "no id returned");
-      const fresh = await rpcAs("caterlink-vendor", "create_caterlink_vendor_delivery_secure", { p_station_code: "JHB", p_driver_name: "E2E Vendor Driver", p_driver_nric: "E2E-NRIC-001", p_vehicle_registration_no: `E2EV${tag}`, p_seal_number: `E2E-VESCRPC-${tag}`, p_signature_url: "signatures/e2e-vendor.png" });
+      const fresh = await createVendorDeliveryFixture({ p_station_code: "JHB", p_vehicle_registration_no: `E2EV${tag}`, p_seal_number: `E2E-VESCRPC-${tag}` });
       jhbId = (Array.isArray(fresh.data) ? fresh.data[0] : fresh.data)?.delivery_id;
     }
     state.escalatedId = jhbId;
@@ -327,7 +352,7 @@ async function vendorFlow(browser, state) {
 // assignment / profile state cases, in the browser and against the API, for the six negative-state review accounts
 async function stateFlow(browser, state) {
   const T = "State";
-  const fresh = await rpcAs("caterlink-vendor", "create_caterlink_vendor_delivery_secure", { p_station_code: "PEN", p_driver_name: "E2E State", p_driver_nric: "E2E-NRIC-002", p_vehicle_registration_no: `E2ES${tag}`, p_seal_number: `E2E-VST-${tag}`, p_signature_url: "signatures/e2e-state.png" });
+  const fresh = await createVendorDeliveryFixture({ p_station_code: "PEN", p_driver_name: "E2E State", p_driver_nric: "E2E-NRIC-002", p_vehicle_registration_no: `E2ES${tag}`, p_seal_number: `E2E-VST-${tag}` });
   const id = (Array.isArray(fresh.data) ? fresh.data[0] : fresh.data)?.delivery_id;
   ok(`${T}: (setup) a CREATED PEN delivery exists`, !!id, fresh.error?.message);
   for (const label of ["neg-pending-profile", "neg-rejected-profile", "neg-deactivated-profile", "neg-revoked-assignment", "neg-expired-assignment", "neg-future-assignment"]) {
@@ -338,8 +363,13 @@ async function stateFlow(browser, state) {
       await page.goto(`${base}/icms/vendor-transactions/${id}/part-b`, { waitUntil: "domcontentloaded" });
       await page.waitForTimeout(2000);
       ok(`${T}: ${label} gets no PEN security-check form`, (await page.locator("#vehicle_registration_no").count()) === 0, `landed ${landed}; part-b -> ${pathOf(page)}`);
-      const r = await rpcAs(label, "record_caterlink_vendor_security_check_secure", { p_delivery_id: id, p_signature_url: "x", p_result: "PASS" });
-      ok(`${T}: ${label} is refused by the security-check function`, !!r.error, r.error?.message?.slice(0, 80));
+      const r = await officerSecurityCheck(label, id);
+      for (const [gate, res, rule] of [["Storage gate", r.upload, null], ["RPC gate", r.rpc, /not authori[sz]ed/i]]) {
+        const msg = String(res.error?.message ?? "");
+        const verdict = rule ? (rule.test(msg) ? "authorization" : (res.outcome === "ok" ? "ok" : "setup")) : res.outcome;
+        if (verdict === "setup") blocked(`${T}: ${label} ${gate} of the security-check path`, `fixture/setup fault, NOT an authorization verdict: ${msg.slice(0, 80)}`);
+        else ok(`${T}: ${label} is refused at the ${gate} of the security-check path`, verdict === "authorization", msg.slice(0, 80) || "NOT refused");
+      }
       if (state.txId) {
         await page.goto(`${base}/icms/transactions/${state.txId}`, { waitUntil: "domcontentloaded" });
         await page.waitForTimeout(1500);
@@ -441,7 +471,7 @@ async function main() {
     if (flows.includes("isolation")) await isolationFlow(browser, state);
     if (flows.includes("state")) await stateFlow(browser, state);
   } finally { await browser.close(); }
-  console.log(`\nEvidence directory: ${evDir}\nBlocked steps: ${blockedCount}\nTotal failures: ${failures}`);
-  process.exit(failures ? 1 : 0);
+  console.log(`\nEvidence directory: ${evDir}\nBlocked (inconclusive) steps: ${blockedCount}\nTotal failures: ${failures}`);
+  process.exit(failures ? 1 : blockedCount ? 2 : 0);
 }
-main().catch((e) => { console.error("FATAL:", e.message); process.exit(1); });
+main().catch((e) => { if (e instanceof SetupError) { console.error("INCONCLUSIVE (fixture/setup fault, not an authorization verdict):", e.message); console.log(`Total failures so far: ${failures}`); process.exit(failures > 0 ? 1 : 2); } console.error("FATAL:", e.message); process.exit(1); });

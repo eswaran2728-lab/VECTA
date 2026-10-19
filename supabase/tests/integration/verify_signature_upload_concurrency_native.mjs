@@ -106,6 +106,40 @@ console.log('=== a workflow state change committed mid-burst: later uploads are 
   assert((await count(`vendor-part-c/${dId}/%`)) === 3, 'only the three uploads made before the state change exist');
 }
 
+console.log('=== two transactions reference the SAME object at once: exactly one commits (single-use registry) ===');
+{
+  const driver = await external('drvsu', 'warehouse_pic');
+  const pen = await one("select id from public.org_stations where code = 'PEN';");
+  const myAoc = (await one("select id from public.aocs where code = 'MY';")).id;
+  const txs = [];
+  await asSuper(async () => {
+    await db.query('set session_replication_role = replica;');
+    for (let k = 0; k < 6; k += 1) {
+      const id = nextId();
+      await db.query(`insert into public.transactions (id, transaction_number, aoc_id, direction, vehicle_number, driver_name, driver_id, seal_number, status, route, origin_station_id, flight_number, created_by)
+        values ($1,$2,$3,'OUTBOUND','SU1234A','SU Driver','SUD001','S','CREATED','AIRCRAFT',$4,'AK703',$5);`, [id, `TX-SU-${k}`, myAoc, pen.id, driver]);
+      txs.push(id);
+    }
+    await db.query('set session_replication_role = origin;');
+  });
+  const name = `part-a/${driver}/${uuid()}.png`;
+  await asSuper(() => db.query("insert into storage.objects (bucket_id, name, owner) values ('signatures', $1, $2)", [name, driver]));
+  const cs = await Promise.all(txs.map(() => mk()));
+  const res = await Promise.allSettled(cs.map(async (c, i) => {
+    await c.query('begin;');
+    await c.query("insert into public.caterlink_checkpoint_part_a (transaction_id, pic_name, pic_staff_id, signature_url, completed_by) values ($1,'n','s',$2,$3)", [txs[i], name, driver]);
+    await new Promise((r) => setTimeout(r, 300));
+    await c.query('commit;');
+  }));
+  await Promise.all(cs.map((c) => c.query('rollback;').catch(() => {}).then(() => c.end())));
+  const won = res.filter((r) => r.status === 'fulfilled').length;
+  const rows = (await one("select count(*)::int n from public.caterlink_checkpoint_part_a where signature_url = $1", [name])).n;
+  const reg = (await one("select count(*)::int n from public.caterlink_signature_refs where signature_url = $1", [name])).n;
+  assert(won === 1 && rows === 1 && reg === 1, `exactly one of six simultaneous rows claimed the object (won ${won}, rows ${rows}, registry ${reg})`);
+  const used = res.filter((r) => r.status === 'rejected' && /already been used/i.test(String(r.reason?.message))).length;
+  assert(used === 5, `the five losers were refused as already used (${used})`);
+}
+
 await db.end();
 console.log(`\nTOTAL: ${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

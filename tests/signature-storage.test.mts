@@ -103,9 +103,17 @@ test("settle discards after a RETURNED refusal but keeps the object after a thro
   const thrown = deps();
   assert.equal(await settleSignature(path, thrown.d, { error: { message: "timeout" }, thrown: true }), "kept-for-reconciliation");
   assert.deepEqual(thrown.calls.removed, []);
-  const ok = deps();
+  const ok = deps({ isReferenced: async () => true });
   assert.equal(await settleSignature(path, ok.d, { error: null, thrown: false }), "recorded");
   assert.deepEqual(ok.calls.removed, []);
+  // a "successful" call that did NOT reference the object (e.g. an ON CONFLICT retry) leaves an orphan: it is removed now
+  const unref = deps({ isReferenced: async () => false });
+  assert.equal(await settleSignature(path, unref.d, { error: null, thrown: false }), "removed");
+  assert.deepEqual(unref.calls.removed, [[path]]);
+  // an unknown reference state after success is never a reason to delete
+  const unknown = deps({ isReferenced: async () => null });
+  assert.equal(await settleSignature(path, unknown.d, { error: null, thrown: false }), "failed");
+  assert.deepEqual(unknown.calls.removed, []);
 });
 
 test("reconciliation lists every approved prefix, re-checks each reference and survives a failing listing", async () => {
@@ -114,9 +122,10 @@ test("reconciliation lists every approved prefix, re-checks each reference and s
   const { d, calls } = deps({ listOrphans: async () => names, isReferenced: async (p: string) => p === raced });
   const r = await reconcileSignatureOrphans(d, 30);
   assert.deepEqual(calls.removed, [[names[0], names[2], names[3]]]);
-  assert.deepEqual(r, { removed: 3, skipped: 3 });
+  assert.equal(r.removed, 3);
+  assert.equal(r.skipped, 3);
   const bad = deps({ listOrphans: async () => { throw new Error("rpc down"); } });
-  assert.deepEqual(await reconcileSignatureOrphans(bad.d, 30), { removed: 0, skipped: 0, failed: true });
+  { const br = await reconcileSignatureOrphans(bad.d, 30); assert.deepEqual([br.removed, br.skipped, br.failed], [0, 0, true]); }
 });
 
 test("source: no application code uploads to the signatures bucket by a client-chosen name any more", () => {
@@ -214,4 +223,45 @@ test("an ambiguous outcome keeps the object for reconciliation; a database refus
   const b = deps();
   assert.equal(await settleSignature(path, b.d, refused), "removed");
   assert.deepEqual(b.calls.removed, [[path]]);
+});
+
+test("a gateway failure (5xx without a SQLSTATE) is ambiguous; a database verdict with a SQLSTATE is not, whatever the status", async () => {
+  for (const status of [502, 503, 504, 520, 0]) {
+    assert.equal(isAmbiguousTransportError({ message: "The upstream server is timing out" }, status), true, String(status));
+    assert.equal(isAmbiguousTransportError({ message: "Bad gateway" }, status), true, String(status));
+  }
+  assert.equal(isAmbiguousTransportError({ message: "Not authorised", code: "P0001" }, 500), false, "a SQLSTATE means the database answered");
+  assert.equal(isAmbiguousTransportError({ message: "Not authorised" }, 400), false, "a 4xx without a SQLSTATE and without a transport message is a refusal");
+  const gw = await captureOutcome(async () => ({ error: { message: "Gateway Time-out" }, status: 504 }));
+  assert.equal(gw.thrown, true);
+  const keep = deps();
+  assert.equal(await settleSignature(`part-a/${U1}/${U2}.png`, keep.d, gw), "kept-for-reconciliation");
+  assert.deepEqual(keep.calls.removed, []);
+});
+
+test("reconciliation pages through the backlog, advancing past rows that could not be removed, and stops at the page cap", async () => {
+  const mk = (n: number) => Array.from({ length: n }, (_, i) => `part-a/${U1}/aaaaaaaa-bbbb-4ccc-8ddd-${String(i).padStart(12, "0")}.png`);
+  // a stateful fake of the server: removed names leave the listing; the first 200 names cannot be removed (a stuck head)
+  const make = (total: number, stuck: number) => {
+    const live = new Set(mk(total));
+    const stuckNames = new Set(mk(total).slice(0, stuck));
+    const asked: number[] = [];
+    return {
+      asked,
+      live,
+      d: deps({
+        listOrphans: async (_m: number, offset: number) => { asked.push(offset); return [...live].sort().slice(offset, offset + 200); },
+        removeAsService: async (paths: string[]) => { if (paths.some((x) => stuckNames.has(x))) { for (const x of paths) if (!stuckNames.has(x)) live.delete(x); return { error: { message: "partial failure" } }; } for (const x of paths) live.delete(x); return { error: null }; },
+      }).d,
+    };
+  };
+  const f = make(450, 200);
+  const r = await reconcileSignatureOrphans(f.d, 30);
+  assert.equal(f.live.size, 200, "only the stuck head remains; everything behind it was reached");
+  assert.equal(r.removed + r.skipped >= 450, true);
+  assert.ok(f.asked.includes(200), "the offset advanced past the stuck head");
+  const endless = deps({ listOrphans: async () => mk(200), removeAsService: async () => ({ error: { message: "down" } }) });
+  const cap = await reconcileSignatureOrphans(endless.d, 30, 3);
+  assert.equal(cap.removed, 0);
+  assert.equal(cap.pages, 3, "a stuck backlog cannot loop forever");
 });

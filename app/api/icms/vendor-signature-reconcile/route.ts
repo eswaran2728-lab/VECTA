@@ -5,6 +5,7 @@ import { signatureDeps } from "@/lib/icms/signature-runtime";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const maxDuration = 60; // a paged run checks each candidate's reference; allow it time to finish
 
 function authorised(header: string | null, secret: string): boolean {
   const given = Buffer.from(header ?? "");

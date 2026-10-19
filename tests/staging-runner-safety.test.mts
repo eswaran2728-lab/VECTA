@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { destructiveStatement, MIGRATIONS } from "../scripts/staging/apply-containment-migration.mjs";
 
-/** The guarded runner refuses a migration that contains a top-level destructive statement, but must accept all six reviewed files. */
+/** The guarded runner refuses a migration that contains a top-level destructive statement, but must accept all eight reviewed files. */
 test("the destructive-statement gate accepts every reviewed migration (bounded clean-up inside a function body is not a top-level statement)", () => {
-  assert.equal(MIGRATIONS.length, 6);
+  assert.equal(MIGRATIONS.length, 8);
   for (const m of MIGRATIONS) {
     const sql = fs.readFileSync(`supabase/migrations/${m.version}_${m.name}.sql`, "utf8");
     assert.equal(destructiveStatement(sql), null, `${m.version} must pass the gate`);
@@ -59,4 +59,19 @@ test("the runner verifies the original policies are restored after the rolled-ba
   const src = fs.readFileSync("scripts/staging/apply-containment-migration.mjs", "utf8");
   assert.match(src, /policiesAll/);
   assert.ok(src.includes("polname = 'signatures: authenticated upload'"), "the legacy policy's return is checked");
+});
+
+test("the runner proves the incident-photos lockdown and the signature hardening with named probes", () => {
+  const src = fs.readFileSync("scripts/staging/apply-containment-migration.mjs", "utf8");
+  for (const must of [
+    "incident-photos: both unrestricted policies are gone",
+    "no client upload workflow exists",
+    "the reporter can read the photo of their incident",
+    "an unrelated PEN officer cannot read it",
+    "single use: an object backs ONE checkpoint row",
+    "quota: an account that already has 30 unreferenced signature objects",
+    "the signatures bucket accepts at most 5 MB",
+    "structure: every permissive INSERT/UPDATE/DELETE/ALL policy on storage.objects names a bucket",
+    "structure: the only permissive write policy that reaches either bucket",
+  ]) assert.ok(src.includes(must), "missing probe: " + must);
 });

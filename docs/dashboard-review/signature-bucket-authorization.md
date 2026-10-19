@@ -91,3 +91,44 @@ signature workflow (Part C, Part D, REDQ) rejects any signature reference.
   `verify-external-workflows-staging.mjs`, `targeted-part-b-probe.mjs`) must switch to the bound paths before any post-application run.
 * Part C, Part D, HUB and REDQ signatures remain blocked until the process owner answers
   `docs/dashboard-review/part-c-owner-questions.md`.
+
+## Hardening (migration 20261115000001) and the second independent review
+
+A second, fresh review of the implementation found no bypass of the upload policy or the finalisation guard and no cross-station / cross-AOC /
+cross-entity gap between the helpers and the RPCs they mirror. It recorded residual risks, handled as follows:
+
+| Finding | Disposition |
+|---|---|
+| A 5xx gateway failure (no SQLSTATE) was treated as a definite refusal, so a committed signature could be deleted | **Fixed.** Status 0, any 5xx, or a transport-fault message without a SQLSTATE is ambiguous: the object is kept for reconciliation (`isAmbiguousTransportError`). |
+| One object could back more than one row of the same actor (Part A / vendor creation are actor-bound) | **Fixed.** `caterlink_signature_refs` (primary key, RLS on, no client grant) makes every object single-use, atomically, including under concurrent inserts. |
+| Reconciliation capacity: 200 per run, a stuck head starved the rest, an account could create unlimited leftovers | **Fixed.** `list_orphan_signatures_secure(minutes, offset)` orders by (created_at, name) and pages; the cron route pages up to 20 times per run, advancing past rows that could not be removed; the upload policy refuses an account that already has 30 UNREFERENCED objects created in the last hour (leftovers only; objects backing a real checkpoint never count, so a busy officer is not blocked; the check bounds abuse rather than being an atomic gate, so concurrent uploads at the limit can overshoot by the concurrency level). |
+| Object content was bounded only by its file name | **Fixed where the platform allows.** The bucket is limited to 5 MB and image/png, image/jpeg, image/webp. |
+| `ON CONFLICT DO UPDATE` on the receipt can leave an unreferenced object | **Fixed.** After every successful call the application verifies the reference and removes an unreferenced object (an unknown reference state is never deleted). |
+| Structural policy check only saw policies containing the word "signatures" | **Fixed.** The runner now enumerates every permissive write policy on `storage.objects`, requires each to name a bucket, and requires that the only one reaching the signatures or incident-photos bucket is `signatures: workflow upload`. |
+
+### Intentional limitations
+* A signed upload URL minted before authority is lost can create an object afterwards (platform behaviour). Finalisation re-authorises, so the effect is an
+  orphan removed by reconciliation.
+* The stored `signature_hash` is supplied by the application and is not compared with the object's bytes.
+* The policy and guard compare `storage.objects.owner` (uuid). If a hosted Storage version stopped populating it, uploads and finalisation would fail closed
+  (availability, not security). Staging has no object with a null owner.
+* Reconciliation runs daily (Vercel Hobby allows only daily crons). Capacity is up to 20 pages of 200 per run, and an account cannot hold more than ~30
+  unreferenced objects created within an hour, so the backlog is bounded. **Business decision for the process owner:** whether 30 per hour is the right
+  limit for the busiest receipt/Part B officers (it only counts unreferenced leftovers, so normal work never reaches it) and whether more than daily
+  reconciliation is wanted once the project leaves the Hobby plan.
+* The nine unreferenced legacy `part-b/<ts>-<id>` objects on staging are not removed (no authorisation was given).
+* Part C, Part D, HUB and REDQ signatures stay blocked pending the owner decisions in `part-c-owner-questions.md`.
+
+### Test note: the native `verify_phase8_concurrency_round2_native` count (21 vs 22)
+The suite races a case resolve against a reopen. The assertion block is branch-dependent by design: if the reopen wins the race it asserts one fact,
+if it loses it asserts two (denial message and final state). Both outcomes are valid, so 21 or 22 passing assertions are both correct and neither
+is a flake. It is not a defect.
+
+### Staging verification scripts
+The four staging scripts (`verify-storage-staging.mjs`, `e2e-external-workflows.mjs`, `verify-external-workflows-staging.mjs`, `targeted-part-b-probe.mjs`) now upload
+every fixture signature through the actor's own session to a parent-bound path (`scripts/staging/lib/signature-fixtures.mjs`), use a fresh object per record, and
+test BOTH gates for an unauthorised actor (the Storage upload, then the RPC with a well-formed bound path that carries no object, so the RPC's own check answers).
+A refusal is credited only when it is a genuine authorization refusal, and a named expected rule is required when given. Fixture/setup faults are counted
+separately and end the run with exit code 2 (never a pass); a failed control ends it with exit code 1 even if a later setup fault occurs. Each run removes only the
+unreferenced objects it created itself (decided by the database's own reference check), so repeated runs do not consume the hourly quota. These scripts
+require the migrations to be applied and have NOT been executed in this phase (no live application is authorised).

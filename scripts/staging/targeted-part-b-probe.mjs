@@ -11,6 +11,12 @@ import { createClient } from "@supabase/supabase-js";
 import { connectVerified, defaultCredentialsDir, environmentGates, FORBIDDEN_REF } from "./lib/run-gates.mjs";
 import { loadCurrentCredentials, loadCurrentManifest } from "./lib/review-accounts.mjs";
 import { nextStepFor } from "../../lib/icms/workflow.ts";
+import { bound, uploadBound, cleanupOwnOrphans, SetupError } from "./lib/signature-fixtures.mjs";
+import { resolveStagingAdminContext } from "./lib/env-guard.mjs";
+// a fixture/setup fault is INCONCLUSIVE (exit 2), never a pass and never a failed control
+const inconclusive = (e) => { if (e instanceof SetupError || e?.name === "SetupError") { console.error("INCONCLUSIVE (fixture/setup fault, not an authorization verdict):", e.message); process.exit(2); } console.error(e); process.exit(1); };
+process.on("uncaughtException", inconclusive);
+process.on("unhandledRejection", inconclusive);
 
 const args = process.argv.slice(2);
 const argVal = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split("=").slice(1).join("=");
@@ -49,13 +55,22 @@ async function rest(label) {
   await sleep(2500);
   return (sessions[label] = c);
 }
-let n = 0;
-const call = (c, tx, o = {}) => c.rpc("record_caterlink_part_b_secure", {
+// Two gates guard a Part B signature (migration 20261113000001): Storage RLS on the upload, then the RPC. The refusal probes call the RPC alone
+// with a well-formed parent-bound path (no object): the RPC authorises BEFORE it looks at the signature, so its uniform refusal is what is
+// compared. The success and concurrency paths upload a real object through the officer's OWN session first (callUploaded).
+const rpcArgs = (tx, o, sig) => ({
   p_transaction_id: tx.id, p_vehicle_verified: o.veh ?? true, p_driver_verified: o.drv ?? true,
   p_seal_entries: o.entries ?? { [tx.sealId]: P.sealNumber }, p_seal_colors: o.colors ?? { [tx.sealId]: "BLUE" },
   p_observed_vehicle: o.vehicle ?? P.vehicleNumber, p_observed_driver_name: o.dname ?? P.driverName, p_observed_driver_id: o.did ?? P.driverStaffId,
-  p_signature_url: o.sig ?? `part-b/uat-${runId}-${++n}.png`, p_signature_hash: "a".repeat(64), p_remarks: "", p_result: o.result ?? "PASS", p_escalation_reason: o.reason ?? "",
+  p_signature_url: sig, p_signature_hash: "a".repeat(64), p_remarks: "", p_result: o.result ?? "PASS", p_escalation_reason: o.reason ?? "",
 });
+async function callUploaded(c, tx, o = {}) {
+  const up = await uploadBound({ sb: c }, bound.partB(tx.id));
+  if (up.outcome === "setup") throw new SetupError(`fixture signature could not be uploaded: ${String(up.error?.message ?? "").slice(0, 100)}`);
+  if (up.outcome === "authorization") return { error: up.error, data: null, stage: "upload" };
+  return c.rpc("record_caterlink_part_b_secure", rpcArgs(tx, o, up.path));
+}
+const call = (c, tx, o = {}) => c.rpc("record_caterlink_part_b_secure", o.sig !== undefined ? rpcArgs(tx, o, o.sig) : rpcArgs(tx, o, bound.partB(tx.id)));
 
 console.log("=== authorization, workflow state and validation (REST RPC as the user) ===");
 if (argVal("rest") !== "0") {
@@ -74,6 +89,9 @@ if (argVal("rest") !== "0") {
     const r2 = await call(c, TX[key]);
     const a = await snap(TX[key]);
     refusals.add(r2.error?.message ?? "(accepted)");
+    const gate1 = await uploadBound({ sb: c }, bound.partB(TX[key].id));
+    if (gate1.outcome === "setup") throw new SetupError(`${label}: the upload probe hit a fixture/setup fault: ${String(gate1.error?.message ?? "").slice(0, 80)}`);
+    ok(`${label} on ${key}: the Storage upload gate refuses it too`, gate1.outcome === "authorization", gate1.outcome);
     ok(`${label} on ${key}: refused, nothing written`, !!r2.error && same(a, b), r2.error ? "refused" : "ACCEPTED");
   }
   // the refusal must not depend on whether the movement exists or sits at another station: same caller, same message
@@ -104,7 +122,7 @@ if (argVal("rest") !== "0") {
   const aso = await rest("aso");
   const tx = TX["pen-concurrent"];
   const fresh = (await snap(tx)).status === "CREATED";
-  const res = await Promise.all(Array.from({ length: 8 }, () => call(aso, tx)));
+  const res = await Promise.all(Array.from({ length: 8 }, () => callUploaded(aso, tx)));
   const rows = res.map((r) => r.data?.[0]).filter(Boolean);
   const s = await snap(tx);
   ok("exactly one request recorded the checkpoint (is_new)", fresh ? rows.filter((r) => r.is_new).length === 1 : rows.filter((r) => r.is_new).length === 0 && s.partB === 1, `${fresh ? "" : "(already exercised in an earlier pass) "}new=${rows.filter((r) => r.is_new).length} replies=${rows.length} errors=${res.filter((r) => r.error).length}`);
@@ -124,6 +142,8 @@ if (argVal("rest") !== "0") {
   ok("a completed Part B record cannot be rewritten", upd === "refused");
 }
 
+// this run's own unreferenced signature leftovers (the 7 losers of the concurrency burst, uploads before a refused call) are removed so the next run keeps its hourly quota
+if (argVal("rest") !== "0") await cleanupOwnOrphans(resolveStagingAdminContext().client);
 if (argVal("rest") !== "0" && argVal("browser") !== "0") { console.log("(pausing 5 minutes so the REST sign-ins do not rate-limit the browser sign-ins)"); await sleep(300000); }
 if (argVal("browser") === "0") { await client.end(); console.log(fails ? `\nREST PATH: ${fails} FAILED` : "\nREST PATH PASSED"); process.exit(fails ? 1 : 0); }
 

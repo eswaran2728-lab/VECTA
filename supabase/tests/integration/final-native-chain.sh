@@ -5,7 +5,7 @@ for f in verify_canonical_compat verify_export_isolation verify_phase7_dashboard
   timeout -s KILL 1200 node $f.mjs > "$TEMP/out_$f.txt" 2>&1
   echo "$f exit=$? pass=$(grep -c '^PASS' $TEMP/out_$f.txt) fail=$(grep -c '^FAIL' $TEMP/out_$f.txt) fatal=$(grep -c 'FATAL' $TEMP/out_$f.txt)"
 done
-for spec in "verify_leave_atomicity.mjs --native" "verify_registration_throttle.mjs --native" "verify_vendor_signature_authorization.mjs --native" "verify_signature_upload_authorization.mjs --native" "verify_driver_route_guard.mjs --native" "verify_leave_atomicity_concurrency_native.mjs" "verify_registration_throttle_concurrency_native.mjs" "verify_vendor_signature_concurrency_native.mjs" "verify_signature_upload_concurrency_native.mjs"; do
+for spec in "verify_leave_atomicity.mjs --native" "verify_registration_throttle.mjs --native" "verify_vendor_signature_authorization.mjs --native" "verify_signature_upload_authorization.mjs --native" "verify_incident_photos_lockdown.mjs --native" "verify_driver_route_guard.mjs --native" "verify_leave_atomicity_concurrency_native.mjs" "verify_registration_throttle_concurrency_native.mjs" "verify_vendor_signature_concurrency_native.mjs" "verify_signature_upload_concurrency_native.mjs"; do
   timeout -s KILL 1200 node $spec > "$TEMP/out_extra.txt" 2>&1
   echo "$spec exit=$? pass=$(grep -c '^PASS' $TEMP/out_extra.txt) fail=$(grep -c '^FAIL' $TEMP/out_extra.txt) fatal=$(grep -c 'FATAL' $TEMP/out_extra.txt)"
 done
