@@ -59,7 +59,7 @@ test("header touch targets are at least 44x44 on mobile and keep their desktop s
   const header = read("components/layout/UnifiedHeader.tsx");
   assert.match(header, /min-h-\[44px\] min-w-\[44px\][^"]*sm:min-h-\[28px\] sm:min-w-0/);
   assert.match(header, /Link href=\{homeHref\} className="flex min-h-\[44px\][^"]*sm:min-h-0/);
-  assert.match(read("components/layout/ThemeToggle.tsx"), /h-11 w-11[^"]*sm:h-9 sm:w-9/);
+  assert.match(read("components/theme/AppearanceControl.tsx"), /h-11 w-11/); // the quick theme toggle keeps a 44px mobile target
   assert.match(BELL, /h-11 w-11[^"]*sm:h-9 sm:w-9/);
   assert.match(BELL, /aria-label=/);
 });

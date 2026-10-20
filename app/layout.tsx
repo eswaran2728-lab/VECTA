@@ -1,28 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono, Orbitron, Plus_Jakarta_Sans, Sora } from "next/font/google";
+import { JetBrains_Mono, Sora } from "next/font/google";
+import { themeInitScript } from "@/lib/theme/theme";
 import "./globals.css";
 
-// Plus Jakarta Sans stays as the general `font-heading` family — it's used
-// across the ~20 screens outside this redesign's scope (reports, admin,
-// incidents, duty, etc.) and isn't part of the three approved mockups.
-const heading = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
-  variable: "--font-heading",
-  display: "swap",
-});
-// Orbitron — the "ops console" display/heading face (VECTA wordmark,
-// section titles) from the approved FutLogin/FutDashboard/FutScan mockups.
-const display = Orbitron({
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
-  variable: "--font-display",
-  display: "swap",
-});
-// Sora replaces Inter as the base body font, matching the mockups.
+// Sora is the single VECTA typeface (Stitch direction): body, headings and display all resolve to it through the
+// --font-body variable (tailwind font-sans / font-heading / font-display). The earlier display and heading faces were retired.
 const body = Sora({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500", "600", "700", "800"],
   variable: "--font-body",
   display: "swap",
 });
@@ -59,20 +44,8 @@ export const viewport: Viewport = {
   maximumScale: 1,
 };
 
-// Light by default — only an explicit stored choice (via the theme toggle)
-// switches to dark mode; defaults cleanly to light theme.
-const themeInit = `
-try {
-  const stored = localStorage.getItem("vecta-theme") || localStorage.getItem("avsec-theme") || localStorage.getItem("cscs-theme");
-  if (stored === "dark") {
-    document.documentElement.classList.add("dark");
-    document.documentElement.setAttribute("data-theme", "dark");
-  } else {
-    document.documentElement.classList.remove("dark");
-    document.documentElement.setAttribute("data-theme", "light");
-  }
-} catch (e) {}
-`;
+// Theme (Light / Dark / Use Device Setting) is applied by lib/theme/theme.ts before first paint; see themeInitScript().
+const themeInit = themeInitScript();
 
 import { WoisFloatingTrigger } from "@/components/wois/WoisFloatingTrigger";
 import { getCurrentProfile, getPortalIdentity } from "@/lib/avsec/auth";
@@ -105,7 +78,7 @@ export default async function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${heading.variable} ${display.variable} ${body.variable} ${mono.variable}`}
+      className={`${body.variable} ${mono.variable}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />

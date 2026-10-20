@@ -3,78 +3,102 @@
 @tailwind utilities;
 
 @layer base {
+  /* ------------------------------------------------------------------------------------------------
+     VECTA design tokens -- one token set, two themes (Light / Dark). "Use Device Setting" simply selects one of them from
+     prefers-color-scheme (see lib/theme/theme.ts). Components use ONLY these semantic tokens (via tailwind.config.ts), never raw
+     colours, so a future role workspace gets both themes for free. Values are bare "L C H" oklch triplets so Tailwind opacity
+     modifiers keep working; every text/status pair is held to WCAG AA by tests/design-tokens.test.mts.
+     Direction (Stitch): midnight-navy shell, warm-white page, white cards, AirAsia red for brand emphasis and critical primary
+     actions, aviation cyan for active operational states, accessible green / amber / red for status.
+     ------------------------------------------------------------------------------------------------ */
   :root,
   :root[data-theme="light"] {
     color-scheme: light;
-    /* Nocturne Light Theme — Crisp aviation white/slate with rebalanced deep vivid cyan/teal interactive accents */
-    --background: 0.985 0.005 240;
-    --foreground: 0.18 0.03 260;
+    --background: 0.978 0.006 85;
+    --foreground: 0.2 0.055 262;
     --card: 1 0 0;
-    --card-foreground: 0.18 0.03 260;
-    /* Rebalanced deep vivid cyan for high contrast, clean readability, and crisp accents on white */
-    --primary: 0.52 0.18 225;
+    --card-foreground: 0.2 0.055 262;
+    /* Aviation cyan: active operational state, links, focus */
+    --primary: 0.5 0.12 225;
     --primary-foreground: 1 0 0;
-    /* AirAsia brand red for alerts/reject/destructive */
-    --brand: 0.56 0.22 28;
+    /* AirAsia red: brand emphasis and critical primary actions */
+    --brand: 0.52 0.22 27;
     --brand-foreground: 1 0 0;
-    --secondary: 0.95 0.01 240;
-    --secondary-foreground: 0.22 0.03 260;
-    --muted: 0.96 0.008 240;
-    --muted-foreground: 0.48 0.03 250;
-    --accent: 0.94 0.02 225;
-    --accent-foreground: 0.2 0.04 240;
-    --destructive: 0.56 0.22 28;
+    --secondary: 0.955 0.01 250;
+    --secondary-foreground: 0.25 0.05 262;
+    --muted: 0.96 0.008 250;
+    --muted-foreground: 0.46 0.03 255;
+    --accent: 0.94 0.025 225;
+    --accent-foreground: 0.2 0.05 262;
+    --destructive: 0.5 0.21 27;
     --destructive-foreground: 1 0 0;
-    --border: oklch(0.88 0.015 240);
-    --input: oklch(0.99 0.002 240);
-    --ring: 0.52 0.18 225;
-    --radius: 1rem;
-    --success: 0.52 0.16 150;
+    --border: oklch(0.89 0.012 250);
+    --input: oklch(0.995 0.003 85);
+    --ring: 0.5 0.12 225;
+    --radius: 0.75rem;
+    --success: 0.48 0.13 150;
     --success-foreground: 1 0 0;
+    --warning: 0.5 0.11 70;
+    --warning-foreground: 1 0 0;
+    /* Navigation shell: midnight navy in both themes */
+    --shell: 0.2 0.055 262;
+    --shell-foreground: 0.97 0.008 85;
+    --shell-muted: 0.78 0.025 255;
+    --shell-active: 0.8 0.12 215;
+    --shell-border: oklch(1 0 0 / 0.12);
 
-    /* Extra raw tokens */
-    --cyan: oklch(0.52 0.18 225);
-    --red: oklch(0.56 0.22 28);
-    --green: oklch(0.52 0.16 150);
+    /* Raw colour functions kept for existing callers */
+    --cyan: oklch(0.5 0.12 225);
+    --red: oklch(0.52 0.22 27);
+    --green: oklch(0.48 0.13 150);
     --glass: oklch(1 0 0 / 0.85);
     --violet: oklch(0.48 0.2 300);
-    --surface: oklch(0.97 0.005 240);
+    --surface: oklch(0.965 0.006 250);
+    --shadow-card: 0 1px 2px oklch(0.2 0.055 262 / 0.06), 0 4px 14px -6px oklch(0.2 0.055 262 / 0.1);
   }
 
   .dark,
   :root[data-theme="dark"] {
     color-scheme: dark;
     @apply text-foreground;
-    /* Nocturne Dark Theme — Deep indigo-black command center, glassmorphic panels, glowing cyan/violet accents */
-    --background: 0.14 0.03 275;
-    --foreground: 0.95 0.01 240;
-    --card: 0.22 0.04 275;
-    --card-foreground: 0.95 0.01 240;
-    --primary: 0.78 0.14 220;
-    --primary-foreground: 0.12 0.02 275;
-    --brand: 0.6 0.2 25;
+    /* Midnight navy (never pure black); cards one step lighter; cool-grey borders; warm-white text */
+    --background: 0.17 0.04 262;
+    --foreground: 0.96 0.008 85;
+    --card: 0.22 0.045 262;
+    --card-foreground: 0.96 0.008 85;
+    --primary: 0.8 0.12 215;
+    --primary-foreground: 0.17 0.04 262;
+    --brand: 0.55 0.22 27;
     --brand-foreground: 1 0 0;
-    --secondary: 0.2 0.035 275;
-    --secondary-foreground: 0.95 0.01 240;
-    --muted: 0.18 0.03 275;
-    --muted-foreground: 0.64 0.02 250;
-    --accent: 0.2 0.035 275;
-    --accent-foreground: 0.95 0.01 240;
-    --destructive: 0.6 0.2 25;
-    --destructive-foreground: 1 0 0;
-    --border: oklch(0.78 0.14 220 / 0.32);
-    --input: oklch(0.1 0.03 275 / 0.6);
-    --ring: 0.78 0.14 220;
-    --radius: 1rem;
-    --success: 0.78 0.17 150;
-    --success-foreground: 0.12 0.02 275;
+    --secondary: 0.25 0.045 262;
+    --secondary-foreground: 0.96 0.008 85;
+    --muted: 0.25 0.04 262;
+    --muted-foreground: 0.76 0.025 255;
+    --accent: 0.27 0.05 250;
+    --accent-foreground: 0.96 0.008 85;
+    --destructive: 0.7 0.17 25;
+    --destructive-foreground: 0.17 0.04 262;
+    --border: oklch(0.38 0.035 258);
+    --input: oklch(0.2 0.04 262);
+    --ring: 0.8 0.12 215;
+    --radius: 0.75rem;
+    --success: 0.78 0.15 150;
+    --success-foreground: 0.17 0.04 262;
+    --warning: 0.82 0.14 80;
+    --warning-foreground: 0.17 0.04 262;
+    --shell: 0.14 0.04 262;
+    --shell-foreground: 0.96 0.008 85;
+    --shell-muted: 0.74 0.025 255;
+    --shell-active: 0.8 0.12 215;
+    --shell-border: oklch(1 0 0 / 0.1);
 
-    --cyan: oklch(0.78 0.14 220);
-    --red: oklch(0.6 0.2 25);
-    --green: oklch(0.78 0.17 150);
-    --glass: oklch(0.26 0.045 275 / 0.55);
-    --violet: oklch(0.62 0.2 300);
-    --surface: oklch(0.18 0.03 275);
+    --cyan: oklch(0.8 0.12 215);
+    --red: oklch(0.7 0.17 25);
+    --green: oklch(0.78 0.15 150);
+    --glass: oklch(0.26 0.045 262 / 0.7);
+    --violet: oklch(0.7 0.16 300);
+    --surface: oklch(0.2 0.04 262);
+    --shadow-card: 0 1px 2px oklch(0 0 0 / 0.3), 0 6px 18px -8px oklch(0 0 0 / 0.5);
   }
 
   * {
@@ -258,7 +282,7 @@
     border-radius: 10px;
   }
   .vecta-btn-primary {
-    @apply flex h-12 w-full items-center justify-center bg-primary font-sans text-[13px] font-semibold tracking-[0.04em] text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50;
+    @apply flex min-h-[48px] w-full items-center justify-center bg-brand font-sans text-[13px] font-semibold tracking-[0.04em] text-brand-foreground transition-opacity hover:opacity-90 disabled:opacity-50;
     border-radius: 10px;
   }
   .vecta-status-dot {
@@ -321,7 +345,7 @@
   }
 
   .btn-primary {
-    @apply inline-flex min-h-[46px] items-center justify-center rounded-lg bg-primary px-5 py-2.5 font-sans text-xs font-semibold uppercase tracking-[0.08em] text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-[46px] items-center justify-center rounded-lg bg-brand px-5 py-2.5 font-sans text-xs font-semibold uppercase tracking-[0.08em] text-brand-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-secondary {
     @apply inline-flex min-h-[46px] items-center justify-center rounded-lg border border-border bg-card px-5 py-2.5 font-sans text-xs font-semibold uppercase tracking-[0.08em] text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50;

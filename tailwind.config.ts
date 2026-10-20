@@ -7,8 +7,8 @@ const config: Config = {
     extend: {
       fontFamily: {
         sans: ["var(--font-body)", "system-ui", "sans-serif"],
-        heading: ["var(--font-heading)", "var(--font-body)", "system-ui", "sans-serif"],
-        display: ["var(--font-display)", "Arial Narrow", "sans-serif"],
+        heading: ["var(--font-body)", "system-ui", "sans-serif"],
+        display: ["var(--font-body)", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
       colors: {
@@ -57,8 +57,20 @@ const config: Config = {
           DEFAULT: "oklch(var(--success) / <alpha-value>)",
           foreground: "oklch(var(--success-foreground) / <alpha-value>)",
         },
+        warning: {
+          DEFAULT: "oklch(var(--warning) / <alpha-value>)",
+          foreground: "oklch(var(--warning-foreground) / <alpha-value>)",
+        },
+        shell: {
+          DEFAULT: "oklch(var(--shell) / <alpha-value>)",
+          foreground: "oklch(var(--shell-foreground) / <alpha-value>)",
+          muted: "oklch(var(--shell-muted) / <alpha-value>)",
+          active: "oklch(var(--shell-active) / <alpha-value>)",
+          border: "var(--shell-border)",
+        },
       },
       borderRadius: {
+        xl: "calc(var(--radius) + 2px)",
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
