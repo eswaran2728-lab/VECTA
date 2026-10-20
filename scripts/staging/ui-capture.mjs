@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { chromium } from "playwright";
 import { loadCurrentCredentials } from "./lib/review-accounts.mjs";
 
@@ -23,9 +24,11 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL?.includes("ddlctzbnqewubltcavkh")) thr
 
 const VIEWPORTS = { mobile: { width: 390, height: 844 }, tablet: { width: 768, height: 1024 }, laptop: { width: 1280, height: 800 }, desktop: { width: 1440, height: 900 } };
 const ROUTES = {
+  anon: ["/login"], // signed-out: no credentials are used
   aso: ["/", "/avsec/duty", "/avsec/profile", "/avsec/bay-board", "/icms/transactions"],
   operation_manager: ["/avsec/my-dashboard", "/avsec/profile", "/avsec/bay-board", "/avsec/reports/lookup", "/avsec/discussions"],
 };
+const axeSrc = args.includes("--axe") ? fs.readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8") : null;
 const roles = (argVal("roles") ?? "aso,operation_manager").split(",");
 const vps = (argVal("viewports") ?? "mobile,tablet,laptop,desktop").split(",");
 const themes = (argVal("themes") ?? "light,dark").split(",");
@@ -59,7 +62,8 @@ try {
     const errors = [];
     page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 160)); });
     page.on("pageerror", (e) => errors.push(`pageerror: ${String(e.message).slice(0, 160)}`));
-    await login(page, label);
+    if (label !== "anon") await login(page, label);
+    else await page.goto(`${base}/login`, { waitUntil: "domcontentloaded" }); // an origin is needed before localStorage can be set
     for (const route of (ROUTES[label] ?? []).filter((r) => !only || only.includes(r))) {
       for (const theme of themes) {
         // the theme is the user's own local preference; set it exactly as the Appearance control does
@@ -85,10 +89,19 @@ try {
               railVisible: !!document.querySelector('aside[aria-label="Primary navigation"]') && getComputedStyle(document.querySelector('aside[aria-label="Primary navigation"]')).display !== "none",
             };
           });
+          let axe = null;
+          if (axeSrc) {
+            await page.evaluate(axeSrc);
+            // WCAG 2.0/2.1 A and AA, including colour contrast in the active theme; only serious/critical are counted as failures
+            axe = await page.evaluate(async () => {
+              const r = await window.axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } });
+              return r.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.length, sample: v.nodes[0]?.target?.join(" ").slice(0, 100) }));
+            });
+          }
           const file = `${label}__${route.replace(/[^a-z0-9]+/gi, "_") || "home"}__${vp}__${theme}.png`;
           await page.screenshot({ path: path.join(evDir, file), fullPage: false });
-          results.push({ role: label, route, viewport: vp, requestedTheme: theme, ...m, consoleErrors: [...errors], file });
-          console.log(`${m.overflowX ? "OVERFLOW" : "ok      "} ${label} ${route} -> ${m.path} ${vp}/${theme} h1=${m.h1} smallTargets=${m.smallNavTargets}${m.smallNavNames.length ? `(${m.smallNavNames.join("|")})` : ""} bottomNav=${m.bottomNavVisible} rail=${m.railVisible} errors=${errors.length}`);
+          results.push({ role: label, route, viewport: vp, requestedTheme: theme, ...m, consoleErrors: [...errors], axe, file });
+          console.log(`${m.overflowX ? "OVERFLOW" : "ok      "} ${label} ${route} -> ${m.path} ${vp}/${theme} h1=${m.h1} smallTargets=${m.smallNavTargets}${m.smallNavNames.length ? `(${m.smallNavNames.join("|")})` : ""} bottomNav=${m.bottomNavVisible} rail=${m.railVisible} errors=${errors.length}${axe ? ` axe=${axe.length}${axe.length ? ` (${axe.map((v) => `${v.id}x${v.nodes}`).join(",")})` : ""}` : ""}`);
         }
       }
     }

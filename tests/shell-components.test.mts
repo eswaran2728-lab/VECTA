@@ -144,3 +144,15 @@ test("profile page uses the shared Appearance control and the primitive for prof
   assert.match(page, /<AssignmentStatusCard title="Profile status"/);
   assert.doesNotMatch(page, /Nocturne/);
 });
+
+test("retired chrome: the old sidebar, bottom bar and drawer are gone and nothing imports them", () => {
+  for (const f of ["components/layout/AppSidebar.tsx", "components/layout/TeamBottomNav.tsx", "components/layout/NavDrawer.tsx"]) assert.ok(!fs.existsSync(f), `${f} was removed`);
+  const walk = (d: string): string[] =>
+    fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+      if (e.name === "node_modules" || e.name === ".next") return [];
+      const p = `${d}/${e.name}`;
+      return e.isDirectory() ? walk(p) : /\.(ts|tsx)$/.test(e.name) ? [p] : [];
+    });
+  const offenders = ["app", "components", "lib"].flatMap(walk).filter((f) => /layout\/(AppSidebar|TeamBottomNav|NavDrawer)["']/.test(fs.readFileSync(f, "utf8")));
+  assert.deepEqual(offenders, []);
+});

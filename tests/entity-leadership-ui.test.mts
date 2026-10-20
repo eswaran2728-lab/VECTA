@@ -75,17 +75,18 @@ test("nav: layout builds the explicit model and has no ASO fallback", () => {
   const layout = read("app/(avsec)/avsec/layout.tsx");
   assert.doesNotMatch(layout, /primaryCompatRole \?\? "ASO"/);
   assert.match(layout, /buildNavModel/);
-  const bottom = read("components/layout/TeamBottomNav.tsx");
-  assert.match(bottom, /lg:hidden/, "tablet widths keep a usable bottom bar");
-  assert.doesNotMatch(bottom, /md:hidden/);
+  const bottom = read("components/layout/shell/MobileBottomNavigation.tsx");
+  assert.match(bottom, /md:hidden/, "phones get the bottom bar; tablet and desktop get the rail");
+  assert.doesNotMatch(bottom, /lg:hidden/);
 });
 
-test("nav: a drawer is available below the desktop breakpoint, keyboard accessible", () => {
-  const drawer = read("components/layout/NavDrawer.tsx");
-  assert.match(drawer, /aria-expanded/);
-  assert.match(drawer, /aria-modal="true"/);
-  assert.match(drawer, /Escape/);
-  assert.match(drawer, /h-11 w-11/, "44px touch target");
+test("nav: phones get Actions / Alerts / More sheets that are keyboard accessible; the rail covers tablet and desktop", () => {
+  const sheet = read("components/layout/shell/BottomSheet.tsx");
+  assert.match(sheet, /aria-modal="true"/);
+  assert.match(sheet, /Escape/);
+  assert.match(sheet, /h-11 w-11/, "44px touch target");
+  assert.match(read("components/layout/shell/MobileBottomNavigation.tsx"), /aria-expanded/);
+  assert.match(read("components/layout/shell/DesktopNavigationRail.tsx"), /md:flex/);
   const header = read("components/layout/UnifiedHeader.tsx");
   assert.match(header, /menu\?: React\.ReactNode/);
 });

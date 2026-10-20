@@ -144,7 +144,7 @@ test("target protection: only an effective super_admin assignment on an approved
 const MIGRATED = [
   "lib/super-admin/actions.ts", "lib/super-admin/authority.ts", "lib/super-admin/assignment-rules.ts",
   "app/super-admin/page.tsx", "app/super-admin/readiness/page.tsx", "lib/avsec/admin/actions.ts",
-  "lib/avsec/announcements/queries.ts", "components/layout/AppSidebar.tsx", "components/avsec/admin/UsersTable.tsx",
+  "lib/avsec/announcements/queries.ts", "components/layout/shell/DesktopNavigationRail.tsx", "lib/dashboard/shell-nav.ts", "components/avsec/admin/UsersTable.tsx",
 ];
 
 test("closure: migrated Super Admin gate files contain no legacy SUPER_ADMIN / super_admin-by-column check", () => {

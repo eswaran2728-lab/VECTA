@@ -18,7 +18,7 @@ test("the bell uses only the caller-scoped notification RPCs: no table read, no 
 });
 
 test("no application code reads or writes the legacy public.notifications table from the bell path", () => {
-  for (const f of ["components/layout/AppSidebar.tsx", "app/page.tsx", "app/(avsec)/avsec/layout.tsx", "app/(icms)/icms/layout.tsx"]) {
+  for (const f of ["components/layout/shell/DesktopNavigationRail.tsx", "components/layout/shell/MobileBottomNavigation.tsx", "app/page.tsx", "app/(avsec)/avsec/layout.tsx", "app/(icms)/icms/layout.tsx"]) {
     assert.doesNotMatch(read(f), /from\("notifications"\)/, f);
   }
 });
@@ -99,7 +99,7 @@ test("the legacy Anonymous Feedback module is retired: no reference to the missi
     assert.doesNotMatch(src, /\.from\(|\.rpc\(/);
   }
   assert.doesNotMatch(read("lib/dashboard/nav-capabilities.ts"), /\/avsec\/feedback|management\/feedback/);
-  assert.doesNotMatch(read("components/layout/AppSidebar.tsx"), /\/avsec\/feedback|management\/feedback|discussions\/moderation/);
+  for (const f of ["components/layout/shell/DesktopNavigationRail.tsx", "components/layout/shell/MobileBottomNavigation.tsx", "lib/dashboard/shell-nav.ts"]) assert.doesNotMatch(read(f), /\/avsec\/feedback|management\/feedback|discussions\/moderation/);
 });
 
 test("every AVSEC page the hosted UAT reached has a page heading (h1 or h2) in its source or its header component", () => {
@@ -110,15 +110,14 @@ test("every AVSEC page the hosted UAT reached has a page heading (h1 or h2) in i
 
 test("accessibility fixes found by axe-core and the target-size audit", () => {
   assert.match(read("components/layout/TransactionStageBar.tsx"), /role="img" aria-label=\{`Stage: \$\{status\}`\}/);
-  const side = read("components/layout/AppSidebar.tsx");
-  assert.match(side, /min-h-\[28px\] items-center gap-1\.5 text-\[11\.5px\]/);
-  assert.match(side, /min-h-\[28px\] items-center gap-1 text-\[11px\]/);
-  assert.match(side, /text-\[9px\] font-bold text-foreground/);
+  const side = read("components/layout/shell/DesktopNavigationRail.tsx");
+  assert.match(side, /min-h-\[44px\] w-full items-center gap-2\.5/, "rail actions are 44px targets");
+  assert.doesNotMatch(side, /min-h-\[28px\]|text-\[9px\]|text-\[10px\]/, "no sub-44px targets or tiny text in the rail");
   assert.match(read("components/dashboard/EntityDashboard.tsx"), /inline-flex min-h-\[24px\] items-center font-mono text-xs text-primary/);
 });
 
 test("contrast, keyboard-scroll and mobile target fixes from the hosted accessibility audit", () => {
-  assert.match(read("components/layout/TeamBottomNav.tsx"), /active \? "bg-secondary text-foreground"/);
+  assert.match(read("components/layout/shell/MobileBottomNavigation.tsx"), /active \? "text-shell-active" : "text-shell-muted/);
   assert.match(read("components/avsec/duty/CheckInScreen.tsx"), /bg-brand\/10 px-5 py-4 text-sm font-medium text-foreground/);
   assert.match(read("app/(avsec)/avsec/duty/page.tsx"), /text-\[11px\] font-bold uppercase tracking-\[0\.06em\] text-foreground/);
   assert.match(read("app/page.tsx"), /overflow-x-auto" tabIndex=\{0\} role="region" aria-label="Live activity stream/);

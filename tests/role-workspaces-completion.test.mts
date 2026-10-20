@@ -262,9 +262,9 @@ test("new forms and controls: >=44px touch targets, labelled fields, status mess
   }
   const css = read("app/globals.css");
   assert.match(css, /focus-visible|:focus/, "a visible focus style exists globally");
-  const drawer = read("components/layout/NavDrawer.tsx");
+  const drawer = read("components/layout/shell/BottomSheet.tsx");
   assert.match(drawer, /aria-modal="true"/);
   assert.match(drawer, /Escape/);
   assert.match(read("components/layout/NavGroupsList.tsx"), /focus-visible:ring-2/);
-  assert.match(read("components/layout/TeamBottomNav.tsx"), /lg:hidden/);
+  assert.match(read("components/layout/shell/MobileBottomNavigation.tsx"), /md:hidden/);
 });
