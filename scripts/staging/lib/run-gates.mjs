@@ -56,13 +56,13 @@ const TOOLING_PATHS = [/^scripts\/staging\//, /^tests\//, /^docs\//];
  * expectedBase: the SHA the run was authorized against. HEAD must either equal it or descend from it with
  * ONLY provisioning-tooling / test / doc paths changed since (no app, migration or lib source).
  */
-export function gitGates({ expectedBase, expectedRepoPath, extraAllowed = [] }) {
+export function gitGates({ expectedBase, expectedRepoPath, extraAllowed = [], expectedBranch = EXPECTED_BRANCH }) {
   const sh = (c) => child_process.execSync(c, { encoding: "utf8" }).trim();
   const root = sh("git rev-parse --show-toplevel");
   const resolved = path.resolve(root).toLowerCase();
   if (expectedRepoPath && resolved !== path.resolve(expectedRepoPath).toLowerCase()) throw new Error("Repository path is not the expected VECTA checkout.");
   const branch = sh("git branch --show-current");
-  if (branch !== EXPECTED_BRANCH) throw new Error(`Branch mismatch: ${branch}`);
+  if (branch !== expectedBranch) throw new Error(`Branch mismatch: ${branch}`);
   const head = sh("git rev-parse HEAD");
   let toolingOnlySinceBase = true;
   if (expectedBase && head !== expectedBase) {
