@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireProfile, DUTY_ROLES, ENFORCEMENT_SEARCH_ROLES } from "@/lib/avsec/auth";
 import { signOut } from "@/lib/avsec/profile-actions";
 import { ThemeOptions } from "@/components/avsec/layout/ThemeToggle";
+import { AssignmentStatusCard } from "@/components/ds/cards";
 import { ROLE_LABELS, REPORT_TYPES, ORG_WIDE_ROLES } from "@/lib/avsec/reference-data";
 import { initials } from "@/lib/avsec/utils";
 
@@ -47,76 +48,51 @@ export default async function ProfilePage() {
   ];
 
   return (
-    <main className="min-h-screen bg-background pb-32">
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-        <div className="card p-5 flex items-center gap-4 border-l-4 border-l-primary">
-          <div className="w-14 h-14 shrink-0 rounded-xl flex items-center justify-center font-mono text-lg font-bold bg-primary/20 text-primary border border-primary/30">
+    <main className="min-h-screen bg-background">
+      <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
+        <div className="flex items-center gap-4 rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/15 font-mono text-lg font-bold text-primary" aria-hidden>
             {initials(profile.name)}
           </div>
           <div className="min-w-0">
-            <h1 className="font-display font-bold text-lg text-foreground tracking-[0.03em] uppercase">
-              {profile.name}
-            </h1>
-            <div className="font-mono text-xs font-semibold text-primary mt-1">
-              {ROLE_LABELS[profile.role]}
-            </div>
-            <div className="font-mono text-xs text-muted-foreground mt-0.5">
-              {[profile.staff_no, profile.station, profile.team].filter(Boolean).join(" · ")}
-            </div>
+            <h1 className="font-display text-lg font-bold text-foreground">{profile.name}</h1>
+            <div className="mt-1 text-sm font-semibold text-primary">{ROLE_LABELS[profile.role]}</div>
+            <div className="mt-0.5 font-mono text-xs text-muted-foreground">{[profile.staff_no, profile.station, profile.team].filter(Boolean).join(" · ")}</div>
           </div>
         </div>
 
-        <div className="card p-4 space-y-1">
-          <div className="field-label">Profile status</div>
-          <div className="font-mono text-xs font-bold text-success uppercase tracking-wider">
-            ● {profile.status === "approved" ? "Approved" : profile.status}
-          </div>
-        </div>
+        <AssignmentStatusCard title="Profile status" status={profile.status === "approved" ? "Approved" : profile.status} tone={profile.status === "approved" ? "success" : "warning"} />
 
-        <div className="card p-4 space-y-2">
-          <div className="field-label">Appearance</div>
+        <section aria-label="Appearance" className="rounded-xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
           <ThemeOptions />
-          <p className="field-hint">
-            Choose between Nocturne Light and Dark themes. Preference persists across sessions.
-          </p>
-        </div>
+          <p className="mt-2 text-xs text-muted-foreground">Saved on this device only. &ldquo;Use Device Setting&rdquo; follows your phone or computer.</p>
+        </section>
 
-        <div className="card overflow-hidden !p-0 divide-y divide-border">
+        <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-card)]">
           {menu.map((m) => (
-            <Link
-              key={m.href}
-              href={m.href}
-              className="flex items-center justify-between px-4 py-3.5 hover:bg-card/40 transition-colors group"
-            >
-              <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
-                {m.label}
-              </span>
-              <span className="font-mono text-xs text-muted-foreground group-hover:text-primary transition-colors">
+            <Link key={m.href} href={m.href} className="group flex min-h-[48px] items-center justify-between px-4 py-3 transition-colors hover:bg-muted">
+              <span className="text-sm font-medium text-foreground">{m.label}</span>
+              <span className="text-muted-foreground" aria-hidden>
                 →
               </span>
             </Link>
           ))}
 
           <form action={signOut}>
-            <button
-              type="submit"
-              className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-destructive/10 transition-colors group cursor-pointer"
-            >
-              <span className="text-sm font-medium text-destructive">
-                Sign out
-              </span>
-              <span className="font-mono text-xs text-destructive">
+            <button type="submit" className="group flex min-h-[48px] w-full cursor-pointer items-center justify-between px-4 py-3 text-left transition-colors hover:bg-destructive/10">
+              <span className="text-sm font-medium text-destructive">Sign out</span>
+              <span className="text-destructive" aria-hidden>
                 →
               </span>
             </button>
           </form>
         </div>
 
-        <div className="px-2 py-3 font-mono text-[10px] text-muted-foreground/60 leading-relaxed text-center uppercase tracking-widest">
+        <p className="px-2 py-3 text-center text-xs leading-relaxed text-muted-foreground">
           VECTA AVSEC OPS · {REPORT_TYPES.map((t) => t.replace("sec", "")).join(" / ")}
           <br />
-          OFFLINE-FIRST PWA · IMMUTABLE SEC SUBMISSIONS
-        </div>
+          Offline-first PWA · Immutable SEC submissions
+        </p>
       </div>
     </main>
   );

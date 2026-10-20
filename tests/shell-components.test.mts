@@ -115,3 +115,32 @@ test("keyboard: all shell controls have visible focus styles", () => {
   }
   assert.ok(labels(bottom("aso")).length >= 3);
 });
+
+test("CaterLink-only identities never get the VECTA shell: the portal shell returns first, before AppChrome is reached", () => {
+  const layout = read("app/(icms)/icms/layout.tsx");
+  const portal = layout.indexOf("if (isCaterLinkOnly(portalKind))");
+  const caterShell = layout.indexOf("<CaterLinkShell");
+  const chrome = layout.indexOf("<AppChrome");
+  assert.ok(portal > 0 && caterShell > portal && chrome > caterShell, "CaterLink-only returns before the VECTA chrome");
+  const home = read("app/page.tsx");
+  assert.ok(home.indexOf('redirect("/caterlink/dashboard")') > 0 && home.indexOf('redirect("/caterlink/dashboard")') < home.indexOf("<AppChrome"), "the home page sends CaterLink-only identities away before rendering the shell");
+});
+
+test("the AVSEC shell is drawn only for approved profiles with an assignment (negative states fail closed)", () => {
+  const layout = read("app/(avsec)/avsec/layout.tsx").replace(/\r\n/g, "\n");
+  assert.match(layout, /const showChrome = Boolean\(profile && profile\.status === "approved" && profile\.name && access\?\.hasAssignment && !access\.isSuperAdmin\)/);
+  assert.match(layout, /showChrome && profile && navModel \? \(\s*<AppChrome/);
+});
+
+test("ICMS transactions render readable cards on phones and the table from tablet width", () => {
+  const page = read("app/(icms)/icms/transactions/page.tsx");
+  assert.match(page, /<ul className="space-y-2 p-3 md:hidden" aria-label="Transactions">/);
+  assert.match(page, /<div className="hidden md:block">\s*<Table>/);
+});
+
+test("profile page uses the shared Appearance control and the primitive for profile status", () => {
+  const page = read("app/(avsec)/avsec/profile/page.tsx");
+  assert.match(page, /<ThemeOptions \/>/);
+  assert.match(page, /<AssignmentStatusCard title="Profile status"/);
+  assert.doesNotMatch(page, /Nocturne/);
+});

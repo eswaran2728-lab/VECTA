@@ -60,7 +60,7 @@ export function ThemeQuickToggle({ className, tone = "surface" }: { className?: 
       aria-label={`Appearance: ${THEME_LABELS[pref]}. Switch to ${THEME_LABELS[next]}`}
       title={`Appearance: ${THEME_LABELS[pref]}`}
       className={cn(
-        "inline-flex h-11 w-11 items-center justify-center rounded-xl transition-colors lg:h-10 lg:w-10",
+        "inline-flex h-11 w-11 items-center justify-center rounded-xl transition-colors",
         tone === "shell" ? "text-shell-muted hover:bg-white/5 hover:text-shell-foreground" : "border border-border bg-card text-muted-foreground hover:text-foreground",
         className,
       )}

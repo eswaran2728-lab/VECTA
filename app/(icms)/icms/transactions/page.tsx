@@ -178,6 +178,41 @@ export default async function TransactionsPage({
       </Card>
 
       <Card>
+        {/* Phones: one readable card per movement instead of a seven-column table */}
+        <ul className="space-y-2 p-3 md:hidden" aria-label="Transactions">
+          {transactions.length === 0 ? (
+            <li className="py-8 text-center text-sm text-muted-foreground">No transactions match your filters.</li>
+          ) : (
+            transactions.map((t) => {
+              const actionable = nextStepFor(t.direction, t.status)?.role === profile.role;
+              return (
+                <li key={t.id} className={`rounded-lg border bg-background p-3 ${actionable ? "border-primary" : "border-border"}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <Link href={`/icms/transactions/${t.id}`} prefetch={false} className="inline-flex min-h-[44px] items-center font-mono text-sm font-semibold text-primary hover:underline">
+                      {t.transaction_number}
+                    </Link>
+                    <StatusBadge status={t.status} />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <DirectionBadge direction={t.direction} />
+                    {actionable ? <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">Your turn</span> : null}
+                  </div>
+                  <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                    <dt className="text-muted-foreground">Vehicle</dt>
+                    <dd className="font-mono text-foreground">{t.vehicle_number}</dd>
+                    <dt className="text-muted-foreground">Driver</dt>
+                    <dd className="text-foreground">{t.driver_name}</dd>
+                    <dt className="text-muted-foreground">Seal</dt>
+                    <dd className="font-mono text-foreground">{t.seals.length > 0 ? t.seals.map((x) => x.seal_number).join(", ") : (t.seal_number ?? "—")}</dd>
+                    <dt className="text-muted-foreground">Created</dt>
+                    <dd className="text-foreground">{formatDateTime(t.created_at)}</dd>
+                  </dl>
+                </li>
+              );
+            })
+          )}
+        </ul>
+        <div className="hidden md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -240,6 +275,7 @@ export default async function TransactionsPage({
             )}
           </TableBody>
         </Table>
+        </div>
       </Card>
 
       <div className="h-14" aria-hidden />

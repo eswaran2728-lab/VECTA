@@ -80,6 +80,7 @@ try {
               overflowX: de.scrollWidth > window.innerWidth + 1,
               h1: document.querySelectorAll("h1").length,
               smallNavTargets: nav.filter((e) => { const r = e.getBoundingClientRect(); return r.height < 44; }).length,
+              smallNavNames: nav.filter((e) => e.getBoundingClientRect().height < 44).map((e) => (e.getAttribute("aria-label") || e.textContent || "").trim().slice(0, 30)),
               bottomNavVisible: !!document.querySelector('nav[aria-label="Primary"]') && getComputedStyle(document.querySelector('nav[aria-label="Primary"]')).display !== "none",
               railVisible: !!document.querySelector('aside[aria-label="Primary navigation"]') && getComputedStyle(document.querySelector('aside[aria-label="Primary navigation"]')).display !== "none",
             };
@@ -87,7 +88,7 @@ try {
           const file = `${label}__${route.replace(/[^a-z0-9]+/gi, "_") || "home"}__${vp}__${theme}.png`;
           await page.screenshot({ path: path.join(evDir, file), fullPage: false });
           results.push({ role: label, route, viewport: vp, requestedTheme: theme, ...m, consoleErrors: [...errors], file });
-          console.log(`${m.overflowX ? "OVERFLOW" : "ok      "} ${label} ${route} -> ${m.path} ${vp}/${theme} h1=${m.h1} smallTargets=${m.smallNavTargets} bottomNav=${m.bottomNavVisible} rail=${m.railVisible} errors=${errors.length}`);
+          console.log(`${m.overflowX ? "OVERFLOW" : "ok      "} ${label} ${route} -> ${m.path} ${vp}/${theme} h1=${m.h1} smallTargets=${m.smallNavTargets}${m.smallNavNames.length ? `(${m.smallNavNames.join("|")})` : ""} bottomNav=${m.bottomNavVisible} rail=${m.railVisible} errors=${errors.length}`);
         }
       }
     }
