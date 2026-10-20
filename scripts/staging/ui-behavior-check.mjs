@@ -71,6 +71,7 @@ try {
   await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
   // wait for React to attach (the live device listener is installed by an effect after hydration)
   await page.waitForFunction(() => { const b = document.querySelector('aside button'); return !!b && Object.keys(b).some((k) => k.startsWith("__react")); }, null, { timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(1500); // effects (the device listener) run after hydration; give them time to install
   let t = await theme(page);
   ok("Use Device Setting + light device -> light", t.t === "light" && t.p === "system" && !t.dark, JSON.stringify(t));
   await page.emulateMedia({ colorScheme: "dark" });
