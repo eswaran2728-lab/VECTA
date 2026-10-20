@@ -47,7 +47,7 @@ export function AppearanceControl({ className }: { className?: string }) {
 }
 
 /** Compact one-tap Light/Dark toggle for the desktop header only (never in the mobile bottom navigation). */
-export function ThemeQuickToggle({ className }: { className?: string }) {
+export function ThemeQuickToggle({ className, tone = "surface" }: { className?: string; tone?: "surface" | "shell" }) {
   const { pref, choose } = useThemePreference();
   // Cycles Light -> Dark -> Use Device Setting so the quick control can reach all three states.
   const order: ThemePreference[] = ["light", "dark", "system"];
@@ -59,7 +59,11 @@ export function ThemeQuickToggle({ className }: { className?: string }) {
       onClick={() => choose(next)}
       aria-label={`Appearance: ${THEME_LABELS[pref]}. Switch to ${THEME_LABELS[next]}`}
       title={`Appearance: ${THEME_LABELS[pref]}`}
-      className={cn("inline-flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground lg:h-10 lg:w-10", className)}
+      className={cn(
+        "inline-flex h-11 w-11 items-center justify-center rounded-xl transition-colors lg:h-10 lg:w-10",
+        tone === "shell" ? "text-shell-muted hover:bg-white/5 hover:text-shell-foreground" : "border border-border bg-card text-muted-foreground hover:text-foreground",
+        className,
+      )}
     >
       <Icon className="h-4 w-4" aria-hidden />
     </button>

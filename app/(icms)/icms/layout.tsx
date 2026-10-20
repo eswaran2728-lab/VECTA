@@ -18,14 +18,12 @@ import { signOut } from "@/lib/icms/actions/auth";
 import { getLang } from "@/lib/icms/actions/language";
 import { LanguageToggle } from "@/components/icms/language-toggle";
 import { ROLE_LABELS } from "@/lib/icms/constants";
-import { NotificationsBell } from "@/components/layout/NotificationsBell";
 import { PwaProvider } from "@/components/icms/pwa-provider";
 import { InstallPrompt } from "@/components/icms/install-prompt";
-import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
-import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
-import { AppSidebar } from "@/components/layout/AppSidebar";
-import { getActiveRoleAssignments } from "@/lib/dashboard/context";
-import { deriveCanonicalAccess, isOrgWideOperator } from "@/lib/auth/canonical-access";
+import { AppChrome } from "@/components/layout/shell/AppChrome";
+import { buildNavModel } from "@/lib/dashboard/nav-capabilities";
+import { getCanConfirmCaterLinkReceipt } from "@/lib/avsec/caterlink/receipt-capability";
+import { primaryRoleLabel } from "@/lib/auth/role-capabilities";
 import { classifyPortalAccess, isCaterLinkOnly, type PortalKind } from "@/lib/auth/caterlink-access";
 import { caterLinkNavFor, CATERLINK_ROLE_LABELS, type CaterLinkIconKey } from "@/lib/caterlink/portal-nav";
 import { CaterLinkShell } from "@/components/caterlink/CaterLinkShell";
@@ -121,56 +119,35 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         { href: "/icms/admin/archive", label: "Archive", icon: Archive, show: profile.role === "supervisor" },
       ].filter((item) => item.show);
 
-  // Phase 7: purely a nav-display decision (see lib/dashboard/navigation.ts) --
-  // an empty result here (the common case for ICMS-only accounts, which
-  // live in a separate `users` table Phase 3 assignments aren't granted
-  // against) just means no "My Dashboard" entry is shown, never a broken
-  // link or an authorization change.
-  const assignments = await getActiveRoleAssignments();
-  const hasPhase7Assignment = assignments.length > 0;
-  const orgWide = isOrgWideOperator(deriveCanonicalAccess(assignments));
+  // Everyone who reaches this point holds an active canonical assignment (CaterLink-only identities returned above). Navigation is
+  // display-only and comes from those canonical roles plus the two server-derived station capabilities.
+  const canonical = profile.canonical;
+  const canReceive = canonical ? await getCanConfirmCaterLinkReceipt(canonical) : false;
+  const navModel = buildNavModel({ roleCodes: canonical?.roleCodes ?? [], canScan, canReceive });
+  const roleLabel = (canonical ? primaryRoleLabel(canonical.roleCodes) : null) ?? ROLE_LABELS[profile.role] ?? null;
 
   return (
     <div className="min-h-screen bg-background text-foreground antialiased">
-      <AppSidebar
+      <AppChrome
         userId={profile.id}
         name={profile.name}
-        role={profile.role}
-        roleLabel={ROLE_LABELS[profile.role] ?? null}
-        canScan={canScan}
-        hasPhase7Assignment={hasPhase7Assignment}
+        roleLabel={roleLabel}
+        model={navModel}
+        station={canonical?.stationCode ?? null}
+        team={canonical?.teamName ?? null}
         signOutAction={signOut}
-      />
+      >
+        <div className="flex min-h-screen flex-col">
+          <div className="flex items-center justify-end gap-2 px-4 pt-3">
+            <PwaProvider />
+            <LanguageToggle lang={lang} />
+          </div>
 
-      <div className="flex min-h-screen flex-col pb-24 lg:pb-8 lg:pl-64">
-        <div className="lg:hidden">
-          <UnifiedHeader
-            name={profile.name}
-            roleLabel={ROLE_LABELS[profile.role] ?? null}
-            signOutAction={signOut}
-            brand="VECTA"
-            homeHref={isDriver ? "/icms/dashboard" : "/"}
-            extra={
-              <>
-                <PwaProvider />
-                <LanguageToggle lang={lang} />
-                <NotificationsBell userId={profile.id} />
-              </>
-            }
-          />
+          {!isDriver && <InstallPrompt />}
+
+          <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">{children}</main>
         </div>
-
-        {!isDriver && <InstallPrompt />}
-
-        <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">{children}</main>
-
-        <TeamBottomNav
-          orgWide={orgWide}
-          canScan={canScan}
-          role={profile.role === "ops_staff" ? "aso" : profile.role}
-          hasPhase7Assignment={hasPhase7Assignment}
-        />
-      </div>
+      </AppChrome>
     </div>
   );
 }

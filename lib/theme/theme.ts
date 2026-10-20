@@ -11,6 +11,8 @@ export type ResolvedTheme = "light" | "dark";
 
 export const THEME_PREFERENCES: readonly ThemePreference[] = ["light", "dark", "system"];
 export const THEME_STORAGE_KEY = "vecta-theme";
+/** Local-only desktop navigation preference ("collapsed" | absent). Restored by the same pre-paint script. */
+export const NAV_STORAGE_KEY = "vecta-nav";
 /** Keys written by earlier VECTA/AVSEC/CSCS builds; still honoured when reading so an existing choice survives the redesign. */
 const LEGACY_KEYS = ["avsec-theme", "cscs-theme"] as const;
 
@@ -76,5 +78,5 @@ export function applyTheme(pref: ThemePreference, env: { root: RootLike; systemD
  * execute it against fake environments to prove they agree.
  */
 export function themeInitScript(): string {
-  return `(function(){try{var d=document.documentElement,p="system";try{var ks=[${JSON.stringify(THEME_STORAGE_KEY)},"avsec-theme","cscs-theme"];for(var i=0;i<ks.length;i++){var v=localStorage.getItem(ks[i]);if(v==="light"||v==="dark"||v==="system"){p=v;break}}}catch(e){}var s=false;try{s=!!(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)}catch(e){}var t=p==="system"?(s?"dark":"light"):p;d.setAttribute("data-theme",t);d.setAttribute("data-theme-pref",p);if(t==="dark"){d.classList.add("dark")}else{d.classList.remove("dark")}d.style.colorScheme=t}catch(e){}})();`;
+  return `(function(){try{var d=document.documentElement,p="system";try{var ks=[${JSON.stringify(THEME_STORAGE_KEY)},"avsec-theme","cscs-theme"];for(var i=0;i<ks.length;i++){var v=localStorage.getItem(ks[i]);if(v==="light"||v==="dark"||v==="system"){p=v;break}}}catch(e){}var s=false;try{s=!!(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)}catch(e){}var t=p==="system"?(s?"dark":"light"):p;d.setAttribute("data-theme",t);d.setAttribute("data-theme-pref",p);if(t==="dark"){d.classList.add("dark")}else{d.classList.remove("dark")}d.style.colorScheme=t;try{if(localStorage.getItem(${JSON.stringify(NAV_STORAGE_KEY)})==="collapsed"){d.setAttribute("data-nav","collapsed")}}catch(e){}}catch(e){}})();`;
 }

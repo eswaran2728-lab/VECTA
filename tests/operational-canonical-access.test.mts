@@ -219,7 +219,8 @@ test("closure: ICMS/scan surfaces use the shared canonical operator scope, not p
     assert.ok(!/ORG_WIDE_UNIFIED_ROLES/.test(code), f);
   }
   const layout = strip(read("app/(icms)/icms/layout.tsx"));
-  assert.match(layout, /isOrgWideOperator\(/);
+  // The shared shell takes its navigation from the caller's canonical role codes (no per-file org-wide constant, no role-string branching).
+  assert.match(layout, /buildNavModel\(\{ roleCodes: canonical\?\.roleCodes/);
   assert.ok(!/ORG_WIDE_UNIFIED_ROLES/.test(layout));
 });
 

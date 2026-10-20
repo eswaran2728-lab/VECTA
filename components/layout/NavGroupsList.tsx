@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { NavGroupModel, NavIcon, NavLink } from "@/lib/dashboard/nav-capabilities";
 
-const ICONS: Record<NavIcon, React.ComponentType<{ className?: string }>> = {
+export const NAV_ICONS: Record<NavIcon, React.ComponentType<{ className?: string }>> = {
   dashboard: LayoutDashboard,
   shield: Shield,
   scan: QrCode,
@@ -39,30 +39,38 @@ export function isNavLinkActive(pathname: string, item: NavLink): boolean {
 }
 
 /** Shared renderer for the desktop sidebar and the tablet/mobile drawer: one model, one markup, no drift. */
-export function NavGroupsList({ groups, onNavigate }: { groups: NavGroupModel[]; onNavigate?: () => void }) {
+/**
+ * tone "surface" = light/dark card surfaces (drawer, sheets); tone "shell" = the midnight-navy rail / sidebar.
+ * In the rail, labels collapse to screen-reader-only text (class vecta-rail-label) so the collapsed rail stays fully accessible.
+ */
+export function NavGroupsList({ groups, onNavigate, tone = "surface" }: { groups: NavGroupModel[]; onNavigate?: () => void; tone?: "surface" | "shell" }) {
+  const shell = tone === "shell";
   const pathname = usePathname();
   return (
     <>
       {groups.map((group) => (
         <div key={group.title} className="space-y-1">
-          <h3 className="px-3 font-mono text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{group.title}</h3>
+          <h3 className={`px-3 font-mono text-[10px] font-bold uppercase tracking-wider ${shell ? "vecta-rail-label text-shell-muted" : "text-muted-foreground"}`}>{group.title}</h3>
           <ul className="space-y-0.5">
             {group.items.map((item) => {
-              const active = isNavLinkActive(pathname, item);
-              const Icon = ICONS[item.icon];
+              const active = isNavLinkActive(pathname ?? "", item);
+              const Icon = NAV_ICONS[item.icon];
               return (
                 <li key={`${group.title}:${item.href}`}>
                   <Link
                     href={item.href}
                     onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
-                    className={`flex min-h-[44px] items-center justify-between gap-2.5 rounded-lg px-3 py-2 text-xs font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
-                      active ? "bg-primary font-semibold text-primary-foreground shadow-xs" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                    title={item.label}
+                    className={`flex min-h-[44px] items-center justify-between gap-2.5 rounded-lg px-3 py-2 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                      shell
+                        ? `focus-visible:ring-offset-shell ${active ? "bg-white/10 font-semibold text-shell-foreground" : "text-shell-muted hover:bg-white/5 hover:text-shell-foreground"}`
+                        : `focus-visible:ring-offset-background ${active ? "bg-primary font-semibold text-primary-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`
                     }`}
                   >
                     <span className="flex min-w-0 items-center gap-2.5">
-                      <Icon className={`h-4 w-4 shrink-0 ${active ? "text-primary-foreground" : "text-muted-foreground"}`} />
-                      <span className="truncate">{item.label}</span>
+                      <Icon className={`h-[18px] w-[18px] shrink-0 ${shell ? (active ? "text-shell-active" : "text-shell-muted") : active ? "text-primary-foreground" : "text-muted-foreground"}`} />
+                      <span className={`truncate ${shell ? "vecta-rail-label" : ""}`}>{item.label}</span>
                     </span>
                     {item.badge ? (
                       <span className={`rounded px-1.5 font-mono text-[9px] font-bold ${active ? "bg-primary-foreground/20 text-primary-foreground" : "bg-primary/10 text-primary"}`}>

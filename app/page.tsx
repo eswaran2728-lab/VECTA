@@ -7,11 +7,10 @@ import { getOpenBayBoard } from "@/lib/avsec/reports/queries";
 import { REPORT_TYPES as AVSEC_REPORT_TYPES, REPORT_META } from "@/lib/avsec/reference-data";
 import { requiresDailyReport } from "@/lib/avsec/auth";
 import { StatusDot, type OpsStatus } from "@/components/layout/StatusDot";
+import { AppChrome } from "@/components/layout/shell/AppChrome";
+import { buildNavModel } from "@/lib/dashboard/nav-capabilities";
+import { getCanConfirmCaterLinkReceipt } from "@/lib/avsec/caterlink/receipt-capability";
 import { landsOnRoleDashboard, primaryRoleLabel } from "@/lib/auth/role-capabilities";
-import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
-import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
-import { AppSidebar } from "@/components/layout/AppSidebar";
-import { NotificationsBell } from "@/components/layout/NotificationsBell";
 import { TransactionStageBar } from "@/components/layout/TransactionStageBar";
 import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries";
 import { getActiveRoleAssignments } from "@/lib/dashboard/context";
@@ -125,8 +124,9 @@ export default async function LandingPage() {
     getActivityFeed(),
     getActiveAnnouncementsForUser(currentUserProfile),
   ]);
-  // Phase 7: purely a nav-display decision (see lib/dashboard/navigation.ts).
-  const hasPhase7Assignment = activeAssignments.length > 0;
+  // Navigation is display-only and comes from the caller's canonical roles plus the two server-derived station capabilities.
+  const canReceive = await getCanConfirmCaterLinkReceipt(access);
+  const navModel = buildNavModel({ roleCodes: access.roleCodes, canScan: showScan, canReceive });
 
   const overallStatus: OpsStatus =
     snapshot.alerts > 0 ? "critical" : snapshot.activeTransactions > 0 ? "operational" : "standby";
@@ -140,31 +140,9 @@ export default async function LandingPage() {
   }
 
   return (
-    <main className="relative min-h-screen bg-background pb-28 lg:pb-8">
-      {/* Desktop Persistent Left Sidebar */}
-      <AppSidebar
-        userId={user.id}
-        name={profile.name}
-        role={role}
-        roleLabel={roleChip}
-        canScan={showScan}
-        station={station}
-        team={team}
-        hasPhase7Assignment={hasPhase7Assignment}
-        signOutAction={signOut}
-      />
-
-      <div className="relative z-10 flex min-h-screen flex-col lg:pl-64">
-        {/* Mobile Header (Hidden on Desktop since AppSidebar has brand and user card) */}
-        <div className="lg:hidden">
-          <UnifiedHeader
-            name={profile.name}
-            roleLabel={roleChip}
-            signOutAction={signOut}
-            extra={<NotificationsBell userId={user.id} />}
-          />
-        </div>
-
+    <main className="relative min-h-screen bg-background">
+      <AppChrome userId={user.id} name={profile.name} roleLabel={roleChip} model={navModel} station={station} team={team} signOutAction={signOut}>
+      <div className="relative z-10 flex flex-col">
         <div className="flex flex-col gap-6 px-4 py-6 sm:px-8 sm:py-8">
           {/* Management Announcements Section */}
           <AnnouncementBanner announcements={announcements} />
@@ -352,8 +330,7 @@ export default async function LandingPage() {
           </div>
         </div>
       </div>
-
-      <TeamBottomNav orgWide={orgWide} role={role} canScan={showScan} hasPhase7Assignment={hasPhase7Assignment} />
+      </AppChrome>
     </main>
   );
 }

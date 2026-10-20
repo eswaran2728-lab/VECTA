@@ -394,6 +394,35 @@
   }
 }
 
+/* Responsive shell geometry. Mobile (<768px): bottom navigation, no rail. Tablet (>=768px): 72px icon rail. Desktop (>=1024px): 256px
+   sidebar that the user can collapse to the same rail (html[data-nav="collapsed"], persisted locally). */
+@layer components {
+  .vecta-rail { width: 4.5rem; }
+  .vecta-shell-offset { padding-left: 0; }
+  .vecta-rail-flyout { left: 4.75rem; }
+  .vecta-rail-label {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+    clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
+  @media (min-width: 768px) {
+    .vecta-shell-offset { padding-left: 4.5rem; }
+  }
+  @media (min-width: 1024px) {
+    .vecta-rail { width: 16rem; }
+    .vecta-rail-flyout { left: 16.5rem; }
+    .vecta-shell-offset { padding-left: 16rem; }
+    .vecta-rail-label {
+      position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; white-space: normal;
+    }
+    html[data-nav="collapsed"] .vecta-rail { width: 4.5rem; }
+    html[data-nav="collapsed"] .vecta-rail-flyout { left: 4.75rem; }
+    html[data-nav="collapsed"] .vecta-shell-offset { padding-left: 4.5rem; }
+    html[data-nav="collapsed"] .vecta-rail-label {
+      position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap;
+    }
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-float,
   .animate-float-slow,

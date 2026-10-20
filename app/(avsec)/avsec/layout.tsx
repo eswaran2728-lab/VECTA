@@ -7,13 +7,9 @@ import { APP_NAME, APP_DESCRIPTION } from "@/lib/avsec/branding";
 import { getRawProfile, getCanonicalAccess, getCanScanCaterLink } from "@/lib/avsec/auth";
 import { getCanConfirmCaterLinkReceipt } from "@/lib/avsec/caterlink/receipt-capability";
 import { signOut as authSignOut } from "@/lib/avsec/profile-actions";
-import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
-import { TeamBottomNav } from "@/components/layout/TeamBottomNav";
-import { AppSidebar } from "@/components/layout/AppSidebar";
-import { NotificationsBell } from "@/components/layout/NotificationsBell";
-import { NavDrawer } from "@/components/layout/NavDrawer";
 import { buildNavModel } from "@/lib/dashboard/nav-capabilities";
 import { primaryRoleLabel } from "@/lib/auth/role-capabilities";
+import { AppChrome } from "@/components/layout/shell/AppChrome";
 
 export const metadata: Metadata = {
   title: APP_NAME,
@@ -29,7 +25,6 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
   // name/role/ops_group to put in them.
   const profile = await getRawProfile();
   const access = profile ? await getCanonicalAccess() : null;
-  const isOrgWide = access?.orgWide ?? false;
   const showChrome = Boolean(profile && profile.status === "approved" && profile.name && access?.hasAssignment && !access.isSuperAdmin);
   const canScan = showChrome && access ? await getCanScanCaterLink(access) : false;
   // Phase 7: purely a nav-display decision (see lib/dashboard/navigation.ts)
@@ -37,7 +32,6 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
   // pending-approval), and an empty result just means no "My Dashboard"
   // entry, never a broken link or an authorization change.
   const canReceive = showChrome && access ? await getCanConfirmCaterLinkReceipt(access) : false;
-  const hasPhase7Assignment = showChrome ? Boolean(access?.hasAssignment) : false;
   // Explicit canonical-role navigation. There is NO default role: an absent or unrecognised role gets the minimal model.
   const navModel = showChrome && access ? buildNavModel({ roleCodes: access.roleCodes, canScan, canReceive }) : null;
   // Exact canonical label (SSO is SSO, Hub SE is Hub SE) -- never the legacy compat label.
@@ -48,38 +42,14 @@ export default async function AvsecLayout({ children }: { children: React.ReactN
       <OfflineSyncProvider ownerId={profile?.id ?? null}>
         <ServiceWorkerRegister />
         <OfflineStatusBadge />
-        {showChrome && profile ? (
-          <AppSidebar
-            userId={profile.id}
-            name={profile.name}
-            role={navModel?.roleCode ?? null}
-            roleLabel={roleLabel}
-            model={navModel ?? undefined}
-            canScan={canScan}
-            station={profile.station}
-            team={profile.team}
-            hasPhase7Assignment={hasPhase7Assignment}
-            signOutAction={authSignOut}
-          />
-        ) : null}
-        <div className={showChrome ? "pb-24 lg:pb-8 lg:pl-64" : undefined}>
-          {showChrome && profile ? (
-            <div className="lg:hidden">
-              <UnifiedHeader
-                name={profile.name}
-                roleLabel={roleLabel}
-                menu={navModel ? <NavDrawer groups={navModel.groups} /> : undefined}
-                signOutAction={authSignOut}
-                extra={<NotificationsBell userId={profile.id} />}
-              />
-            </div>
-          ) : null}
-          {children}
-        </div>
-        <InstallPrompt />
         {showChrome && profile && navModel ? (
-          <TeamBottomNav orgWide={isOrgWide} role={navModel.roleCode} canScan={canScan} hasPhase7Assignment={hasPhase7Assignment} model={navModel} />
-        ) : null}
+          <AppChrome userId={profile.id} name={profile.name} roleLabel={roleLabel} model={navModel} station={profile.station} team={profile.team} signOutAction={authSignOut}>
+            {children}
+          </AppChrome>
+        ) : (
+          children
+        )}
+        <InstallPrompt />
       </OfflineSyncProvider>
     </div>
   );

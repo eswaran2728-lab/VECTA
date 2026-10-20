@@ -57,7 +57,7 @@ function formatDateTime(iso: string): string {
  *
  * `userId` is used only to reset local state when the signed-in user changes; it is not sent anywhere.
  */
-export function NotificationsBell({ userId }: { userId: string }) {
+export function useNotifications(userId: string) {
   const [items, setItems] = useState<AppNotification[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -99,6 +99,55 @@ export function NotificationsBell({ userId }: { userId: string }) {
     }
   };
 
+  return { items, open, setOpen, loading, error, unread, toggle };
+}
+
+/** The notification rows, shared by the desktop dropdown and the mobile Alerts sheet. */
+export function NotificationsList({ items, loading, error, onNavigate }: { items: AppNotification[]; loading: boolean; error: boolean; onNavigate: () => void }) {
+  if (loading) return <p className="px-2 py-3 text-sm text-muted-foreground">Loading…</p>;
+  if (error) {
+    return (
+      <p className="px-2 py-3 text-sm text-muted-foreground" role="alert">
+        Couldn&apos;t load notifications. Try again shortly.
+      </p>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <p className="px-2 py-3 text-sm text-muted-foreground" role="status">
+        Nothing yet.
+      </p>
+    );
+  }
+  return (
+    <ul className="max-h-96 divide-y divide-border overflow-y-auto">
+      {items.map((n) => {
+        const content = (
+          <>
+            <span className="font-medium">{n.title}</span>
+            {n.body ? <span className="block text-xs text-muted-foreground">{n.body}</span> : null}
+            <span className="block text-[11px] text-muted-foreground">{formatDateTime(n.createdAt)}</span>
+          </>
+        );
+        return (
+          <li key={n.id} className="px-2 py-2 text-sm">
+            {n.href ? (
+              <Link href={n.href} onClick={onNavigate} className="block min-h-[44px]">
+                {content}
+              </Link>
+            ) : (
+              <div>{content}</div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+export function NotificationsBell({ userId, tone = "surface" }: { userId: string; tone?: "surface" | "shell" }) {
+  const { items, open, setOpen, loading, error, unread, toggle } = useNotifications(userId);
+
   return (
     <div className="relative">
       <button
@@ -106,52 +155,19 @@ export function NotificationsBell({ userId }: { userId: string }) {
         onClick={toggle}
         aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
         aria-expanded={open}
-        className="relative flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 sm:h-9 sm:w-9"
+        className={`relative flex items-center justify-center rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${tone === "shell" ? "h-11 w-11 text-shell-muted hover:bg-white/5 hover:text-shell-foreground" : "h-11 w-11 text-muted-foreground hover:bg-muted/60 hover:text-foreground sm:h-9 sm:w-9"}`}
       >
         <Bell className="h-4 w-4" />
         {unread > 0 ? (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold text-brand-foreground">
             {unread}
           </span>
         ) : null}
       </button>
       {open ? (
-        <div className="absolute right-0 top-12 z-50 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card p-2 shadow-lg sm:top-11">
+        <div className={`z-50 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card p-2 text-card-foreground shadow-lg ${tone === "shell" ? "vecta-rail-flyout fixed bottom-4" : "absolute right-0 top-12 sm:top-11"}`}>
           <p className="px-2 py-1 text-xs font-semibold text-muted-foreground">Notifications</p>
-          {loading ? (
-            <p className="px-2 py-3 text-sm text-muted-foreground">Loading…</p>
-          ) : error ? (
-            <p className="px-2 py-3 text-sm text-muted-foreground" role="alert">
-              Couldn&apos;t load notifications. Try again shortly.
-            </p>
-          ) : items.length === 0 ? (
-            <p className="px-2 py-3 text-sm text-muted-foreground" role="status">
-              Nothing yet.
-            </p>
-          ) : (
-            <ul className="max-h-96 divide-y divide-border overflow-y-auto">
-              {items.map((n) => {
-                const content = (
-                  <>
-                    <span className="font-medium">{n.title}</span>
-                    {n.body ? <span className="block text-xs text-muted-foreground">{n.body}</span> : null}
-                    <span className="block text-[10px] text-muted-foreground">{formatDateTime(n.createdAt)}</span>
-                  </>
-                );
-                return (
-                  <li key={n.id} className="px-2 py-2 text-sm">
-                    {n.href ? (
-                      <Link href={n.href} onClick={() => setOpen(false)}>
-                        {content}
-                      </Link>
-                    ) : (
-                      <div>{content}</div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <NotificationsList items={items} loading={loading} error={error} onNavigate={() => setOpen(false)} />
         </div>
       ) : null}
     </div>
