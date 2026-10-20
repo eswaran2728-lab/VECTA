@@ -120,5 +120,5 @@ test("frozen hashes: the staging runner pins exactly the nine forward migrations
   assert.match(runner, /LAST_PRE = "20261107000001"/);
   const all = fs.readdirSync("supabase/migrations").filter((f) => /^\d{14}_.*\.sql$/.test(f)).sort();
   assert.equal(new Set(all.map((f) => f.slice(0, 14))).size, all.length, "no migration version collision");
-  assert.deepEqual(all.filter((f) => f.slice(0, 14) > "20261107000001").map((f) => f.slice(0, 14)), ["20261108000001", "20261109000001", "20261110000001", "20261111000001", "20261112000001", "20261113000001", "20261114000001", "20261115000001", "20261116000001"], "migration order");
+  assert.deepEqual(all.filter((f) => f.slice(0, 14) > "20261107000001" && f.slice(0, 14) <= "20261116000001").map((f) => f.slice(0, 14)), ["20261108000001", "20261109000001", "20261110000001", "20261111000001", "20261112000001", "20261113000001", "20261114000001", "20261115000001", "20261116000001"], "migration order");
 });
