@@ -117,8 +117,8 @@ export const DIRECTION_LABELS: Record<Direction, string> = {
 
 /** Matches the physical truck seal colors: blue outbound, green inbound. */
 export const DIRECTION_COLORS: Record<Direction, string> = {
-  OUTBOUND: "bg-blue-600 text-white dark:bg-blue-500",
-  INBOUND: "bg-green-600 text-white dark:bg-green-500",
+  OUTBOUND: "bg-blue-700 text-white",
+  INBOUND: "bg-green-700 text-white",
 };
 
 export const DELIVERY_LOCATION_LABELS: Record<DeliveryLocation, string> = {

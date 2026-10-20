@@ -163,7 +163,7 @@ export function LoginForm() {
       {/* Divider */}
       <div className="my-1 flex items-center gap-3">
         <div className="h-px flex-1 bg-border/60" />
-        <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground/80">
+        <span className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
           or password sign-in
         </span>
         <div className="h-px flex-1 bg-border/60" />

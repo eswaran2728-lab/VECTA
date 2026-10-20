@@ -51,7 +51,7 @@ export default async function ProfilePage() {
     <main className="min-h-screen bg-background">
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
         <div className="flex items-center gap-4 rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/15 font-mono text-lg font-bold text-primary" aria-hidden>
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/15 font-mono text-lg font-bold text-foreground" aria-hidden>
             {initials(profile.name)}
           </div>
           <div className="min-w-0">
