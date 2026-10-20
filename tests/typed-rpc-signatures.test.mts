@@ -10,9 +10,9 @@ import path from "node:path";
  */
 const MIG_DIR = "supabase/migrations";
 const sql = [MIG_DIR, path.join(MIG_DIR, "icms")]
-  .flatMap((d) => fs.readdirSync(d).filter((f) => f.endsWith(".sql")).sort().map((f) => fs.readFileSync(path.join(d, f), "utf8").replace(/--.*$/gm, "")))
+  .flatMap((d) => fs.readdirSync(d).filter((f) => f.endsWith(".sql")).sort().map((f) => fs.readFileSync(path.join(d, f), "utf8").replace(/\r\n/g, "\n").replace(/--.*$/gm, "")))
   .join("\n");
-const types = fs.readFileSync("lib/supabase/database.types.ts", "utf8");
+const types = fs.readFileSync("lib/supabase/database.types.ts", "utf8").replace(/\r\n/g, "\n");
 
 const TS: Record<string, string> = { uuid: "string", text: "string", integer: "number", boolean: "boolean", timestamptz: "string", jsonb: "Json", date: "string" };
 

@@ -8,7 +8,7 @@ import { isNonRosteredLeadership } from "../lib/auth/non-rostered-roles.ts";
 import { buildNavModel, navHrefs } from "../lib/dashboard/nav-capabilities.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8").replace(/\r\n/g, "\n");
 
 /** Roles whose my-dashboard component is a dedicated component (see app/(avsec)/avsec/my-dashboard/page.tsx). */
 const DEDICATED = new Set(["executive", "super_admin", "entity_boss", "entity_admin", "operation_manager", "caterlink"]);

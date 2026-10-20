@@ -7,7 +7,7 @@ import { assignmentsFromRpcRows, deriveCanonicalAccess, NO_CANONICAL_ACCESS } fr
 import { buildAccountPlan } from "../scripts/staging/lib/team-plan.mjs";
 
 const REPO = path.resolve(import.meta.dirname, "..");
-const read = (rel: string) => fs.readFileSync(path.join(REPO, rel), "utf8");
+const read = (rel: string) => fs.readFileSync(path.join(REPO, rel), "utf8").replace(/\r\n/g, "\n");
 const MIG = read("supabase/migrations/20261020000001_canonical_operations_compatibility.sql");
 const strip = (s: string) => s.replace(/--[^\n]*/g, "");
 
