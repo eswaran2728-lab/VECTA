@@ -28,7 +28,7 @@ export function HighlightRow({
   return (
     <TableRow
       ref={ref}
-      className={(className ?? "") + (isHighlighted ? " outline outline-2 outline-amber-500 -outline-offset-2" : "")}
+      className={(className ?? "") + (isHighlighted ? " outline outline-2 outline-warning -outline-offset-2" : "")}
     >
       {children}
     </TableRow>

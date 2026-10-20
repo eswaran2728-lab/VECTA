@@ -53,7 +53,7 @@ export default async function AuditPage() {
       </div>
 
       {error ? (
-        <p role="alert" className="rounded-md bg-red-100 p-3 text-sm font-medium text-red-800">
+        <p role="alert" className="rounded-md bg-red-100 p-3 text-sm font-medium text-destructive">
           The audit log could not be loaded: {error.message.replace(/^ERROR:\s*/i, "")}
         </p>
       ) : null}

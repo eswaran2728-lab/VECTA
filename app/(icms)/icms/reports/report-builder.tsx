@@ -327,7 +327,7 @@ export function ReportBuilder({
                       </TableCell>
                       <TableCell
                         className={`py-2 text-right font-mono text-sm ${
-                          d.slaPct !== null && d.slaPct < 90 ? "font-semibold text-amber-600" : ""
+                          d.slaPct !== null && d.slaPct < 90 ? "font-semibold text-warning" : ""
                         }`}
                       >
                         {d.slaPct === null ? "No limit" : `${d.slaPct}%`}

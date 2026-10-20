@@ -57,7 +57,7 @@ export default async function PartBPage({ params }: { params: Promise<{ id: stri
         </p>
       </div>
       {seals.length === 0 ? (
-        <p role="alert" className="rounded-md border border-red-300 p-4 text-sm">
+        <p role="alert" className="rounded-md border border-destructive p-4 text-sm">
           No seals are on record for this transaction, so Part B cannot be completed. Contact CaterLink Management.
         </p>
       ) : (

@@ -101,7 +101,7 @@ export default async function EntityReportsPage({ searchParams: searchParamsProm
 
         <section className="card p-4" aria-label="Report results">
           {results.status === "error" && (
-            <p className="font-mono text-xs text-red-500" role="alert">
+            <p className="font-mono text-xs text-destructive" role="alert">
               The search could not be completed right now. Try again shortly.
             </p>
           )}

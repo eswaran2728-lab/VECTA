@@ -11,7 +11,7 @@ export async function EntityBayBoard({ hubCode, stationCode }: { hubCode: string
 
   if (scopes.status !== "ok") {
     return (
-      <p className="font-mono text-xs text-red-500" role="alert">
+      <p className="font-mono text-xs text-destructive" role="alert">
         {scopes.status === "unauthorized" ? "Not authorized for this scope." : "The Bay Board scopes could not be loaded right now."}
       </p>
     );
@@ -57,7 +57,7 @@ export async function EntityBayBoard({ hubCode, stationCode }: { hubCode: string
       </form>
 
       {board.status === "error" && (
-        <p className="font-mono text-xs text-red-500" role="alert">
+        <p className="font-mono text-xs text-destructive" role="alert">
           The Bay Board could not be loaded right now. Try again shortly.
         </p>
       )}

@@ -127,7 +127,7 @@ export function NewHandoverForm({
         />
       </div>
 
-      {error && <p className="text-xs text-red-400 font-mono">{error}</p>}
+      {error && <p className="text-xs text-destructive font-mono">{error}</p>}
 
       <button type="submit" className="btn-primary w-full" disabled={submitting}>
         {submitting ? "Filing…" : "File Handover ▸"}

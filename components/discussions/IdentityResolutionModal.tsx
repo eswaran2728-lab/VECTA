@@ -105,8 +105,8 @@ export function IdentityResolutionModal({
 
         {resolvedData ? (
           <div className="mt-5 space-y-4">
-            <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 space-y-3">
-              <div className="flex items-center gap-2 text-emerald-400 font-semibold text-sm">
+            <div className="p-4 rounded-xl border border-success/30 bg-success/10 space-y-3">
+              <div className="flex items-center gap-2 text-success font-semibold text-sm">
                 <UserCheck className="h-4 w-4" />
                 <span>Identity Successfully Resolved</span>
               </div>
@@ -155,7 +155,7 @@ export function IdentityResolutionModal({
                 <label htmlFor="investigation-reason" className="block text-xs font-semibold text-foreground uppercase tracking-wider">
                   Official Investigation Justification
                 </label>
-                <span className={`text-[11px] ${reason.trim().length >= 10 ? "text-emerald-400" : "text-amber-400"}`}>
+                <span className={`text-[11px] ${reason.trim().length >= 10 ? "text-success" : "text-warning"}`}>
                   {reason.trim().length}/10 chars min
                 </span>
               </div>

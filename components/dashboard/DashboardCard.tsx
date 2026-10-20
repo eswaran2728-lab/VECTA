@@ -36,7 +36,7 @@ export function DashboardCard({
         </p>
       )}
       {status === "error" && (
-        <p className="font-mono text-xs text-red-500" role="alert">
+        <p className="font-mono text-xs text-destructive" role="alert">
           Could not load this data right now. Try again shortly.
         </p>
       )}

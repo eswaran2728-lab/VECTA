@@ -12,7 +12,7 @@ export function OfflineStatusBadge() {
       className={
         "w-full text-center text-sm font-medium py-1.5 px-3 " +
         (isOnline
-          ? "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
+          ? "bg-amber-100 text-warning dark:bg-warning/20 dark:text-warning"
           : "bg-slate-800 text-white")
       }
     >

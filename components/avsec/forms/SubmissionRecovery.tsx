@@ -55,11 +55,11 @@ export function SubmissionRecovery({
   }
 
   return (
-    <div className="rounded-lg border border-amber-400/40 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-3">
-      <p className="font-medium text-amber-900 dark:text-amber-200">Your report was saved but not fully submitted</p>
-      <p className="text-sm text-amber-800 dark:text-amber-300">{message}</p>
-      <p className="text-xs text-amber-700 dark:text-amber-400">Report reference: {reportId}</p>
-      {retryError && <p className="text-sm text-red-700 dark:text-red-400">{retryError}</p>}
+    <div className="rounded-lg border border-warning/40 bg-amber-50 dark:bg-warning/30 p-4 space-y-3">
+      <p className="font-medium text-warning dark:text-warning">Your report was saved but not fully submitted</p>
+      <p className="text-sm text-warning dark:text-warning">{message}</p>
+      <p className="text-xs text-warning dark:text-warning">Report reference: {reportId}</p>
+      {retryError && <p className="text-sm text-destructive dark:text-destructive">{retryError}</p>}
       <div className="flex gap-2">
         <button
           type="button"

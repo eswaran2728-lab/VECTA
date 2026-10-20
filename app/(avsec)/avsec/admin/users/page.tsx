@@ -51,7 +51,7 @@ export default async function AdminUsersPage({
         )}
 
         {searchParams.success && (
-          <div className="card p-4 border-emerald-500/40 bg-emerald-500/10 text-emerald-400">
+          <div className="card p-4 border-success/40 bg-success/10 text-success">
             <p className="text-sm font-medium">{searchParams.success}</p>
           </div>
         )}

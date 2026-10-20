@@ -35,7 +35,7 @@ export default async function OperationStaffPage({ searchParams: searchParamsPro
           </label>
           <button type="submit" className="btn-primary min-h-[44px] px-4 text-xs">Search</button>
         </form>
-        {error && <p className="font-mono text-xs text-red-500" role="alert">The staff list could not be loaded right now.</p>}
+        {error && <p className="font-mono text-xs text-destructive" role="alert">The staff list could not be loaded right now.</p>}
         {!error && (data ?? []).length === 0 && <p className="card p-6 text-center font-mono text-xs text-muted-foreground" role="status">No staff match.</p>}
         {(data ?? []).length > 0 && (
           <div className="card overflow-x-auto p-4">

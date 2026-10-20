@@ -46,8 +46,8 @@ export function SubmissionConfirmation({
         className={cn(
           "w-16 h-16 rounded-2xl flex items-center justify-center text-3xl font-bold border mx-auto",
           queued
-            ? "bg-blue-500/10 border-blue-500/30 text-blue-400"
-            : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+            ? "bg-primary/10 border-primary/30 text-primary"
+            : "bg-success/10 border-success/30 text-success"
         )}
       >
         {queued ? "⇅" : "✓"}
@@ -65,15 +65,15 @@ export function SubmissionConfirmation({
       </div>
 
       {attachmentErrors && attachmentErrors.length > 0 && (
-        <div className="card p-4 space-y-1.5 border-red-500/50 bg-red-500/10">
-          <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-red-400">
+        <div className="card p-4 space-y-1.5 border-destructive/50 bg-destructive/10">
+          <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-destructive">
             ATTACHMENT UPLOAD ISSUE
           </p>
-          <p className="text-xs text-red-300">
+          <p className="text-xs text-destructive">
             The report itself was submitted successfully. These attachments will keep retrying in the background:
           </p>
           {attachmentErrors.map((e) => (
-            <p key={e} className="font-mono text-[11px] text-red-400">
+            <p key={e} className="font-mono text-[11px] text-destructive">
               {e}
             </p>
           ))}
@@ -94,7 +94,7 @@ export function SubmissionConfirmation({
             <p className="font-mono font-bold text-3xl tracking-wider text-primary break-all">
               {reportNo}
             </p>
-            <p className="font-mono text-xs font-semibold text-amber-400">
+            <p className="font-mono text-xs font-semibold text-warning">
               Write this number on the paper form
             </p>
             <button type="button" className="btn-secondary w-full text-xs" onClick={copyReportNo}>

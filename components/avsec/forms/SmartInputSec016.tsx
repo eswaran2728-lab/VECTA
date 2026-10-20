@@ -81,11 +81,11 @@ export function SmartInputSec016<T extends FieldValues>({
           {parsing ? "Parsing…" : "Parse & Fill"}
         </button>
         {summary && (
-          <p className="text-xs font-mono font-semibold text-emerald-400">
+          <p className="text-xs font-mono font-semibold text-success">
             {summary}
           </p>
         )}
-        {errorMsg && <p className="text-xs text-red-400 font-mono">{errorMsg}</p>}
+        {errorMsg && <p className="text-xs text-destructive font-mono">{errorMsg}</p>}
       </div>
     </section>
   );

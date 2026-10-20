@@ -267,7 +267,7 @@ export function Sec013Form({
                 <FieldRow>
                   <div>
                     <label className="field-label" htmlFor={`profiling_duties.${idx}.duty_area`}>
-                      Duty Area <span className="text-red-400">*</span>
+                      Duty Area <span className="text-destructive">*</span>
                     </label>
                     <input
                       id={`profiling_duties.${idx}.duty_area`}

@@ -47,7 +47,7 @@ export default async function VendorPartCPage({ params }: { params: Promise<{ id
         </CardContent>
       </Card>
 
-      <p className="rounded-md bg-amber-100 p-3 text-xs font-medium text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
+      <p className="rounded-md bg-amber-100 p-3 text-xs font-medium text-warning dark:bg-warning/30 dark:text-warning">
         I confirm the information above is true and accurate and that the delivery has been handed over.
       </p>
 

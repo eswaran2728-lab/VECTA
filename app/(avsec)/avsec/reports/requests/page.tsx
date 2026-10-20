@@ -61,7 +61,7 @@ export default async function ReportRequestsPage({ searchParams: searchParamsPro
               ))}
             </div>
             {requests && !requests.ok && (
-              <p className="font-mono text-xs text-red-500" role="alert">
+              <p className="font-mono text-xs text-destructive" role="alert">
                 {requests.error}
               </p>
             )}
@@ -103,7 +103,7 @@ export default async function ReportRequestsPage({ searchParams: searchParamsPro
               ))}
             </div>
             {grants && !grants.ok && (
-              <p className="font-mono text-xs text-red-500" role="alert">
+              <p className="font-mono text-xs text-destructive" role="alert">
                 {grants.error}
               </p>
             )}
@@ -143,7 +143,7 @@ export default async function ReportRequestsPage({ searchParams: searchParamsPro
               ))}
             </div>
             {audit && !audit.ok && (
-              <p className="font-mono text-xs text-red-500" role="alert">
+              <p className="font-mono text-xs text-destructive" role="alert">
                 {audit.error}
               </p>
             )}

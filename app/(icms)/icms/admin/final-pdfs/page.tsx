@@ -40,12 +40,12 @@ export default async function FinalPdfsPage({ searchParams }: { searchParams: Pr
         </a>
       </div>
       {params.error === "download" && (
-        <p className="text-sm text-red-500" role="alert">
+        <p className="text-sm text-destructive" role="alert">
           The final PDF could not be downloaded.
         </p>
       )}
       {error && (
-        <p className="text-sm text-red-500" role="alert">
+        <p className="text-sm text-destructive" role="alert">
           The PDF jobs could not be loaded right now.
         </p>
       )}

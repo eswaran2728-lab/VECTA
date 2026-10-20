@@ -259,7 +259,7 @@ export function Sec029Form({
         <FieldRow>
           <div>
             <label className="field-label" htmlFor="supervising_officer_profile_id">
-              Supervising Officer Name <span className="text-red-400">*</span>
+              Supervising Officer Name <span className="text-destructive">*</span>
             </label>
             <select
               id="supervising_officer_profile_id"
@@ -286,7 +286,7 @@ export function Sec029Form({
               Only SO/DSE on your own team are listed.
             </p>
             {errors.supervising_officer_profile_id && (
-              <p className="text-xs text-red-400 font-mono mt-1.5">{errors.supervising_officer_profile_id.message}</p>
+              <p className="text-xs text-destructive font-mono mt-1.5">{errors.supervising_officer_profile_id.message}</p>
             )}
           </div>
           <TextField
@@ -361,7 +361,7 @@ export function Sec029Form({
               <h3 className="font-bold text-xs font-mono uppercase tracking-wider text-foreground">
                 {section}
                 {section === "COCKPIT AREA" && (
-                  <span className="block text-[11px] font-mono font-normal mt-0.5 text-amber-400">
+                  <span className="block text-[11px] font-mono font-normal mt-0.5 text-warning">
                     NOTE: DO NOT TOUCH THE INSTRUMENT PANEL
                   </span>
                 )}
@@ -424,7 +424,7 @@ export function Sec029Form({
         {/* 6. Declaration and conditional discrepancy details */}
         <div>
           <label className="field-label">
-            Declaration <span className="text-red-400">*</span>
+            Declaration <span className="text-destructive">*</span>
           </label>
           <div className="space-y-2">
             {[DECLARATION_CLEAN, DECLARATION_DISCREPANCY].map((opt) => (
@@ -438,7 +438,7 @@ export function Sec029Form({
               </label>
             ))}
           </div>
-          {errors.declaration && <p className="text-xs text-red-400 font-mono mt-1">{errors.declaration.message}</p>}
+          {errors.declaration && <p className="text-xs text-destructive font-mono mt-1">{errors.declaration.message}</p>}
         </div>
 
         {discrepanciesFound && (
@@ -454,10 +454,10 @@ export function Sec029Form({
               id="sec029-photo-notice"
               className={cn(
                 "card-inset p-3 rounded-lg border flex items-start gap-2.5",
-                hasPhoto ? "border-emerald-500/40 bg-emerald-500/5" : "border-amber-500/50 bg-amber-500/10"
+                hasPhoto ? "border-success/40 bg-success/5" : "border-warning/50 bg-warning/10"
               )}
             >
-              <Camera className={cn("h-4 w-4 mt-0.5 shrink-0", hasPhoto ? "text-emerald-400" : "text-amber-400")} />
+              <Camera className={cn("h-4 w-4 mt-0.5 shrink-0", hasPhoto ? "text-success" : "text-warning")} />
               <p className="text-xs font-semibold text-foreground">
                 Photo Evidence Required — {hasPhoto
                   ? "at least one photo is attached."
@@ -480,7 +480,7 @@ export function Sec029Form({
       <div id="sec029-attachments">
         <AttachmentUpload value={attachments} onChange={setAttachments} disabled={isSubmitting} />
         {photoRequiredError && (
-          <p className="text-xs text-red-400 font-mono mt-2">
+          <p className="text-xs text-destructive font-mono mt-2">
             ⚠ Add at least one photo before submitting — discrepancies were declared and a PDF alone isn&apos;t enough.
           </p>
         )}

@@ -90,7 +90,7 @@ export function RegisterForm() {
             onClick={() => setSystemType("caterlink")}
             className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 px-3 text-xs font-semibold transition-all duration-150 cursor-pointer ${
               systemType === "caterlink"
-                ? "border-amber-500 bg-amber-500/15 text-amber-400 shadow-sm shadow-amber-500/20"
+                ? "border-warning bg-warning/15 text-warning shadow-sm shadow-amber-500/20"
                 : "border-border/60 bg-surface/50 text-muted-foreground hover:bg-surface/80"
             }`}
           >
@@ -238,7 +238,7 @@ export function RegisterForm() {
           </div>
         ) : (
           <div className="flex flex-col gap-3.5">
-            <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
+            <div className="flex items-center gap-2 text-xs font-semibold text-warning">
               <Truck className="h-3.5 w-3.5" />
               <span>CATERLINK Driver Details</span>
             </div>
@@ -286,8 +286,8 @@ export function RegisterForm() {
       </div>
 
       {errorMsg ? (
-        <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/15 p-3 text-xs font-medium text-red-300">
-          <TriangleAlert className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />
+        <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/15 p-3 text-xs font-medium text-destructive">
+          <TriangleAlert className="h-4 w-4 shrink-0 text-destructive mt-0.5" />
           <span>{errorMsg}</span>
         </div>
       ) : null}
@@ -295,9 +295,9 @@ export function RegisterForm() {
       <TurnstileField key={verificationResetKey} />
 
       {successMsg ? (
-        <div className="flex flex-col gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-300">
+        <div className="flex flex-col gap-2 rounded-lg border border-success/30 bg-success/10 p-3.5 text-xs text-success">
           <div className="flex items-center gap-1.5 font-semibold">
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
             <span>Registration Submitted!</span>
           </div>
           <p className="leading-relaxed text-foreground/90">{successMsg}</p>

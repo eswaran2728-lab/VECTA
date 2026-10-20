@@ -296,7 +296,7 @@ export default function ZoneMapEditor({
           {/* Station Airport Badge */}
           <div className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-background/90 px-2.5 py-1 text-[10px] font-mono font-medium shadow-md backdrop-blur border border-border/80 text-foreground">
             <span className="h-2 w-2 rounded-full bg-cyan-400" />
-            <span className="font-semibold text-cyan-400">{stationLabel}</span>
+            <span className="font-semibold text-primary">{stationLabel}</span>
             <span className="text-muted-foreground hidden sm:inline">AIRPORT MAP</span>
           </div>
 
@@ -305,18 +305,18 @@ export default function ZoneMapEditor({
             {points.length === 0 ? (
               <>
                 <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-amber-400 font-semibold">Tap map to add points (0/3 min)</span>
+                <span className="text-warning font-semibold">Tap map to add points (0/3 min)</span>
               </>
             ) : points.length < 3 ? (
               <>
                 <span className="h-2 w-2 rounded-full bg-amber-400" />
-                <span className="text-amber-400 font-bold">{points.length}/3 points placed</span>
+                <span className="text-warning font-bold">{points.length}/3 points placed</span>
                 <span className="text-muted-foreground hidden sm:inline">(need {3 - points.length} more)</span>
               </>
             ) : (
               <>
                 <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                <span className="text-emerald-400 font-bold">{points.length} points</span>
+                <span className="text-success font-bold">{points.length} points</span>
                 <span className="text-muted-foreground">· radius ≈{geometry.radius_m}m</span>
               </>
             )}

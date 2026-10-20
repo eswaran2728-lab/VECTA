@@ -17,7 +17,7 @@ function CompletedPart({
   return (
     <div className="rounded-lg border bg-background p-3">
       <div className="flex items-center gap-2 text-sm font-semibold">
-        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+        <CheckCircle2 className="h-4 w-4 text-success" />
         {label} completed
       </div>
       <p className="mt-1 text-sm">{person}</p>

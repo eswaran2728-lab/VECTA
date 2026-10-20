@@ -45,7 +45,7 @@ export function QrDisplay({ token, transactionNumber, size = 240 }: QrDisplayPro
       <button
         type="button"
         onClick={() => window.print()}
-        className="text-xs text-blue-600 underline print:hidden"
+        className="text-xs text-primary underline print:hidden"
       >
         Print QR pass
       </button>

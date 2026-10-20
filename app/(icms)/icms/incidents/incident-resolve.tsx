@@ -67,8 +67,8 @@ export function IncidentResolve({
       ) : (
         <input type="hidden" name="resolution_notes" value="" />
       )}
-      {state.error ? <p className="text-xs text-red-600">{state.error}</p> : null}
-      {state.success ? <p className="text-xs text-emerald-600">{state.success}</p> : null}
+      {state.error ? <p className="text-xs text-destructive">{state.error}</p> : null}
+      {state.success ? <p className="text-xs text-success">{state.success}</p> : null}
     </form>
   );
 }

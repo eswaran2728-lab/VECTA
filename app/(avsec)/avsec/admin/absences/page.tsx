@@ -122,14 +122,14 @@ export default async function AdminLeaveAuditPage({
           </div>
 
           <div className="vecta-tile !p-3 space-y-1 border-l-4 border-l-emerald-500">
-            <span className="vecta-eyebrow text-emerald-500">COMPLIANT (≥3H)</span>
-            <div className="font-display text-xl font-bold text-emerald-500">{stats.greenCount}</div>
+            <span className="vecta-eyebrow text-success">COMPLIANT (≥3H)</span>
+            <div className="font-display text-xl font-bold text-success">{stats.greenCount}</div>
             <span className="font-mono text-[9px] text-muted-foreground">Same-day notice</span>
           </div>
 
           <div className="vecta-tile !p-3 space-y-1 border-l-4 border-l-rose-500">
-            <span className="vecta-eyebrow text-rose-500">LATE NOTICE (&lt;3H)</span>
-            <div className="font-display text-xl font-bold text-rose-500">{stats.redCount}</div>
+            <span className="vecta-eyebrow text-destructive">LATE NOTICE (&lt;3H)</span>
+            <div className="font-display text-xl font-bold text-destructive">{stats.redCount}</div>
             <span className="font-mono text-[9px] text-muted-foreground">Short notice / late</span>
           </div>
         </div>
@@ -365,7 +365,7 @@ export default async function AdminLeaveAuditPage({
                         </td>
                         <td className="py-3">
                           {isPendingCancel ? (
-                            <span className="font-mono text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30 whitespace-nowrap">
+                            <span className="font-mono text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-warning/20 text-warning border border-warning/30 whitespace-nowrap">
                               ⚡ Cancel Requested
                             </span>
                           ) : isEscalated ? (
@@ -413,7 +413,7 @@ export default async function AdminLeaveAuditPage({
                         <td className="py-3 font-sans text-xs text-foreground max-w-xs break-words space-y-1">
                           <div>&ldquo;{n.remarks}&rdquo;</div>
                           {n.cancellation_reason && (
-                            <div className="text-[11px] font-mono text-amber-300">
+                            <div className="text-[11px] font-mono text-warning">
                               <strong>Cancel Reason:</strong> {n.cancellation_reason}
                             </div>
                           )}

@@ -23,7 +23,7 @@ export default async function SatCombinedReportsPage() {
         </div>
 
         {result.error && (
-          <div className="card p-4 border-red-500/50 bg-red-500/10 text-xs text-red-400 font-mono">{result.error}</div>
+          <div className="card p-4 border-destructive/50 bg-destructive/10 text-xs text-destructive font-mono">{result.error}</div>
         )}
 
         {canUpload && (

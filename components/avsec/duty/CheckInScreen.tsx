@@ -438,8 +438,8 @@ export function CheckInScreen({
                 <span
                   className={`font-mono text-[10px] px-2 py-0.5 rounded-full font-bold ${
                     leaveNotice.status === "green"
-                      ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                      : "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                      ? "bg-success/20 text-success border border-success/30"
+                      : "bg-destructive/20 text-destructive border border-destructive/30"
                   }`}
                 >
                   {formatAbsenceGap(leaveNotice.gap_minutes)}

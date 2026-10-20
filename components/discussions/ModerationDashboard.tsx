@@ -105,7 +105,7 @@ export function ModerationDashboard({ initialReports }: ModerationDashboardProps
       {/* Reports Table / List */}
       {filteredReports.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border p-12 text-center space-y-2">
-          <CheckCircle2 className="h-8 w-8 text-emerald-400 mx-auto" />
+          <CheckCircle2 className="h-8 w-8 text-success mx-auto" />
           <h3 className="text-sm font-semibold text-foreground">No reports match the current filter</h3>
           <p className="text-xs text-muted-foreground">
             All reported items have been handled or no reports exist.
@@ -132,9 +132,9 @@ export function ModerationDashboard({ initialReports }: ModerationDashboardProps
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded text-[10.5px] font-medium capitalize ${
                           isOpen
-                            ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                            ? "bg-warning/15 text-warning border border-warning/30"
                             : isReviewed
-                            ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                            ? "bg-success/15 text-success border border-success/30"
                             : "bg-muted text-muted-foreground border border-border"
                         }`}
                       >

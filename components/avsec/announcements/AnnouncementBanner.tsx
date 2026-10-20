@@ -235,7 +235,7 @@ export function AnnouncementBanner({
                     >
                       <div className="flex items-center justify-between gap-2">
                         <h4 className="font-semibold text-foreground">{a.title}</h4>
-                        <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
+                        <span className="text-[10px] font-mono text-success flex items-center gap-1">
                           <CheckCircle2 className="h-3 w-3" />
                           Acknowledged
                         </span>

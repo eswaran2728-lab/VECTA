@@ -160,7 +160,7 @@ export function DiscussionList({ categories, threads, isModerator }: DiscussionL
                       {catName}
                     </span>
                     {isLocked && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-medium bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-medium bg-warning/15 text-warning border border-warning/30">
                         <Lock className="h-3 w-3" />
                         <span>Locked</span>
                       </span>

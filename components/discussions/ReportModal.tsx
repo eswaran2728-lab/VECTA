@@ -87,7 +87,7 @@ export function ReportModal({
 
         {isSuccess ? (
           <div className="py-10 text-center space-y-3">
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-success/15 text-success border border-success/30">
               <ShieldCheck className="h-6 w-6" />
             </div>
             <h3 className="text-base font-medium text-foreground">Report Submitted</h3>

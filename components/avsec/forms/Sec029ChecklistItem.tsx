@@ -45,7 +45,7 @@ export function Sec029ChecklistItem<T extends FieldValues>({
       className={cn(
         "card-inset p-3.5 space-y-3 rounded-lg border transition-all",
         flagged
-          ? "border-red-500/50 bg-red-500/10"
+          ? "border-destructive/50 bg-destructive/10"
           : "border-border/70 bg-surface/50"
       )}
     >
@@ -89,7 +89,7 @@ export function Sec029ChecklistItem<T extends FieldValues>({
               {...register(remarkTextName)}
             />
             {itemErrors?.[index]?.remark_text && (
-              <p className="text-xs text-red-400 font-mono mt-1">{itemErrors[index]?.remark_text?.message}</p>
+              <p className="text-xs text-destructive font-mono mt-1">{itemErrors[index]?.remark_text?.message}</p>
             )}
           </div>
         )}

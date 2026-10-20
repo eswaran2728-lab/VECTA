@@ -96,8 +96,8 @@ function Check({ ok, label }: { ok: boolean; label: string }) {
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
         ok
-          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
-          : "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200"
+          ? "bg-emerald-100 text-success dark:bg-success/40 dark:text-success"
+          : "bg-red-100 text-destructive dark:bg-destructive/40 dark:text-destructive"
       }`}
     >
       {ok ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
@@ -209,12 +209,12 @@ export default async function TransactionDetailPage({
   return (
     <div className="space-y-4">
       {holdMessage ? (
-        <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm font-semibold text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
+        <p role="alert" className="rounded-md border border-destructive bg-red-50 p-3 text-sm font-semibold text-destructive dark:border-destructive dark:bg-destructive/40 dark:text-destructive">
           {holdMessage}
         </p>
       ) : null}
       {banner ? (
-        <p className="rounded-md bg-emerald-100 p-3 text-sm font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">{banner}</p>
+        <p className="rounded-md bg-emerald-100 p-3 text-sm font-medium text-success dark:bg-success/40 dark:text-success">{banner}</p>
       ) : null}
 
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -275,7 +275,7 @@ export default async function TransactionDetailPage({
                   <span className="font-mono font-semibold">{s.seal_number}</span>
                   <Badge className={SEAL_COLOR_BADGES[s.seal_color]}>{SEAL_COLOR_LABELS[s.seal_color]}</Badge>
                   <span className="text-xs text-muted-foreground">{SEAL_TYPE_LABELS[s.seal_type]}</span>
-                  {s.superseded_at ? <span className="text-xs text-amber-700">superseded</span> : null}
+                  {s.superseded_at ? <span className="text-xs text-warning">superseded</span> : null}
                 </div>
                 {s.seal_verifications.length > 0 ? (
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -320,7 +320,7 @@ export default async function TransactionDetailPage({
             signature={sigB}
             signatureLabel="Officer signature"
           >
-            {partB.escalation_reason ? <p className="text-sm font-medium text-orange-700">Escalated: {partB.escalation_reason}</p> : null}
+            {partB.escalation_reason ? <p className="text-sm font-medium text-warning">Escalated: {partB.escalation_reason}</p> : null}
           </PartCard>
         ) : (
           <PendingCard title="Part B — Checkpoint" />
@@ -338,7 +338,7 @@ export default async function TransactionDetailPage({
             signature={sigC}
             signatureLabel="Officer signature"
           >
-            {partC.escalation_reason ? <p className="text-sm font-medium text-orange-700">Escalated: {partC.escalation_reason}</p> : null}
+            {partC.escalation_reason ? <p className="text-sm font-medium text-warning">Escalated: {partC.escalation_reason}</p> : null}
           </PartCard>
         ) : (
           <PendingCard title="Part C — Checkpoint" />
@@ -390,9 +390,9 @@ export default async function TransactionDetailPage({
       </div>
 
       {incidents.length > 0 ? (
-        <Card className="border-red-300 dark:border-red-900">
+        <Card className="border-destructive dark:border-destructive">
           <CardHeader>
-            <CardTitle className="text-base text-red-700 dark:text-red-300">Incidents ({incidents.length})</CardTitle>
+            <CardTitle className="text-base text-destructive dark:text-destructive">Incidents ({incidents.length})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {incidents.map((incident) => (

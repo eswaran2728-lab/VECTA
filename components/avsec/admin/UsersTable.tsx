@@ -141,10 +141,10 @@ function UserRow({ profile: p, isProtected }: { profile: Profile; isProtected: b
           className={cn(
             "text-xs font-bold px-2 py-1 rounded-full",
             p.status === "approved"
-              ? "bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300"
+              ? "bg-green-100 text-success dark:bg-success/20 dark:text-success"
               : p.status === "rejected" || p.status === "deactivated"
-                ? "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300"
-                : "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",
+                ? "bg-red-100 text-destructive dark:bg-destructive/20 dark:text-destructive"
+                : "bg-amber-100 text-warning dark:bg-warning/20 dark:text-warning",
           )}
         >
           {p.status.toUpperCase()}
@@ -165,7 +165,7 @@ function UserRow({ profile: p, isProtected }: { profile: Profile; isProtected: b
               <button
                 form={`deactivate-user-${p.id}`}
                 type="submit"
-                className="btn-quiet font-semibold text-amber-700 dark:text-amber-400"
+                className="btn-quiet font-semibold text-warning dark:text-warning"
                 onClick={(e) => {
                   if (!confirm(`Deactivate ${p.name || p.email}? They won't be able to sign in until reactivated.`)) {
                     e.preventDefault();
@@ -175,14 +175,14 @@ function UserRow({ profile: p, isProtected }: { profile: Profile; isProtected: b
                 Deactivate
               </button>
             ) : (
-              <button form={`reactivate-user-${p.id}`} type="submit" className="btn-quiet font-semibold text-green-700 dark:text-green-400">
+              <button form={`reactivate-user-${p.id}`} type="submit" className="btn-quiet font-semibold text-success dark:text-success">
                 Reactivate
               </button>
             )}
             <button
               form={`delete-user-${p.id}`}
               type="submit"
-              className="btn-quiet font-semibold text-red-600 dark:text-red-400"
+              className="btn-quiet font-semibold text-destructive dark:text-destructive"
               onClick={(e) => {
                 if (
                   !confirm(

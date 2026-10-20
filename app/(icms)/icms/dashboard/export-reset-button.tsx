@@ -255,7 +255,7 @@ export function ExportResetButton() {
             This will export all transactions from <strong>{from}</strong> to <strong>{to}</strong> as
             PDF and archive them. Checkpoint users will see a clean dashboard afterward. Continue?
           </p>
-          {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="ghost" onClick={close} disabled={step === "archiving"}>
               Cancel

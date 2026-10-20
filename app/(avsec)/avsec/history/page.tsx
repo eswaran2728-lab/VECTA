@@ -144,7 +144,7 @@ export default async function HistoryPage({
                       className={cn(
                         "font-mono text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border",
                         submitted
-                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          ? "bg-success/10 text-success border-success/20"
                           : "bg-muted text-muted-foreground border-border"
                       )}
                     >

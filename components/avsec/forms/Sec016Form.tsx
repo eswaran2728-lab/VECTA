@@ -192,7 +192,7 @@ function RampAgentsField({
     <div>
       <div className="flex items-center gap-1.5">
         <label className="field-label" htmlFor={name}>
-          {label} <span className="text-red-400">*</span>
+          {label} <span className="text-destructive">*</span>
         </label>
         <FormatGuidanceStar />
       </div>
@@ -203,7 +203,7 @@ function RampAgentsField({
         placeholder={"One agent per line, e.g.\nJohn Doe A1234 (hold)\nJane Roe A5678 (tarmac)"}
         {...register(name)}
       />
-      {error?.message && <p className="text-xs text-red-400 font-mono mt-1.5">{error.message}</p>}
+      {error?.message && <p className="text-xs text-destructive font-mono mt-1.5">{error.message}</p>}
     </div>
   );
 }
@@ -378,7 +378,7 @@ export function Sec016Form({
       <div className="card p-4 space-y-3 border-primary/40 bg-surface/80">
         <div className="flex items-center justify-between">
           <label className="field-label block font-semibold text-xs tracking-wider uppercase text-foreground">
-            Flight Direction <span className="text-red-500">*</span>
+            Flight Direction <span className="text-destructive">*</span>
           </label>
           <span className="t-mono text-[10px] uppercase font-bold text-primary">
             {isArrival ? "Auto Bay Board Addition" : "Auto Bay Board Clearance"}
@@ -391,11 +391,11 @@ export function Sec016Form({
             className={cn(
               "flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl border font-bold text-sm transition-all cursor-pointer",
               isArrival
-                ? "bg-emerald-500/15 border-emerald-500 text-emerald-400 shadow-sm"
+                ? "bg-success/15 border-success text-success shadow-sm"
                 : "bg-surface border-border text-muted-foreground hover:border-border/80"
             )}
           >
-            <PlaneLanding className="h-4 w-4 text-emerald-400" />
+            <PlaneLanding className="h-4 w-4 text-success" />
             <span>Arrival (ARR)</span>
           </button>
           <button
@@ -404,18 +404,18 @@ export function Sec016Form({
             className={cn(
               "flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl border font-bold text-sm transition-all cursor-pointer",
               !isArrival
-                ? "bg-sky-500/15 border-sky-500 text-sky-400 shadow-sm"
+                ? "bg-primary/15 border-primary text-primary shadow-sm"
                 : "bg-surface border-border text-muted-foreground hover:border-border/80"
             )}
           >
-            <PlaneTakeoff className="h-4 w-4 text-sky-400" />
+            <PlaneTakeoff className="h-4 w-4 text-primary" />
             <span>Departure (DEP)</span>
           </button>
         </div>
       </div>
 
       {!isArrival && (
-        <div className="card p-4 space-y-2 border-amber-500/30 bg-amber-500/5">
+        <div className="card p-4 space-y-2 border-warning/30 bg-warning/5">
           <label className="flex items-start gap-3 cursor-pointer">
             <input
               type="checkbox"
@@ -597,10 +597,10 @@ export function Sec016Form({
           <div
             className={cn(
               "card-inset p-3 rounded-lg border flex items-start gap-2.5",
-              hasPhoto ? "border-emerald-500/40 bg-emerald-500/5" : "border-amber-500/50 bg-amber-500/10"
+              hasPhoto ? "border-success/40 bg-success/5" : "border-warning/50 bg-warning/10"
             )}
           >
-            <Camera className={cn("h-4 w-4 mt-0.5 shrink-0", hasPhoto ? "text-emerald-400" : "text-amber-400")} />
+            <Camera className={cn("h-4 w-4 mt-0.5 shrink-0", hasPhoto ? "text-success" : "text-warning")} />
             <p className="text-xs font-semibold text-foreground">
               {hasPhoto
                 ? "Photo attached for baggage discrepancy."
@@ -616,7 +616,7 @@ export function Sec016Form({
           <div>
             <div className="flex items-center justify-between gap-2">
               <label className="field-label" htmlFor="offload_baggage_tag_no">
-                Baggage Tag No <span className="text-red-400">*</span>
+                Baggage Tag No <span className="text-destructive">*</span>
               </label>
               <button
                 type="button"
@@ -636,7 +636,7 @@ export function Sec016Form({
               Enter one baggage tag number per line.
             </p>
             {errors.offload_baggage_tag_no?.message && (
-              <p className="text-xs text-red-400 font-mono mt-1.5">{errors.offload_baggage_tag_no.message}</p>
+              <p className="text-xs text-destructive font-mono mt-1.5">{errors.offload_baggage_tag_no.message}</p>
             )}
           </div>
 
@@ -671,7 +671,7 @@ export function Sec016Form({
       <div id="sec016-attachments">
         <AttachmentUpload value={attachments} onChange={setAttachments} disabled={isSubmitting} />
         {photoRequiredError && (
-          <p className="text-xs text-red-400 font-mono mt-2">
+          <p className="text-xs text-destructive font-mono mt-2">
             ⚠ Add at least one photo before submitting — baggage discrepancy was reported and a PDF alone isn&apos;t enough.
           </p>
         )}
@@ -699,7 +699,7 @@ export function Sec016Form({
         </FormSection>
 
         {Object.keys(errors).length > 0 && (
-          <p className="text-xs text-red-400 font-mono text-center">
+          <p className="text-xs text-destructive font-mono text-center">
             Some required fields are incomplete — submitting will jump back to the first one.
           </p>
         )}

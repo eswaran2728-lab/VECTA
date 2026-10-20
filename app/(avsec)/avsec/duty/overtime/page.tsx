@@ -10,7 +10,7 @@ import { Clock, BarChart2 } from "lucide-react";
 const FILTERS = ["ALL", "PENDING", "APPROVED", "REJECTED"] as const;
 
 const STATUS_CLASS: Record<string, string> = {
-  pending: "text-amber-500 border-amber-500/30 bg-amber-500/10",
+  pending: "text-warning border-warning/30 bg-warning/10",
   endorsed: "text-primary border-primary bg-primary/10",
   approved: "text-success border-success bg-success/10",
   rejected: "text-brand border-brand bg-brand/10",

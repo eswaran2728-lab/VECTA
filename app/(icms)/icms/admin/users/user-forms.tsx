@@ -68,12 +68,12 @@ export function CreateUserForm() {
             </Button>
           </div>
           {state.error ? (
-            <p role="alert" className="text-sm text-red-600 sm:col-span-2 lg:col-span-3">
+            <p role="alert" className="text-sm text-destructive sm:col-span-2 lg:col-span-3">
               {state.error}
             </p>
           ) : null}
           {state.success ? (
-            <p className="text-sm text-emerald-600 sm:col-span-2 lg:col-span-3">
+            <p className="text-sm text-success sm:col-span-2 lg:col-span-3">
               {state.success}
             </p>
           ) : null}
@@ -112,7 +112,7 @@ export function RoleSelect({ userId, currentRole }: { userId: string; currentRol
       <Button type="submit" variant="outline" size="sm" disabled={pending}>
         {pending ? "…" : "Save"}
       </Button>
-      {state.error ? <span className="text-xs text-red-600">{state.error}</span> : null}
+      {state.error ? <span className="text-xs text-destructive">{state.error}</span> : null}
     </form>
   );
 }

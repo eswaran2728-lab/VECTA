@@ -30,14 +30,14 @@ export const metadata: Metadata = { title: "Whitelists" };
 export const dynamic = "force-dynamic";
 
 const STATUS_STYLE: Record<WhitelistEntry["status"], string> = {
-  pending: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
-  active: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
+  pending: "bg-amber-100 text-warning dark:bg-warning/40 dark:text-warning",
+  active: "bg-emerald-100 text-success dark:bg-success/40 dark:text-success",
   inactive: "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
   deactivated: "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-  expired: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200",
-  future: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200",
-  rejected: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200",
-  revoked: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200",
+  expired: "bg-orange-100 text-warning dark:bg-warning/40 dark:text-warning",
+  future: "bg-blue-100 text-primary dark:bg-primary/40 dark:text-primary",
+  rejected: "bg-red-100 text-destructive dark:bg-destructive/40 dark:text-destructive",
+  revoked: "bg-red-100 text-destructive dark:bg-destructive/40 dark:text-destructive",
 };
 
 function StatusBadge({ status }: { status: WhitelistEntry["status"] }) {
@@ -54,7 +54,7 @@ function ExpiryCell({ table, id, value }: { table: string; id: string; value: st
         type="date"
         name="pass_expiry_date"
         defaultValue={value ?? ""}
-        className={`h-8 rounded border bg-background px-1 text-xs ${expired ? "border-red-500 text-red-600" : "border-input"}`}
+        className={`h-8 rounded border bg-background px-1 text-xs ${expired ? "border-destructive text-destructive" : "border-input"}`}
       />
       <button type="submit" className="text-xs text-primary underline">
         Save
@@ -118,7 +118,7 @@ export default async function WhitelistsPage({
 
   if (companiesRes.unauthorized) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+      <div className="rounded-lg border border-destructive bg-red-50 p-6 text-sm text-destructive dark:border-destructive dark:bg-red-950 dark:text-destructive">
         <h1 className="text-lg font-semibold">Not authorized</h1>
         <p className="mt-1">
           Managing the CaterLink whitelist requires an active CaterLink Management assignment
@@ -136,7 +136,7 @@ export default async function WhitelistsPage({
   return (
     <div className="space-y-6">
       {actionError ? (
-        <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm font-medium text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+        <p role="alert" className="rounded-md border border-destructive bg-red-50 p-3 text-sm font-medium text-destructive dark:border-destructive dark:bg-red-950 dark:text-destructive">
           {actionError === "The whitelist change could not be applied." ? actionError : "The requested change could not be applied."}
         </p>
       ) : null}
@@ -170,7 +170,7 @@ export default async function WhitelistsPage({
       </form>
 
       {loadError ? (
-        <p className="text-sm text-red-600">Failed to load whitelist: {loadError}</p>
+        <p className="text-sm text-destructive">Failed to load whitelist: {loadError}</p>
       ) : null}
 
       <Card>

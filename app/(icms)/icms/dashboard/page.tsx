@@ -94,7 +94,7 @@ export default async function DashboardPage({
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/60 pb-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-xs font-semibold uppercase tracking-wider text-amber-400">
+              <span className="font-mono text-xs font-semibold uppercase tracking-wider text-warning">
                 {isVendor ? "INFLIGHT CATERING · 3RD PARTY VENDOR" : "INFLIGHT CATERING · IFC DRIVER"}
               </span>
             </div>
@@ -375,7 +375,7 @@ export default async function DashboardPage({
       </div>
 
       {error === "forbidden" ? (
-        <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300">
+        <div className="flex items-start gap-2 rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive dark:text-destructive">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <span>You don&apos;t have access to that page for your role.</span>
         </div>
@@ -421,9 +421,9 @@ export default async function DashboardPage({
               <Card
                 className={
                   isAlert
-                    ? "h-full border-orange-400/40 bg-orange-500/10 transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-orange-800/60"
+                    ? "h-full border-warning/40 bg-warning/10 transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-warning/60"
                     : isNearSla
-                      ? "h-full border-amber-400/50 bg-amber-500/10 transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-amber-800/60"
+                      ? "h-full border-warning/50 bg-warning/10 transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-warning/60"
                       : "h-full transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
                 }
               >
@@ -431,9 +431,9 @@ export default async function DashboardPage({
                   <div
                     className={
                       isAlert
-                        ? "animate-glow-pulse flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500/15 text-orange-500"
+                        ? "animate-glow-pulse flex h-8 w-8 items-center justify-center rounded-lg bg-warning/15 text-warning"
                         : isNearSla
-                          ? "flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/15 text-amber-600"
+                          ? "flex h-8 w-8 items-center justify-center rounded-lg bg-warning/15 text-warning"
                           : "flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary transition-transform duration-200 group-hover:scale-110"
                     }
                   >
@@ -449,7 +449,7 @@ export default async function DashboardPage({
                     <p className="text-xs text-muted-foreground">{card.sub}</p>
                   ) : null}
                   {isNearSla ? (
-                    <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                    <p className="text-xs font-medium text-warning dark:text-warning">
                       ⚠ {nearSla} nearing SLA limit
                     </p>
                   ) : null}

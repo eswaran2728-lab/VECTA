@@ -171,7 +171,7 @@ function RequestCard({ row, onDone }: { row: EntityRegistrationRequestRow; onDon
                 </select>
               </label>
               {role && !required ? (
-                <p className="font-mono text-xs text-amber-500" role="status">
+                <p className="font-mono text-xs text-warning" role="status">
                   This role has no self-service assignment form; the database will decide whether it can be assigned.
                 </p>
               ) : null}
@@ -199,7 +199,7 @@ function RequestCard({ row, onDone }: { row: EntityRegistrationRequestRow; onDon
             </>
           )}
           {error && options ? (
-            <p className="text-sm text-red-500" role="alert">
+            <p className="text-sm text-destructive" role="alert">
               {error}
             </p>
           ) : null}

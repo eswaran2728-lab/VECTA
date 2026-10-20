@@ -42,19 +42,19 @@ export function WorkflowStepper({
         <div key={step.key} className="flex items-center gap-2 text-sm">
           <span className="w-5 text-right text-xs text-muted-foreground">{i + 1}.</span>
           {step.done ? (
-            <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-success" />
           ) : (
             <CircleDashed
               className={cn(
                 "h-5 w-5 shrink-0",
-                step.current ? "text-blue-600" : "text-muted-foreground/30"
+                step.current ? "text-primary" : "text-muted-foreground/30"
               )}
             />
           )}
           <span
             className={cn(
               step.done && "font-medium",
-              step.current && "font-semibold text-blue-700 dark:text-blue-300",
+              step.current && "font-semibold text-primary dark:text-primary",
               !step.done && !step.current && "text-muted-foreground"
             )}
           >
@@ -64,7 +64,7 @@ export function WorkflowStepper({
         </div>
       ))}
       {status === "ESCALATED" ? (
-        <div className="mt-2 flex items-center gap-2 rounded-md bg-orange-100 p-2 text-sm text-orange-800 dark:bg-orange-900/40 dark:text-orange-200">
+        <div className="mt-2 flex items-center gap-2 rounded-md bg-orange-100 p-2 text-sm text-warning dark:bg-warning/40 dark:text-warning">
           <AlertTriangle className="h-5 w-5" />
           Escalated — admin review required.
         </div>

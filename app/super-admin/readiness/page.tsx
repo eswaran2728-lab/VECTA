@@ -67,7 +67,7 @@ export default async function ReadinessPage() {
         </div>
 
         {readinessError ? (
-          <p className="text-sm text-red-500">Could not load the readiness report: {readinessError.message}</p>
+          <p className="text-sm text-destructive">Could not load the readiness report: {readinessError.message}</p>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {Object.entries((readiness as Record<string, unknown>) ?? {}).map(([key, value]) => (
@@ -88,7 +88,7 @@ export default async function ReadinessPage() {
         </div>
 
         {legacyError ? (
-          <p className="text-sm text-red-500">Could not load the legacy-role mapping report: {legacyError.message}</p>
+          <p className="text-sm text-destructive">Could not load the legacy-role mapping report: {legacyError.message}</p>
         ) : (
           <div className="rounded-lg border border-border bg-card p-3 text-xs">
             <p className="font-semibold text-foreground">
@@ -96,7 +96,7 @@ export default async function ReadinessPage() {
               replacement assignment yet.
             </p>
             {legacyWithoutReplacement.length > 0 && (
-              <p className="mt-2 text-amber-500">
+              <p className="mt-2 text-warning">
                 Retirement gate: BLOCKED until every legacy-role profile has an approved replacement assignment.
               </p>
             )}

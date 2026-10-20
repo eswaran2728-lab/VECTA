@@ -105,11 +105,11 @@ export function RosterCell({
         {/* Layered On-Leave Status & Conflict Warning */}
         {leaveInfo && (
           <div className="mt-1.5 space-y-1">
-            <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[8.5px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+            <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[8.5px] font-bold bg-warning/20 text-warning border border-warning/30">
               {LEAVE_TYPE_ICONS[leaveInfo.leaveType] || "🌴"} {leaveInfo.leaveLabel}
             </span>
             {hasConflict && (
-              <span className="block font-mono text-[8px] font-bold text-rose-400">
+              <span className="block font-mono text-[8px] font-bold text-destructive">
                 ⚠️ Reassignment Needed
               </span>
             )}

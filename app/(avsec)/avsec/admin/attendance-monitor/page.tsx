@@ -264,7 +264,7 @@ export default async function AttendanceMonitorPage({
           <div className="card p-4 space-y-1">
             <div className="flex items-center justify-between text-muted-foreground">
               <span className="font-mono text-[10.5px] uppercase">Shifts Worked</span>
-              <Calendar className="h-4 w-4 text-blue-500" />
+              <Calendar className="h-4 w-4 text-primary" />
             </div>
             <p className="font-display text-2xl font-extrabold text-foreground">
               {data.totals.totalShiftsWorked}
@@ -284,7 +284,7 @@ export default async function AttendanceMonitorPage({
           <div className="card p-4 space-y-1">
             <div className="flex items-center justify-between text-muted-foreground">
               <span className="font-mono text-[10.5px] uppercase">Approved OT</span>
-              <Zap className="h-4 w-4 text-amber-500" />
+              <Zap className="h-4 w-4 text-warning" />
             </div>
             <p className="font-display text-2xl font-extrabold text-success">
               {data.totals.totalApprovedOtHours}h
@@ -294,7 +294,7 @@ export default async function AttendanceMonitorPage({
           <div className="card p-4 space-y-1">
             <div className="flex items-center justify-between text-muted-foreground">
               <span className="font-mono text-[10.5px] uppercase">Leave Days</span>
-              <Coffee className="h-4 w-4 text-emerald-500" />
+              <Coffee className="h-4 w-4 text-success" />
             </div>
             <p className="font-display text-2xl font-extrabold text-foreground">
               {data.totals.totalLeaveDaysTaken}
@@ -304,9 +304,9 @@ export default async function AttendanceMonitorPage({
           <div className="card p-4 space-y-1">
             <div className="flex items-center justify-between text-muted-foreground">
               <span className="font-mono text-[10.5px] uppercase">Pending OT</span>
-              <AlertCircle className="h-4 w-4 text-amber-500" />
+              <AlertCircle className="h-4 w-4 text-warning" />
             </div>
-            <p className="font-display text-2xl font-extrabold text-amber-500">
+            <p className="font-display text-2xl font-extrabold text-warning">
               {data.totals.totalPendingOtCount}
             </p>
           </div>
@@ -489,7 +489,7 @@ export default async function AttendanceMonitorPage({
                                           ? "bg-success/15 text-success border border-success/30"
                                           : leave.approvalStatus === "rejected"
                                           ? "bg-brand/15 text-brand border border-brand/30"
-                                          : "bg-amber-500/15 text-amber-500 border border-amber-500/30"
+                                          : "bg-warning/15 text-warning border border-warning/30"
                                       }`}
                                     >
                                       {leave.leaveLabel} ({leave.approvalStatus.toUpperCase()})
@@ -510,7 +510,7 @@ export default async function AttendanceMonitorPage({
                                           ? "bg-success/15 text-success border border-success/30"
                                           : ot.status === "rejected"
                                           ? "bg-brand/15 text-brand border border-brand/30"
-                                          : "bg-amber-500/15 text-amber-500 border border-amber-500/30"
+                                          : "bg-warning/15 text-warning border border-warning/30"
                                       }`}
                                     >
                                       +{ot.payableHours}h OT ({ot.status.toUpperCase()})

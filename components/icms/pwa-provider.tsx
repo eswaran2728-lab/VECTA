@@ -91,8 +91,8 @@ export function PwaProvider() {
         onClick={() => setOpen((v) => !v)}
         className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${
           online
-            ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-            : "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200"
+            ? "bg-amber-100 text-warning dark:bg-warning/40 dark:text-warning"
+            : "bg-red-100 text-destructive dark:bg-destructive/40 dark:text-destructive"
         }`}
         aria-label="Sync status"
       >
@@ -114,7 +114,7 @@ export function PwaProvider() {
                 </p>
                 {item.error ? (
                   <>
-                    <p className="mt-1 text-xs text-red-600">{item.error}</p>
+                    <p className="mt-1 text-xs text-destructive">{item.error}</p>
                     <button
                       type="button"
                       onClick={() => removeQueued(item.id)}

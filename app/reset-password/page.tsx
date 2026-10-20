@@ -84,15 +84,15 @@ export default function ResetPasswordPage() {
             <div className="mb-5 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
 
             {success ? (
-              <div className="flex flex-col gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-300">
-                <div className="flex items-center gap-2 font-semibold text-emerald-400">
+              <div className="flex flex-col gap-3 rounded-lg border border-success/30 bg-success/10 p-4 text-xs text-success">
+                <div className="flex items-center gap-2 font-semibold text-success">
                   <CheckCircle2 className="h-5 w-5 shrink-0" />
                   <span>Password Updated Successfully!</span>
                 </div>
                 <p className="leading-relaxed text-foreground/90">
                   Your new password is now active. You can now sign in using your new credentials.
                 </p>
-                <div className="mt-2 pt-2 border-t border-emerald-500/20">
+                <div className="mt-2 pt-2 border-t border-success/20">
                   <Link
                     href="/login"
                     className="flex items-center justify-center gap-1.5 rounded-md bg-primary py-2.5 px-4 font-semibold text-primary-foreground hover:bg-primary/90"
@@ -153,8 +153,8 @@ export default function ResetPasswordPage() {
                 </div>
 
                 {errorMsg ? (
-                  <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/15 p-3 text-xs font-medium text-red-300">
-                    <TriangleAlert className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />
+                  <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/15 p-3 text-xs font-medium text-destructive">
+                    <TriangleAlert className="h-4 w-4 shrink-0 text-destructive mt-0.5" />
                     <span>{errorMsg}</span>
                   </div>
                 ) : null}

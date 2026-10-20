@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { TriangleAlert, Clock3 } from "lucide-react";
-
+import { Clock3, Shield, TriangleAlert } from "lucide-react";
 
 import { LoginForm } from "./login-form";
 import { PartnerLogos } from "./partner-logos";
@@ -8,149 +7,102 @@ import { ThemeToggle } from "@/components/layout/ThemeToggle";
 
 export const metadata: Metadata = { title: "Sign in — VECTA" };
 
+type Notice = { tone: "warning" | "danger" | "info"; icon: "alert" | "clock"; body: React.ReactNode };
+
+const NOTICE_TONE: Record<Notice["tone"], string> = {
+  warning: "border-warning/40 bg-warning/10 text-foreground",
+  danger: "border-destructive/40 bg-destructive/10 text-foreground",
+  info: "border-primary/40 bg-primary/10 text-foreground",
+};
+const NOTICE_ICON: Record<Notice["tone"], string> = { warning: "text-warning", danger: "text-destructive", info: "text-primary" };
+
+function noticeFor(error: string | undefined): Notice | null {
+  switch (error) {
+    case "caterlink-only":
+      return {
+        tone: "warning",
+        icon: "alert",
+        body: (
+          <>
+            This account is registered for <strong>CaterLink Driver/Vendor</strong> access only. Please sign in through the CaterLink portal.
+          </>
+        ),
+      };
+    case "auth-code-error":
+      return { tone: "danger", icon: "alert", body: "Google authentication failed or expired. Please try signing in again." };
+    case "no-profile":
+      return { tone: "danger", icon: "alert", body: "Your account has no VECTA profile. Contact an admin." };
+    case "pending":
+      return { tone: "info", icon: "clock", body: "Your registration is awaiting admin approval. You'll be able to sign in once it's approved." };
+    case "rejected":
+      return { tone: "danger", icon: "alert", body: "Your registration was not approved. Contact an admin for details." };
+    default:
+      return null;
+  }
+}
+
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
   const params = await searchParams;
+  const notice = noticeFor(params.error);
 
   return (
-    <main className="relative flex min-h-screen flex-col overflow-hidden bg-background px-5 py-5">
-      {/* Radial cyan/violet glow wash, responsive to light & dark tokens. */}
-      <div
-        className="pointer-events-none absolute inset-0 opacity-40 dark:opacity-80"
-        style={{
-          background:
-            "radial-gradient(ellipse 480px 340px at 20% -8%, color-mix(in oklab, var(--violet) 22%, transparent), transparent 60%), radial-gradient(ellipse 520px 380px at 85% 100%, color-mix(in oklab, var(--cyan) 18%, transparent), transparent 60%)",
-        }}
-      />
-      {/* Subtle CRT-style scanlines. */}
-      <div
-        className="pointer-events-none absolute inset-0 opacity-20 dark:opacity-60"
-        style={{
-          background:
-            "repeating-linear-gradient(to bottom, transparent 0px, transparent 3px, color-mix(in oklab, var(--foreground) 3%, transparent) 4px)",
-        }}
-      />
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="flex min-h-[64px] items-center justify-between bg-shell px-5 text-shell-foreground">
+        <span className="flex items-center gap-2.5">
+          <Shield className="h-5 w-5 text-shell-active" aria-hidden />
+          <span className="text-base font-extrabold tracking-wide">VECTA</span>
+        </span>
+        <ThemeToggle tone="shell" />
+      </header>
 
-      <div className="relative z-10 flex items-center justify-between">
-        <span className="vecta-eyebrow">VECTA // AUTH.SYS</span>
-        <div className="flex items-center gap-3">
-          <ThemeToggle />
-          <span className="font-mono text-[11px] text-muted-foreground" suppressHydrationWarning>
-            {new Date().toISOString().slice(11, 19)} UTC
-          </span>
-        </div>
-      </div>
-
-      <div className="relative z-10 flex flex-1 items-center justify-center py-8">
-        <div className="flex w-full max-w-[400px] flex-col gap-5">
-          <div className="vecta-panel">
-            {/* Corner nodes. */}
-            {[
-              { top: "-3px", left: "-3px" },
-              { top: "-3px", right: "-3px" },
-              { bottom: "-3px", left: "-3px" },
-              { bottom: "-3px", right: "-3px" },
-            ].map((pos, i) => (
-              <span
-                key={i}
-                className="absolute h-[6px] w-[6px] rounded-full bg-primary"
-                style={{ ...pos, boxShadow: "0 0 8px 1px var(--cyan)" }}
-              />
-            ))}
-
-            <div className="mb-6 flex flex-col items-center gap-1.5 text-center">
-              <h1 className="bg-gradient-to-r from-primary to-[var(--violet)] bg-clip-text font-display text-[32px] font-extrabold leading-none tracking-[0.08em] text-transparent">
-                VECTA
-              </h1>
-              <p className="mx-auto mt-2 max-w-[260px] font-mono text-[9px] tracking-[0.16em] text-muted-foreground">
-                VERSATILE &middot; ENFORCEMENT &middot; CONTINUITY &middot; TRACEABILITY &middot; AUDIT
+      <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center">
+        <div className="flex w-full max-w-[420px] flex-col gap-4">
+          <div className="rounded-xl border border-border bg-card p-6 text-card-foreground shadow-[var(--shadow-card)] sm:p-8">
+            <div className="mb-6 text-center">
+              <h1 className="text-3xl font-extrabold tracking-wide text-foreground">VECTA</h1>
+              <p className="mx-auto mt-2 max-w-[300px] text-xs font-medium leading-relaxed text-muted-foreground">
+                Versatile &middot; Enforcement &middot; Continuity &middot; Traceability &middot; Audit
               </p>
             </div>
 
-            <div className="mb-[22px] h-px bg-gradient-to-r from-transparent via-border to-transparent" />
-
-            <div className="mb-[26px] flex items-center justify-center gap-3.5">
+            <div className="mb-6 flex items-center justify-center gap-3.5">
               <PartnerLogos />
             </div>
 
-            {params.error === "caterlink-only" ? (
-              <div className="mb-4 flex items-start gap-2 border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
-                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>
-                  This account is registered for <strong>CaterLink Driver/Vendor</strong> access only. Please sign in through the CaterLink portal.
-                </span>
+            {notice ? (
+              <div role="alert" className={`mb-4 flex items-start gap-2 rounded-lg border p-3 text-sm ${NOTICE_TONE[notice.tone]}`}>
+                {notice.icon === "clock" ? (
+                  <Clock3 className={`mt-0.5 h-4 w-4 shrink-0 ${NOTICE_ICON[notice.tone]}`} aria-hidden />
+                ) : (
+                  <TriangleAlert className={`mt-0.5 h-4 w-4 shrink-0 ${NOTICE_ICON[notice.tone]}`} aria-hidden />
+                )}
+                <span>{notice.body}</span>
               </div>
             ) : null}
-            {params.error === "auth-code-error" ? (
-              <div className="mb-4 flex items-start gap-2 border border-brand/30 bg-brand/10 p-3 text-sm text-brand">
-                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>Google authentication failed or expired. Please try signing in again.</span>
-              </div>
-            ) : null}
-            {params.error === "no-profile" ? (
-              <div className="mb-4 flex items-start gap-2 border border-brand/30 bg-brand/10 p-3 text-sm text-brand">
-                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>Your account has no VECTA profile. Contact an admin.</span>
-              </div>
-            ) : null}
-            {params.error === "pending" ? (
-              <div className="mb-4 flex items-start gap-2 border border-primary/30 bg-primary/10 p-3 text-sm text-primary">
-                <Clock3 className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>
-                  Your registration is awaiting admin approval. You&apos;ll be able to sign in once
-                  it&apos;s approved.
-                </span>
-              </div>
-            ) : null}
-            {params.error === "rejected" ? (
-              <div className="mb-4 flex items-start gap-2 border border-brand/30 bg-brand/10 p-3 text-sm text-brand">
-                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>Your registration was not approved. Contact an admin for details.</span>
-              </div>
-            ) : null}
-
 
             {/*
-              No self-registration: accounts are created only by an
-              admin/management user via the Admin panel
-              (/avsec/admin/users, app/(icms)/icms/admin/users). Full SSO
-              via AirAsia's Google Workspace domain is planned as a future
-              replacement for Supabase email/password auth, but that's a
-              later migration — for now Supabase auth continues, just
-              without any self-service path to create an account.
+              No self-registration for AVSEC staff: accounts are created only by an admin/management user via the Admin panel
+              (/avsec/admin/users, app/(icms)/icms/admin/users). Google Workspace SSO and Supabase email/password both remain.
             */}
             <LoginForm />
 
-            <div className="mt-4 pt-4 border-t border-border/40 text-center">
+            <div className="mt-4 border-t border-border pt-4 text-center">
               <p className="text-xs text-muted-foreground">
                 New Catering Driver / Vendor?{" "}
-                <a
-                  href="/register"
-                  className="font-semibold text-primary underline underline-offset-4 hover:text-primary/80"
-                >
+                <a href="/register" className="inline-flex min-h-[44px] items-center font-semibold text-primary underline underline-offset-4 hover:opacity-80">
                   Register driver account
                 </a>
               </p>
             </div>
-
-
-            <div className="mt-[18px] flex items-center justify-center gap-2">
-              <span className="vecta-status">
-                <span className="vecta-status-dot" />
-                System Nominal
-              </span>
-            </div>
           </div>
 
-          <p className="text-center font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70">
-            AVSEC Accounts provisioned via SSO &middot; Driver Self-Registration Enabled
-          </p>
-
+          <p className="text-center text-xs text-muted-foreground">AVSEC accounts are provisioned via SSO &middot; Driver self-registration is enabled</p>
         </div>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }

@@ -93,7 +93,7 @@ export default async function StaffLeavePortalPage({
             <span>ℹ️</span> Leave & Compliance Policy
           </div>
           <p className="font-mono text-xs text-muted-foreground leading-relaxed">
-            • <strong>Same-Day Leave (Starts Today)</strong>: Must give ≥ 3 hours notice before shift start for compliant (🟢) timing. Late notice (<strong className="text-rose-500">🔴</strong>) is logged for performance review.<br />
+            • <strong>Same-Day Leave (Starts Today)</strong>: Must give ≥ 3 hours notice before shift start for compliant (🟢) timing. Late notice (<strong className="text-destructive">🔴</strong>) is logged for performance review.<br />
             • <strong>Roster Linking</strong>: Approved leave automatically displays on the duty roster for all covered dates.<br />
             • <strong>Cancellation Workflow</strong>: Cancellation requests must be submitted and approved by DSE before leave is removed from the roster.
           </p>
@@ -170,7 +170,7 @@ export default async function StaffLeavePortalPage({
                       highlightId={searchParams.highlight}
                       className={`card p-4 border-l-4 transition-all ${
                         isPendingCancel
-                          ? "border-l-amber-500 bg-amber-500/5"
+                          ? "border-l-amber-500 bg-warning/5"
                           : isEscalated
                             ? "border-l-purple-500 bg-purple-500/5"
                             : isPending
@@ -198,7 +198,7 @@ export default async function StaffLeavePortalPage({
                         <div className="flex items-center gap-2 flex-wrap">
                           {/* Escalation or Approval Status Badge */}
                           {isPendingCancel ? (
-                            <span className="font-mono text-xs px-2.5 py-0.5 rounded font-bold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse">
+                            <span className="font-mono text-xs px-2.5 py-0.5 rounded font-bold uppercase bg-warning/20 text-warning border border-warning/30 animate-pulse">
                               ⚡ Cancellation Requested
                             </span>
                           ) : isEscalated ? (
@@ -232,8 +232,8 @@ export default async function StaffLeavePortalPage({
                             <span
                               className={`font-mono text-xs px-2 py-0.5 rounded font-bold ${
                                 isGreen
-                                  ? "bg-emerald-500/20 text-emerald-400"
-                                  : "bg-rose-500/20 text-rose-400"
+                                  ? "bg-success/20 text-success"
+                                  : "bg-destructive/20 text-destructive"
                               }`}
                             >
                               {formatAbsenceGap(item.gap_minutes)}
@@ -257,8 +257,8 @@ export default async function StaffLeavePortalPage({
                       </div>
 
                       {item.cancellation_reason && (
-                        <div className="mt-2 p-2.5 rounded bg-amber-500/10 border border-amber-500/30 text-xs text-foreground">
-                          <div className="font-mono text-[10px] text-amber-400 uppercase font-bold mb-0.5">Cancellation Request Reason:</div>
+                        <div className="mt-2 p-2.5 rounded bg-warning/10 border border-warning/30 text-xs text-foreground">
+                          <div className="font-mono text-[10px] text-warning uppercase font-bold mb-0.5">Cancellation Request Reason:</div>
                           {item.cancellation_reason}
                         </div>
                       )}
@@ -330,7 +330,7 @@ export default async function StaffLeavePortalPage({
                     key={item.id}
                     className={`card p-4 border-l-4 transition-all ${
                       isPendingCancel
-                        ? "border-l-amber-500 bg-amber-500/5"
+                        ? "border-l-amber-500 bg-warning/5"
                         : isApproved
                           ? "border-l-success bg-success/5"
                           : isRejected
@@ -349,7 +349,7 @@ export default async function StaffLeavePortalPage({
                         <span
                           className={`font-mono text-xs px-2.5 py-0.5 rounded-full font-bold uppercase ${
                             isPendingCancel
-                              ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                              ? "bg-warning/20 text-warning border border-warning/30"
                               : isApproved
                                 ? "bg-success/20 text-success border border-success/30"
                                 : isRejected
@@ -374,8 +374,8 @@ export default async function StaffLeavePortalPage({
                           <span
                             className={`font-mono text-xs px-2 py-0.5 rounded-full font-bold uppercase ${
                               isGreen
-                                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                                : "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                                ? "bg-success/20 text-success border border-success/30"
+                                : "bg-destructive/20 text-destructive border border-destructive/30"
                             }`}
                           >
                             {isGreen ? "🟢 Compliant (≥3H)" : "🔴 Late Notice (<3H)"}
@@ -421,7 +421,7 @@ export default async function StaffLeavePortalPage({
                       </div>
 
                       {item.cancellation_reason && (
-                        <div className="p-2 rounded bg-amber-500/10 font-mono text-xs text-amber-300 border border-amber-500/30">
+                        <div className="p-2 rounded bg-warning/10 font-mono text-xs text-warning border border-warning/30">
                           <strong>Cancellation Reason:</strong> {item.cancellation_reason}
                         </div>
                       )}

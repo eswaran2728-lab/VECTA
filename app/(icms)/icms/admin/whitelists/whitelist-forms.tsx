@@ -22,8 +22,8 @@ const initialState: WhitelistActionState = { error: null, success: null };
 const TRUCK_TYPES: TruckType[] = ["Hi-Lift", "Bonded Truck"];
 
 function Feedback({ state }: { state: WhitelistActionState }) {
-  if (state.error) return <p className="text-sm text-red-600">{state.error}</p>;
-  if (state.success) return <p className="text-sm text-emerald-600">{state.success}</p>;
+  if (state.error) return <p className="text-sm text-destructive">{state.error}</p>;
+  if (state.success) return <p className="text-sm text-success">{state.success}</p>;
   return null;
 }
 
@@ -151,7 +151,7 @@ export function ApproveButton({ table, id }: { table: string; id: string }) {
     <form action={approveWhitelistEntry} className="inline">
       <input type="hidden" name="table" value={table} />
       <input type="hidden" name="id" value={id} />
-      <button type="submit" className="text-xs text-emerald-700 underline">
+      <button type="submit" className="text-xs text-success underline">
         Approve
       </button>
     </form>
@@ -190,7 +190,7 @@ export function ReasonActionButton({
 
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="text-xs text-red-600 underline">
+      <button type="button" onClick={() => setOpen(true)} className="text-xs text-destructive underline">
         {label}
       </button>
     );
@@ -201,13 +201,13 @@ export function ReasonActionButton({
       <input type="hidden" name="table" value={table} />
       <input type="hidden" name="id" value={id} />
       <Input name="reason" placeholder="Reason (required)" required className="h-7 w-40 text-xs" />
-      <button type="submit" className="text-xs text-red-600 underline" disabled={pending}>
+      <button type="submit" className="text-xs text-destructive underline" disabled={pending}>
         {pending ? "Saving…" : "Confirm"}
       </button>
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-muted-foreground underline">
         Cancel
       </button>
-      {state.error ? <span className="text-xs text-red-600">{state.error}</span> : null}
+      {state.error ? <span className="text-xs text-destructive">{state.error}</span> : null}
     </form>
   );
 }

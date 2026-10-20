@@ -214,18 +214,18 @@ export default function DutyMap({
           {locating ? (
             <>
               <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-              <span className="text-amber-400 font-semibold">ACQUIRING GPS...</span>
+              <span className="text-warning font-semibold">ACQUIRING GPS...</span>
             </>
           ) : position ? (
             <>
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
-              <span className="text-emerald-400 font-bold">GPS LOCKED</span>
+              <span className="text-success font-bold">GPS LOCKED</span>
               <span className="text-muted-foreground">±{Math.round(position.accuracy)}m</span>
             </>
           ) : (
             <>
               <span className="h-2 w-2 rounded-full bg-rose-500" />
-              <span className="text-rose-400 font-semibold">NO GPS FIX</span>
+              <span className="text-destructive font-semibold">NO GPS FIX</span>
             </>
           )}
         </div>
@@ -235,12 +235,12 @@ export default function DutyMap({
           {insideZone ? (
             <>
               <span className="h-2 w-2 rounded-full bg-emerald-400" />
-              <span className="text-emerald-400 font-bold">INSIDE: {insideZone.name}</span>
+              <span className="text-success font-bold">INSIDE: {insideZone.name}</span>
             </>
           ) : position ? (
             <>
               <span className="h-2 w-2 rounded-full bg-rose-500" />
-              <span className="text-rose-400 font-bold">OUTSIDE GEOFENCE</span>
+              <span className="text-destructive font-bold">OUTSIDE GEOFENCE</span>
             </>
           ) : (
             <span className="text-muted-foreground">AWAITING LOCATION</span>

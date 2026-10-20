@@ -53,7 +53,7 @@ export default function UpdatePasswordPage() {
         </div>
 
         {status === "done" ? (
-          <p className="text-center text-sm font-medium text-emerald-700 dark:text-emerald-400">
+          <p className="text-center text-sm font-medium text-success dark:text-success">
             Password updated — signing you in…
           </p>
         ) : (

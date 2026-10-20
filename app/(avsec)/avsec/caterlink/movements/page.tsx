@@ -41,7 +41,7 @@ export default async function CaterlinkMovementsPage({ searchParams: searchParam
           ))}
         </nav>
         {error && (
-          <p className="font-mono text-xs text-red-500" role="alert">
+          <p className="font-mono text-xs text-destructive" role="alert">
             The movements could not be loaded right now.
           </p>
         )}

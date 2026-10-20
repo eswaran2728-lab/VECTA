@@ -40,7 +40,7 @@ export default async function ShiftHandoverPage() {
           ) : (
             <div className="space-y-3">
               {pending.map((h) => (
-                <div key={h.id} className="card p-4 border-l-4 border-l-amber-500 bg-amber-500/5 space-y-3">
+                <div key={h.id} className="card p-4 border-l-4 border-l-amber-500 bg-warning/5 space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-sm text-foreground">
@@ -98,7 +98,7 @@ export default async function ShiftHandoverPage() {
                   {h.place_category}: {h.place_detail}
                   {h.flight_number ? ` · Flight ${h.flight_number}` : ""}
                 </p>
-                <p className="font-mono text-[10px] text-emerald-500 mt-0.5">
+                <p className="font-mono text-[10px] text-success mt-0.5">
                   Acknowledged {h.acknowledged_at ? formatDateTimeMY(h.acknowledged_at) : ""}
                   {h.acknowledgment_notes ? ` — "${h.acknowledgment_notes}"` : ""}
                 </p>

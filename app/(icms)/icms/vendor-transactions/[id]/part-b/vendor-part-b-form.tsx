@@ -91,7 +91,7 @@ export function VendorPartBForm({ transactionId, officerName, officerStaffId }: 
           <input type="hidden" name="signature" value={signature ?? ""} />
 
           {state.error ? (
-            <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
+            <p role="alert" className="text-sm font-medium text-destructive dark:text-destructive">
               {state.error}
             </p>
           ) : null}

@@ -89,7 +89,7 @@ export default async function UsersPage() {
                 </TableCell>
                 <TableCell>
                   {user.status === "rejected" ? (
-                    <Badge className="border bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200">
+                    <Badge className="border bg-red-100 text-destructive dark:bg-destructive/40 dark:text-destructive">
                       Rejected
                     </Badge>
                   ) : (

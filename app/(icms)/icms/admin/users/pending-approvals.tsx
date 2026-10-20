@@ -26,10 +26,10 @@ export function PendingApprovals({ pending }: { pending: PendingUser[] }) {
   if (pending.length === 0) return null;
 
   return (
-    <Card className="border-amber-400 dark:border-amber-700">
+    <Card className="border-warning dark:border-warning">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <UserCheck className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          <UserCheck className="h-4 w-4 text-warning dark:text-warning" />
           Pending Approvals ({pending.length})
         </CardTitle>
       </CardHeader>
@@ -54,8 +54,8 @@ function PendingRow({ user }: { user: PendingUser }) {
         <p className="text-xs text-muted-foreground">
           {user.email} · Requested {ROLE_LABELS[user.role]} · {user.created_at}
         </p>
-        {approveState.error ? <p className="text-xs text-red-600">{approveState.error}</p> : null}
-        {rejectState.error ? <p className="text-xs text-red-600">{rejectState.error}</p> : null}
+        {approveState.error ? <p className="text-xs text-destructive">{approveState.error}</p> : null}
+        {rejectState.error ? <p className="text-xs text-destructive">{rejectState.error}</p> : null}
       </div>
       <div className="flex gap-2">
         <form action={approveAction}>

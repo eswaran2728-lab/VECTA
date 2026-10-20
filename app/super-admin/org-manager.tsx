@@ -188,7 +188,7 @@ export function OrgManager({
                         <span
                           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider ${
                             isActive
-                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                              ? "bg-success/10 text-success border border-success/20"
                               : isSuspended
                               ? "bg-brand/10 text-brand border border-brand/20"
                               : "bg-muted text-muted-foreground"
@@ -222,7 +222,7 @@ export function OrgManager({
                       <button
                         type="button"
                         onClick={() => handleStatusChange(org.id, "active")}
-                        className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 px-3 py-1.5 font-mono text-[11px] font-semibold text-emerald-400 hover:bg-emerald-500/10 cursor-pointer transition-colors"
+                        className="rounded-lg border border-success/40 bg-success/5 px-3 py-1.5 font-mono text-[11px] font-semibold text-success hover:bg-success/10 cursor-pointer transition-colors"
                       >
                         Activate
                       </button>

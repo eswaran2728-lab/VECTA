@@ -109,7 +109,7 @@ export default async function VendorTransactionDetailPage({ params }: { params: 
                 </div>
               ) : null}
               {c.remarks ? <p className="text-sm text-muted-foreground">“{c.remarks}”</p> : null}
-              {c.escalation_reason ? <p className="text-sm font-medium text-orange-700">Escalated: {c.escalation_reason}</p> : null}
+              {c.escalation_reason ? <p className="text-sm font-medium text-warning">Escalated: {c.escalation_reason}</p> : null}
               {sigs[i] ? (
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Signature</p>

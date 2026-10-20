@@ -60,7 +60,7 @@ export default async function RequestAccessPage({ searchParams: searchParamsProm
 
         <section aria-label="Search results" className="space-y-3">
           {!searched && <p className="font-mono text-xs text-muted-foreground" role="status">Enter a flight number or a date range to look for a report.</p>}
-          {stubs && !stubs.ok && <p className="font-mono text-xs text-red-500" role="alert">{stubs.error}</p>}
+          {stubs && !stubs.ok && <p className="font-mono text-xs text-destructive" role="alert">{stubs.error}</p>}
           {stubs?.ok && stubs.rows.length === 0 && <p className="font-mono text-xs text-muted-foreground" role="status">No reports match.</p>}
           {stubs?.rows.map((r) => (
             <article key={r.id} className="card space-y-2 p-4">
@@ -77,7 +77,7 @@ export default async function RequestAccessPage({ searchParams: searchParamsProm
 
         <section aria-label="My requests" className="space-y-3">
           <h2 className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">My requests ({mine.rows.length})</h2>
-          {!mine.ok && <p className="font-mono text-xs text-red-500" role="alert">{mine.error}</p>}
+          {!mine.ok && <p className="font-mono text-xs text-destructive" role="alert">{mine.error}</p>}
           {mine.ok && mine.rows.length === 0 && <p className="font-mono text-xs text-muted-foreground" role="status">You have not requested any report yet.</p>}
           {mine.rows.map((r) => {
             const href = r.sourceId ? reportViewHref(r.sourceTable, r.sourceId) : null;

@@ -73,8 +73,8 @@ export function Sec016View({ report }: { report: Sec016Row }) {
               className={cn(
                 "inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold uppercase",
                 !isArrival
-                  ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
-                  : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                  ? "bg-primary/10 text-primary border border-primary/20"
+                  : "bg-success/10 text-success border border-success/20"
               )}
             >
               {report.flight_type ? report.flight_type.toUpperCase() : "ARRIVAL"}
@@ -97,7 +97,7 @@ export function Sec016View({ report }: { report: Sec016Row }) {
               <Field
                 label="Search Warning / Flag"
                 value={
-                  <span className="text-red-400 font-bold font-mono text-xs">
+                  <span className="text-destructive font-bold font-mono text-xs">
                     ⚠️ {report.search_remark || "Aircraft Search not completed — aircraft on ground >4h"}
                   </span>
                 }
@@ -267,10 +267,10 @@ export function Sec029View({ report }: { report: Sec029Row & { items?: Sec029Ite
                 className={cn(
                   "font-mono text-[10px] font-bold shrink-0 px-2 py-0.5 rounded border",
                   flagged
-                    ? "bg-red-500/10 text-red-400 border-red-500/30"
+                    ? "bg-destructive/10 text-destructive border-destructive/30"
                     : entry.checked === "NA"
                     ? "bg-muted text-muted-foreground border-border"
-                    : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                    : "bg-success/10 text-success border-success/30"
                 )}
               >
                 {entry.checked}
@@ -385,7 +385,7 @@ export function Sec013View({ report }: { report: Sec013Row & { profiling_duties?
               </p>
               <p className="mt-1 text-muted-foreground">{d.description}</p>
               {d.incident_remark && (
-                <p className="mt-1 text-amber-400 font-mono text-xs">
+                <p className="mt-1 text-warning font-mono text-xs">
                   {d.incident_remark}
                 </p>
               )}

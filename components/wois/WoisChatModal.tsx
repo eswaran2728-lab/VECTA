@@ -379,7 +379,7 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
                         onClick={() => handleDeleteConversation(c.id)}
                         aria-label={`Delete "${c.title}"`}
                         title="Delete"
-                        className="shrink-0 p-1.5 pr-2.5 opacity-0 group-hover:opacity-100 hover:text-red-400 cursor-pointer"
+                        className="shrink-0 p-1.5 pr-2.5 opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer"
                       >
                         <Trash2 className="h-3 w-3" />
                       </button>
@@ -395,7 +395,7 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {eligibility.checked && !eligibility.eligible ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-4 py-8 space-y-3">
-              <div className="h-14 w-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <div className="h-14 w-14 rounded-2xl bg-warning/10 border border-warning/30 flex items-center justify-center text-warning">
                 <ShieldAlert className="h-7 w-7" />
               </div>
               <h3 className="font-display text-base font-bold text-foreground">W.O.I.S AI is not available for your account</h3>

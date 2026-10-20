@@ -128,3 +128,15 @@ test("reduced motion and visible focus are defined globally", () => {
 test("tailwind exposes the new semantic colours so components never hard-code hex values", () => {
   for (const k of ["warning", "shell"]) assert.match(tailwind, new RegExp(`${k}:`));
 });
+
+test("no component uses the dark-first raw status palette for text, borders or tinted backgrounds (Light Mode contrast)", () => {
+  const walk = (d: string): string[] =>
+    fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+      if (e.name === "node_modules" || e.name === ".next") return [];
+      const p = `${d}/${e.name}`;
+      return e.isDirectory() ? walk(p) : p.endsWith(".tsx") ? [p] : [];
+    });
+  const raw = /\b(?:text|border|ring)-(?:emerald|green|red|rose|amber|yellow|orange|sky|blue|cyan|teal)-\d{2,3}|\bbg-(?:emerald|green|red|rose|amber|yellow|orange|sky|blue|cyan|teal)-\d{2,3}\/\d+/;
+  const offenders = [...walk("app"), ...walk("components")].filter((f) => raw.test(fs.readFileSync(f, "utf8")));
+  assert.deepEqual(offenders, [], "use the success / warning / destructive / primary tokens (they carry AA contrast in both themes)");
+});

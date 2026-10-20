@@ -30,7 +30,7 @@ export default async function CaterlinkReceiptPage() {
           </p>
         </header>
         {!pending.ok && (
-          <p className="font-mono text-xs text-red-500" role="alert">
+          <p className="font-mono text-xs text-destructive" role="alert">
             {pending.error}
           </p>
         )}

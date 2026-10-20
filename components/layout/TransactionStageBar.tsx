@@ -16,8 +16,8 @@ const STEP_ORDER: TransactionStatus[] = [
 export function TransactionStageBar({ status }: { status: TransactionStatus }) {
   if (status === "ESCALATED") {
     return (
-      <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.08em]" style={{ color: "var(--red)" }}>
-        <span className="h-[6px] w-[6px] rounded-full" style={{ background: "var(--red)" }} />
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-destructive">
+        <span className="h-[6px] w-[6px] rounded-full bg-destructive" aria-hidden />
         Escalated
       </span>
     );
@@ -34,10 +34,7 @@ export function TransactionStageBar({ status }: { status: TransactionStatus }) {
         <span
           key={step}
           aria-hidden
-          className="h-[5px] w-[14px] rounded-full"
-          style={{
-            background: i <= currentIndex ? "var(--cyan)" : "var(--border)",
-          }}
+          className={`h-[6px] w-[14px] rounded-full ${i <= currentIndex ? "bg-primary" : "bg-border"}`}
         />
       ))}
     </span>

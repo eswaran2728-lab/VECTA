@@ -62,7 +62,7 @@ export default async function ReportViewPage({
             <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
               {meta.code}
             </span>
-            <span className="font-mono text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <span className="font-mono text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-success/10 text-success border border-success/20">
               Submitted
             </span>
           </div>
@@ -81,7 +81,7 @@ export default async function ReportViewPage({
         {(acknowledgement || canAcknowledge || searchParams.error) && (
           <div className="card p-4 space-y-2 border-border/80 bg-surface/80">
             {acknowledgement ? (
-              <p className="text-xs font-mono text-emerald-400">
+              <p className="text-xs font-mono text-success">
                 ✓ Acknowledged by <strong>{acknowledgement.acknowledgedByName}</strong> on{" "}
                 {formatDateTimeMY(acknowledgement.acknowledgedAt)}
               </p>
@@ -96,7 +96,7 @@ export default async function ReportViewPage({
                 </form>
               )
             )}
-            {searchParams.error && <p className="text-xs text-red-400 font-mono">{searchParams.error}</p>}
+            {searchParams.error && <p className="text-xs text-destructive font-mono">{searchParams.error}</p>}
           </div>
         )}
 

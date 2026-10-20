@@ -248,7 +248,7 @@ export function ThreadDetailView({
       <article className="rounded-xl border border-border bg-card p-5 sm:p-7 shadow-sm space-y-5">
         {/* Status Banners */}
         {isThreadLocked && (
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-400">
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning">
             <Lock className="h-4 w-4 flex-shrink-0" />
             <span>This discussion has been locked by a moderator. No further replies can be added.</span>
           </div>
@@ -321,7 +321,7 @@ export function ThreadDetailView({
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                 title="Report content"
               >
-                <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+                <AlertTriangle className="h-3.5 w-3.5 text-warning" />
                 <span>Report</span>
               </button>
             )}
@@ -345,7 +345,7 @@ export function ThreadDetailView({
                   type="button"
                   onClick={handleToggleLock}
                   disabled={busyContentId === thread.id}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-warning/30 bg-warning/10 text-warning hover:bg-warning/20 transition-colors"
                   title={isThreadLocked ? "Unlock thread" : "Lock thread"}
                 >
                   {isThreadLocked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
@@ -508,7 +508,7 @@ export function ThreadDetailView({
                         <button
                           type="button"
                           onClick={() => setReportTarget({ contentType: "reply", contentId: reply.id })}
-                          className="p-1 rounded text-muted-foreground hover:text-amber-400 hover:bg-muted transition-colors"
+                          className="p-1 rounded text-muted-foreground hover:text-warning hover:bg-muted transition-colors"
                           title="Report reply"
                         >
                           <AlertTriangle className="h-3 w-3" />

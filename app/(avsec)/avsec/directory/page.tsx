@@ -61,7 +61,7 @@ export default async function StaffDirectoryPage({ searchParams: searchParamsPro
 
         <section className="card p-4" aria-label="Directory results">
           {directory.status === "error" && (
-            <p className="font-mono text-xs text-red-500" role="alert">
+            <p className="font-mono text-xs text-destructive" role="alert">
               The directory could not be loaded right now. Try again shortly.
             </p>
           )}

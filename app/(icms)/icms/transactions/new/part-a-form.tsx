@@ -32,16 +32,16 @@ type WhitelistState = "matched" | "expired" | "unlisted" | "empty";
 function whitelistHint(state: WhitelistState): { text: string; className: string } | null {
   switch (state) {
     case "matched":
-      return { text: "✓ Whitelisted, pass valid", className: "text-emerald-600" };
+      return { text: "✓ Whitelisted, pass valid", className: "text-success" };
     case "expired":
       return {
         text: "✕ Whitelisted but airport pass EXPIRED — will be blocked",
-        className: "font-semibold text-red-600",
+        className: "font-semibold text-destructive",
       };
     case "unlisted":
       return {
         text: "✕ Not in whitelist — submission will be blocked",
-        className: "font-semibold text-red-600",
+        className: "font-semibold text-destructive",
       };
     default:
       return null;
@@ -258,7 +258,7 @@ export function PartAForm({
                   <div>
                     <p className="font-heading font-bold">{opt.title}</p>
                     <p className="text-xs text-muted-foreground">{opt.subtitle}</p>
-                    {unavailable ? <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-300">Unavailable: {unavailable}</p> : null}
+                    {unavailable ? <p className="mt-1 text-xs font-medium text-warning dark:text-warning">Unavailable: {unavailable}</p> : null}
                   </div>
                 </button>
               );
@@ -456,7 +456,7 @@ export function PartAForm({
                 className="font-mono"
               />
               {!escortComplete ? (
-                <p className="text-xs font-semibold text-red-600">
+                <p className="text-xs font-semibold text-destructive">
                   Escort officer name, staff ID and escort vehicle number must all be filled in
                   together, or all left blank. / Ketiga-tiganya mesti diisi bersama, atau dibiarkan
                   kosong semua.
@@ -504,7 +504,7 @@ export function PartAForm({
                 <p className="text-xs text-muted-foreground">Select at least one.</p>
               ) : null}
               {isMaintenance ? (
-                <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                <p className="text-xs font-medium text-warning dark:text-warning">
                   GSE Workshop (Maintenance): this transaction completes at Part C — Airport Post
                   (Post 6). The workshop has no security checkpoint, so Part D does not apply.
                 </p>
@@ -559,7 +559,7 @@ export function PartAForm({
           </div>
 
           {anyUnlisted ? (
-            <p className="rounded-md bg-red-100 p-3 text-sm font-semibold text-red-800 dark:bg-red-900/40 dark:text-red-200">
+            <p className="rounded-md bg-red-100 p-3 text-sm font-semibold text-destructive dark:bg-destructive/40 dark:text-destructive">
               WHITELIST VIOLATION — a vehicle or driver above is not on the active whitelist.
               Submission is blocked; ask an Admin to add it under Whitelists. / PELANGGARAN SENARAI
               PUTIH — hantar dihalang; hubungi Admin untuk menambah dalam Senarai Putih.
@@ -579,7 +579,7 @@ export function PartAForm({
 
           {/* Validation Checklist / Help */}
           {!searchDone || !signature || !sealsReady || cargoTypes.length === 0 || !hubDestinationReady || !station.trim() ? (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+            <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning dark:text-warning">
               <p className="font-semibold mb-1">Required before submission:</p>
               <ul className="list-disc pl-4 space-y-0.5">
                 {!station.trim() ? <li>Enter Station</li> : null}
@@ -599,7 +599,7 @@ export function PartAForm({
           ) : null}
 
           {expiredBlocked ? (
-            <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-red-400 bg-red-50 p-3 text-sm dark:bg-red-950/40">
+            <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-destructive bg-red-50 p-3 text-sm dark:bg-destructive/40">
               <input type="checkbox" name="escalate_expired" className="h-5 w-5 accent-red-600" />
               <span>
                 Record anyway as an <strong>Expired Pass incident</strong> — the transaction is
@@ -609,7 +609,7 @@ export function PartAForm({
           ) : null}
 
               {routeUnavailable ? (
-                <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
+                <p role="alert" className="rounded-md border border-warning bg-amber-50 p-3 text-sm font-medium text-warning dark:border-warning dark:bg-warning/40 dark:text-warning">
                   {routeUnavailable}
                 </p>
               ) : null}

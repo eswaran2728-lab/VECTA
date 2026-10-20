@@ -34,10 +34,10 @@ export function UnifiedHeader({
       <Link href={homeHref} className="flex min-h-[44px] shrink-0 items-center gap-2.5 sm:min-h-0">
         {isCaterLink ? (
           <>
-            <span className="flex h-5 w-5 items-center justify-center rounded bg-amber-500/20 text-amber-500 font-bold text-xs">
+            <span className="flex h-5 w-5 items-center justify-center rounded bg-warning/20 text-warning font-bold text-xs">
               ⚡
             </span>
-            <span className="font-display text-[17px] font-extrabold tracking-[0.06em] text-amber-500">
+            <span className="font-display text-[17px] font-extrabold tracking-[0.06em] text-warning">
               CATERLINK
             </span>
           </>

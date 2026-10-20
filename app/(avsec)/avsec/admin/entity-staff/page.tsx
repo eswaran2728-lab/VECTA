@@ -33,7 +33,7 @@ export default async function EntityStaffPage({ searchParams: searchParamsPromis
           </button>
         </form>
         {!list.ok || !opts.ok || !opts.options ? (
-          <p className="text-sm text-red-500" role="alert">
+          <p className="text-sm text-destructive" role="alert">
             {list.error ?? "The assignment options could not be loaded."}
           </p>
         ) : (

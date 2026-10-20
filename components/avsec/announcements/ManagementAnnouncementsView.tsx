@@ -225,16 +225,16 @@ export function ManagementAnnouncementsView({
   return (
     <div className="space-y-4">
       {/* Governance Banner */}
-      <div className="p-3.5 rounded-xl border border-sky-500/30 bg-sky-500/10 flex items-start gap-3">
-        <ShieldAlert className="h-5 w-5 text-sky-400 shrink-0 mt-0.5" />
+      <div className="p-3.5 rounded-xl border border-primary/30 bg-primary/10 flex items-start gap-3">
+        <ShieldAlert className="h-5 w-5 text-primary shrink-0 mt-0.5" />
         <div className="text-xs space-y-1">
           <p className="font-semibold text-foreground">
             Authoritative Announcement Publishing Scope Matrix (Phase 11)
           </p>
           <p className="text-muted-foreground leading-relaxed">
-            <strong className="text-sky-300">Global Scope:</strong> Publisher: <strong>GHOD</strong> only. Audience: every eligible active VECTA user across every active AOC. AirAsia Management may read but cannot create, edit, publish, or archive.
+            <strong className="text-primary">Global Scope:</strong> Publisher: <strong>GHOD</strong> only. Audience: every eligible active VECTA user across every active AOC. AirAsia Management may read but cannot create, edit, publish, or archive.
             <br />
-            <strong className="text-sky-300">Malaysia AOC Scope:</strong> Publishers: <strong>MAA Boss, MAA Admin, AAX Boss, AAX Admin</strong> only. Audience: every eligible active user assigned to Malaysia AOC (both MAA and AAX). GHOD must not publish AOC announcements.
+            <strong className="text-primary">Malaysia AOC Scope:</strong> Publishers: <strong>MAA Boss, MAA Admin, AAX Boss, AAX Admin</strong> only. Audience: every eligible active user assigned to Malaysia AOC (both MAA and AAX). GHOD must not publish AOC announcements.
           </p>
         </div>
       </div>
@@ -442,7 +442,7 @@ export function ManagementAnnouncementsView({
                 />
                 <div className="space-y-0.5">
                   <div className="font-bold text-xs text-foreground flex items-center gap-1.5">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                    <CheckCircle2 className="h-3.5 w-3.5 text-success" />
                     <span>Mandatory Acknowledgement</span>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
@@ -460,7 +460,7 @@ export function ManagementAnnouncementsView({
                 />
                 <div className="space-y-0.5">
                   <div className="font-bold text-xs text-foreground flex items-center gap-1.5">
-                    <Pin className="h-3.5 w-3.5 text-amber-400" />
+                    <Pin className="h-3.5 w-3.5 text-warning" />
                     <span>Pin Announcement</span>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
@@ -525,14 +525,14 @@ export function ManagementAnnouncementsView({
                           <span>GLOBAL (GHOD)</span>
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-blue-500/10 text-blue-400 border border-blue-500/30 flex items-center gap-1">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-primary/10 text-primary border border-primary/30 flex items-center gap-1">
                           <Flag className="h-3 w-3" />
                           <span>MALAYSIA AOC</span>
                         </span>
                       )}
 
                       {a.is_pop && (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-destructive/20 text-destructive border border-destructive/30 flex items-center gap-1">
                           <Zap className="h-3 w-3" />
                           <span>URGENT</span>
                         </span>
@@ -624,8 +624,8 @@ export function ManagementAnnouncementsView({
                     ) : activeReport ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                         {/* Acknowledged List */}
-                        <div className="space-y-1.5 p-3 rounded-lg bg-surface border border-emerald-500/20 max-h-60 overflow-y-auto">
-                          <div className="font-bold text-emerald-400 flex items-center gap-1 mb-1">
+                        <div className="space-y-1.5 p-3 rounded-lg bg-surface border border-success/20 max-h-60 overflow-y-auto">
+                          <div className="font-bold text-success flex items-center gap-1 mb-1">
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             <span>Acknowledged ({activeReport.acknowledged_staff.length})</span>
                           </div>
@@ -649,13 +649,13 @@ export function ManagementAnnouncementsView({
                         </div>
 
                         {/* Pending List */}
-                        <div className="space-y-1.5 p-3 rounded-lg bg-surface border border-amber-500/20 max-h-60 overflow-y-auto">
-                          <div className="font-bold text-amber-400 flex items-center gap-1 mb-1">
+                        <div className="space-y-1.5 p-3 rounded-lg bg-surface border border-warning/20 max-h-60 overflow-y-auto">
+                          <div className="font-bold text-warning flex items-center gap-1 mb-1">
                             <Clock className="h-3.5 w-3.5" />
                             <span>Pending Read Receipt ({activeReport.pending_staff.length})</span>
                           </div>
                           {activeReport.pending_staff.length === 0 ? (
-                            <p className="text-emerald-400 text-[11px]">All active staff have acknowledged! ✓</p>
+                            <p className="text-success text-[11px]">All active staff have acknowledged! ✓</p>
                           ) : (
                             activeReport.pending_staff.map((u) => (
                               <div key={u.profile_id} className="py-1 border-b border-border/40 last:border-0">

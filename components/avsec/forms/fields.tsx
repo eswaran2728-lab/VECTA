@@ -11,7 +11,7 @@ import { cn } from "@/lib/avsec/utils";
 
 function ErrorText({ error }: { error?: FieldError }) {
   if (!error) return null;
-  return <p className="text-xs text-red-400 font-mono mt-1.5">{error.message}</p>;
+  return <p className="text-xs text-destructive font-mono mt-1.5">{error.message}</p>;
 }
 
 // Selectable chip — modern Nocturne tile that lights up with cyan/primary accent when selected
@@ -36,7 +36,7 @@ interface BaseProps<T extends FieldValues> {
 function AutoFilledBadge() {
   return (
     <span
-      className="inline-flex items-center gap-1 font-mono text-[9px] font-semibold uppercase tracking-wider text-emerald-400"
+      className="inline-flex items-center gap-1 font-mono text-[9px] font-semibold uppercase tracking-wider text-success"
     >
       ✦ Auto-filled
     </span>
@@ -69,7 +69,7 @@ export function TextField<T extends FieldValues>({
       <div className="flex items-center justify-between gap-2">
         <label className="field-label" htmlFor={name}>
           {label}
-          {required && <span className="text-red-400"> *</span>}
+          {required && <span className="text-destructive"> *</span>}
         </label>
         <div className="flex items-center gap-2 shrink-0">
           {autoFilled && <AutoFilledBadge />}
@@ -89,7 +89,7 @@ export function TextField<T extends FieldValues>({
         type={type}
         inputMode={inputMode}
         placeholder={placeholder}
-        className={cn("input-base", autoFilled && "border-emerald-500/80 focus:border-emerald-400 focus:ring-emerald-400/20")}
+        className={cn("input-base", autoFilled && "border-success/80 focus:border-success focus:ring-success/20")}
         {...register(name)}
       />
       {hint && <p className="field-hint text-[11px] text-muted-foreground font-mono mt-1">{hint}</p>}
@@ -112,7 +112,7 @@ export function TextAreaField<T extends FieldValues>({
     <div className={className}>
       <label className="field-label" htmlFor={name}>
         {label}
-        {required && <span className="text-red-400"> *</span>}
+        {required && <span className="text-destructive"> *</span>}
       </label>
       <textarea id={name} rows={rows} className="input-base" {...register(name)} />
       {hint && <p className="field-hint text-[11px] text-muted-foreground font-mono mt-1">{hint}</p>}
@@ -136,7 +136,7 @@ export function SelectField<T extends FieldValues>({
     <div className={className}>
       <label className="field-label" htmlFor={name}>
         {label}
-        {required && <span className="text-red-400"> *</span>}
+        {required && <span className="text-destructive"> *</span>}
       </label>
       <select id={name} className="input-base" defaultValue="" {...register(name)}>
         <option value="" disabled className="bg-card text-muted-foreground">
@@ -172,7 +172,7 @@ export function RadioGroupField<T extends FieldValues>({
       <div className="flex items-center justify-between gap-2">
         <label className="field-label">
           {label}
-          {required && <span className="text-red-400"> *</span>}
+          {required && <span className="text-destructive"> *</span>}
         </label>
         {autoFilled && <AutoFilledBadge />}
       </div>
@@ -204,7 +204,7 @@ export function CheckboxGroupField<T extends FieldValues>({
     <div className={className}>
       <label className="field-label">
         {label}
-        {required && <span className="text-red-400"> *</span>}
+        {required && <span className="text-destructive"> *</span>}
       </label>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {options.map((opt) => (
@@ -332,7 +332,7 @@ export function EntryCard({
           <button
             type="button"
             onClick={onRemove}
-            className="font-mono text-[10px] font-bold uppercase tracking-wider text-red-400 hover:text-red-300 transition-colors"
+            className="font-mono text-[10px] font-bold uppercase tracking-wider text-destructive hover:text-destructive transition-colors"
           >
             Remove ✕
           </button>

@@ -37,7 +37,7 @@ export default async function InvestigationCaseDetailPage({ params }: { params: 
     return (
       <main className="min-h-screen pb-32">
         <div className="max-w-2xl mx-auto px-4 py-6">
-          <div className="card p-4 border-red-500/50 bg-red-500/10 text-xs text-red-400 font-mono">
+          <div className="card p-4 border-destructive/50 bg-destructive/10 text-xs text-destructive font-mono">
             {caseResult.error ?? "Case not found."}
           </div>
         </div>

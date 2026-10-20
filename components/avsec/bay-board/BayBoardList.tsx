@@ -58,7 +58,7 @@ export function BayBoardList({
             className={cn(
               "card p-4 transition-all border",
               overdue
-                ? "border-red-500/50 bg-red-500/5 dark:bg-red-950/20"
+                ? "border-destructive/50 bg-destructive/5 dark:bg-destructive/20"
                 : "border-border/80 bg-surface/90"
             )}
           >
@@ -79,11 +79,11 @@ export function BayBoardList({
                     </span>
                   )}
                   {e.is_manual ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold uppercase bg-warning/10 text-warning border border-warning/20">
                       Manual Entry
                     </span>
                   ) : (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold uppercase bg-success/10 text-success border border-success/20">
                       SEC016 Auto
                     </span>
                   )}
@@ -106,17 +106,17 @@ export function BayBoardList({
               </div>
 
               <div className="flex items-center gap-4 shrink-0">
-                <div className={cn("text-right font-mono", overdue && "text-red-400")}>
+                <div className={cn("text-right font-mono", overdue && "text-destructive")}>
                   <div className="text-base font-bold">
                     {e.hoursOnGround.toFixed(1)}h
                   </div>
                   {overdue ? (
-                    <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 text-red-400">
+                    <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 text-destructive">
                       <AlertTriangle className="h-3 w-3" />
                       Search Overdue (&gt;4h)
                     </p>
                   ) : (
-                    <p className="text-[10px] font-semibold text-emerald-400 flex items-center gap-1">
+                    <p className="text-[10px] font-semibold text-success flex items-center gap-1">
                       <CheckCircle2 className="h-3 w-3" />
                       Normal
                     </p>

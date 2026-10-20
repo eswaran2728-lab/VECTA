@@ -185,7 +185,7 @@ export function CheckpointForm({
           </div>
 
           {touched && !whitelisted ? (
-            <p className="rounded-md bg-red-100 p-3 text-sm font-medium text-red-800 dark:bg-red-900/40 dark:text-red-200">
+            <p className="rounded-md bg-red-100 p-3 text-sm font-medium text-destructive dark:bg-destructive/40 dark:text-destructive">
               WHITELIST VIOLATION — the observed vehicle/driver is not on the active whitelist. Pass is
               disabled; this checkpoint will be escalated automatically. / PELANGGARAN SENARAI PUTIH —
               kenderaan/pemandu yang diperhatikan tiada dalam senarai putih aktif. Lulus dinyahaktifkan;
@@ -236,7 +236,7 @@ export function CheckpointForm({
             <Label>Result</Label>
             <div className="grid grid-cols-2 gap-3">
               <label
-                className={`flex items-center gap-2 rounded-lg border p-3 ${whitelisted ? "cursor-pointer" : "cursor-not-allowed opacity-50"} ${effectiveResult === "PASS" ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30" : ""}`}
+                className={`flex items-center gap-2 rounded-lg border p-3 ${whitelisted ? "cursor-pointer" : "cursor-not-allowed opacity-50"} ${effectiveResult === "PASS" ? "border-success bg-emerald-50 dark:bg-success/30" : ""}`}
               >
                 <input
                   type="radio"
@@ -248,7 +248,7 @@ export function CheckpointForm({
                 />
                 <span className="font-medium">Pass</span>
               </label>
-              <label className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 ${effectiveResult === "ESCALATE" ? "border-red-500 bg-red-50 dark:bg-red-950/30" : ""}`}>
+              <label className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 ${effectiveResult === "ESCALATE" ? "border-destructive bg-red-50 dark:bg-destructive/30" : ""}`}>
                 <input
                   type="radio"
                   name="result"
@@ -277,12 +277,12 @@ export function CheckpointForm({
           <input type="hidden" name="signature" value={signature ?? ""} />
 
           {state.error ? (
-            <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
+            <p role="alert" className="text-sm font-medium text-destructive dark:text-destructive">
               {state.error}
             </p>
           ) : null}
           {queuedMsg ? (
-            <p className="rounded-md bg-amber-100 p-3 text-sm font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+            <p className="rounded-md bg-amber-100 p-3 text-sm font-medium text-warning dark:bg-warning/40 dark:text-warning">
               {queuedMsg}
             </p>
           ) : null}

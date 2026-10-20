@@ -10,10 +10,10 @@ export function NeedsYourActionPanel({ items }: { items: ActionItem[] }) {
   }
 
   return (
-    <section className="card p-4 border-l-4 border-l-amber-500 bg-amber-500/5 space-y-3">
-      <h2 className="font-bold font-mono text-xs uppercase tracking-wider text-amber-500 flex items-center gap-2">
+    <section className="card p-4 border-l-4 border-l-amber-500 bg-warning/5 space-y-3">
+      <h2 className="font-bold font-mono text-xs uppercase tracking-wider text-warning flex items-center gap-2">
         ⚡ Needs Your Action
-        <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-500 border border-amber-500/30">
+        <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-warning/20 text-warning border border-warning/30">
           {items.length}
         </span>
       </h2>

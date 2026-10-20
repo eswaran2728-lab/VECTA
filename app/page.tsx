@@ -8,6 +8,8 @@ import { REPORT_TYPES as AVSEC_REPORT_TYPES, REPORT_META } from "@/lib/avsec/ref
 import { requiresDailyReport } from "@/lib/avsec/auth";
 import { StatusDot, type OpsStatus } from "@/components/layout/StatusDot";
 import { AppChrome } from "@/components/layout/shell/AppChrome";
+import { ActionCard, OperationalSummaryCard, PageHeader, RoleScopeHeader } from "@/components/ds/cards";
+import { CalendarCheck, Megaphone, Plane, ScanLine, Search } from "lucide-react";
 import { buildNavModel } from "@/lib/dashboard/nav-capabilities";
 import { getCanConfirmCaterLinkReceipt } from "@/lib/avsec/caterlink/receipt-capability";
 import { landsOnRoleDashboard, primaryRoleLabel } from "@/lib/auth/role-capabilities";
@@ -142,160 +144,138 @@ export default async function LandingPage() {
   return (
     <main className="relative min-h-screen bg-background">
       <AppChrome userId={user.id} name={profile.name} roleLabel={roleChip} model={navModel} station={station} team={team} signOutAction={signOut}>
-      <div className="relative z-10 flex flex-col">
-        <div className="flex flex-col gap-6 px-4 py-6 sm:px-8 sm:py-8">
+        <div className="flex flex-col gap-6 px-4 py-5 sm:px-8 sm:py-8">
+          <PageHeader
+            title="My Workspace"
+            eyebrow={station ?? (orgWide ? "All stations" : undefined)}
+            actions={
+              !orgWide ? (
+                <Link
+                  href="/avsec/duty"
+                  className="inline-flex min-h-[48px] items-center gap-2 rounded-xl bg-brand px-5 text-sm font-bold text-brand-foreground shadow-sm transition-opacity hover:opacity-90"
+                >
+                  <span className="h-2 w-2 rounded-full bg-brand-foreground" aria-hidden />
+                  Duty check-in / check-out
+                </Link>
+              ) : null
+            }
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <RoleScopeHeader
+              roleLabel={roleChip}
+              scopes={[...(station ? [{ label: "Station", value: station }] : []), ...(team ? [{ label: "Team", value: team }] : [])]}
+            />
+            <StatusDot status={overallStatus} />
+          </div>
+
           {/* Management Announcements Section */}
           <AnnouncementBanner announcements={announcements} />
 
-          {/* Desktop 2-Column Responsive Layout */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Main Operations Stream (8 Columns on Desktop) */}
-            <div className="lg:col-span-8 space-y-6">
-              {/* Operational status header */}
-              <div className="vecta-panel flex flex-wrap items-center justify-between gap-4 px-6 py-5">
-                <div className="flex flex-col gap-1.5">
-                  <span className="font-display text-lg font-bold tracking-[0.02em]">
-                    {station ?? (orgWide ? "All Stations" : "My Workspace")}
-                    {team ? ` · Team ${team}` : ""}
-                  </span>
-                  <StatusDot status={overallStatus} />
-                  {!orgWide ? (
-                    <Link
-                      href="/avsec/duty"
-                      className="mt-2 inline-flex items-center justify-between gap-3 rounded-xl bg-primary px-4 py-2.5 font-sans text-xs font-bold tracking-[0.04em] text-primary-foreground shadow-sm transition-all hover:opacity-95 active:scale-[0.98] group"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-primary-foreground animate-pulse" />
-                        <span>DUTY CHECK-IN / CHECK-OUT</span>
-                      </span>
-                      <span className="font-mono text-sm transition-transform group-hover:translate-x-1 shrink-0">
-                        &rarr;
-                      </span>
-                    </Link>
-                  ) : null}
-                </div>
-                <div className="flex flex-wrap gap-6">
-                  <Metric label="Staff on Duty" value={snapshot.staffOnDuty} />
-                  <Metric label="Active Transactions" value={snapshot.activeTransactions} />
-                  <Metric label="Reports Today" value={snapshot.reportsToday} />
-                  <Metric
-                    label="Alerts"
-                    value={snapshot.alerts}
-                    alert={snapshot.alerts > 0}
-                    href="/avsec/admin/alerts"
-                  />
-                </div>
-              </div>
+          <section aria-label="Operational summary" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <OperationalSummaryCard label="Staff on duty" value={snapshot.staffOnDuty} />
+            <OperationalSummaryCard label="Active transactions" value={snapshot.activeTransactions} />
+            <OperationalSummaryCard label="Reports today" value={snapshot.reportsToday} />
+            <OperationalSummaryCard label="Alerts" value={snapshot.alerts} tone={snapshot.alerts > 0 ? "danger" : "success"} href="/avsec/admin/alerts" />
+          </section>
 
-              {/* Recent activity feed — read-only merge of duty check-in/out,
-                  transaction, and report-submission events. */}
-              <section className="vecta-panel px-6 py-[22px]">
-                <p className="vecta-eyebrow mb-4">Live Activity Stream</p>
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12">
+            <div className="space-y-6 lg:col-span-8">
+              {/* Recent activity feed — read-only merge of duty check-in/out, transaction, and report-submission events. */}
+              <section className="rounded-xl border border-border bg-card p-4 shadow-[var(--shadow-card)] sm:p-5" aria-labelledby="activity-heading">
+                <h2 id="activity-heading" className="mb-3 text-base font-semibold text-foreground">
+                  Live activity stream
+                </h2>
                 {activity.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No recent activity to show.</p>
                 ) : (
-                  <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Live activity stream (scrollable)">
-                    <table className="w-full min-w-[560px] border-collapse text-left text-sm">
-                      <thead>
-                        <tr className="border-b border-border text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-                          <th className="pb-2 pr-3 font-mono font-medium">Time (MYT)</th>
-                          <th className="pb-2 pr-3 font-mono font-medium">Activity</th>
-                          <th className="pb-2 pr-3 font-mono font-medium">Location</th>
-                          <th className="pb-2 font-mono font-medium">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {activity.map((row) => (
-                          <tr key={row.key} className="border-b border-border/60 last:border-none hover:bg-muted/20 transition-colors">
-                            <td className="whitespace-nowrap py-2.5 pr-3 font-mono text-[12px] text-muted-foreground">
-                              {formatClock(row.time)}
-                            </td>
-                            <td className="py-2.5 pr-3 text-[13px]">{row.activity}</td>
-                            <td className="py-2.5 pr-3 text-[13px] text-muted-foreground">{row.location}</td>
-                            <td className="py-2.5">
-                              {row.transactionStatus ? (
-                                <TransactionStageBar status={row.transactionStatus} />
-                              ) : (
-                                <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-                                  {row.status}
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <>
+                    {/* Phones: readable cards instead of a wide table */}
+                    <ul className="space-y-2 md:hidden">
+                      {activity.map((row) => (
+                        <li key={row.key} className="rounded-lg border border-border bg-background p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="text-sm font-medium text-foreground">{row.activity}</p>
+                            <span className="shrink-0 font-mono text-xs text-muted-foreground">{formatClock(row.time)}</span>
+                          </div>
+                          <div className="mt-1.5 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                            <span>{row.location}</span>
+                            {row.transactionStatus ? (
+                              <TransactionStageBar status={row.transactionStatus} />
+                            ) : (
+                              <span className="font-semibold uppercase tracking-wide">{row.status}</span>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="hidden md:block">
+                      <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Live activity stream (scrollable)">
+                        <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+                          <thead>
+                            <tr className="border-b border-border text-xs text-muted-foreground">
+                              <th scope="col" className="pb-2 pr-3 font-semibold">Time (MYT)</th>
+                              <th scope="col" className="pb-2 pr-3 font-semibold">Activity</th>
+                              <th scope="col" className="pb-2 pr-3 font-semibold">Location</th>
+                              <th scope="col" className="pb-2 font-semibold">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {activity.map((row) => (
+                              <tr key={row.key} className="border-b border-border/60 transition-colors last:border-none hover:bg-muted/40">
+                                <td className="whitespace-nowrap py-2.5 pr-3 font-mono text-xs text-muted-foreground">{formatClock(row.time)}</td>
+                                <td className="py-2.5 pr-3 text-sm">{row.activity}</td>
+                                <td className="py-2.5 pr-3 text-sm text-muted-foreground">{row.location}</td>
+                                <td className="py-2.5">
+                                  {row.transactionStatus ? (
+                                    <TransactionStageBar status={row.transactionStatus} />
+                                  ) : (
+                                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{row.status}</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>
                 )}
               </section>
             </div>
 
-            {/* Quick Actions & Security Reports Hub (4 Columns on Desktop) */}
-            <div className="lg:col-span-4 space-y-6">
-              {/* Quick Action Tiles */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
+            <div className="space-y-6 lg:col-span-4">
+              {/* Quick actions: each link is shown only when the server-derived capability allows it */}
+              <section aria-label="Quick actions" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
                 {showScan ? (
-                  <Link href="/avsec/scan" className="vecta-tile group">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
-                      <path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" stroke="var(--violet)" strokeWidth="1.6" />
-                      <rect x="9" y="9" width="6" height="6" stroke="var(--violet)" strokeWidth="1.6" />
-                    </svg>
-                    <h2 className="font-display text-lg font-bold tracking-[0.03em]">Scan Checkpoint</h2>
-                    <p className="vecta-eyebrow mt-0.5">Scan a transaction at your station</p>
-                  </Link>
+                  <ActionCard href="/avsec/scan" title="Scan Checkpoint" description="Scan a transaction at your station" icon={<ScanLine className="h-5 w-5" />} />
                 ) : orgWide ? (
-                  <Link href="/avsec/reports/lookup" className="vecta-tile group">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
-                      <circle cx="10.5" cy="10.5" r="6" stroke="var(--violet)" strokeWidth="1.6" />
-                      <path d="M15 15L20 20" stroke="var(--violet)" strokeWidth="1.6" strokeLinecap="round" />
-                    </svg>
-                    <h2 className="font-display text-lg font-bold tracking-[0.03em]">Report Search</h2>
-                    <p className="vecta-eyebrow mt-0.5">Look up any report · org-wide</p>
-                  </Link>
+                  <ActionCard href="/avsec/reports/lookup" title="Report Search" description="Look up any report · org-wide" icon={<Search className="h-5 w-5" />} />
                 ) : null}
-
-                {quickAccess && (
-                  <Link href={quickAccess.href} className="vecta-tile group">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
-                      <path d="M4 19h16M6 19V9l6-4 6 4v10" stroke="var(--cyan)" strokeWidth="1.6" />
-                    </svg>
-                    <h2 className="font-display text-lg font-bold tracking-[0.03em]">{quickAccess.label}</h2>
-                    <p className="vecta-eyebrow mt-0.5 font-mono text-[13px] normal-case tracking-normal text-foreground">
-                      {quickAccess.count} {quickAccess.unit}
-                    </p>
-                  </Link>
-                )}
-
-                {showAdmin && (
+                {quickAccess ? (
+                  <ActionCard
+                    href={quickAccess.href}
+                    title={quickAccess.label}
+                    description={`${quickAccess.count} ${quickAccess.unit}`}
+                    icon={<Plane className="h-5 w-5" />}
+                  />
+                ) : null}
+                {showAdmin ? (
                   <>
-                    <Link href="/avsec/admin/attendance-monitor" className="vecta-tile group">
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
-                        <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" stroke="var(--cyan)" strokeWidth="1.6" />
-                        <rect x="9" y="3" width="6" height="4" rx="2" stroke="var(--cyan)" strokeWidth="1.6" />
-                        <path d="M9 14l2 2 4-4" stroke="var(--cyan)" strokeWidth="1.6" />
-                      </svg>
-                      <h2 className="font-display text-lg font-bold tracking-[0.03em]">Attendance Monitor</h2>
-                      <p className="vecta-eyebrow mt-0.5">Live duty, leave & auto-OT</p>
-                    </Link>
-                    <Link href="/avsec/management/announcements" className="vecta-tile group">
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="mb-2" aria-hidden="true">
-                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                        <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="var(--cyan)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                      <h2 className="font-display text-lg font-bold tracking-[0.03em]">Announcements</h2>
-                      <p className="vecta-eyebrow mt-0.5">Broadcast to staff & teams</p>
-                    </Link>
+                    <ActionCard href="/avsec/admin/attendance-monitor" title="Attendance Monitor" description="Live duty, leave & auto-OT" icon={<CalendarCheck className="h-5 w-5" />} />
+                    <ActionCard href="/avsec/management/announcements" title="Announcements" description="Broadcast to staff & teams" icon={<Megaphone className="h-5 w-5" />} />
                   </>
-                )}
-              </div>
+                ) : null}
+              </section>
 
               {/* Reports section */}
               {(showReports || showIcmsReports) && (
-                <section id="reports" className="vecta-panel px-5 py-5 scroll-mt-24">
-                  <div className="mb-3 flex items-center justify-between">
-                    <p className="vecta-eyebrow">File Reports</p>
+                <section id="reports" className="scroll-mt-24 rounded-xl border border-border bg-card p-4 shadow-[var(--shadow-card)]" aria-labelledby="reports-heading">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h2 id="reports-heading" className="text-base font-semibold text-foreground">
+                      Security Reports
+                    </h2>
                     {showReports && (
-                      <Link href="/avsec/history" className="inline-flex min-h-[24px] items-center font-mono text-[10px] uppercase tracking-[0.1em] text-primary hover:underline">
+                      <Link href="/avsec/history" className="inline-flex min-h-[44px] items-center text-sm font-semibold text-primary hover:underline">
                         History &rarr;
                       </Link>
                     )}
@@ -306,21 +286,16 @@ export default async function LandingPage() {
                         <Link
                           key={t}
                           href={`/avsec/reports/${t}`}
-                          className="rounded-lg border border-border bg-card p-2.5 transition-colors hover:border-primary"
+                          className="flex min-h-[56px] flex-col justify-center rounded-lg border border-border bg-background p-2.5 transition-colors hover:border-primary"
                         >
-                          <p className="font-mono text-[9px] text-muted-foreground">{REPORT_META[t].code}</p>
-                          <p className="mt-0.5 text-xs font-semibold leading-tight line-clamp-1">{REPORT_META[t].name}</p>
+                          <span className="font-mono text-xs text-muted-foreground">{REPORT_META[t].code}</span>
+                          <span className="mt-0.5 line-clamp-2 text-sm font-semibold leading-tight text-foreground">{REPORT_META[t].name}</span>
                         </Link>
                       ))}
                     {showIcmsReports && (
-                      <Link
-                        href="/icms/reports"
-                        className="rounded-lg border border-border bg-card p-2.5 transition-colors hover:border-primary col-span-2"
-                      >
-                        <p className="font-mono text-[9px] text-muted-foreground">ICMS</p>
-                        <p className="mt-0.5 text-xs font-semibold leading-tight">
-                          Transaction &amp; Incident Reports
-                        </p>
+                      <Link href="/icms/reports" className="col-span-2 flex min-h-[56px] flex-col justify-center rounded-lg border border-border bg-background p-2.5 transition-colors hover:border-primary">
+                        <span className="font-mono text-xs text-muted-foreground">ICMS</span>
+                        <span className="mt-0.5 text-sm font-semibold leading-tight text-foreground">Transaction &amp; Incident Reports</span>
                       </Link>
                     )}
                   </div>
@@ -329,42 +304,8 @@ export default async function LandingPage() {
             </div>
           </div>
         </div>
-      </div>
       </AppChrome>
     </main>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  alert,
-  href,
-}: {
-  label: string;
-  value: number;
-  alert?: boolean;
-  /** When set, the metric becomes a link — used for Alerts so the count
-   *  isn't a dead end (it used to be a static number with no way to see
-   *  what the alerts actually were). */
-  href?: string;
-}) {
-  const content = (
-    <div className="flex flex-col items-end gap-0.5">
-      <span
-        className="font-mono text-2xl font-semibold tabular-nums"
-        style={{ color: alert ? "var(--red)" : undefined }}
-      >
-        {String(value).padStart(2, "0")}
-      </span>
-      <span className="vecta-eyebrow">{label}</span>
-    </div>
-  );
-  if (!href) return content;
-  return (
-    <Link href={href} className="rounded-md transition-opacity hover:opacity-75">
-      {content}
-    </Link>
   );
 }
 

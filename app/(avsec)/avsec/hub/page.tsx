@@ -19,7 +19,7 @@ export default async function HubOverviewPage({ searchParams: searchParamsPromis
   if (stationError || !stations) {
     return (
       <main className="min-h-screen pb-24">
-        <p className="m-6 font-mono text-xs text-red-500" role="alert">
+        <p className="m-6 font-mono text-xs text-destructive" role="alert">
           Your hub could not be loaded right now.
         </p>
       </main>
@@ -52,7 +52,7 @@ export default async function HubOverviewPage({ searchParams: searchParamsPromis
           <Link href="/avsec/hub" className="btn-secondary inline-flex min-h-[44px] items-center px-4 text-xs">Reset</Link>
         </form>
         {error && (
-          <p className="font-mono text-xs text-red-500" role="alert">
+          <p className="font-mono text-xs text-destructive" role="alert">
             The overview could not be loaded right now.
           </p>
         )}

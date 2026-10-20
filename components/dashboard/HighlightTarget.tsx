@@ -31,8 +31,8 @@ export function HighlightTarget({
 
   const highlightClass = isHighlighted
     ? as === "tr"
-      ? " outline outline-2 outline-amber-500 -outline-offset-2"
-      : " ring-2 ring-amber-500 ring-offset-2 ring-offset-background rounded-lg"
+      ? " outline outline-2 outline-warning -outline-offset-2"
+      : " ring-2 ring-warning ring-offset-2 ring-offset-background rounded-lg"
     : "";
 
   const Tag = as;

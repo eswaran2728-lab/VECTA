@@ -7,10 +7,10 @@ export type OpsStatus = "operational" | "attention" | "critical" | "information"
 
 const STATUS_META: Record<OpsStatus, { label: string; color: string }> = {
   operational: { label: "Operational", color: "var(--green)" },
-  attention: { label: "Attention", color: "oklch(0.79 0.15 85)" },
+  attention: { label: "Attention", color: "oklch(var(--warning))" },
   critical: { label: "Critical", color: "var(--red)" },
   information: { label: "Information", color: "var(--cyan)" },
-  standby: { label: "Standby", color: "oklch(0.64 0.02 250)" },
+  standby: { label: "Standby", color: "oklch(var(--muted-foreground))" },
 };
 
 export function StatusDot({
@@ -25,7 +25,7 @@ export function StatusDot({
 }) {
   const meta = STATUS_META[status];
   return (
-    <span className={`inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground ${className}`}>
+    <span className={`inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground ${className}`}>
       <span
         aria-hidden
         className="inline-block h-[8px] w-[8px] shrink-0 rounded-full"

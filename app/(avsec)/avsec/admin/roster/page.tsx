@@ -150,11 +150,11 @@ export default async function AdminRosterPage({
 
         {/* Coverage Conflict Alert Banner */}
         {coverageConflicts.length > 0 && (
-          <div className="card p-4 border-l-4 border-l-rose-500 bg-rose-500/5 space-y-2">
+          <div className="card p-4 border-l-4 border-l-rose-500 bg-destructive/5 space-y-2">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-base">⚠️</span>
-                <span className="font-display text-sm font-bold text-rose-400 uppercase tracking-wide">
+                <span className="font-display text-sm font-bold text-destructive uppercase tracking-wide">
                   Coverage Reassignment Needed ({coverageConflicts.length} Conflict{coverageConflicts.length > 1 ? "s" : ""})
                 </span>
               </div>
@@ -169,16 +169,16 @@ export default async function AdminRosterPage({
               {coverageConflicts.map((c, i) => (
                 <div
                   key={i}
-                  className="p-2.5 rounded bg-background/80 border border-rose-500/30 text-xs font-mono space-y-0.5"
+                  className="p-2.5 rounded bg-background/80 border border-destructive/30 text-xs font-mono space-y-0.5"
                 >
                   <div className="font-bold text-foreground flex items-center justify-between">
                     <span>{c.officerName}</span>
-                    <span className="text-[10px] text-rose-400">{c.team}</span>
+                    <span className="text-[10px] text-destructive">{c.team}</span>
                   </div>
                   <div className="text-muted-foreground text-[11px]">
                     {dayLabel(c.date)} · Shift: <strong className="text-foreground">{c.shiftCode}</strong>
                   </div>
-                  <div className="text-amber-400 text-[10px] font-semibold">
+                  <div className="text-warning text-[10px] font-semibold">
                     {c.leaveLabel}
                   </div>
                 </div>

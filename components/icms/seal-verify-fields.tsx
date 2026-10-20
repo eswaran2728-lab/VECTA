@@ -69,8 +69,8 @@ export function SealVerifyFields({
                     "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
                     pickedColor === c
                       ? c === "BLUE"
-                        ? "border-blue-600 bg-blue-600 text-white"
-                        : "border-green-600 bg-green-600 text-white"
+                        ? "border-primary bg-blue-600 text-white"
+                        : "border-success bg-green-600 text-white"
                       : "border-input bg-background hover:bg-accent"
                   )}
                 >
@@ -80,7 +80,7 @@ export function SealVerifyFields({
             </div>
             {entered ? (
               <p
-                className={`flex items-center gap-1 text-xs font-medium ${numberMatches ? "text-emerald-600" : "text-red-600"}`}
+                className={`flex items-center gap-1 text-xs font-medium ${numberMatches ? "text-success" : "text-destructive"}`}
               >
                 {numberMatches ? (
                   <CheckCircle2 className="h-3.5 w-3.5" />

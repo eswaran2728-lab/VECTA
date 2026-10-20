@@ -24,7 +24,7 @@ export default async function ProfilingWorkspacePage() {
         </div>
 
         {pendingResult.error && (
-          <div className="card p-4 border-red-500/50 bg-red-500/10 text-xs text-red-400 font-mono">{pendingResult.error}</div>
+          <div className="card p-4 border-destructive/50 bg-destructive/10 text-xs text-destructive font-mono">{pendingResult.error}</div>
         )}
 
         {activeRole === "profiling_so" && (

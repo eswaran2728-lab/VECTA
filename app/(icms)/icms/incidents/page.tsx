@@ -101,7 +101,7 @@ export default async function IncidentsPage({
                     </span>
                   </TableCell>
                   <TableCell>
-                    <Badge className="bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200">
+                    <Badge className="bg-red-100 text-destructive dark:bg-destructive/40 dark:text-destructive">
                       {INCIDENT_TYPE_LABELS[incident.incident_type]}
                     </Badge>
                   </TableCell>

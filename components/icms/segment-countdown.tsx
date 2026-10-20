@@ -35,9 +35,9 @@ export function SegmentCountdown({ deadline }: { deadline: string | null }) {
     <span
       className={`inline-flex items-center gap-1 text-xs font-medium ${
         overdue
-          ? "text-red-600 dark:text-red-400"
+          ? "text-destructive dark:text-destructive"
           : msLeft < 5 * 60 * 1000
-            ? "text-amber-600 dark:text-amber-400"
+            ? "text-warning dark:text-warning"
             : "text-muted-foreground"
       }`}
     >

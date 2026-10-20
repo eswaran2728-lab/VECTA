@@ -9,7 +9,7 @@ export function FlightEntityBadge({ flight }: { flight: string | null | undefine
   const ok = c.status === "classified";
   return (
     <p
-      className={`font-mono text-[11px] ${ok ? "text-emerald-500" : "text-amber-500"}`}
+      className={`font-mono text-[11px] ${ok ? "text-success" : "text-warning"}`}
       role="status"
       data-flight-entity={c.entityCode ?? "unclassified"}
     >

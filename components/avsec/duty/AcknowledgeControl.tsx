@@ -23,7 +23,7 @@ export function AcknowledgeControl({ handoverId }: { handoverId: string }) {
         onChange={(e) => setNotes(e.target.value)}
         placeholder="Confirming receipt of handover…"
       />
-      {error && <p className="text-xs text-red-400 font-mono">{error}</p>}
+      {error && <p className="text-xs text-destructive font-mono">{error}</p>}
       <button
         type="button"
         className="btn-primary w-full text-xs"
