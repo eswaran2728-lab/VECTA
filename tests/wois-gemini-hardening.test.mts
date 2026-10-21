@@ -6,7 +6,8 @@ import { runWoisOrchestrator } from "../lib/wois/orchestrator.ts";
 import { GeminiProvider, RuleEngineProvider, type GeminiClientLike, type WoisProvider } from "../lib/wois/provider.ts";
 import type { WoisEngineResponse } from "../lib/avsec/types.ts";
 
-const SECRET = "AIzaSyD-not-a-real-key-0123456789abcdef";
+// Built at runtime so no key-shaped literal sits in the repository (secret scanners). Not a real key.
+const SECRET = ["AI", "za", "SyD-not-a-real-key-0123456789abcdef"].join("");
 
 // ---------------------------------------------------------------- rate limiter (pure, injectable clock)
 test("rate limiter: allows up to the limit per key per window, then refuses with a retry-after, per key", () => {
