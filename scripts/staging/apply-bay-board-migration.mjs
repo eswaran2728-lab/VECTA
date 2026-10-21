@@ -34,7 +34,8 @@ export const LIVE_PHRASE = `APPLY ${MIGRATION.version} TO STAGING ${APPROVED_REF
  * Any difference aborts the run before anything is written: the migration was reviewed against exactly this state.
  */
 export const PRE_STATE = {
-  functionMd5: "65028798b594260183b0ef487f152a77", // md5(pg_get_functiondef('public.get_bay_board_secure(text,text)'))
+  functionMd5: "65028798b594260183b0ef487f152a77", // md5(pg_get_functiondef('public.get_bay_board_secure(text,text)')) (raw; the pre-state body was stored with LF)
+  functionMd5Normalized: "65028798b594260183b0ef487f152a77", // the same after CRLF/CR -> LF
   functionAcl: "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
   bayBoardColumnsMd5: "2e88a9298553f224f2ebe381153726db", // information_schema.columns of public.bay_board, ordered
   sec016Columns: 61,
@@ -60,7 +61,12 @@ const DENIED = DENIED_LABELS;
 const WRITER = "aso";
 const RPC_COLUMNS = "id,station,reg_no,aircraft_type,bay,flight,on_ground_since";
 
-export const normalisedSha256 = (buf) => crypto.createHash("sha256").update(buf.toString("utf8").replace(/\r\n/g, "\n")).digest("hex");
+/**
+ * The ONE canonical form of a migration: CRLF and lone CR become LF, in memory. The frozen SHA-256 is of this canonical string, and this exact string is
+ * what is parsed, audited, executed and recorded -- so the runner can never execute different bytes from those the frozen hash represents.
+ */
+export const canonicalSql = (input) => String(Buffer.isBuffer(input) ? input.toString("utf8") : input).replace(/\r\n?/g, "\n");
+export const normalisedSha256 = (buf) => crypto.createHash("sha256").update(canonicalSql(buf)).digest("hex");
 
 /** Statements the migration may contain (comments and $function$ bodies removed). Anything else aborts the run. */
 const ALLOWED_STATEMENTS = [
@@ -104,11 +110,29 @@ export function runnerGitGates({ expectedHead, repoPath, certifiedBase = CERTIFI
   return git;
 }
 
+/** md5 of a string (function-definition fingerprints). */
+const md5 = (t) => crypto.createHash("md5").update(String(t)).digest("hex");
+/** A function fingerprint keeps BOTH the raw hash of pg_get_functiondef() and the line-ending-normalized hash, plus every security property. */
+export function functionFingerprint({ def, securityDefiner, config, owner, acl, volatility }) {
+  return { raw: md5(def), normalized: md5(canonicalSql(def)), securityDefiner: !!securityDefiner, config: config ?? "", owner, acl: acl ?? "", volatility };
+}
+/**
+ * Semantic comparison is allowed ONLY after every security property and the normalized body match. A raw-only difference (CR characters in the stored body)
+ * is never hidden: it is reported as a deviation.
+ */
+export function compareFunctionFingerprints(expected, actual) {
+  const props = ["securityDefiner", "config", "owner", "acl", "volatility"].filter((k) => expected[k] !== actual[k]);
+  if (props.length) return { status: "different", reasons: props.map((k) => `${k} differs`) };
+  if (expected.normalized !== actual.normalized) return { status: "different", reasons: ["normalized body differs"] };
+  if (expected.raw === actual.raw) return { status: "identical", reasons: [] };
+  return { status: "semantically-equal-line-endings-differ", reasons: [], deviation: "the raw stored definition differs (line endings only); normalized body and every security property match" };
+}
+
 /** The migration file must match its frozen SHA-256 (LF-normalised) and contain only allow-listed statements. Returns the SQL text. */
 export function verifyFrozenMigration(buf, file = `${MIGRATION.version}_${MIGRATION.name}.sql`) {
   const sha = normalisedSha256(buf);
   if (sha !== MIGRATION.sha256) fail(`${file}: SHA-256 ${sha} differs from the frozen ${MIGRATION.sha256}`);
-  const text = buf.toString("utf8");
+  const text = canonicalSql(buf); // the string that is audited, executed and recorded: identical to the string that was hashed
   const bad = statementAudit(text);
   if (bad) fail(`${file} contains a statement outside the reviewed allow-list: ${bad}`);
   return text;
@@ -176,7 +200,10 @@ async function verifyPreState(q, ctx) {
  * ctx: { files, acct(label), live, log, preCount, lastPre, hashes|null, writer?, onSnapshot? }
  */
 export async function execute(client, ctx) {
-  const { files, acct, log } = ctx;
+  const { acct, log } = ctx;
+  // whatever the caller hands in is canonicalized and must hash to the frozen SHA-256: execute() can never run bytes the frozen hash does not represent
+  const files = ctx.files.map((f) => ({ ...f, sql: canonicalSql(f.sql) }));
+  for (const f of files) if (f.sha256 && normalisedSha256(f.sql) !== f.sha256) fail(`${f.file}: the SQL to execute does not match its frozen SHA-256`);
   const q = async (s, p) => (await client.query(s, p)).rows;
   const probes = [];
   const probe = (name) => { probes.push(name); log(`PROBE PASS: ${name}`); };
@@ -249,7 +276,10 @@ export async function execute(client, ctx) {
       if ((await q("select count(*)::int n from pg_indexes where schemaname='public' and indexname in ('idx_report_sec016_flight_type','idx_report_sec016_station_reg','idx_bay_board_match','idx_bay_board_arrival_report')"))[0].n !== 4) fail("canonical indexes missing");
       if ((await trgMd5()) !== triggersBefore) fail("a trigger on bay_board / report_sec016 changed");
       // ---- function: same hardening, same ACL, owner unchanged
-      const fn = (await q("select p.prosecdef sd, p.provolatile vol, coalesce(p.proconfig::text,'') cfg, p.proowner = c.relowner same_owner, coalesce(p.proacl::text,'') acl from pg_proc p, pg_class c where p.oid = 'public.get_bay_board_secure(text,text)'::regprocedure and c.oid = 'public.bay_board'::regclass"))[0];
+      const fn = (await q("select p.prosecdef sd, p.provolatile vol, coalesce(p.proconfig::text,'') cfg, p.proowner = c.relowner same_owner, coalesce(p.proacl::text,'') acl, md5(pg_get_functiondef(p.oid)) raw_md5, md5(replace(replace(pg_get_functiondef(p.oid), chr(13)||chr(10), chr(10)), chr(13), chr(10))) norm_md5 from pg_proc p, pg_class c where p.oid = 'public.get_bay_board_secure(text,text)'::regprocedure and c.oid = 'public.bay_board'::regclass"))[0];
+      if (fn.raw_md5 !== fn.norm_md5) fail("the stored get_bay_board_secure body contains CR characters (raw and normalized fingerprints differ)");
+      if (ctx.hashes && fn.norm_md5 !== ctx.hashes.functionMd5Normalized) fail("the normalized get_bay_board_secure body differs from the reviewed body");
+      log(`get_bay_board_secure fingerprints: raw ${fn.raw_md5} = normalized ${fn.norm_md5} (LF body; security properties verified below)`);
       if (!fn.sd || fn.vol !== "s" || !/search_path=public/.test(fn.cfg) || !fn.same_owner) fail("get_bay_board_secure is not SECURITY DEFINER / STABLE / fixed search_path / table-owner-owned");
       const g = (await q("select has_function_privilege('anon', 'public.get_bay_board_secure(text,text)', 'execute') an, has_function_privilege('authenticated', 'public.get_bay_board_secure(text,text)', 'execute') au, has_function_privilege('service_role', 'public.get_bay_board_secure(text,text)', 'execute') sv"))[0];
       if (g.an || !g.au || !g.sv || /(^\{|,)=/.test(fn.acl)) fail("get_bay_board_secure execute grants are not anon/PUBLIC-denied and authenticated + service_role-granted");

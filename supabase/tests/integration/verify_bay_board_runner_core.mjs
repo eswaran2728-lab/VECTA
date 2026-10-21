@@ -125,7 +125,7 @@ async function main() {
   });
 
   const file = `${runner.MIGRATION.version}_${runner.MIGRATION.name}.sql`;
-  const sql = fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', file), 'utf8');
+  const sql = runner.canonicalSql(fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', file)));
   assert(runner.normalisedSha256(Buffer.from(sql)) === runner.MIGRATION.sha256, 'the frozen SHA-256 in the runner matches the migration file');
   assert(runner.statementAudit(sql) === null, 'every statement in the migration is on the runner allow-list');
   assert(runner.statementAudit(`${sql}\ngrant select on public.bay_board to anon;`) !== null, 'an added grant to anon is refused by the allow-list');
@@ -201,8 +201,23 @@ async function main() {
     assert(afterRow.j.flight_type === 'arrival' && afterRow.j.aircraft_search_completed === false && afterRow.j.search_overdue_flag === false && afterRow.j.ramp_agents_baggage === null && afterRow.j.cabin_check === null && afterRow.j.ops_group === null, 'the existing row takes only the column defaults (flight_type arrival, flags false, new text columns null)');
     await db.exec('ROLLBACK;');
   }
-  function sqlOfMigration() { return fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', runner.MIGRATION.version + '_' + runner.MIGRATION.name + '.sql'), 'utf8'); }
+  function sqlOfMigration() { return runner.canonicalSql(fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', runner.MIGRATION.version + '_' + runner.MIGRATION.name + '.sql'))); }
   assert(JSON.stringify(await state()) === JSON.stringify(before), 'the existing-row experiment changed nothing (rolled back)');
+
+  // ================= line-ending hardening: LF and CRLF checkouts store the SAME function body =================
+  {
+    const lfText = sqlOfMigration();
+    const crlfBuf = Buffer.from(lfText.replace(/\n/g, '\r\n'));
+    const fnHashes = async () => (await one("select md5(pg_get_functiondef('public.get_bay_board_secure(text,text)'::regprocedure)) raw, md5(replace(replace(pg_get_functiondef('public.get_bay_board_secure(text,text)'::regprocedure), chr(13)||chr(10), chr(10)), chr(13), chr(10))) norm"));
+    const applyIn = async (text) => { await db.exec('BEGIN;'); try { await db.exec(text); return await fnHashes(); } finally { await db.exec('ROLLBACK;'); } };
+    const fromLf = await applyIn(runner.verifyFrozenMigration(Buffer.from(lfText)));
+    const fromCrlf = await applyIn(runner.verifyFrozenMigration(crlfBuf));
+    const rawCrlf = await applyIn(crlfBuf.toString('utf8')); // the OLD behaviour: executing the raw checkout text
+    assert(fromLf.raw === fromLf.norm && fromCrlf.raw === fromCrlf.norm, 'a canonical LF execution stores an LF body (raw and normalized fingerprints agree)');
+    assert(fromLf.raw === fromCrlf.raw, 'LF and CRLF checkouts, executed through the runner, store the SAME function body (identical raw fingerprint)');
+    assert(rawCrlf.raw !== fromLf.raw && rawCrlf.norm === fromLf.norm, 'executing the raw CRLF text (the old behaviour) stored a different RAW body with the same NORMALIZED body -- the deviation seen on hosted staging');
+    assert(JSON.stringify(await state()) === JSON.stringify(before), 'the line-ending experiments changed nothing (rolled back)');
+  }
 
   // ---- gates refuse a wrong state, and refusal changes nothing
   const refuse = async (label, ctx, rx) => {
