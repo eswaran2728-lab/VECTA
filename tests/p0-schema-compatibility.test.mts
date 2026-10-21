@@ -17,7 +17,7 @@ test("report compatibility migration accepts current report payload fields and S
       create table report_sec014 (id uuid primary key);
       create table report_sec016 (id uuid primary key, ops_group text);
       create table report_sec018 (id uuid primary key);
-      create table report_sec029 (id uuid primary key);
+      create table report_sec029 (id uuid primary key, aircraft_type text constraint report_sec029_aircraft_type_check check (aircraft_type in ('A320','A321','A330')));
       create table report_sec033 (id uuid primary key);
       create table report_sec014_patrols (
         id uuid primary key,
@@ -131,7 +131,7 @@ const sec014Stub = `
   create table report_sec013 (id uuid primary key);
   create table report_sec014 (id uuid primary key);
   create table report_sec018 (id uuid primary key);
-  create table report_sec029 (id uuid primary key);
+  create table report_sec029 (id uuid primary key, aircraft_type text constraint report_sec029_aircraft_type_check check (aircraft_type in ('A320','A321','A330')));
   create table report_sec033 (id uuid primary key);
 `;
 const overtimeStub = (extra = "") => `
@@ -209,5 +209,28 @@ test("the P0 migrations contain no policy, grant, function, trigger, storage, de
   for (const [name, sql] of Object.entries(migrations)) {
     const code = sql.split(/\r?\n/).filter((l) => !l.trim().startsWith("--")).join("\n");
     assert.doesNotMatch(code, forbidden, name);
+  }
+});
+
+test("SEC029 'Others' aircraft type (with aircraft_type_other) is accepted after the migration; an unknown type is still rejected; a differently named old check is replaced", async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(`
+      create table report_sec013 (id uuid primary key);
+      create table report_sec014 (id uuid primary key);
+      create table report_sec018 (id uuid primary key);
+      create table report_sec033 (id uuid primary key);
+      create table report_sec029 (id uuid primary key default gen_random_uuid(), aircraft_type text constraint legacy_ac_types check (aircraft_type in ('A320','A321','A330')));
+      create table report_sec014_patrols (id uuid primary key default gen_random_uuid(), entry_no integer not null, location text not null);
+    `);
+    await assert.rejects(db.query("insert into report_sec029 (aircraft_type) values ('Others')"), /legacy_ac_types/);
+    await db.exec(migrations.reports);
+    await db.query("insert into report_sec029 (aircraft_type, aircraft_type_other, flight_destination) values ('Others', 'ATR72', 'PEN')");
+    await db.query("insert into report_sec029 (aircraft_type) values ('A321')");
+    await assert.rejects(db.query("insert into report_sec029 (aircraft_type) values ('Boeing')"), /report_sec029_aircraft_type_check/);
+    const n = await db.query<{ n: string }>("select count(*)::text n from pg_constraint where conrelid = 'report_sec029'::regclass and contype = 'c'");
+    assert.equal(n.rows[0].n, '1');
+  } finally {
+    await db.close();
   }
 });

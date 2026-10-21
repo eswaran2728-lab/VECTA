@@ -23,7 +23,7 @@ import { loadCurrentManifest } from "./lib/review-accounts.mjs";
 import { gitGates, environmentGates, backupGates, connectVerified, APPROVED_REF, FORBIDDEN_REF } from "./lib/run-gates.mjs";
 
 export const MIGRATIONS = [
-  { version: "20261118000001", name: "p0_report_schema_compatibility", sha256: "9c38f06d47071cea04cc80b9702761511709008670c91b90eef8defd6126e7df" },
+  { version: "20261118000001", name: "p0_report_schema_compatibility", sha256: "8950a2293b057f7c3cf61af6aae194ea450d62447be0baf5196e93d5cb2fe00b" },
   { version: "20261118000002", name: "p0_duty_overtime_compatibility", sha256: "40fd3d33a47b8241a374443787ea9682d34801c1aa21a6d6b181597c272e784d" },
   { version: "20261118000003", name: "p0_profile_approval_audit", sha256: "2a22a8f1b1f72bbe97d05b10c8e495c3aae9ab0c1b5ec2f74c887e9b43cc1357" },
 ];
@@ -47,7 +47,7 @@ export const ADDED_COLUMNS = {
   profiles: ["approved_at", "approved_by", "rejection_reason"],
 };
 /** Constraints whose definition changes (same name), and the one that is added. */
-export const CHANGED_CONSTRAINTS = ["overtime_requests:overtime_requests_category_check", "report_sec014_patrols:report_sec014_patrols_entry_no_check", "report_sec014_patrols:report_sec014_patrols_location_check"];
+export const CHANGED_CONSTRAINTS = ["overtime_requests:overtime_requests_category_check", "report_sec029:report_sec029_aircraft_type_check","report_sec014_patrols:report_sec014_patrols_entry_no_check", "report_sec014_patrols:report_sec014_patrols_location_check"];
 export const ADDED_CONSTRAINTS = ["profiles:profiles_approved_by_fkey"];
 export const ADDED_INDEXES = ["overtime_requests:overtime_requests_duty_category_uniq"];
 export const LEGACY_AUTHORITY_COLUMNS = ["org_id", "unified_role", "duty_post"];
@@ -71,7 +71,7 @@ export const OTHER_STATION = "aso-jhb";
 /** SEC013 is the Profiling ASO's only form (report_form_assignments); every other form is the standard ASO's. */
 export const FORM_ACTOR = { report_sec013: "profiling_aso" };
 /** Probes the dry run must complete (every role in the review manifest present). The run is refused if fewer or more were executed. */
-export const EXPECTED_PROBES = 19;
+export const EXPECTED_PROBES = 20;
 
 export const canonicalSql = (input) => String(Buffer.isBuffer(input) ? input.toString("utf8") : input).replace(/\r\n?/g, "\n");
 export const normalisedSha256 = (buf) => crypto.createHash("sha256").update(canonicalSql(buf)).digest("hex");
@@ -83,6 +83,7 @@ const ALLOWED_STATEMENTS = [
   new RegExp(`^alter table public\\.(${ALLOWED_TABLES}) add column if not exists ops_group text$`),
   /^alter table public\.report_sec029 add column if not exists flight_destination text, add column if not exists aircraft_type_other text$/,
   /^do ''$/,
+  /^alter table public\.report_sec029 add constraint report_sec029_aircraft_type_check check \(aircraft_type = any \(array\['a320'::text, 'a321'::text, 'a330'::text, 'others'::text\]\)\)$/,
   /^alter table public\.report_sec014_patrols add constraint report_sec014_patrols_entry_no_check check \(entry_no >= 1\)$/,
   /^alter table public\.report_sec014_patrols add constraint report_sec014_patrols_location_check check \(location = any \(array\['apron'::text, 'terminal'::text, 'premises'::text, 'aircraft'::text\]\)\)$/,
   /^alter table public\.overtime_requests add column if not exists actual_check_in timestamptz, add column if not exists actual_check_out timestamptz, add column if not exists scheduled_start timestamptz, add column if not exists scheduled_end timestamptz, add column if not exists calculated_at timestamptz not null default now\(\)$/,
@@ -92,7 +93,7 @@ const ALLOWED_STATEMENTS = [
 ];
 /** What a DO block body may never contain, and the only dynamic statements it may execute. */
 const DO_DENY = /\b(grant|revoke|truncate|delete\s+from|insert\s+into|update\s+\w+\s+set|create\s+(policy|function|trigger|table|index|schema|role)|drop\s+(table|policy|function|trigger|index|column|schema)|alter\s+(policy|role|function|default)|storage\.|org_id|unified_role|duty_post)\b/i;
-const DO_EXECUTE_OK = /^execute format\('alter table public\.(report_sec014_patrols|overtime_requests) drop constraint %I', c\.conname\)$/i;
+const DO_EXECUTE_OK = /^execute format\('alter table public\.(report_sec014_patrols|overtime_requests|report_sec029) drop constraint %I', c\.conname\)$/i;
 
 /** Returns the first statement or DO body of a migration that is not on the allow-list, or null. */
 export function statementAudit(sql) {
@@ -220,6 +221,7 @@ export async function verifyPreState(q, ctx) {
   if (!/entry_no <= 15/.test(cons.get("report_sec014_patrols:report_sec014_patrols_entry_no_check") ?? "")) fail("the SEC014 entry cap is not in its observed pre-state form");
   if (/Apron/.test(cons.get("report_sec014_patrols:report_sec014_patrols_location_check") ?? "x")) fail("the SEC014 location check already allows Apron");
   if (/early_arrival/.test(cons.get("overtime_requests:overtime_requests_category_check") ?? "x")) fail("the overtime category check already allows early_arrival");
+  if (/Others/.test(cons.get("report_sec029:report_sec029_aircraft_type_check") ?? "Others")) fail("the SEC029 aircraft type check is not in its observed pre-state form");
   if (cons.has("profiles:profiles_approved_by_fkey")) fail("profiles_approved_by_fkey already exists");
   if ((await idxMap(q)).has(ADDED_INDEXES[0])) fail("the overtime unique index already exists");
   const dup = (await q("select count(*)::int n from (select 1 from public.overtime_requests group by linked_duty_id, category having count(*) > 1) d"))[0].n;
@@ -240,6 +242,7 @@ export async function verifyApplied(q, ctx = {}) {
   if (!/Apron/.test(cons.get("report_sec014_patrols:report_sec014_patrols_location_check") ?? "")) fail("the SEC014 location check does not allow Apron");
   const cat = cons.get("overtime_requests:overtime_requests_category_check") ?? "";
   if (!/early_arrival/.test(cat) || !/late_departure/.test(cat)) fail("the overtime category check does not allow early_arrival and late_departure");
+  if (!/Others/.test(cons.get("report_sec029:report_sec029_aircraft_type_check") ?? "")) fail("the SEC029 aircraft type check does not allow Others");
   if (!cons.has(ADDED_CONSTRAINTS[0])) fail("profiles_approved_by_fkey is missing");
   const idx = await q("select i.indisunique, i.indpred is null plain, i.indnatts from pg_index i where i.indexrelid = to_regclass('public.overtime_requests_duty_category_uniq')");
   if (idx.length !== 1 || !idx[0].indisunique || !idx[0].plain || idx[0].indnatts !== 2) fail("overtime_requests_duty_category_uniq is not a plain two-column unique index");
@@ -352,7 +355,8 @@ export async function execute(client, ctx) {
           case "report_sec014": return { ...who, ...person, date_time_in: now.toISOString(), remark: "p0 probe", ops_group: null };
           case "report_sec018": return { ...who, staff_name: person.staff_name, date_time: now.toISOString(), ops_group: null };
           case "report_sec033": return { ...who, ...person, report_date: today, report_time: "10:00", ops_group: null };
-          case "report_sec029": return { ...who, ...person, supervising_officer_name: "SO", supervising_officer_id: "SO1", assisted_by_name: "AB", assisted_by_id: "AB1", aircraft_type: "A320", flight_no: "AK703", aircraft_registration: "9M-P0", std: "10:00", ops_group: null, aircraft_type_other: "Sample", flight_destination: "KUL" };
+          // the application's exact column set (lib/avsec/reports/actions.ts submitSec029), with aircraft type "Others" + its free text
+          case "report_sec029": return { ...who, ...person, status: "submitted", ops_group: null, supervising_officer_name: "SO", supervising_officer_id: "SO1", assisted_by_name: "AB", assisted_by_id: "AB1", aircraft_type: "Others", aircraft_type_other: "ATR72", flight_no: "AK703", flight_destination: "KUL", aircraft_registration: "9M-P0", std: "10:00", parking_bay: "B1", time_commence: "10:05", time_completed: "10:20", pic_informed: "YES", declaration: "I CERTIFY THAT THE ABOVE CHECKS HAVE BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.", d_remark: null, acknowledgement: true };
           default: return fail("unknown probe table");
         }
       };
@@ -368,6 +372,16 @@ export async function execute(client, ctx) {
         if (r !== "ok") fail(`${label} submission failed for ${actor}: ${r}`);
         probe(`${actor}: ${label} submission (the application's payload incl. ops_group null${table === "report_sec029" ? ", aircraft_type_other and flight_destination" : ""}) succeeds`);
       }
+      const aircraft = await asUser(WRITER, async () => {
+        const ok = [];
+        for (const t of ["A321", "Others"]) { await ins("report_sec029", { ...reports.report_sec029, aircraft_type: t }); ok.push(t); }
+        await client.query("SAVEPOINT bad");
+        let bad = "ALLOWED"; try { await ins("report_sec029", { ...reports.report_sec029, aircraft_type: "Boeing" }); } catch (e) { bad = e.code; }
+        await client.query("ROLLBACK TO SAVEPOINT bad");
+        return `${ok.join(",")}|${bad}`;
+      });
+      if (aircraft !== "A321,Others|23514") fail(`SEC029 aircraft types behaved unexpectedly (${aircraft})`);
+      probe(`${WRITER}: SEC029 accepts aircraft type Others (with aircraft_type_other) and still A321, and still refuses an unknown type (23514)`);
       const patrol = await asUser(WRITER, async () => {
         const rid = await ins("report_sec014", reports.report_sec014);
         const out = [];

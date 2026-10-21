@@ -50,3 +50,39 @@ begin
     raise exception 'report_sec014_patrols must carry exactly one CHECK on entry_no and one on location';
   end if;
 end $$;
+
+-- AA/SEC/F/029 Rev.03 adds the "Others" aircraft type (free text in aircraft_type_other).
+-- The original schema restricted aircraft_type to A320/A321/A330, so the current
+-- submit action (aircraft_type 'Others') would be refused; replace that CHECK
+-- whatever its name.
+do $$
+declare
+  c record;
+begin
+  for c in
+    select k.conname
+    from pg_constraint k
+    join pg_attribute a on a.attrelid = k.conrelid and a.attnum = k.conkey[1]
+    where k.conrelid = 'public.report_sec029'::regclass
+      and k.contype = 'c'
+      and array_length(k.conkey, 1) = 1
+      and a.attname = 'aircraft_type'
+  loop
+    execute format('alter table public.report_sec029 drop constraint %I', c.conname);
+  end loop;
+end $$;
+
+alter table public.report_sec029
+  add constraint report_sec029_aircraft_type_check
+  check (aircraft_type = any (array['A320'::text, 'A321'::text, 'A330'::text, 'Others'::text]));
+
+do $$
+begin
+  if (select count(*) from pg_constraint k
+        join pg_attribute a on a.attrelid = k.conrelid and a.attnum = k.conkey[1]
+       where k.conrelid = 'public.report_sec029'::regclass
+         and k.contype = 'c' and array_length(k.conkey, 1) = 1
+         and a.attname = 'aircraft_type') <> 1 then
+    raise exception 'report_sec029 must carry exactly one CHECK on aircraft_type';
+  end if;
+end $$;

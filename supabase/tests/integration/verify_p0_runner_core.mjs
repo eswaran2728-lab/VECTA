@@ -108,6 +108,8 @@ async function main() {
     alter table public.report_sec014_patrols add constraint report_sec014_patrols_location_check check (location = any (array['Aircraft'::text, 'Terminal'::text, 'Premises'::text]));
     alter table public.overtime_requests drop constraint if exists overtime_requests_category_check;
     alter table public.overtime_requests add constraint overtime_requests_category_check check (category = any (array['flight_delay'::text, 'manpower_shortage'::text, 'event'::text, 'off_day_work'::text, 'adhoc'::text]));
+    do $$ declare c record; begin for c in select k.conname from pg_constraint k join pg_attribute a on a.attrelid=k.conrelid and a.attnum=k.conkey[1] where k.conrelid='public.report_sec029'::regclass and k.contype='c' and array_length(k.conkey,1)=1 and a.attname='aircraft_type' loop execute format('alter table public.report_sec029 drop constraint %I', c.conname); end loop; end $$;
+    alter table public.report_sec029 add constraint report_sec029_aircraft_type_check check (aircraft_type = any (array['A320'::text, 'A321'::text, 'A330'::text]));
     alter table public.profiles drop constraint if exists profiles_approved_by_fkey;
     alter table public.profiles drop column if exists approved_by, drop column if exists approved_at, drop column if exists rejection_reason;
   `);
