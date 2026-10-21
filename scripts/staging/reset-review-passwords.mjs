@@ -26,7 +26,7 @@ const REPO_PATH = path.resolve(import.meta.dirname, "../..");
 
 async function main() {
   if (!url || !/^https:\/\/[a-z0-9.-]+\.vercel\.app\/?$/.test(url)) throw new Error("--url must be the https Preview URL");
-  const git = gitGates({ expectedBase, expectedRepoPath: REPO_PATH });
+  const git = gitGates({ expectedBase, expectedRepoPath: REPO_PATH, expectedBranch: "ui/stitch-mobile-redesign" });
   console.log(`GATE ok: HEAD ${git.head.slice(0, 12)}, clean tree, origin ${git.remote}`);
   environmentGates();
   const ctx = resolveStagingAdminContext();
