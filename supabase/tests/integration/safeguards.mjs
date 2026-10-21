@@ -44,6 +44,7 @@ export const ALLOWED_DISPOSABLE_DATABASES = new Set([
   'vecta_baybay_run',
   'vecta_baybay_runner_run',
   'vecta_p0_runner_run',
+  'vecta_hardening_runner_run',
 ]);
 
 export function assertDisposableLocalTarget(config, ...dbNames) {
