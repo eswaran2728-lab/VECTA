@@ -176,7 +176,9 @@ test("closure: AVSEC requireProfile and user-management guards use the canonical
 test("closure: the Super Admin portal links to the readiness route and every action goes through isSuperAdmin()", () => {
   assert.match(read("app/super-admin/page.tsx"), /href="\/super-admin\/readiness"/);
   const src = read("lib/super-admin/actions.ts");
-  assert.equal((src.match(/await isSuperAdmin\(\)/g) ?? []).length, 3);
+  // the only action left is the read-only hierarchy view (create / status actions were removed with the retired organizations table)
+  assert.equal((src.match(/await isSuperAdmin\(\)/g) ?? []).length, 1);
+  assert.equal((src.match(/export async function /g) ?? []).length, 2, "isSuperAdmin and getOrganizationHierarchy are the only exports");
 });
 
 // `unified_role` no longer exists on the staging baseline and must not decide or
