@@ -83,7 +83,7 @@ export default async function HomePage() {
             <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-destructive">
               ⚠ {overdue.length} aircraft overdue for search (SEC 029)
             </h2>
-            <ul className="space-y-1 text-xs mt-2 text-destructive-foreground/90 font-mono">
+            <ul className="space-y-1 text-xs mt-2 text-foreground font-mono">
               {overdue.map((a) => (
                 <li key={a.id}>
                   Reg <span className="font-bold text-foreground">{a.reg_no}</span> · Bay {a.bay} ·{" "}
@@ -91,7 +91,7 @@ export default async function HomePage() {
                 </li>
               ))}
             </ul>
-            <Link href="/avsec/bay-board" className="btn-quiet mt-2 inline-block">
+            <Link href="/avsec/bay-board" className="btn-quiet mt-2 inline-block text-foreground underline underline-offset-2">
               Open Bay Board →
             </Link>
           </section>

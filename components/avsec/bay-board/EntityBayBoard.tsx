@@ -68,7 +68,7 @@ export async function EntityBayBoard({ hubCode, stationCode }: { hubCode: string
         </p>
       )}
       {board.status === "ok" && board.rows.length > 0 && (
-        <div className="card overflow-x-auto p-4">
+        <div className="card overflow-x-auto p-4" role="region" aria-label="Aircraft on ground" tabIndex={0}>
           <table className="w-full min-w-[34rem] text-left text-xs">
             <thead className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
               <tr>

@@ -284,7 +284,7 @@ export default async function DashboardPage({
             <h2 className="font-bold text-destructive mb-2 font-mono text-xs uppercase tracking-wider">
               ⚠ Bay Board — {overdue.length} aircraft overdue for SEC 029 search
             </h2>
-            <ul className="space-y-1 text-xs text-destructive-foreground/90 font-mono">
+            <ul className="space-y-1 text-xs text-foreground font-mono">
               {overdue.map((a) => (
                 <li key={a.id}>
                   {a.station} · Reg <span className="font-bold text-foreground">{a.reg_no}</span> · Bay {a.bay} ·{" "}

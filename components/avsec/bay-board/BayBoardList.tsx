@@ -69,7 +69,7 @@ export function BayBoardList({
                     {e.reg_no}
                   </span>
                   {e.flight && (
-                    <span className="t-mono text-xs font-bold text-primary px-2 py-0.5 rounded bg-primary/10 border border-primary/20">
+                    <span className="t-mono text-xs font-bold text-foreground px-2 py-0.5 rounded bg-primary/10 border border-primary/20">
                       {e.flight}
                     </span>
                   )}
