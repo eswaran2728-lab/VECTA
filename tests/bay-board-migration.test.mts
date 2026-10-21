@@ -12,8 +12,13 @@ const runner = fs.readFileSync("scripts/staging/apply-bay-board-migration.mjs", 
 const gates = fs.readFileSync("scripts/staging/lib/run-gates.mjs", "utf8");
 const files = fs.readdirSync(DIR).filter((f) => /^\d{14}_.*\.sql$/.test(f)).sort();
 
-test("the Bay Board migration is the only one after the last applied staging migration and its version is unique", () => {
-  assert.deepEqual(files.filter((f) => f.slice(0, 14) > "20261116000001"), [FILE]);
+test("the applied Bay Board migration keeps its unique version ahead of the three pending P0 repairs", () => {
+  assert.deepEqual(files.filter((f) => f.slice(0, 14) > "20261116000001"), [
+    FILE,
+    "20261118000001_p0_report_schema_compatibility.sql",
+    "20261118000002_p0_duty_overtime_compatibility.sql",
+    "20261118000003_p0_profile_approval_audit.sql",
+  ]);
   assert.equal(files.filter((f) => f.startsWith("20261117000001")).length, 1);
 });
 
