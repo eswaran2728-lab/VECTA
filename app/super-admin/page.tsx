@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/lib/avsec/profile-actions";
-import { getOrganizations, isSuperAdmin } from "@/lib/super-admin/actions";
+import { getOrganizationHierarchy, isSuperAdmin } from "@/lib/super-admin/actions";
 import { UnifiedHeader } from "@/components/layout/UnifiedHeader";
 import { OrgManager } from "./org-manager";
 
@@ -25,7 +25,7 @@ export default async function SuperAdminPage() {
   ]);
 
   const name = avsecProfile?.name || icmsProfile?.name || user.email || "Super Admin";
-  const orgs = await getOrganizations();
+  const hierarchy = await getOrganizationHierarchy();
 
   return (
     <main className="min-h-screen bg-background pb-20">
@@ -42,7 +42,7 @@ export default async function SuperAdminPage() {
             Release Readiness
           </Link>
         </div>
-        <OrgManager initialOrgs={orgs} userName={name} />
+        <OrgManager hierarchy={hierarchy} userName={name} />
       </div>
     </main>
   );

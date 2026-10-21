@@ -1,18 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasActiveSuperAdminRole } from "./authority";
-
-export interface OrganizationRow {
-  id: string;
-  name: string;
-  code: string | null;
-  status: "active" | "inactive" | "suspended";
-  created_by: string | null;
-  created_at: string;
-}
+import { buildHierarchy, type AocNode } from "./hierarchy";
 
 // Canonical authority only (active Phase 3 super_admin assignment) -- see
 // lib/super-admin/authority.ts. Legacy profile/user role columns are never read.
@@ -20,77 +10,33 @@ export async function isSuperAdmin(): Promise<boolean> {
   return hasActiveSuperAdminRole();
 }
 
-export async function getOrganizations(): Promise<OrganizationRow[]> {
+/**
+ * Read-only view of the canonical organizational hierarchy (AOC -> operating entities, departments, hubs). The retired multi-tenant
+ * public.organizations table is neither read nor written; creating or changing an AOC / operating entity is not activated (see
+ * lib/super-admin/hierarchy.ts). Returns [] for anyone who is not an active Super Admin -- the check precedes any service-key read.
+ */
+export async function getOrganizationHierarchy(): Promise<AocNode[]> {
   const isSuper = await isSuperAdmin();
   if (!isSuper) return [];
 
-  const adminClient = createAdminClient();
-  const { data, error } = await adminClient
-    .from("organizations")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("Error fetching organizations:", error);
+  const admin = createAdminClient();
+  const [aocs, entities, departments, hubs, stations] = await Promise.all([
+    admin.from("aocs").select("id, code, name, is_active"),
+    admin.from("operating_entities").select("id, aoc_id, code, name, flight_prefix"),
+    admin.from("departments").select("id, aoc_id, code, name"),
+    admin.from("hubs").select("id, aoc_id, code, name"),
+    admin.from("org_stations").select("id, hub_id"),
+  ]);
+  const failed = [aocs, entities, departments, hubs, stations].find((r) => r.error);
+  if (failed?.error) {
+    console.error("[super-admin] hierarchy read failed:", failed.error.code ?? "unknown");
     return [];
   }
-  return (data as OrganizationRow[]) ?? [];
-}
-
-export async function createOrganization(formData: FormData) {
-  const isSuper = await isSuperAdmin();
-  if (!isSuper) {
-    return { error: "Unauthorized: Super Admin access required." };
-  }
-
-  const name = String(formData.get("name") || "").trim();
-  const code = String(formData.get("code") || "").trim().toUpperCase();
-
-  if (!name) {
-    return { error: "Organization name is required." };
-  }
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const adminClient = createAdminClient();
-  const { data, error } = await adminClient
-    .from("organizations")
-    .insert({
-      name,
-      code: code || null,
-      status: "active",
-      created_by: user?.id ?? null,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    return { error: error.message };
-  }
-
-  revalidatePath("/super-admin");
-  return { success: true, organization: data as OrganizationRow };
-}
-
-export async function updateOrganizationStatus(orgId: string, status: "active" | "inactive" | "suspended") {
-  const isSuper = await isSuperAdmin();
-  if (!isSuper) {
-    return { error: "Unauthorized: Super Admin access required." };
-  }
-
-  const adminClient = createAdminClient();
-  const { error } = await adminClient
-    .from("organizations")
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq("id", orgId);
-
-  if (error) {
-    return { error: error.message };
-  }
-
-  revalidatePath("/super-admin");
-  return { success: true };
+  return buildHierarchy({
+    aocs: aocs.data ?? [],
+    entities: entities.data ?? [],
+    departments: departments.data ?? [],
+    hubs: hubs.data ?? [],
+    stations: stations.data ?? [],
+  });
 }
