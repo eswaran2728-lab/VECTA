@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Applies ONLY the frozen forward migration 20261117000001_bay_board_sec016_reconciliation to the approved staging project. PREPARED, NOT EXECUTED.
+// Applies ONLY the frozen forward migration 20261117000001_bay_board_sec016_reconciliation (Bay Board + SEC016 reconciliation incl. the Rev.03 columns and
+// the sixteen relaxed legacy columns) to the approved staging project. PREPARED, NOT EXECUTED.
 // A complete transactional DRY RUN (apply, verify, real-role probes, ROLLBACK, then proof that staging is unchanged) always comes first; only with
 // --live and the exact phrase is the real application committed (migration + history row atomically). Prints names and counts only.
 //
@@ -19,8 +20,9 @@ import { pathToFileURL } from "node:url";
 import { decryptBackupPayload, encryptBackupPayload } from "./lib/backup-crypto.mjs";
 import { loadCurrentManifest } from "./lib/review-accounts.mjs";
 import { gitGates, environmentGates, backupGates, connectVerified, APPROVED_REF, FORBIDDEN_REF } from "./lib/run-gates.mjs";
+import * as F from "./lib/sec016-fixtures.mjs";
 
-export const MIGRATION = { version: "20261117000001", name: "bay_board_sec016_reconciliation", sha256: "a740c9780274a67573570a5834af3f70459d20db0a4abc7eb477c25cb388c725" };
+export const MIGRATION = { version: "20261117000001", name: "bay_board_sec016_reconciliation", sha256: "bfdb30cf474bc6ba65732786fb9ad1a2692fc9e386afa1f14da5e76fe643d27b" };
 export const RUNNER_BRANCH = "ui/stitch-mobile-redesign";
 /** The certified baseline (dashboard/role-workspaces-adjustment); HEAD must descend from it. */
 export const CERTIFIED_BASE = "ac91dd59a6ab066a48553084d2dc8b2942e8deb9";
@@ -38,12 +40,23 @@ export const PRE_STATE = {
   sec016Columns: 61,
   sec016ColumnsMd5: "9658cb2c7021205fb3a190e6e48af242",
   indexesMd5: "d6d86e894c8d53720294e5e16d2293a7", // pg_indexes of bay_board + report_sec016
+  // Added after the hosted dry run of 2026-10-21 exposed the Rev.03 drift; frozen from a read-only observation of the same project (names/definitions only).
+  constraintsMd5: "82e4e69f661beb37625dc45c3bfdaaa0", // non-NOT-NULL constraints of bay_board + report_sec016
+  policiesMd5: "8e9b470bc98c958e1bdfc8748a8c5f66", // pg_policies of bay_board + report_sec016
+  tableGrantsMd5: "71ec0d07d850ad7daecf70ea3903d661", // role_table_grants of bay_board + report_sec016
+  triggersMd5: "317413b417494bd314e4a03e3e675edf", // non-internal triggers of bay_board + report_sec016
+  legacyNotNull: F.SEC016_LEGACY_NULLABLE.slice().sort().join(","), // the sixteen legacy columns that are still NOT NULL on hosted
+  absentColumns: Object.keys(F.SEC016_NEW_COLUMNS).sort().join(","), // the eight report_sec016 columns hosted lacks
 };
 
+/** Probes the dry run must complete on the hosted database (every role in the review manifest present). The run is refused if fewer or more were executed. */
+export const EXPECTED_PROBES = 34;
+export const DENIED_LABELS = ["aso", "aso-kul", "sso", "so", "ghod", "global_reporting_controller", "airasia_management", "super_admin", "compliance", "caterlink_management", "caterlink-driver", "caterlink-vendor", "neg-pending-profile", "neg-revoked-assignment", "neg-expired-assignment", "neg-future-assignment"];
+
 const NEW_BAY_COLUMNS = ["flight", "is_manual", "arrival_report_id", "departure_report_id"];
-const NEW_SEC016_COLUMNS = ["flight_type", "aircraft_search_completed", "search_overdue_flag", "search_remark"];
+const NEW_SEC016_COLUMNS = Object.keys(F.SEC016_NEW_COLUMNS);
 const AUTHORIZED = ["operation_manager", "main_enforcement", "maa_boss", "maa_admin", "aax_boss", "aax_admin"];
-const DENIED = ["aso", "aso-kul", "sso", "so", "ghod", "global_reporting_controller", "airasia_management", "super_admin", "compliance", "caterlink_management", "caterlink-driver", "caterlink-vendor", "neg-pending-profile", "neg-revoked-assignment", "neg-expired-assignment", "neg-future-assignment"];
+const DENIED = DENIED_LABELS;
 const WRITER = "aso";
 const RPC_COLUMNS = "id,station,reg_no,aircraft_type,bay,flight,on_ground_since";
 
@@ -52,6 +65,10 @@ export const normalisedSha256 = (buf) => crypto.createHash("sha256").update(buf.
 /** Statements the migration may contain (comments and $function$ bodies removed). Anything else aborts the run. */
 const ALLOWED_STATEMENTS = [
   /^alter table public\.report_sec016\s+add column if not exists flight_type text not null default 'arrival' check \(flight_type in \('arrival', 'departure'\)\),\s+add column if not exists aircraft_search_completed boolean not null default false,\s+add column if not exists search_overdue_flag boolean not null default false,\s+add column if not exists search_remark text$/i,
+  // 20260914000001 (Rev.03 direction fields), the historical ops_group the application still writes, and the sixteen relaxed legacy columns (exactly these, in the canonical order)
+  /^alter table public\.report_sec016\s+add column if not exists ramp_agents_baggage text,\s+add column if not exists ramp_agents_cargo text,\s+add column if not exists cabin_check text$/i,
+  /^alter table public\.report_sec016 add column if not exists ops_group text$/i,
+  new RegExp(`^alter table public\\.report_sec016\\s+${F.SEC016_LEGACY_NULLABLE.map((c) => `alter column ${c} drop not null`).join(",\\s+")}$`, "i"),
   /^create index if not exists idx_report_sec016_flight_type on public\.report_sec016 \(flight_type\)$/i,
   /^create index if not exists idx_report_sec016_station_reg on public\.report_sec016 \(station, reg_no\)$/i,
   /^alter table public\.bay_board drop constraint if exists bay_board_cleared_by_report_id_fkey$/i,
@@ -130,6 +147,10 @@ async function verifyPreState(q, ctx) {
   const fk = await q("select pg_get_constraintdef(oid) d from pg_constraint where conname = 'bay_board_cleared_by_report_id_fkey' and conrelid = 'public.bay_board'::regclass");
   if (fk.length !== 1 || !/REFERENCES report_sec029\(id\)|REFERENCES public\.report_sec029\(id\)/.test(fk[0].d)) fail("the legacy bay_board -> report_sec029 foreign key is not present as observed");
   if ((await q("select count(*)::int n from public.report_sec016"))[0].n !== 0) fail("report_sec016 holds rows: the canonical flight_type default ('arrival') would be assigned to existing data; an owner decision is required");
+  if ((await q("select count(*)::int n from public.bay_board"))[0].n !== 0) fail("bay_board holds rows: the reviewed pre-state has none");
+  // the sixteen legacy columns are exactly the NOT NULL ones the migration relaxes (and no other legacy column is in a different state)
+  const stillNotNull = (await q("select column_name from information_schema.columns where table_schema='public' and table_name='report_sec016' and is_nullable='NO' and column_name = any($1) order by column_name", [F.SEC016_LEGACY_NULLABLE])).map((r) => r.column_name);
+  if (stillNotNull.join(",") !== F.SEC016_LEGACY_NULLABLE.slice().sort().join(",")) fail(`the sixteen legacy report_sec016 columns are not all NOT NULL as observed (${stillNotNull.length} of 16)`);
   if ((await q("select relrowsecurity r from pg_class where oid = 'public.bay_board'::regclass"))[0].r !== true) fail("row level security is not enabled on bay_board");
   if (ctx.hashes) {
     const h = ctx.hashes;
@@ -139,6 +160,12 @@ async function verifyPreState(q, ctx) {
     if ((await md("select proacl::text h from pg_proc where oid = 'public.get_bay_board_secure(text,text)'::regprocedure")) !== h.functionAcl) fail("get_bay_board_secure ACL differs from the observed pre-state");
     if ((await md(colMd5("bay_board"))) !== h.bayBoardColumnsMd5) fail("bay_board columns differ from the observed pre-state");
     if ((await md(colMd5("report_sec016"))) !== h.sec016ColumnsMd5 || sec.length !== h.sec016Columns) fail("report_sec016 columns differ from the observed pre-state");
+    if (h.legacyNotNull !== F.SEC016_LEGACY_NULLABLE.slice().sort().join(",") || h.absentColumns !== NEW_SEC016_COLUMNS.slice().sort().join(",")) fail("the frozen legacy / absent column lists differ from the migration's definitions");
+    const T = "'public.bay_board'::regclass,'public.report_sec016'::regclass";
+    if ((await md(`select md5(string_agg(c.relname||':'||k.conname||':'||pg_get_constraintdef(k.oid), ',' order by c.relname,k.conname)) h from pg_constraint k join pg_class c on c.oid=k.conrelid where c.oid in (${T}) and k.contype <> 'n'`)) !== h.constraintsMd5) fail("bay_board / report_sec016 constraints differ from the observed pre-state");
+    if ((await md("select md5(string_agg(tablename||':'||policyname||':'||cmd||':'||array_to_string(roles,',')||':'||coalesce(qual,'')||':'||coalesce(with_check,''), ',' order by tablename,policyname)) h from pg_policies where schemaname='public' and tablename in ('bay_board','report_sec016')")) !== h.policiesMd5) fail("bay_board / report_sec016 policies differ from the observed pre-state");
+    if ((await md("select md5(string_agg(table_name||':'||grantee||':'||privilege_type, ',' order by table_name,grantee,privilege_type)) h from information_schema.role_table_grants where table_schema='public' and table_name in ('bay_board','report_sec016')")) !== h.tableGrantsMd5) fail("bay_board / report_sec016 table grants differ from the observed pre-state");
+    if ((await md(`select md5(string_agg(c.relname||':'||t.tgname||':'||pg_get_triggerdef(t.oid), ',' order by c.relname,t.tgname)) h from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.oid in (${T}) and not t.tgisinternal`)) !== h.triggersMd5) fail("bay_board / report_sec016 triggers differ from the observed pre-state");
     if ((await md("select md5(string_agg(indexname||indexdef, ',' order by indexname)) h from pg_indexes where schemaname='public' and tablename in ('bay_board','report_sec016')")) !== h.indexesMd5) fail("bay_board / report_sec016 indexes differ from the observed pre-state");
   }
 }
@@ -181,25 +208,46 @@ export async function execute(client, ctx) {
     await client.query("BEGIN");
     await client.query("SET LOCAL lock_timeout = '15s'");
     await client.query("SET LOCAL statement_timeout = '120s'");
+    const colShape = (t) => q("select column_name, data_type, is_nullable, coalesce(column_default,'') as d from information_schema.columns where table_schema='public' and table_name=$1 order by column_name", [t]);
+    const trgMd5 = async () => (await q("select md5(string_agg(c.relname||':'||t.tgname||':'||pg_get_triggerdef(t.oid), ',' order by c.relname,t.tgname)) h from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.oid in ('public.bay_board'::regclass,'public.report_sec016'::regclass) and not t.tgisinternal"))[0].h;
+    const secBefore = await colShape("report_sec016");
+    const bayBefore = await colShape("bay_board");
+    const triggersBefore = await trgMd5();
     try {
       for (const f of files) {
         await client.query(f.sql);
         await client.query("insert into supabase_migrations.schema_migrations (version, name, statements) values ($1, $2, $3)", [f.version, f.name, [f.sql]]);
       }
-      if ((await q("select count(*)::int n from supabase_migrations.schema_migrations"))[0].n !== ctx.preCount + files.length) fail("unexpected history count");
+      // ---- history: exactly one new row for exactly this version
+      const hist = (await q("select count(*)::int n, (count(*) filter (where version = $1))::int m, max(version) v from supabase_migrations.schema_migrations", [files[0].version]))[0];
+      if (hist.n !== ctx.preCount + files.length || hist.m !== 1 || hist.v !== files[files.length - 1].version) fail(`migration history is not ${ctx.preCount + files.length} with ${files[0].version} recorded exactly once (${hist.n} / ${hist.m} / ${hist.v})`);
+      log(`migration history is ${hist.n} with ${files[0].version} recorded exactly once`);
 
-      // ---- structure equals the canonical definition
-      const bay = await cols(q, "bay_board");
-      const sec = await cols(q, "report_sec016");
-      if (!NEW_BAY_COLUMNS.every((c) => bay.includes(c)) || !NEW_SEC016_COLUMNS.every((c) => sec.includes(c))) fail("a column is missing after the migration");
-      const shape = await q("select table_name, column_name, data_type, is_nullable, column_default from information_schema.columns where table_schema='public' and ((table_name='bay_board' and column_name = any($1)) or (table_name='report_sec016' and column_name = any($2)))", [NEW_BAY_COLUMNS, NEW_SEC016_COLUMNS]);
-      const c = (n) => shape.find((x) => x.column_name === n);
-      if (c("flight").data_type !== "text" || c("flight").is_nullable !== "YES" || c("is_manual").data_type !== "boolean" || c("is_manual").is_nullable !== "NO" || !/false/.test(c("is_manual").column_default)
-        || c("arrival_report_id").data_type !== "uuid" || c("departure_report_id").data_type !== "uuid" || c("flight_type").is_nullable !== "NO" || !/arrival/.test(c("flight_type").column_default)
-        || c("aircraft_search_completed").data_type !== "boolean" || c("search_overdue_flag").data_type !== "boolean" || c("search_remark").data_type !== "text") fail("a new column does not match its canonical definition");
+      // ---- structure equals the canonical definition, and NOTHING ELSE changed in the two tables
+      const secAfter = await colShape("report_sec016");
+      const bayAfter = await colShape("bay_board");
+      const diffCols = (b, a) => {
+        const bm = new Map(b.map((x) => [x.column_name, x])); const am = new Map(a.map((x) => [x.column_name, x]));
+        const changed = [...am.keys()].filter((k) => bm.has(k) && JSON.stringify(bm.get(k)) !== JSON.stringify(am.get(k))).sort();
+        return {
+          added: [...am.keys()].filter((k) => !bm.has(k)).sort(), removed: [...bm.keys()].filter((k) => !am.has(k)).sort(), changed,
+          onlyNullability: changed.every((k) => bm.get(k).data_type === am.get(k).data_type && bm.get(k).d === am.get(k).d && bm.get(k).is_nullable === "NO" && am.get(k).is_nullable === "YES"),
+        };
+      };
+      const sd = diffCols(secBefore, secAfter); const bd = diffCols(bayBefore, bayAfter);
+      if (sd.added.join() !== Object.keys(F.SEC016_NEW_COLUMNS).sort().join() || sd.removed.length || sd.changed.join() !== F.SEC016_LEGACY_NULLABLE.slice().sort().join() || !sd.onlyNullability) fail(`report_sec016 changed other than designed (added ${sd.added.join()}; removed ${sd.removed.join()}; changed ${sd.changed.length})`);
+      if (bd.added.join() !== Object.keys(F.BAY_NEW_COLUMNS).sort().join() || bd.removed.length || bd.changed.length) fail(`bay_board changed other than designed (added ${bd.added.join()}; removed ${bd.removed.join()}; changed ${bd.changed.join()})`);
+      log("no unrelated column change: report_sec016 gained exactly eight columns and relaxed exactly the sixteen legacy NOT NULL constraints (nothing else changed); bay_board gained exactly four columns");
+      const defOk = (rows, defs, t) => { for (const [col, d] of Object.entries(defs)) { const r = rows.find((x) => x.column_name === col); if (!r || r.data_type !== d.data_type || r.is_nullable !== d.nullable || (d.default ? !d.default.test(r.d) : r.d !== "")) fail(`${t}.${col} does not match its canonical definition`); } };
+      defOk(secAfter, F.SEC016_NEW_COLUMNS, "report_sec016"); defOk(bayAfter, F.BAY_NEW_COLUMNS, "bay_board");
+      if (secAfter.some((x) => x.column_name === "org_id") || bayAfter.some((x) => x.column_name === "org_id")) fail("an org_id column appeared");
+      if ((await q("select count(*)::int n from information_schema.columns where table_schema='public' and table_name='report_sec016' and is_nullable='NO' and column_name = any($1)", [F.SEC016_LEGACY_NULLABLE]))[0].n !== 0) fail("a legacy report_sec016 column is still NOT NULL");
+      if ((await q("select count(*)::int n from pg_constraint where conrelid = 'public.report_sec016'::regclass and contype = 'c' and pg_get_constraintdef(oid) ~ 'flight_type'"))[0].n !== 1) fail("the flight_type check constraint is not present exactly once");
+      log("all eight report_sec016 columns (flight_type, aircraft_search_completed, search_overdue_flag, search_remark, ramp_agents_baggage, ramp_agents_cargo, cabin_check, ops_group) and the four bay_board columns match their canonical definitions; all sixteen legacy columns are nullable");
       if ((await q("select count(*)::int n from pg_constraint where conname = 'bay_board_cleared_by_report_id_fkey' and conrelid = 'public.bay_board'::regclass"))[0].n !== 0) fail("the legacy FK is still present");
       if ((await q("select count(*)::int n from pg_constraint where conrelid = 'public.bay_board'::regclass and contype = 'f' and confrelid = 'public.report_sec016'::regclass"))[0].n !== 2) fail("arrival/departure report FKs are not exactly two");
       if ((await q("select count(*)::int n from pg_indexes where schemaname='public' and indexname in ('idx_report_sec016_flight_type','idx_report_sec016_station_reg','idx_bay_board_match','idx_bay_board_arrival_report')"))[0].n !== 4) fail("canonical indexes missing");
+      if ((await trgMd5()) !== triggersBefore) fail("a trigger on bay_board / report_sec016 changed");
       // ---- function: same hardening, same ACL, owner unchanged
       const fn = (await q("select p.prosecdef sd, p.provolatile vol, coalesce(p.proconfig::text,'') cfg, p.proowner = c.relowner same_owner, coalesce(p.proacl::text,'') acl from pg_proc p, pg_class c where p.oid = 'public.get_bay_board_secure(text,text)'::regprocedure and c.oid = 'public.bay_board'::regclass"))[0];
       if (!fn.sd || fn.vol !== "s" || !/search_path=public/.test(fn.cfg) || !fn.same_owner) fail("get_bay_board_secure is not SECURITY DEFINER / STABLE / fixed search_path / table-owner-owned");
@@ -232,34 +280,80 @@ export async function execute(client, ctx) {
       if (anonWrite === "ALLOWED" || !/permission denied|row-level security/i.test(anonWrite)) fail(`anon could write bay_board (${anonWrite})`);
       probe("anon: cannot write bay_board");
 
-      // reachable write workflow, as the real station user under RLS: SEC016 arrival -> Bay Board -> SEC016 departure clears it; manual entry and clear
+      // ---- the application's OWN statements (names and order proven equal to lib/avsec/reports/actions.ts by tests/sec016-app-payload.test.mts), as real roles under RLS
       const w = (await q("select id, station, team, name, staff_no from public.profiles where id = $1", [acct(WRITER)]))[0];
       if (!w?.station || !w?.team) fail(`${WRITER} has no station / team on its profile`);
+      const OTHER = ctx.other ?? "aso-jhb";
+      const exact = (flightType, reg, over = {}) => F.sec016AppPayload({ profileId: w.id, station: w.station, team: w.team, name: w.name ?? "dry run", staffNo: w.staff_no ?? "DRY", reg, flight: "AK703", flightType, ...over });
+      const SUBMIT_RETURNING = "id, ramp_agents_baggage, ramp_agents_cargo, cabin_check, ops_group, flight_type, inbound_baggage, outbound_baggage, ramp_staff_1, ramp_staff_2, ramp_staff_3, ramp_staff_4, ramp_staff_5, offload_flight_no, offload_destination, offload_total_baggage";
+      // the application returns only id, submitted_at, report_no (the only SELECT-granted columns); the stored values are then read back as the table owner
+      const submit = async (payload) => {
+        const ins = F.insertSql("report_sec016", payload);
+        const id = (await client.query(`${ins.text} returning id, submitted_at, report_no`, ins.values)).rows[0].id;
+        await client.query("reset role");
+        try { return (await client.query(`select ${SUBMIT_RETURNING} from public.report_sec016 where id = $1`, [id])).rows[0]; }
+        finally { await client.query("select set_config('role', 'authenticated', true)"); }
+      };
+      const bayInsert = (o) => { const i = F.insertSql("bay_board", o); return client.query(i.text, i.values); };
+      const arrivalBay = (reg, reportId) => ({ station: w.station, reg_no: reg, aircraft_type: "A320", bay: "B1", flight: "AK703", arrival_report_id: reportId, on_ground_since: new Date().toISOString(), is_manual: false, created_by: w.id });
+      const legacyNull = (r) => ["ramp_staff_1", "ramp_staff_2", "ramp_staff_3", "ramp_staff_4", "ramp_staff_5", "offload_flight_no", "offload_destination", "offload_total_baggage"].every((c) => r[c] === null);
+
+      const arr = await asUser(WRITER, async () => { const r = await submit(exact("arrival", "9M-DRY")); return `${r.ramp_agents_baggage}|${r.ramp_agents_cargo}|${r.cabin_check}|${r.ops_group}|${r.flight_type}|${r.inbound_baggage}|${r.outbound_baggage}|${legacyNull(r)}`; });
+      if (arr !== "RAMP-B1|RAMP-C1|YES|null|arrival|TRL-1|null|true") fail(`the canonical SEC016 arrival submission did not store the expected values (${arr})`);
+      probe(`${WRITER}: SEC016 arrival submission (the application's exact 39-column insert) succeeds; the three rev03 direction fields are stored, ops_group is null, the direction's own fields are stored and every omitted legacy field is null`);
+      const dep = await asUser(WRITER, async () => { const r = await submit(exact("departure", "9M-DRY2")); return `${r.ramp_agents_baggage}|${r.ramp_agents_cargo}|${r.cabin_check}|${r.flight_type}|${r.inbound_baggage}|${r.outbound_baggage}|${legacyNull(r)}`; });
+      if (dep !== "RAMP-B1|RAMP-C1|YES|departure|null|TRL-2|true") fail(`the canonical SEC016 departure submission did not store the expected values (${dep})`);
+      probe(`${WRITER}: SEC016 departure submission succeeds with the rev03 direction fields; the arrival-only fields stay null`);
+      const legacy = await asUser(WRITER, async () => { const r = await submit(exact("arrival", "9M-DRY3", { withLegacyValues: true })); return `${r.ramp_staff_1}|${r.ramp_staff_2}|${r.offload_flight_no}|${r.offload_destination}|${r.offload_total_baggage}`; });
+      if (legacy !== "RS1|RS2|AK1|KUL|3") fail(`explicit values in the relaxed legacy columns were not stored (${legacy})`);
+      probe(`${WRITER}: explicit values in the relaxed legacy columns are still accepted and stored`);
+      const ready = await asUser(WRITER, async () => { const r = await submit(exact("arrival", "9M-DRY4")); await client.query("select public.mark_report_ready_for_indexing('report_sec016', $1, 0)", [r.id]); return "ready"; });
+      if (ready !== "ready") fail(`SEC016 finalization (mark_report_ready_for_indexing) failed after a submission (${ready})`);
+      probe(`${WRITER}: after a submission the indexing-readiness finalization the application calls (mark_report_ready_for_indexing) succeeds`);
+
       const writeFlow = await asUser(WRITER, async () => {
-        const arr = crypto.randomUUID();
-        await client.query(`insert into public.report_sec016 (id, profile_id, status, station, team, staff_name, staff_no, duty_date, duty_hour, flight, origin_arr_dep, assisted_by, aircraft_type, reg_no, sta_std, ata_atd, bay_no, do_infmd, shift_leader, cargo_hold_checked, staff_frisked, discrepancies, flight_type, aircraft_search_completed, search_overdue_flag, search_remark)
-          values ($1,$2,'submitted',$3,$4,$5,$6,current_date,'10:00','AK703','ARR','x','A320','9M-DRY','10:00','10:05','B1','NO','sl','YES','YES','none','arrival',false,false,null)`, [arr, w.id, w.station, w.team, w.name ?? "dry run", w.staff_no ?? "DRY"]);
-        await client.query("insert into public.bay_board (station, reg_no, aircraft_type, bay, flight, arrival_report_id, on_ground_since, is_manual, created_by) values ($1,'9M-DRY','A320','B1','AK703',$2, now(), false, $3)", [w.station, arr, w.id]);
-        const seen = (await client.query("select count(*)::int n from public.bay_board where reg_no = '9M-DRY' and flight = 'AK703' and cleared_at is null")).rows[0].n;
-        const dep = crypto.randomUUID();
-        await client.query(`insert into public.report_sec016 (id, profile_id, status, station, team, staff_name, staff_no, duty_date, duty_hour, flight, origin_arr_dep, assisted_by, aircraft_type, reg_no, sta_std, ata_atd, bay_no, do_infmd, shift_leader, cargo_hold_checked, staff_frisked, discrepancies, flight_type, aircraft_search_completed, search_overdue_flag, search_remark)
-          values ($1,$2,'submitted',$3,$4,$5,$6,current_date,'10:00','AK703','DEP','x','A320','9M-DRY','10:00','10:05','B1','NO','sl','YES','YES','none','departure',false,false,null)`, [dep, w.id, w.station, w.team, w.name ?? "dry run", w.staff_no ?? "DRY"]);
-        const cleared = (await client.query("update public.bay_board set cleared_at = now(), cleared_by_report_id = $1, departure_report_id = $1 where station = $2 and reg_no = '9M-DRY' and cleared_at is null", [dep, w.station])).rowCount;
-        await client.query("insert into public.bay_board (station, reg_no, aircraft_type, bay, flight, on_ground_since, is_manual, created_by) values ($1,'9M-DRM','A320','B2','AK1', now(), true, $2)", [w.station, w.id]);
-        const manualCleared = (await client.query("update public.bay_board set cleared_at = now() where reg_no = '9M-DRM' and cleared_at is null")).rowCount;
+        const a = await submit(exact("arrival", "9M-DRYW"));
+        await bayInsert(arrivalBay("9M-DRYW", a.id));
+        const seen = (await client.query("select count(*)::int n from public.bay_board where reg_no = '9M-DRYW' and flight = 'AK703' and cleared_at is null")).rows[0].n;
+        const d = await submit(exact("departure", "9M-DRYW"));
+        const cleared = (await client.query("update public.bay_board set cleared_at = $1, cleared_by_report_id = $2, departure_report_id = $3 where station = $4 and reg_no = $5 and cleared_at is null", [new Date().toISOString(), d.id, d.id, w.station, "9M-DRYW"])).rowCount;
+        await bayInsert({ station: w.station, reg_no: "9M-DRM", aircraft_type: "A320", bay: "B2", flight: "AK1", on_ground_since: new Date().toISOString(), is_manual: true, created_by: w.id });
+        const manualCleared = (await client.query("update public.bay_board set cleared_at = $1 where reg_no = '9M-DRM' and cleared_at is null", [new Date().toISOString()])).rowCount;
         return `${seen}|${cleared}|${manualCleared}`;
       });
       if (writeFlow !== "1|1|1") fail(`the SEC016 -> Bay Board write workflow failed (${writeFlow})`);
-      probe(`${WRITER}: SEC016 arrival submit, Bay Board insert (flight, arrival_report_id, is_manual), SEC016 departure clear (SEC016 id in cleared_by_report_id, departure_report_id), manual entry and manual clear all succeed under RLS`);
-      // a freshly written row is visible to leadership and carries its flight
+      probe(`${WRITER}: SEC016 arrival submit, Bay Board arrival insert (flight, arrival_report_id, is_manual), SEC016 departure submit clearing it (SEC016 id in cleared_by_report_id and departure_report_id), manual entry and manual clear all succeed under RLS`);
       const lead = await asUser(WRITER, async () => {
-        await client.query("insert into public.report_sec016 (id, profile_id, status, station, team, staff_name, staff_no, duty_date, duty_hour, flight, origin_arr_dep, assisted_by, aircraft_type, reg_no, sta_std, ata_atd, bay_no, do_infmd, shift_leader, cargo_hold_checked, staff_frisked, discrepancies, flight_type) select gen_random_uuid(), id, 'submitted', station, team, name, staff_no, current_date, '10:00', 'AK703', 'ARR', 'x', 'A320', '9M-DRV', '10:00', '10:05', 'B1', 'NO', 'sl', 'YES', 'YES', 'none', 'arrival' from public.profiles where id = $1", [w.id]);
-        await client.query("insert into public.bay_board (station, reg_no, aircraft_type, bay, flight, on_ground_since, is_manual, created_by) values ($1,'9M-DRV','A320','B3','AK703', now(), false, $2)", [w.station, w.id]);
+        const r = await submit(exact("arrival", "9M-DRV"));
+        await bayInsert(arrivalBay("9M-DRV", r.id));
         await client.query("select set_config('request.jwt.claims', $1, true), set_config('role', 'authenticated', true)", [JSON.stringify({ sub: acct("operation_manager"), role: "authenticated" })]);
-        return (await client.query("select flight from public.get_bay_board_secure(null, $1) where reg_no = '9M-DRV'", [w.station])).rows.map((r) => r.flight).join();
+        return (await client.query("select flight from public.get_bay_board_secure(null, $1) where reg_no = '9M-DRV'", [w.station])).rows.map((x) => x.flight).join();
       });
       if (lead !== "AK703") fail(`leadership did not see the written row with its flight (${lead})`);
       probe("leadership read round-trip: a row written by the station user is returned by get_bay_board_secure with its flight value");
+
+      // ---- isolation of the new write path: another station's officer, a non-ASO officer and anonymous
+      const isolation = await asUser(WRITER, async () => {
+        const r = await submit(exact("arrival", "9M-ISO"));
+        await bayInsert(arrivalBay("9M-ISO", r.id));
+        await client.query("select set_config('request.jwt.claims', $1, true), set_config('role', 'authenticated', true)", [JSON.stringify({ sub: acct(OTHER), role: "authenticated" })]);
+        const seen = (await client.query("select count(*)::int n from public.bay_board where reg_no = '9M-ISO'")).rows[0].n;
+        const clear = (await client.query("update public.bay_board set cleared_at = now() where reg_no = '9M-ISO'")).rowCount;
+        const sec = (await client.query("select count(*)::int n from public.report_sec016 where id = $1", [r.id])).rows[0].n; // id is SELECT-granted; RLS shows each officer only their own rows
+        await client.query("SAVEPOINT iso");
+        let ins = "ALLOWED";
+        try { await bayInsert({ station: w.station, reg_no: "9M-ISO2", aircraft_type: "A320", bay: "B1", flight: "X", on_ground_since: new Date().toISOString(), is_manual: true, created_by: acct(OTHER) }); } catch (e) { ins = /row-level security|permission denied/i.test(e.message) ? "denied" : `ERR:${e.message.slice(0, 60)}`; }
+        await client.query("ROLLBACK TO SAVEPOINT iso");
+        return `${seen}|${clear}|${sec}|${ins}`;
+      });
+      if (isolation !== "0|0|0|denied") fail(`station isolation failed on the new write path (${isolation})`);
+      probe(`${OTHER}: another station's officer sees 0 Bay Board rows and 0 SEC016 rows of ${WRITER}, clears 0, and cannot insert a Bay Board row for that station (RLS)`);
+      const wrongRole = await asUser("operation_manager", async () => { const ins = F.insertSql("report_sec016", exact("arrival", "9M-WRONG", { profileId: acct("operation_manager") })); await client.query(ins.text, ins.values); return "ALLOWED"; });
+      if (wrongRole === "ALLOWED" || !/row-level security|permission denied|violates|does not include the sec016 report form/i.test(wrongRole)) fail(`a non-ASO role could submit SEC016 (${wrongRole})`);
+      probe("operation_manager: a non-ASO role cannot submit SEC016 (refused by the report-form assignment trigger / the own-insert policy that requires the aso role)");
+      const anonSubmit = await asRole(null, "anon", async () => { const ins = F.insertSql("report_sec016", exact("arrival", "9M-ANON")); await client.query(ins.text, ins.values); return "ALLOWED"; });
+      if (anonSubmit === "ALLOWED" || !/permission denied|row-level security/i.test(anonSubmit)) fail(`anon could submit SEC016 (${anonSubmit})`);
+      probe("anon: cannot submit SEC016");
 
       if (real) {
         await client.query("COMMIT");
@@ -274,6 +368,8 @@ export async function execute(client, ctx) {
 
   await pass(false);
   log("dry run rolled back");
+  if (ctx.expectedProbes !== undefined && probes.length !== ctx.expectedProbes) fail(`incomplete probe execution: ${probes.length} probes passed, ${ctx.expectedProbes} are required`);
+  log(`all ${probes.length} required probes completed in the dry run`);
   await verifyPreState(q, ctx);
   const afterDry = await fingerprint(q);
   for (const k of Object.keys(pre)) if (afterDry[k] !== pre[k]) fail(`staging changed after the rolled-back dry run (${k})`);
@@ -282,6 +378,7 @@ export async function execute(client, ctx) {
   if (ctx.live) {
     await pass(true);
     committed = true;
+    if (ctx.expectedProbes !== undefined && probes.length !== 2 * ctx.expectedProbes) fail("incomplete probe execution in the live pass");
     const post = await fingerprint(q);
     for (const k of ["otherFunctions", "policies", "otherTables", "tableGrants", "profiles", "assignments", "authUsers", "bayRows", "sec016Rows"]) if (post[k] !== pre[k]) fail(`after the live apply an unrelated fingerprint changed (${k})`);
     const cnt = (await q("select count(*)::int n, max(version) v from supabase_migrations.schema_migrations"))[0];
@@ -324,7 +421,7 @@ async function main() {
   try {
     if ((await client.query("select count(*)::int n from auth.users")).rows[0].n !== nb.authUsers?.length) fail("fresh backup Auth-user count differs from the live database");
     const result = await execute(client, {
-      files: [{ ...MIGRATION, file, sql: text }], acct, live: LIVE, log, preCount: PRE_COUNT, lastPre: LAST_PRE, hashes: PRE_STATE,
+      files: [{ ...MIGRATION, file, sql: text }], acct, live: LIVE, log, preCount: PRE_COUNT, lastPre: LAST_PRE, hashes: PRE_STATE, expectedProbes: EXPECTED_PROBES,
       onSnapshot: async (snapshot) => {
         const snap = path.join(path.dirname(freshBackup), `${APPROVED_REF}-bay-board-prechange-${Date.now()}.enc.json`);
         fs.writeFileSync(snap, JSON.stringify(encryptBackupPayload(snapshot, process.env.VECTA_BACKUP_PASSPHRASE)), { mode: 0o600 });

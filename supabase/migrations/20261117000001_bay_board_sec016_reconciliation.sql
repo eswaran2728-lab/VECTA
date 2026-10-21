@@ -1,12 +1,17 @@
 -- Bay Board / SEC016 reconciliation. The approved staging project never received 20260911000005 (SEC016 arrival/departure toggle and Bay Board
--- auto-link), so on staging:
+-- auto-link) nor 20260914000001 (SEC016 Rev.03 direction fields), so on staging:
 --   * public.bay_board has no flight / is_manual / arrival_report_id / departure_report_id, so get_bay_board_secure() fails 42703 and the
 --     SEC016 arrival insert, the SEC016 departure clear and the manual Bay Board entry (lib/avsec/reports/actions.ts) all fail;
---   * public.report_sec016 has no flight_type / aircraft_search_completed / search_overdue_flag / search_remark, so SEC016 submission itself fails;
+--   * public.report_sec016 has no flight_type / aircraft_search_completed / search_overdue_flag / search_remark, no ramp_agents_baggage / ramp_agents_cargo /
+--     cabin_check and no ops_group (the application still writes ops_group = null on every SEC016 insert), so SEC016 submission itself fails (42703);
+--   * sixteen legacy report_sec016 columns are still NOT NULL although the Rev.03 form no longer collects them (the application sends null or omits them),
+--     so even with every column present the insert is rejected (23502 on inbound_baggage -- observed in the hosted transactional dry run of 2026-10-21);
 --   * the legacy bay_board_cleared_by_report_id_fkey (-> report_sec029 only) still rejects a SEC016 id in cleared_by_report_id.
--- This migration applies exactly the structural part of 20260911000005 that the current application uses, with identical definitions, and nothing
--- else: no org_id (the multi-tenant scaffolding is not part of the canonical model; bay_board RLS is station-scoped), no policy or grant change,
--- no backfill beyond the column defaults. Every statement is idempotent, so it is a no-op on a database that already has them (the repository chain).
+-- This migration applies exactly the structural part of 20260911000005 and 20260914000001 that the current application uses, with the canonical
+-- definitions, and nothing else: no org_id and no organizations table (the multi-tenant scaffolding is not part of the canonical model and no reachable
+-- code path reads it; bay_board RLS is station-scoped), no policy, trigger or grant change, no backfill beyond the column defaults. It is NOT a replay of
+-- the skipped migrations. Every statement is idempotent (add column if not exists / drop not null is a no-op when already nullable), so it changes nothing
+-- on a database that already has them (the repository chain). Existing rows are preserved.
 -- get_bay_board_secure() is re-created with the same body, SECURITY DEFINER, fixed search_path and unchanged authorization.
 
 alter table public.report_sec016
@@ -14,6 +19,35 @@ alter table public.report_sec016
   add column if not exists aircraft_search_completed boolean not null default false,
   add column if not exists search_overdue_flag boolean not null default false,
   add column if not exists search_remark text;
+
+-- 20260914000001 (Rev.03 direction fields): the three direction-specific columns the form and submitSec016() write.
+alter table public.report_sec016
+  add column if not exists ramp_agents_baggage text,
+  add column if not exists ramp_agents_cargo text,
+  add column if not exists cabin_check text;
+
+-- Historical column (20260915000001) that submitSec016() still sends as null ("deprecated for authorization"); it carries no default, constraint or policy.
+alter table public.report_sec016 add column if not exists ops_group text;
+
+-- 20260914000001: these fields are only collected for one flight direction (or no longer collected at all), so they are relaxed to nullable. Historical
+-- rows keep their values.
+alter table public.report_sec016
+  alter column outbound_baggage drop not null,
+  alter column outbound_cargo drop not null,
+  alter column outbound_co_mail drop not null,
+  alter column inbound_baggage drop not null,
+  alter column inbound_cargo drop not null,
+  alter column inbound_co_mail drop not null,
+  alter column ramp_staff_1 drop not null,
+  alter column ramp_staff_2 drop not null,
+  alter column ramp_staff_3 drop not null,
+  alter column ramp_staff_4 drop not null,
+  alter column ramp_staff_5 drop not null,
+  alter column offload_flight_no drop not null,
+  alter column offload_destination drop not null,
+  alter column offload_total_baggage drop not null,
+  alter column offload_baggage_tag_no drop not null,
+  alter column offload_remark drop not null;
 
 create index if not exists idx_report_sec016_flight_type on public.report_sec016 (flight_type);
 create index if not exists idx_report_sec016_station_reg on public.report_sec016 (station, reg_no);

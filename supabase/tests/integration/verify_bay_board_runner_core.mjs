@@ -1,12 +1,15 @@
 // Guarded staging runner (scripts/staging/apply-bay-board-migration.mjs): runs the runner's own execute() -- the exact code that will run on staging --
-// against a disposable database reproducing the historical staging state. Proves: the pre-state gates refuse a wrong state, the dry run passes every
-// probe and leaves the database unchanged, the live pass commits, and a second run is refused. Dual-mode (PGlite / native PostgreSQL).
+// against a disposable database reproducing the EXACT hosted staging pre-state (Bay Board and SEC016 columns missing, the three rev03 columns and ops_group
+// missing, the sixteen legacy SEC016 columns still NOT NULL). Proves FIRST that the unrevised migration fails on that state exactly as the hosted dry run did,
+// then: the pre-state gates refuse a wrong state, the dry run passes every probe and leaves the database unchanged, the live pass commits, the migration is
+// idempotent, existing rows are preserved, and a second run is refused. Dual-mode (PGlite / native PostgreSQL).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import pg from 'pg';
 import { PGlite } from '@electric-sql/pglite';
 import { assertDisposableLocalTarget } from './safeguards.mjs';
+import * as F from '../../../scripts/staging/lib/sec016-fixtures.mjs';
 
 const { Client } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -79,6 +82,15 @@ async function main() {
     const m = (await one("insert into public.user_entity_memberships (profile_id, aoc_id, operating_entity_id, status, is_primary) values ($1,$2,$3,'active',true) returning id;", [id, myAoc, maa])).id;
     await db.query('insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, department_id, hub_id, station_id, team_id, entity_membership_id, starts_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9);', [id, roleMap.get('aso'), myAoc, opsDept, kul.hub_id, kul.id, team, m, iso(-DAY)]);
   }
+  {
+    // a station officer at a DIFFERENT station: must not see, insert or clear another station's Bay Board rows
+    const other = await one("select id, hub_id, code from public.org_stations where code <> 'KUL - MAA' and is_active order by code limit 1;");
+    await db.query("insert into public.org_teams (station_id, name) values ($1, 'ALPHA') on conflict (station_id, name) do nothing;", [other.id]);
+    const otherTeam = (await one("select id from public.org_teams where station_id = $1 and name = 'ALPHA';", [other.id])).id;
+    const id = await profile('aso-other');
+    const m = (await one("insert into public.user_entity_memberships (profile_id, aoc_id, operating_entity_id, status, is_primary) values ($1,$2,$3,'active',true) returning id;", [id, myAoc, aax])).id;
+    await db.query('insert into public.user_role_assignments (profile_id, role_definition_id, aoc_id, department_id, hub_id, station_id, team_id, entity_membership_id, starts_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9);', [id, roleMap.get('aso'), myAoc, opsDept, other.hub_id, other.id, otherTeam, m, iso(-DAY)]);
+  }
   for (const [label, role] of [['ghod', 'ghod'], ['global_reporting_controller', 'global_reporting_controller'], ['airasia_management', 'airasia_management']]) await assign(await profile(label), role, { aocId: null });
   await profile('neg-pending-profile', 'pending');
   const pendingOpm = accounts.get('neg-pending-profile');
@@ -98,6 +110,13 @@ async function main() {
     alter table public.report_sec016 drop column if exists flight_type, drop column if exists aircraft_search_completed, drop column if exists search_overdue_flag, drop column if exists search_remark;
     alter table public.bay_board drop constraint if exists bay_board_cleared_by_report_id_fkey;
     alter table public.bay_board add constraint bay_board_cleared_by_report_id_fkey foreign key (cleared_by_report_id) references public.report_sec029 (id);`);
+  // ... and the rest of the exact hosted drift (read-only observation 2026-10-21): the three rev03 columns and the historical ops_group are missing and the
+  // sixteen legacy columns that rev03 relaxed are still NOT NULL (the table is empty on hosted, so the constraints can be re-imposed here)
+  assert((await one('select count(*)::int n from public.report_sec016;')).n === 0 && (await one('select count(*)::int n from public.bay_board;')).n === 0, 'the staging-shaped fixture starts with zero report_sec016 and bay_board rows, like hosted');
+  await db.exec('alter table public.report_sec016 drop column if exists ramp_agents_baggage, drop column if exists ramp_agents_cargo, drop column if exists cabin_check, drop column if exists ops_group;');
+  // hosted never received the multi-tenant scaffolding either: no org_id on either table (the migration must not add it)
+  await db.exec('alter table public.report_sec016 drop column if exists org_id; alter table public.bay_board drop column if exists org_id;');
+  await db.exec('alter table public.report_sec016 ' + F.SEC016_LEGACY_NULLABLE.map((c) => 'alter column ' + c + ' set not null').join(', ') + ';');
   await db.exec("create schema if not exists supabase_migrations; create table if not exists supabase_migrations.schema_migrations (version text primary key, statements text[], name text);");
   const hist = await one('select count(*)::int n, max(version) v from supabase_migrations.schema_migrations;');
   const state = async () => ({
@@ -113,7 +132,9 @@ async function main() {
   assert(runner.statementAudit(`${sql}\ncreate policy p on public.bay_board for select using (true);`) !== null, 'an added policy is refused by the allow-list');
   assert(runner.statementAudit(`${sql}\ndelete from public.bay_board;`) !== null, 'an added delete is refused by the allow-list');
   const logs = [];
-  const base = { files: [{ ...runner.MIGRATION, file, sql }], acct, log: (m) => logs.push(m), preCount: hist.n, lastPre: hist.v ?? '00000000000000', hashes: null };
+  // roster labels the disposable database has no persona for are skipped by the runner (hosted has them all); the required probe count follows
+  const missingDenied = runner.DENIED_LABELS.filter((l) => { try { acct(l); return false; } catch { return true; } }).length;
+  const base = { files: [{ ...runner.MIGRATION, file, sql }], acct, log: (m) => logs.push(m), preCount: hist.n, lastPre: hist.v ?? '00000000000000', hashes: null, other: 'aso-other', expectedProbes: runner.EXPECTED_PROBES - missingDenied };
   if (hist.n === 0) {
     // the disposable database has no recorded history; seed a minimal, deterministic one so the runner's history gates have something to verify
     await db.exec("insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261116000001', 'completed_forms_lockdown', '{}');");
@@ -121,6 +142,67 @@ async function main() {
   }
 
   const before = await state();
+
+  // ================= FAILING FIRST: the hosted drift reproduced, and the UNREVISED migration shown to fail on it =================
+  const asUserTx = async (label, fn) => {
+    await db.exec('BEGIN;');
+    try {
+      await db.exec("select set_config('request.jwt.claims', '" + JSON.stringify({ sub: acct(label), role: 'authenticated' }) + "', true), set_config('role', 'authenticated', true)");
+      return await fn();
+    } finally { await db.exec('ROLLBACK;').catch(() => {}); }
+  };
+  // expected failures run inside a savepoint (a failed statement otherwise aborts the surrounding transaction)
+  const tryRun = async (sqlObj) => { await db.exec('SAVEPOINT tr;'); try { await db.query(sqlObj.text, sqlObj.values); await db.exec('RELEASE SAVEPOINT tr;'); return 'OK'; } catch (e) { await db.exec('ROLLBACK TO SAVEPOINT tr;'); return (e.code ?? '') + ':' + String(e.message).slice(0, 110); } };
+  const writerRow = await one('select id, station, team, name, staff_no from public.profiles where id = $1', [acct('aso')]);
+  const wctx = { profileId: writerRow.id, station: writerRow.station, team: writerRow.team, name: writerRow.name ?? 'fixture', staffNo: writerRow.staff_no ?? 'F1', reg: '9M-RED', flight: 'AK703', flightType: 'arrival' };
+  const appInsert = () => F.insertSql('report_sec016', F.sec016AppPayload(wctx));
+  const preCols = new Set((await rows("select column_name from information_schema.columns where table_schema='public' and table_name='report_sec016';")).map((r) => r.column_name));
+  // the columns the UNREVISED runner's SEC016 probe inserted (it never named the legacy baggage / cargo / ramp_staff / offload columns, so hosted rejected it with 23502 inbound_baggage)
+  const OLD_PROBE_COLUMNS = ['profile_id', 'status', 'station', 'team', 'staff_name', 'staff_no', 'duty_date', 'duty_hour', 'flight', 'origin_arr_dep', 'assisted_by', 'aircraft_type', 'reg_no', 'sta_std', 'ata_atd', 'bay_no', 'do_infmd', 'shift_leader', 'cargo_hold_checked', 'staff_frisked', 'discrepancies', 'flight_type', 'aircraft_search_completed', 'search_overdue_flag', 'search_remark'];
+  const oldStyle = (existing = preCols) => { const full = F.sec016AppPayload(wctx); const o = {}; for (const k of OLD_PROBE_COLUMNS) if (existing.has(k)) o[k] = full[k]; return F.insertSql('report_sec016', o); };
+  const drift = {
+    missing: Object.keys(F.SEC016_NEW_COLUMNS).filter((c) => !preCols.has(c)),
+    notNull: (await rows("select column_name from information_schema.columns where table_schema='public' and table_name='report_sec016' and is_nullable='NO' and column_name = any($1) order by 1;", [F.SEC016_LEGACY_NULLABLE])).map((r) => r.column_name),
+  };
+  assert(drift.missing.length === 8 && drift.notNull.length === 16, 'the fixture reproduces the exact hosted drift: eight report_sec016 columns missing and sixteen legacy columns NOT NULL (' + drift.missing.length + ' / ' + drift.notNull.length + ')');
+  const red1 = await asUserTx('aso', () => tryRun(appInsert()));
+  assert(/^42703:.*ops_group|^42703:/.test(red1), 'BEFORE ANY MIGRATION the application\'s SEC016 submit fails on the missing columns (' + red1 + ')');
+  const red2 = await asUserTx('aso', () => tryRun(oldStyle()));
+  assert(/^23502:.*inbound_baggage/.test(red2), 'BEFORE ANY MIGRATION a submit using only the columns hosted has fails exactly as the hosted dry run did: 23502 inbound_baggage (' + red2 + ')');
+  const bayRed = await asUserTx('aso', () => tryRun(F.insertSql('bay_board', { station: wctx.station, reg_no: 'X', aircraft_type: 'A320', bay: 'B1', flight: 'AK703', arrival_report_id: null, on_ground_since: new Date().toISOString(), is_manual: false, created_by: wctx.profileId })));
+  assert(/^42703:/.test(bayRed), 'BEFORE ANY MIGRATION the Bay Board arrival insert fails on the missing columns (' + bayRed + ')');
+  // the UNREVISED migration (the fixture of what failed on hosted) does not repair SEC016 submission
+  const oldSql = fs.readFileSync(path.join(__dirname, '..', 'fixtures', '20261117000001_bay_board_sec016_reconciliation.pre-revision.sql'), 'utf8');
+  await db.exec('BEGIN;');
+  await db.exec(oldSql);
+  const oldAfter1 = await asUserTx2(() => tryRun(appInsert()));
+  const oldAfter2 = await asUserTx2(() => tryRun(oldStyle2()));
+  await db.exec('ROLLBACK;');
+  function asUserTx2(fn) { return (async () => { await db.exec('SAVEPOINT x;'); try { await db.exec("select set_config('request.jwt.claims', '" + JSON.stringify({ sub: acct('aso'), role: 'authenticated' }) + "', true), set_config('role', 'authenticated', true)"); return await fn(); } finally { await db.exec('RESET role;').catch(() => {}); await db.exec('ROLLBACK TO SAVEPOINT x;').catch(() => {}); } })(); }
+  function oldStyle2() { return oldStyle(new Set([...preCols, 'flight_type', 'aircraft_search_completed', 'search_overdue_flag', 'search_remark'])); }
+  assert(/^42703:/.test(oldAfter1), 'WITH THE UNREVISED MIGRATION the application\'s SEC016 submit still fails (' + oldAfter1 + ')');
+  assert(/^23502:.*inbound_baggage/.test(oldAfter2), 'WITH THE UNREVISED MIGRATION the best-effort submit still fails with 23502 inbound_baggage -- the hosted dry-run failure (' + oldAfter2 + ')');
+  assert(JSON.stringify(await state()) === JSON.stringify(before), 'the failing-first experiments changed nothing (rolled back)');
+
+  // ================= existing-row preservation (a pre-migration row must survive untouched) =================
+  {
+    await db.exec('BEGIN;');
+    const legacy = { id: nextId(), profile_id: wctx.profileId, status: 'submitted', station: wctx.station, team: wctx.team, staff_name: 'legacy', staff_no: 'L1', duty_date: '2026-01-01', duty_hour: '10:00', flight: 'AK100', origin_arr_dep: 'ARR', assisted_by: 'x', aircraft_type: 'A320', reg_no: '9M-LEG', sta_std: '10:00', ata_atd: '10:05', bay_no: 'B9', do_infmd: 'NO', inbound_baggage: 'IB', outbound_baggage: 'OB', inbound_cargo: 'IC', outbound_cargo: 'OC', inbound_co_mail: 'IM', outbound_co_mail: 'OM', shift_leader: 'sl', ramp_staff_1: 'r1', ramp_staff_2: 'r2', ramp_staff_3: 'r3', ramp_staff_4: 'r4', ramp_staff_5: 'r5', cargo_hold_checked: 'YES', staff_frisked: 'YES', discrepancies: 'none', offload_flight_no: 'AK1', offload_destination: 'KUL', offload_total_baggage: '2', offload_baggage_tag_no: 'T', offload_remark: 'none' };
+    // the immutability / form-assignment triggers are bypassed ONLY for this disposable fixture insert (the table is empty on hosted)
+    await db.exec('alter table public.report_sec016 disable trigger user;');
+    const li = F.insertSql('report_sec016', legacy);
+    await db.query(li.text, li.values);
+    await db.exec('alter table public.report_sec016 enable trigger user;');
+    const beforeRow = await one("select to_jsonb(r) j from public.report_sec016 r where id = $1", [legacy.id]);
+    await db.exec(sqlOfMigration());
+    const afterRow = await one("select to_jsonb(r) j from public.report_sec016 r where id = $1", [legacy.id]);
+    const preserved = Object.keys(beforeRow.j).every((k) => JSON.stringify(afterRow.j[k]) === JSON.stringify(beforeRow.j[k]));
+    assert(preserved, 'EXISTING ROW PRESERVED: every pre-migration column value of an existing SEC016 row is unchanged by the migration');
+    assert(afterRow.j.flight_type === 'arrival' && afterRow.j.aircraft_search_completed === false && afterRow.j.search_overdue_flag === false && afterRow.j.ramp_agents_baggage === null && afterRow.j.cabin_check === null && afterRow.j.ops_group === null, 'the existing row takes only the column defaults (flight_type arrival, flags false, new text columns null)');
+    await db.exec('ROLLBACK;');
+  }
+  function sqlOfMigration() { return fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', runner.MIGRATION.version + '_' + runner.MIGRATION.name + '.sql'), 'utf8'); }
+  assert(JSON.stringify(await state()) === JSON.stringify(before), 'the existing-row experiment changed nothing (rolled back)');
 
   // ---- gates refuse a wrong state, and refusal changes nothing
   const refuse = async (label, ctx, rx) => {
@@ -149,6 +231,58 @@ async function main() {
   const rpc = await db.query('select * from public.get_bay_board_secure(null, null)').then(() => 'ok').catch((e) => e.message);
   await db.exec("select set_config('role', 'postgres', false)").catch(() => db.exec('reset role;'));
   assert(rpc === 'ok', 'the Bay Board RPC works after the live pass');
+
+  // ---- after the live pass (disposable copy): the application's statements all succeed, and nothing else moved
+  {
+    const cols016 = await rows("select column_name, data_type, is_nullable, coalesce(column_default,'') d from information_schema.columns where table_schema='public' and table_name='report_sec016';");
+    const by = Object.fromEntries(cols016.map((c) => [c.column_name, c]));
+    assert(Object.entries(F.SEC016_NEW_COLUMNS).every(([c, d]) => by[c] && by[c].data_type === d.data_type && by[c].is_nullable === d.nullable && (d.default ? d.default.test(by[c].d) : by[c].d === '')), 'all eight new report_sec016 columns match their canonical definitions (type, nullability, default)');
+    assert(F.SEC016_LEGACY_NULLABLE.every((c) => by[c].is_nullable === 'YES'), 'all sixteen legacy report_sec016 columns are nullable after the migration');
+    assert(cols016.filter((c) => c.is_nullable === 'NO' && !F.SEC016_LEGACY_NULLABLE.includes(c.column_name)).length > 10 && by.flight.is_nullable === 'NO' && by.station.is_nullable === 'NO' && by.profile_id.is_nullable === 'NO', 'the columns that must stay required (station, flight, profile_id ...) are still NOT NULL');
+    assert(!('org_id' in by), 'no org_id was added to report_sec016');
+  }
+  const asW = async (label, fn) => {
+    await db.exec('BEGIN;');
+    try { await db.exec("select set_config('request.jwt.claims', '" + JSON.stringify({ sub: acct(label), role: 'authenticated' }) + "', true), set_config('role', 'authenticated', true)"); return await fn(); } finally { await db.exec('RESET role;').catch(() => {}); await db.exec('ROLLBACK;').catch(() => {}); }
+  };
+  const writerPayload = (flightType, over = {}) => F.sec016AppPayload({ ...wctx, reg: over.reg ?? '9M-GRN', flightType, withLegacyValues: !!over.withLegacyValues });
+  for (const flightType of ['arrival', 'departure']) {
+    const out = await asW('aso', async () => {
+      const pl = writerPayload(flightType);
+      const ins = F.insertSql('report_sec016', pl);
+      const id = (await db.query(ins.text + ' returning id, submitted_at, report_no', ins.values)).rows[0].id; // only the columns the application returns are SELECT-granted
+      await db.exec('reset role;');
+      return (await db.query('select ramp_agents_baggage, ramp_agents_cargo, cabin_check, ops_group, flight_type, inbound_baggage, outbound_baggage, ramp_staff_1, ramp_staff_5, offload_flight_no, offload_destination, offload_total_baggage from public.report_sec016 where id = $1', [id])).rows[0];
+    });
+    assert(out.ramp_agents_baggage === 'RAMP-B1' && out.ramp_agents_cargo === 'RAMP-C1' && out.cabin_check === 'YES' && out.ops_group === null && out.flight_type === flightType, 'the canonical rev03 ' + flightType + ' submission succeeds and stores the three rev03 direction fields');
+    assert(out.ramp_staff_1 === null && out.ramp_staff_5 === null && out.offload_flight_no === null && out.offload_destination === null && out.offload_total_baggage === null && (flightType === 'arrival' ? out.outbound_baggage === null && out.inbound_baggage === 'TRL-1' : out.inbound_baggage === null && out.outbound_baggage === 'TRL-2'), 'omitted legacy fields stay null and only the filed direction\'s fields are populated (' + flightType + ')');
+  }
+  const withLegacy = await asW('aso', async () => { const ins = F.insertSql('report_sec016', writerPayload('arrival', { withLegacyValues: true, reg: '9M-LEG2' })); const id = (await db.query(ins.text + ' returning id', ins.values)).rows[0].id; await db.exec('reset role;'); return (await db.query('select ramp_staff_1, offload_flight_no, offload_total_baggage from public.report_sec016 where id = $1', [id])).rows[0]; });
+  assert(withLegacy.ramp_staff_1 === 'RS1' && withLegacy.offload_flight_no === 'AK1' && withLegacy.offload_total_baggage === '3', 'explicit values in the relaxed legacy columns are still accepted and stored');
+  // RLS / station isolation of the new write path
+  const isolation = await asW('aso', async () => {
+    const pl = writerPayload('arrival', { reg: '9M-ISO' });
+    const ins = F.insertSql('report_sec016', pl); const id = (await db.query(ins.text + ' returning id', ins.values)).rows[0].id;
+    const b = F.insertSql('bay_board', { station: wctx.station, reg_no: '9M-ISO', aircraft_type: 'A320', bay: 'B1', flight: 'AK703', arrival_report_id: id, on_ground_since: new Date().toISOString(), is_manual: false, created_by: wctx.profileId });
+    await db.query(b.text, b.values);
+    await db.exec('SAVEPOINT s1;');
+    // another station's officer, same transaction (claims switched), must not see, insert for, or clear this station's row
+    await db.exec("select set_config('request.jwt.claims', '" + JSON.stringify({ sub: acct('aso-other'), role: 'authenticated' }) + "', true)");
+    const seen = (await db.query("select count(*)::int n from public.bay_board where reg_no = '9M-ISO'")).rows[0].n;
+    const clear = (await db.query("update public.bay_board set cleared_at = now() where reg_no = '9M-ISO'")).rowCount ?? 0;
+    const insOther = await tryRun(F.insertSql('bay_board', { station: wctx.station, reg_no: '9M-ISO2', aircraft_type: 'A320', bay: 'B1', flight: 'X', on_ground_since: new Date().toISOString(), is_manual: true, created_by: acct('aso-other') }));
+    const secSeen = (await db.query('select count(*)::int n from public.report_sec016 where id = $1', [id])).rows[0].n;
+    return seen + '|' + clear + '|' + (/^42501:/.test(insOther) ? 'denied' : insOther) + '|' + secSeen;
+  });
+  assert(isolation === '0|0|denied|0', 'station / entity isolation holds on the new write path: another station\'s officer sees 0 Bay Board rows, clears 0, cannot insert for this station, and cannot read the SEC016 row (' + isolation + ')');
+  // idempotency: running the migration again changes nothing and raises nothing
+  const stateBeforeRerun = JSON.stringify((await rows("select table_name, column_name, is_nullable from information_schema.columns where table_schema='public' and table_name in ('report_sec016','bay_board') order by 1,2;")));
+  await db.exec('BEGIN;');
+  let rerun = 'OK';
+  try { await db.exec(sqlOfMigration()); } catch (e) { rerun = String(e.message).slice(0, 100); }
+  const stateAfterRerun = JSON.stringify((await rows("select table_name, column_name, is_nullable from information_schema.columns where table_schema='public' and table_name in ('report_sec016','bay_board') order by 1,2;")));
+  await db.exec('ROLLBACK;');
+  assert(rerun === 'OK' && stateAfterRerun === stateBeforeRerun, 'the revised migration is idempotent: re-applying it raises nothing and changes nothing');
 
   // ---- a second run is refused (columns already exist / already recorded)
   let again = null;

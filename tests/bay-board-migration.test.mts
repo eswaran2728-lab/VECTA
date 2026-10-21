@@ -23,7 +23,7 @@ test("the migration only adds what the application uses, idempotently, and never
   assert.doesNotMatch(code, /\bto\s+(anon|public)\b/i);
   assert.doesNotMatch(code, /drop table|truncate|delete from|drop column|org_id/i);
   for (const stmt of code.split(";").map((s) => s.trim()).filter((s) => /^alter table|^create index/i.test(s))) {
-    assert.match(stmt, /if not exists|drop constraint if exists/i, `idempotent: ${stmt.slice(0, 60)}`);
+    assert.match(stmt, /if not exists|drop constraint if exists|drop not null/i, `idempotent: ${stmt.slice(0, 60)}`);
   }
   assert.match(code, /revoke execute on function public\.get_bay_board_secure\(text, text\) from public, anon;/);
   assert.match(code, /grant execute on function public\.get_bay_board_secure\(text, text\) to authenticated, service_role;/);
@@ -75,4 +75,59 @@ test("the guarded-runner baseline expectation is untouched until the migration i
   const base = fs.readFileSync("scripts/staging/lib/expected-baseline.mjs", "utf8");
   assert.match(base, /EXPECTED_MIGRATION_COUNT = 92;/);
   assert.match(base, /EXPECTED_LATEST_MIGRATION = "20261116000001";/);
+});
+
+// ======================= revised reconciliation (SEC016 rev03 + ops_group + Bay Board) =======================
+// @ts-expect-error plain .mjs tooling modules
+import * as F from "../scripts/staging/lib/sec016-fixtures.mjs";
+const rev03 = fs.readFileSync(`${DIR}/20260914000001_sec016_rev03_direction_fields.sql`, "utf8").replace(/\r\n/g, "\n");
+
+test("revised migration: adds exactly the three rev03 columns (canonical text, nullable, no default) and the historical ops_group the application still writes", () => {
+  for (const c of ["ramp_agents_baggage", "ramp_agents_cargo", "cabin_check", "ops_group"]) {
+    assert.match(code, new RegExp(`add column if not exists ${c} text(?!\s+not null)`, "i"), `${c} text`);
+  }
+  // identical column definitions to the canonical rev03 migration
+  for (const c of ["ramp_agents_baggage", "ramp_agents_cargo", "cabin_check"]) assert.match(rev03, new RegExp(`ADD COLUMN IF NOT EXISTS ${c} text`));
+  assert.doesNotMatch(code, /org_id|organizations/i, "no multi-tenant scaffolding is added");
+});
+
+test("revised migration: relaxes precisely the sixteen NOT NULL constraints that the canonical rev03 migration relaxes, and nothing else", () => {
+  const relaxed = [...code.matchAll(/alter column (\w+) drop not null/gi)].map((m) => m[1].toLowerCase()).sort();
+  assert.deepEqual(relaxed, [...F.SEC016_LEGACY_NULLABLE].sort());
+  assert.equal(relaxed.length, 16);
+  assert.doesNotMatch(code, /set not null|alter column \w+ (type|set default|drop default)/i, "no other column change");
+});
+
+test("revised migration: keeps the reviewed Bay Board reconciliation, stays idempotent and adds no policy, grant, trigger or data change", () => {
+  for (const frag of ["add column if not exists flight text", "add column if not exists is_manual boolean not null default false", "add column if not exists arrival_report_id uuid references public.report_sec016(id)", "add column if not exists departure_report_id uuid references public.report_sec016(id)", "drop constraint if exists bay_board_cleared_by_report_id_fkey", "create or replace function public.get_bay_board_secure"]) assert.ok(code.toLowerCase().includes(frag), frag);
+  assert.doesNotMatch(code, /create trigger|drop trigger|insert into|update public\.|delete from|create policy|drop policy|grant\s+(select|insert|update|delete|all)/i);
+});
+
+test("revised migration: every statement is on the runner allow-list, and the allow-list refuses additions", async () => {
+  // @ts-expect-error plain .mjs tooling module
+  const r = await import("../scripts/staging/apply-bay-board-migration.mjs");
+  assert.equal(r.statementAudit(sql), null);
+  for (const extra of ["alter table public.report_sec016 add column org_id uuid;", "alter table public.report_sec016 alter column station drop not null;", "alter table public.report_sec016 alter column inbound_baggage set not null;", "drop table public.report_sec016;", "alter table public.report_sec016 add column if not exists cabin_check text not null;"]) {
+    assert.notEqual(r.statementAudit(`${sql}\n${extra}`), null, extra);
+  }
+  // dropping a column that is NOT one of the sixteen is refused
+  assert.notEqual(r.statementAudit(sql.replace("alter column ramp_staff_5 drop not null", "alter column station drop not null")), null);
+});
+
+test("runner: exact hosted pre-state is frozen (columns, indexes, constraints, policies, grants, triggers, function) and the sixteen legacy NOT NULL columns and eight absent columns are verified before anything is applied", () => {
+  for (const k of ["constraintsMd5", "policiesMd5", "tableGrantsMd5", "triggersMd5", "legacyNotNull", "absentColumns"]) assert.match(runner, new RegExp(`${k}:`), `PRE_STATE.${k}`);
+  assert.match(runner, /import \* as F from "\.\/lib\/sec016-fixtures\.mjs"/);
+  assert.match(runner, /SEC016_LEGACY_NULLABLE/);
+  assert.match(runner, /report_sec016 and bay_board hold rows|report_sec016 holds rows/);
+});
+
+test("runner: the transaction proves canonical columns, sixteen nullable columns, no unrelated column change, 93 history rows, the app-exact SEC016 submit, and refuses an incomplete probe run", () => {
+  for (const needle of ["EXPECTED_PROBES", "SEC016_NEW_COLUMNS", "sec016AppPayload(", "ramp_agents_baggage", "all sixteen legacy columns are nullable", "recorded exactly once", "no unrelated column change", "incomplete probe execution", "ctx.expectedProbes"]) assert.ok(runner.includes(needle), needle);
+  assert.match(runner, /export const EXPECTED_PROBES = \d+;/);
+});
+
+test("runner: still dry-run first, never converts to live without the exact phrase, and the live pass is unchanged", () => {
+  assert.match(runner, /const LIVE = args\.includes\("--live"\)/);
+  assert.match(runner, /argVal\("confirm"\) !== LIVE_PHRASE/);
+  assert.match(runner, /await pass\(false\);[\s\S]*if \(ctx\.live\)/);
 });
