@@ -126,3 +126,88 @@ test("profile compatibility migration records approval and rejection audit data 
     await db.close();
   }
 });
+
+const sec014Stub = `
+  create table report_sec013 (id uuid primary key);
+  create table report_sec014 (id uuid primary key);
+  create table report_sec018 (id uuid primary key);
+  create table report_sec029 (id uuid primary key);
+  create table report_sec033 (id uuid primary key);
+`;
+const overtimeStub = (extra = "") => `
+  create table duty_records (id uuid primary key);
+  create table overtime_requests (
+    id uuid primary key,
+    linked_duty_id uuid,
+    category text not null constraint overtime_requests_category_check
+      check (category = any (array['flight_delay','manpower_shortage','event','off_day_work','adhoc']))
+  );
+  ${extra}
+`;
+const DUTY = "00000000-0000-0000-0000-000000000030";
+
+test("the new constraints still reject out-of-range values (a dropped-and-not-re-added check would fail this)", async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(`${sec014Stub}
+      create table report_sec014_patrols (id uuid primary key default gen_random_uuid(), entry_no integer not null, location text not null);`);
+    await db.exec(migrations.reports);
+    await assert.rejects(db.query("insert into report_sec014_patrols (entry_no, location) values (0, 'Apron')"), /report_sec014_patrols_entry_no_check/);
+    await assert.rejects(db.query("insert into report_sec014_patrols (entry_no, location) values (1, 'Garage')"), /report_sec014_patrols_location_check/);
+    await db.exec(overtimeStub());
+    await db.exec(migrations.duty);
+    await assert.rejects(db.query("insert into overtime_requests (id, linked_duty_id, category) values (gen_random_uuid(), gen_random_uuid(), 'bogus')"), /overtime_requests_category_check/);
+  } finally {
+    await db.close();
+  }
+});
+
+test("an old CHECK with a different name does not survive: exactly one check per constrained column and Apron entry 16 is accepted", async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(`${sec014Stub}
+      create table report_sec014_patrols (
+        id uuid primary key default gen_random_uuid(),
+        entry_no integer not null constraint legacy_entry_cap check (entry_no between 1 and 15),
+        location text not null constraint legacy_location_set check (location = any (array['Aircraft','Terminal','Premises']))
+      );`);
+    await db.exec(migrations.reports);
+    await db.query("insert into report_sec014_patrols (entry_no, location) values (16, 'Apron')");
+    const checks = await db.query<{ n: string }>("select count(*)::text n from pg_constraint where conrelid = 'report_sec014_patrols'::regclass and contype = 'c'");
+    assert.equal(checks.rows[0].n, "2");
+  } finally {
+    await db.close();
+  }
+});
+
+test("duplicate (linked_duty_id, category) rows abort the duty migration with a clear message and leave the table unchanged", async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(overtimeStub(`
+      insert into overtime_requests (id, linked_duty_id, category) values
+        (gen_random_uuid(), '${DUTY}', 'off_day_work'), (gen_random_uuid(), '${DUTY}', 'off_day_work');`));
+    await assert.rejects(db.exec(migrations.duty), /duplicate .*overtime_requests.*linked_duty_id.*category/i);
+    const cols = await db.query<{ n: string }>("select count(*)::text n from information_schema.columns where table_name = 'overtime_requests' and column_name = 'calculated_at'");
+    assert.equal(cols.rows[0].n, "0");
+  } finally {
+    await db.close();
+  }
+});
+
+test("a same-named but partial unique index is refused (it would not satisfy the upsert contract)", async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(overtimeStub(`create unique index overtime_requests_duty_category_uniq on overtime_requests (linked_duty_id, category) where category = 'adhoc';`));
+    await assert.rejects(db.exec(migrations.duty), /overtime_requests_duty_category_uniq/);
+  } finally {
+    await db.close();
+  }
+});
+
+test("the P0 migrations contain no policy, grant, function, trigger, storage, delete or legacy-authority statements", () => {
+  const forbidden = /\b(create|alter|drop)\s+(or\s+replace\s+)?(policy|function|procedure|trigger|publication|role|schema|extension)\b|^\s*(grant|revoke|truncate|delete|insert|update)\b|\bstorage\.|\bdrop\s+table\b|\badd\s+column\s+(if\s+not\s+exists\s+)?(org_id|unified_role|duty_post)\b/im;
+  for (const [name, sql] of Object.entries(migrations)) {
+    const code = sql.split(/\r?\n/).filter((l) => !l.trim().startsWith("--")).join("\n");
+    assert.doesNotMatch(code, forbidden, name);
+  }
+});
