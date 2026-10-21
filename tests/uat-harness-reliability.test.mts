@@ -71,11 +71,11 @@ test("network diagnostics are sanitized, reads are retried once, writes never ar
 
 test("preflight baseline: the expected migration count and latest version are explicit and tied to the guarded runner", () => {
   const base = read("scripts/staging/lib/expected-baseline.mjs");
-  const runner = read("scripts/staging/apply-containment-migration.mjs");
-  const versions = [...runner.matchAll(/\{ version: "(\d{14})", name:/g)].map((m) => m[1]);
-  assert.equal(versions.length, 9);
-  assert.match(base, new RegExp(`EXPECTED_LATEST_MIGRATION = "${versions[versions.length - 1]}"`), "latest version equals the runner's last frozen migration");
-  assert.match(base, /EXPECTED_MIGRATION_COUNT = 92;/);
+  const containment = read("scripts/staging/apply-containment-migration.mjs");
+  assert.equal([...containment.matchAll(/\{ version: "(\d{14})", name:/g)].length, 9, "nine security migrations: 83 + 9 = 92");
+  const bayVersion = /MIGRATION = \{ version: "(\d{14})"/.exec(read("scripts/staging/apply-bay-board-migration.mjs"))![1];
+  assert.match(base, new RegExp(`EXPECTED_LATEST_MIGRATION = "${bayVersion}"`), "latest version equals the guarded Bay Board runner's frozen migration");
+  assert.match(base, /EXPECTED_MIGRATION_COUNT = 93;/, "92 + the Bay Board reconciliation");
   assert.ok(PRE.includes("EXPECTED_MIGRATION_COUNT") && PRE.includes("EXPECTED_LATEST_MIGRATION") && !/82/.test(PRE), "preflight uses the explicit baseline, no literal 82");
 });
 

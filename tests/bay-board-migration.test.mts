@@ -71,10 +71,10 @@ test("gitGates keeps its default branch and only accepts a different one when a 
   assert.match(gates, /if \(branch !== expectedBranch\) throw/);
 });
 
-test("the guarded-runner baseline expectation is untouched until the migration is actually applied", () => {
+test("the expected hosted baseline records the applied reconciliation: 93 migrations ending at 20261117000001 (set only after the guarded live apply was verified)", () => {
   const base = fs.readFileSync("scripts/staging/lib/expected-baseline.mjs", "utf8");
-  assert.match(base, /EXPECTED_MIGRATION_COUNT = 92;/);
-  assert.match(base, /EXPECTED_LATEST_MIGRATION = "20261116000001";/);
+  assert.match(base, /EXPECTED_MIGRATION_COUNT = 93;/);
+  assert.match(base, /EXPECTED_LATEST_MIGRATION = "20261117000001";/);
 });
 
 // ======================= revised reconciliation (SEC016 rev03 + ops_group + Bay Board) =======================
