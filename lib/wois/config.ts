@@ -23,6 +23,8 @@ export interface WoisAiConfig {
   maxOutputTokens: number;
   maxToolCalls: number;
   maxHistoryMessages: number;
+  rateLimitMax: number;
+  rateLimitWindowMs: number;
 }
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
@@ -48,5 +50,7 @@ export function getWoisAiConfig(): WoisAiConfig {
     maxOutputTokens: parseBoundedInt(process.env.WOIS_AI_MAX_OUTPUT_TOKENS, 1024, 128, 4096),
     maxToolCalls: parseBoundedInt(process.env.WOIS_AI_MAX_TOOL_CALLS, 3, 0, 5),
     maxHistoryMessages: parseBoundedInt(process.env.WOIS_AI_MAX_HISTORY_MESSAGES, 20, 0, 50),
+    rateLimitMax: parseBoundedInt(process.env.WOIS_AI_RATE_LIMIT_MAX, 20, 1, 200),
+    rateLimitWindowMs: parseBoundedInt(process.env.WOIS_AI_RATE_LIMIT_WINDOW_MS, 60000, 1000, 3600000),
   };
 }

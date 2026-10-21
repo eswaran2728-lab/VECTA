@@ -172,7 +172,7 @@ export function WoisChatModal({ isOpen, onClose, userContext }: WoisChatModalPro
         // out, the backend already fell back to deterministic guidance --
         // say so plainly rather than presenting it as a normal AI answer.
         body: data.response.usedFallback
-          ? `${data.response.body}\n\n(Deterministic fallback guidance -- conversational AI was unavailable for this reply.)`
+          ? `${data.response.body}\n\n(${data.response.fallbackNotice ?? "Built-in fallback guidance -- the conversational AI was unavailable for this reply."})`
           : data.response.body,
         confidence_tag: data.response.confidence_tag,
         source_type: data.response.source_type,

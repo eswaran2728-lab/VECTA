@@ -602,6 +602,10 @@ export interface WoisEngineResponse {
   toolCalls?: WoisToolCall[];
   provider?: string;
   usedFallback?: boolean;
+  /** Set when the deterministic built-in assistant answered because the AI service was unavailable. */
+  fallbackNotice?: string;
+  /** Category only (timeout | provider_error | invalid_output) -- never raw provider text. */
+  fallbackReason?: string;
 }
 
 // Phase 12: WOIS AI 2.0 -- conversational, tool-grounded Malaysia AOC assistant.
