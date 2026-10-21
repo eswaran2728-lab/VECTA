@@ -3,7 +3,7 @@
 // A complete transactional DRY RUN (apply, verify, real-role probes, ROLLBACK, then proof that staging is unchanged) always comes first; only with
 // --live and the exact phrase is the real application committed (migration + history row atomically). Prints names and counts only.
 //
-// Gates: exact repo / branch (fix/bay-board-flight-column) / origin, clean tree, HEAD == --expected-head and a descendant of the certified baseline;
+// Gates: exact repo / branch (ui/stitch-mobile-redesign) / origin, clean tree, HEAD == --expected-head and a descendant of the certified baseline;
 // approved staging ref only and the production ref absent; verified TLS; existing encrypted backups AND the fresh backup (< 6 h, outside the repo,
 // same Auth-user count) authenticate; hosted history is exactly 92 migrations ending 20261116000001; the hosted pre-state matches the frozen
 // observation exactly; the migration matches its frozen SHA-256 (LF-normalised) and consists only of allow-listed statements.
@@ -21,7 +21,7 @@ import { loadCurrentManifest } from "./lib/review-accounts.mjs";
 import { gitGates, environmentGates, backupGates, connectVerified, APPROVED_REF, FORBIDDEN_REF } from "./lib/run-gates.mjs";
 
 export const MIGRATION = { version: "20261117000001", name: "bay_board_sec016_reconciliation", sha256: "a740c9780274a67573570a5834af3f70459d20db0a4abc7eb477c25cb388c725" };
-export const RUNNER_BRANCH = "fix/bay-board-flight-column";
+export const RUNNER_BRANCH = "ui/stitch-mobile-redesign";
 /** The certified baseline (dashboard/role-workspaces-adjustment); HEAD must descend from it. */
 export const CERTIFIED_BASE = "ac91dd59a6ab066a48553084d2dc8b2942e8deb9";
 export const PRE_COUNT = 92;
@@ -75,6 +75,27 @@ const args = process.argv.slice(2);
 const argVal = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split("=").slice(1).join("=");
 const LIVE = args.includes("--live");
 const fail = (m) => { throw new Error(m); };
+
+/**
+ * Git gates of the run: exact repository, branch RUNNER_BRANCH, origin, clean working tree, HEAD === the expected head (and, when it differs,
+ * a descendant of it with only tooling changed) and a descendant of the certified baseline. Exported so tests exercise the real gate code.
+ */
+export function runnerGitGates({ expectedHead, repoPath, certifiedBase = CERTIFIED_BASE }) {
+  const git = gitGates({ expectedBase: expectedHead, expectedRepoPath: repoPath, expectedBranch: RUNNER_BRANCH });
+  if (git.head !== expectedHead) fail("HEAD is not the expected head");
+  try { child_process.execSync(`git merge-base --is-ancestor ${certifiedBase} HEAD`, { stdio: "ignore" }); } catch { fail("HEAD does not descend from the certified baseline"); }
+  return git;
+}
+
+/** The migration file must match its frozen SHA-256 (LF-normalised) and contain only allow-listed statements. Returns the SQL text. */
+export function verifyFrozenMigration(buf, file = `${MIGRATION.version}_${MIGRATION.name}.sql`) {
+  const sha = normalisedSha256(buf);
+  if (sha !== MIGRATION.sha256) fail(`${file}: SHA-256 ${sha} differs from the frozen ${MIGRATION.sha256}`);
+  const text = buf.toString("utf8");
+  const bad = statementAudit(text);
+  if (bad) fail(`${file} contains a statement outside the reviewed allow-list: ${bad}`);
+  return text;
+}
 const logDir = path.join(os.tmpdir(), "vecta-staging-deployments");
 const defaultLog = (m) => { const l = `[${new Date().toISOString()}] ${m}`; console.log(l); fs.mkdirSync(logDir, { recursive: true }); fs.appendFileSync(path.join(logDir, `bay-board-${process.pid}.log`), l + "\n"); };
 
@@ -278,9 +299,7 @@ async function main() {
   const log = defaultLog;
   log(`bay board migration: ${LIVE ? "dry run, then LIVE APPLY" : "DRY RUN only"}`);
 
-  const git = gitGates({ expectedBase: expectedHead, expectedRepoPath: path.resolve(import.meta.dirname, "../.."), expectedBranch: RUNNER_BRANCH });
-  if (git.head !== expectedHead) fail("HEAD is not the expected head");
-  try { child_process.execSync(`git merge-base --is-ancestor ${CERTIFIED_BASE} HEAD`, { stdio: "ignore" }); } catch { fail("HEAD does not descend from the certified baseline"); }
+  const git = runnerGitGates({ expectedHead, repoPath: path.resolve(import.meta.dirname, "../..") });
   log(`HEAD=${git.head.slice(0, 12)}; branch ${RUNNER_BRANCH}, origin and certified-baseline ancestry verified; working tree clean`);
   environmentGates();
   if (JSON.stringify(process.env).includes(FORBIDDEN_REF)) fail("production reference present");
@@ -293,11 +312,7 @@ async function main() {
 
   const file = `${MIGRATION.version}_${MIGRATION.name}.sql`;
   const buf = fs.readFileSync(path.join(git.root, "supabase", "migrations", file));
-  const sha = normalisedSha256(buf);
-  if (sha !== MIGRATION.sha256) fail(`${file}: SHA-256 ${sha} differs from the frozen ${MIGRATION.sha256}`);
-  const text = buf.toString("utf8");
-  const bad = statementAudit(text);
-  if (bad) fail(`${file} contains a statement outside the reviewed allow-list: ${bad}`);
+  const text = verifyFrozenMigration(buf, file);
   const migDir = fs.readdirSync(path.join(git.root, "supabase", "migrations")).filter((f) => /^\d{14}_.*\.sql$/.test(f)).sort();
   if (migDir.filter((f) => f.slice(0, 14) > LAST_PRE).join() !== file) fail("the repository holds a migration after the last applied one that is not the frozen one");
   log(`${file} matches its frozen SHA-256, contains only allow-listed statements and is the only migration after ${LAST_PRE}`);

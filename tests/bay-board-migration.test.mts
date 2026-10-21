@@ -46,10 +46,14 @@ test("the guarded runner pins the migration hash, the exact branch and commit, s
   const m = /MIGRATION = \{ version: "(\d{14})", name: "([a-z0-9_]+)", sha256: "([0-9a-f]{64})" \}/.exec(runner)!;
   assert.equal(`${m[1]}_${m[2]}.sql`, FILE);
   assert.equal(crypto.createHash("sha256").update(sql).digest("hex"), m[3], "frozen SHA-256 matches the migration");
-  assert.match(runner, /RUNNER_BRANCH = "fix\/bay-board-flight-column"/);
+  assert.match(runner, /RUNNER_BRANCH = "ui\/stitch-mobile-redesign"/);
+  assert.doesNotMatch(runner, /fix\/bay-board-flight-column/, "the superseded repair branch is no longer accepted anywhere in the runner");
   assert.match(runner, /expectedBranch: RUNNER_BRANCH/);
+  assert.match(runner, /runnerGitGates\(\{ expectedHead, repoPath:/, "main() runs the exported, tested git gates");
+  assert.match(runner, /verifyFrozenMigration\(buf, file\)/, "main() runs the exported, tested migration verification");
   assert.match(runner, /git\.head !== expectedHead/);
-  assert.match(runner, /merge-base --is-ancestor \$\{CERTIFIED_BASE\}/);
+  assert.match(runner, /certifiedBase = CERTIFIED_BASE/);
+  assert.match(runner, /merge-base --is-ancestor \$\{certifiedBase\}/);
   assert.match(runner, /environmentGates\(\)/);
   assert.match(runner, /FORBIDDEN_REF/);
   assert.match(runner, /connectVerified\(\)/);
