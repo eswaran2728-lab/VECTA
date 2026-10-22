@@ -34,7 +34,7 @@ export interface WoisOrchestratorDeps {
   signal?: AbortSignal;
 }
 
-export type WoisFallbackReason = "timeout" | "provider_error" | "invalid_output" | "provider_rejected" | "provider_auth" | "provider_model_unavailable" | "provider_rate_limited" | "provider_unavailable";
+export type WoisFallbackReason = "timeout" | "provider_error" | "invalid_output" | "provider_rejected" | "provider_auth" | "provider_model_unavailable" | "provider_rate_limited" | "provider_unavailable" | "provider_precondition";
 
 /** Reduces a provider error to a safe category from its numeric HTTP status ONLY -- the error text is never read, stored or returned. */
 function classifyProviderError(e: unknown): WoisFallbackReason {
@@ -45,6 +45,12 @@ function classifyProviderError(e: unknown): WoisFallbackReason {
   if (status === 404) return "provider_model_unavailable";
   if (status === 429) return "provider_rate_limited";
   if (status >= 500) return "provider_unavailable";
+  if (status === 400) {
+    // Only well-known Google status tokens are matched; the message text is never stored or returned.
+    const text = e instanceof Error ? e.message : "";
+    if (text.includes("API_KEY_INVALID") || text.includes("API key not valid")) return "provider_auth";
+    if (text.includes("FAILED_PRECONDITION")) return "provider_precondition";
+  }
   if (status >= 400) return "provider_rejected";
   return "provider_error";
 }

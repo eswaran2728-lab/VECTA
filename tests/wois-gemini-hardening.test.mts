@@ -229,3 +229,12 @@ test("fallback: an HTTP status on the provider error is reduced to a safe catego
     assert.ok(!JSON.stringify(r).includes(SECRET) && !JSON.stringify(r).includes("boom"));
   }
 });
+
+test("fallback: well-known Google error codes inside a 400 map to safe categories; the text itself is never returned", async () => {
+  const cases: Array<[string, string]> = [["API_KEY_INVALID: API key not valid", "provider_auth"], ["FAILED_PRECONDITION: User location is not supported", "provider_precondition"], ["INVALID_ARGUMENT: bad field", "provider_rejected"]];
+  for (const [text, reason] of cases) {
+    const r = await runWoisOrchestrator("q", { ...base, provider: scripted(() => { throw Object.assign(new Error(`${text} key=${SECRET}`), { status: 400 }); }), fallbackProvider: finalProvider("deterministic answer") });
+    assert.equal(r.fallbackReason, reason, text);
+    assert.ok(!JSON.stringify(r).includes(SECRET) && !JSON.stringify(r).includes("not valid") && !JSON.stringify(r).includes("location"));
+  }
+});
