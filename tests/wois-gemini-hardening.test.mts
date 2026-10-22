@@ -238,3 +238,12 @@ test("fallback: well-known Google error codes inside a 400 map to safe categorie
     assert.ok(!JSON.stringify(r).includes(SECRET) && !JSON.stringify(r).includes("not valid") && !JSON.stringify(r).includes("location"));
   }
 });
+
+test("fallback: a generic 400 is bucketed by fixed keywords (tools / model / config) without returning any text", async () => {
+  const cases: Array<[string, string]> = [["INVALID_ARGUMENT: function_declarations[0].parameters is required", "provider_rejected_tools"], ["INVALID_ARGUMENT: model does not support this", "provider_rejected_model"], ["INVALID_ARGUMENT: system_instruction is not supported", "provider_rejected_config"], ["INVALID_ARGUMENT: something else", "provider_rejected"]];
+  for (const [text, reason] of cases) {
+    const r = await runWoisOrchestrator("q", { ...base, provider: scripted(() => { throw Object.assign(new Error(`${text} key=${SECRET}`), { status: 400 }); }), fallbackProvider: finalProvider("deterministic answer") });
+    assert.equal(r.fallbackReason, reason, text);
+    assert.ok(!JSON.stringify(r).includes(SECRET) && !JSON.stringify(r).includes("parameters"));
+  }
+});

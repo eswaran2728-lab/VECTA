@@ -34,7 +34,7 @@ export interface WoisOrchestratorDeps {
   signal?: AbortSignal;
 }
 
-export type WoisFallbackReason = "timeout" | "provider_error" | "invalid_output" | "provider_rejected" | "provider_auth" | "provider_model_unavailable" | "provider_rate_limited" | "provider_unavailable" | "provider_precondition";
+export type WoisFallbackReason = "timeout" | "provider_error" | "invalid_output" | "provider_rejected" | "provider_auth" | "provider_model_unavailable" | "provider_rate_limited" | "provider_unavailable" | "provider_precondition" | "provider_rejected_tools" | "provider_rejected_model" | "provider_rejected_config";
 
 /** Reduces a provider error to a safe category from its numeric HTTP status ONLY -- the error text is never read, stored or returned. */
 function classifyProviderError(e: unknown): WoisFallbackReason {
@@ -50,6 +50,9 @@ function classifyProviderError(e: unknown): WoisFallbackReason {
     const text = e instanceof Error ? e.message : "";
     if (text.includes("API_KEY_INVALID") || text.includes("API key not valid")) return "provider_auth";
     if (text.includes("FAILED_PRECONDITION")) return "provider_precondition";
+    if (/function|tool/i.test(text)) return "provider_rejected_tools";
+    if (/system_instruction|systemInstruction|thinking|max_output|maxOutput/i.test(text)) return "provider_rejected_config";
+    if (/model/i.test(text)) return "provider_rejected_model";
   }
   if (status >= 400) return "provider_rejected";
   return "provider_error";
