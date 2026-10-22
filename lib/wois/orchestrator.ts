@@ -34,7 +34,20 @@ export interface WoisOrchestratorDeps {
   signal?: AbortSignal;
 }
 
-export type WoisFallbackReason = "timeout" | "provider_error" | "invalid_output";
+export type WoisFallbackReason = "timeout" | "provider_error" | "invalid_output" | "provider_rejected" | "provider_auth" | "provider_model_unavailable" | "provider_rate_limited" | "provider_unavailable";
+
+/** Reduces a provider error to a safe category from its numeric HTTP status ONLY -- the error text is never read, stored or returned. */
+function classifyProviderError(e: unknown): WoisFallbackReason {
+  if (e instanceof Error && e.message === "provider_timeout") return "timeout";
+  const status = typeof e === "object" && e !== null ? (e as { status?: unknown }).status : undefined;
+  if (typeof status !== "number") return "provider_error";
+  if (status === 401 || status === 403) return "provider_auth";
+  if (status === 404) return "provider_model_unavailable";
+  if (status === 429) return "provider_rate_limited";
+  if (status >= 500) return "provider_unavailable";
+  if (status >= 400) return "provider_rejected";
+  return "provider_error";
+}
 
 export interface WoisOrchestratorResult {
   response: WoisEngineResponse;
@@ -85,7 +98,7 @@ async function runLoop(provider: WoisProvider, message: string, deps: WoisOrches
         deps.timeoutMs
       );
     } catch (e) {
-      return { ok: false, reason: e instanceof Error && e.message === "provider_timeout" ? "timeout" : "provider_error", toolCalls };
+      return { ok: false, reason: classifyProviderError(e), toolCalls };
     }
 
     if (result.type === "final") {

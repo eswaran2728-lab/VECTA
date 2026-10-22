@@ -219,3 +219,13 @@ test("route: an unreadable / foreign conversation id fails closed with 403 (owne
   const src = (await import("node:fs")).readFileSync("app/api/wois/chat/route.ts", "utf8");
   assert.match(src, /list_wois_messages_secure[\s\S]{0,400}historyError[\s\S]{0,300}status: 403/);
 });
+
+test("fallback: an HTTP status on the provider error is reduced to a safe category (never the error text)", async () => {
+  const cases: Array<[number, string]> = [[400, "provider_rejected"], [401, "provider_auth"], [403, "provider_auth"], [404, "provider_model_unavailable"], [429, "provider_rate_limited"], [503, "provider_unavailable"]];
+  for (const [status, reason] of cases) {
+    const r = await runWoisOrchestrator("q", { ...base, provider: scripted(() => { throw Object.assign(new Error(`boom key=${SECRET}`), { status }); }), fallbackProvider: finalProvider("deterministic answer") });
+    assert.equal(r.usedFallback, true);
+    assert.equal(r.fallbackReason, reason, `status ${status}`);
+    assert.ok(!JSON.stringify(r).includes(SECRET) && !JSON.stringify(r).includes("boom"));
+  }
+});
