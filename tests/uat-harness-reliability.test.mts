@@ -127,3 +127,11 @@ test("station section: every login in the station loop names the loop variable (
   assert.match(body, /await login\(s\.page, a, x\.label\)/);
   assert.doesNotMatch(body, /login\(s\.page, a, label\)/);
 });
+
+test("mobile notification check targets the control the mobile layout actually shows (Alerts), not the desktop-rail bell hidden at that width", () => {
+  const idx = UAT.indexOf('check("notifications", "aso-kul (mobile)');
+  assert.ok(idx > 0, "the mobile notifications check exists");
+  const block = UAT.slice(Math.max(0, idx - 700), idx);
+  assert.match(block, /name: \/\^Alerts\//, "the mobile bell is the bottom-bar Alerts control");
+  assert.doesNotMatch(block, /name: \/\^Notifications\//, "the desktop-only Notifications control is not clicked at 390px");
+});

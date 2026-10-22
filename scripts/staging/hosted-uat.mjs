@@ -606,9 +606,11 @@ async function sectionResponsive(browser) {
         }
         // bell: opens, announces, no REST 404
         if (vpName === "mobile" && label === "aso-kul") {
-          const bell = s.page.getByRole("button", { name: /^Notifications/ }).first();
-          await bell.click();
-          await s.page.waitForTimeout(1500);
+          // at 390px the layout shows the bottom-bar "Alerts" control; the "Notifications" bell lives in the desktop rail and is hidden here
+          const bell = s.page.getByRole("button", { name: /^Alerts/ }).first();
+          await bell.waitFor({ state: "visible", timeout: 10000 });
+          await bell.click({ timeout: 10000 });
+          await s.page.locator("[role=dialog]").first().waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
           const t = (await s.page.textContent("body")) ?? "";
           check("notifications", "aso-kul (mobile): bell opens and lists the notification", /Registration request submitted|Nothing yet/.test(t));
           await s.page.screenshot({ path: path.join(evDir, `bell-${label}-${vpName}.png`) });
