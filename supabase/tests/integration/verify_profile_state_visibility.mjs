@@ -112,11 +112,11 @@ async function main() {
   const none = (v) => !v.t && !v.a && !v.s;
   const who = { approved, pending, rejected, deactivated, revoked, expired, future, otherStation, mgmt, ops, driver };
 
-  console.log('\n--- SECTION 1: the flaw reproduces on the current helper ---');
+  console.log('\n--- SECTION 1: the historical flaw (profile state ignored) cannot occur under the least-privilege visibility rule ---');
   {
     const v = {}; for (const [k, id] of Object.entries(who)) v[k] = await view(id);
     assert(all(v.approved), 'approved station officer reads the movement, Part A and seals (expected)');
-    assert(all(v.pending) && all(v.rejected) && all(v.deactivated), 'FLAW: a pending, rejected and a deactivated profile with an active assignment read the movement, Part A and seals');
+    assert(none(v.pending) && none(v.rejected) && none(v.deactivated), 'a pending, rejected and a deactivated profile with an active assignment read nothing (the visibility rule requires an approved profile; the old helper is no longer used by any policy)');
     assert(none(v.revoked) && none(v.expired) && none(v.future), 'revoked, expired and future-dated assignments are already denied');
     assert(none(v.otherStation), 'an officer at another station is denied');
     assert(all(v.mgmt) && all(v.ops) && all(v.driver), 'Management, Operation Manager and the creating Driver read it (other branches)');
@@ -139,7 +139,8 @@ async function main() {
     assert(JSON.stringify(before) === JSON.stringify(after), 'signature, SECURITY DEFINER, volatility, pinned search_path and grants of the helper are unchanged');
     assert((await one("select md5(string_agg(policyname || coalesce(qual,''), ',' order by policyname)) h from pg_policies where tablename in ('transactions','seals','caterlink_checkpoint_part_a','part_b_c','caterlink_checkpoint_part_d','caterlink_checkpoint_hub','caterlink_checkpoint_redq');")).h === policyBefore, 'no policy was edited');
     assert((await one("select md5(pg_get_functiondef('public.can_user_scan_caterlink(text, uuid)'::regprocedure)) h;")).h === scanBefore, 'the scan decision is untouched');
-    assert((await one("select count(*)::int n from pg_policies where qual ilike '%has_station_assignment_for_transaction%' or with_check ilike '%has_station_assignment_for_transaction%';")).n === 1, 'the helper is used by exactly one policy (transactions_read_policy)');
+    assert((await one("select count(*)::int n from pg_policies where qual ilike '%has_station_assignment_for_transaction%' or with_check ilike '%has_station_assignment_for_transaction%';")).n === 0, 'the old station-membership helper is no longer used by any policy (least-privilege visibility, migration 20261119000001)');
+    assert((await one("select count(*)::int n from pg_policies where qual ilike '%caterlink_can_read_transaction_at_stations%';")).n === 1, 'the least-privilege function is used by exactly one policy (transactions_read_policy)');
   }
   console.log('\n--- SECTION 3: state changes take effect immediately and idempotently ---');
   {

@@ -159,3 +159,13 @@ test("profile-status verifier lists the object's own parent folder (works for ne
   assert.match(src, /lastIndexOf\("\/"\)/);
   assert.doesNotMatch(src, /list\(mv\.sig\.split\("\/"\)\[0\]/);
 });
+
+test("hosted verifiers encode the least-privilege movement rule: PEN receipt officer reads the PEN-destined movement, Staff Profiling at PEN does not", () => {
+  const prof = read("scripts/staging/verify-profile-status-staging.mjs");
+  assert.match(prof, /\["aso", true, true,/);
+  assert.match(prof, /\["profiling_aso", false, false,/);
+  const ext = read("scripts/staging/verify-external-workflows-staging.mjs");
+  assert.match(ext, /profiling_aso: false/);
+  const e2e = read("scripts/staging/e2e-external-workflows.mjs");
+  assert.match(e2e, /"profiling_aso", "aso-no-caterlink"\]/);
+});

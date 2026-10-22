@@ -63,7 +63,7 @@ const fmt = (o) => Object.entries(o).map(([k, v]) => `${k}=${v ? "Y" : "n"}`).jo
 // label, movement expectation, vendor-delivery expectation
 const matrix = [
   ["aso-kul", true, false, "approved KUL - MAA officer (origin station)"],
-  ["aso", false, true, "approved PEN officer (PEN vendor deliveries only)"],
+  ["aso", true, true, "approved PEN officer (receipt capability at the PEN-destined fixture movement; PEN vendor deliveries)"],
   ["aso-jhb", false, false, "approved JHB officer"],
   ["caterlink_management", true, true, "CaterLink Management"],
   ["operation_manager", true, false, "Operation Manager"],

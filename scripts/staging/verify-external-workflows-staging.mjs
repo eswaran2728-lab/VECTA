@@ -137,10 +137,9 @@ async function main() {
     const s = (await rows(label, "seals")).data?.some((r) => r.transaction_id === txId) ?? false;
     return { t, a, s };
   };
-  const expectVisible = { [drv]: true, [mgmt]: true, operation_manager: true, main_enforcement: true, "aso-kul": true, "sso-kul": true, [vnd]: false, aso: true, "aso-jhb": false, profiling_aso: true, "aso-kch-receipt": false, "neg-pending-profile": false };
-  // The fixture movement is KUL - MAA -> HUB PEN, so station staff at BOTH stations see it under the station read rule (any active assignment at the origin or
-  // destination station, Staff Profiling included: aso and profiling_aso are at PEN). A pending profile sees nothing (station visibility requires an approved profile,
-  // migration 20261027000001), which replaces the old "documented OPEN flaw" expectation.
+  const expectVisible = { [drv]: true, [mgmt]: true, operation_manager: true, main_enforcement: true, "aso-kul": true, "sso-kul": true, [vnd]: false, aso: true, "aso-jhb": false, profiling_aso: false, "aso-kch-receipt": false, "neg-pending-profile": false };
+  // The fixture movement is KUL - MAA -> HUB PEN. Least privilege (migration 20261119000001): station membership alone grants nothing. Staff at KUL - MAA read it through the
+  // station's 'create' capability and staff at PEN through the receipt capability; Staff Profiling (aso/profiling_aso at PEN) is excluded, other-station staff and a pending profile see nothing.
   for (const [label, want] of Object.entries(expectVisible)) {
     const v = await view(label);
     check(`${label}: movement, Part A and seals are ${want ? "visible together" : "all invisible"} (parent-transaction visibility)`, v.t === want && v.a === want && v.s === want, JSON.stringify(v));

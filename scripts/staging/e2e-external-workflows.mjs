@@ -17,9 +17,11 @@ const args = process.argv.slice(2);
 const argVal = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split("=").slice(1).join("=");
 const base = argVal("url") ?? "http://localhost:3000";
 const vpName = argVal("viewport") ?? "desktop";
-const flows = (argVal("flow") ?? "driver,vendor,management,isolation,state").split(",");
+const flows = (argVal("flow") ?? "driver,vendor,station,management,isolation,state").split(",");
 const VIEWPORTS = { desktop: { width: 1366, height: 850 }, mobile: { width: 390, height: 844 } };
 const vp = VIEWPORTS[vpName];
+const bypassFile = argVal("bypass-file");
+const bypass = bypassFile ? fs.readFileSync(bypassFile, "utf8").trim() : null;
 const accounts = loadCurrentCredentials();
 const acct = (l) => accounts.find((a) => a.label === l);
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -40,7 +42,9 @@ async function newCtx(browser) {
   const ctx = await browser.newContext({ viewport: vp, isMobile: vp.width < 500, hasTouch: vp.width < 500 });
   ctx.setDefaultTimeout(20000);
   ctx.setDefaultNavigationTimeout(30000);
-  return { ctx, page: await ctx.newPage() };
+  const page = await ctx.newPage();
+  if (bypass) await page.goto(`${base}/login?x-vercel-protection-bypass=${bypass}&x-vercel-set-bypass-cookie=true`, { waitUntil: "domcontentloaded" });
+  return { ctx, page };
 }
 async function login(page, label) {
   const a = acct(label);
@@ -437,11 +441,70 @@ async function managementFlow(browser, state) {
   await ctx.close();
 }
 
+// The PEN officer (receipt capability at the HUB destination PEN) confirms the Driver's movement through the real receipt screen; the completed movement then has its
+// generated final PDF, which Management downloads (signed URL) from the final-PDFs screen. Needs an active duty fixture for the PEN officer.
+async function stationFlow(browser, state) {
+  const T = "Station";
+  const { ctx, page } = await newCtx(browser);
+  try {
+    ok(`${T}: PEN officer signs in`, await login(page, "aso"));
+    await page.goto(`${base}/avsec/caterlink/receipt`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(2500);
+    ok(`${T}: the PEN officer reaches the final-receipt screen (capability at PEN)`, /\/avsec\/caterlink\/receipt/.test(pathOf(page)) && /Final receipt/i.test(await visibleText(page)), pathOf(page));
+    const card = page.locator(`article[aria-label="Movement ${state.txNumber}"]`);
+    ok(`${T}: the Driver's movement is waiting for receipt at PEN`, (await card.count()) === 1, state.txNumber ?? "no transaction number");
+    if ((await card.count()) === 1) {
+      await card.locator("button[aria-expanded]").click();
+      await card.locator('input[name="routeOk"]').check();
+      await card.locator('input[name="sealOk"]').check();
+      await card.locator('input[name="deliveryOk"]').check();
+      const submit = card.locator('button[type="submit"]');
+      for (let i = 0; i < 6 && !(await submit.isEnabled().catch(() => false)); i += 1) { await draw(page, 0); await page.waitForTimeout(800); }
+      await shot(page, "station-receipt-form");
+      await submit.click();
+      await page.waitForTimeout(6000);
+      const body = await visibleText(page);
+      const gone = (await page.locator(`article[aria-label="Movement ${state.txNumber}"]`).count()) === 0;
+      ok(`${T}: the receipt is confirmed from the UI (the movement leaves the pending list)`, gone && !/not authori[sz]ed|failed/i.test(body), body.slice(0, 120).replace(/\s+/g, " "));
+      await shot(page, "station-receipt-done");
+    }
+    for (const p of ["/avsec/caterlink/receipt"]) { void p; }
+  } catch (e) { ok(`${T}: flow`, false, String(e.message).slice(0, 200)); await shot(page, "station-error"); }
+  await ctx.close();
+  if (state.txId) {
+    const d = await newCtx(browser);
+    try {
+      await login(d.page, "caterlink-driver");
+      await d.page.goto(`${base}/icms/transactions/${state.txId}`, { waitUntil: "domcontentloaded" });
+      const t = await visibleText(d.page);
+      ok(`${T}: the Driver sees the movement COMPLETED after the receipt`, /Completed/i.test(t), pathOf(d.page));
+    } catch (e) { ok(`${T}: driver completion view`, false, String(e.message).slice(0, 160)); }
+    await d.ctx.close();
+    const m = await newCtx(browser);
+    try {
+      await login(m.page, "caterlink_management");
+      await m.page.goto(`${base}/icms/admin/final-pdfs`, { waitUntil: "domcontentloaded" });
+      await m.page.waitForTimeout(2000);
+      const t = await visibleText(m.page);
+      ok(`${T}: the completed movement appears on the final-PDFs screen (generated completed form)`, state.txNumber ? t.includes(state.txNumber) : false, pathOf(m.page));
+      const row = m.page.locator("tr", { hasText: state.txNumber ?? "NONE" });
+      const dl = row.locator("form button[type=submit]").last();
+      if ((await row.count()) && (await dl.count())) {
+        const [resp] = await Promise.all([m.page.waitForResponse((r) => r.request().method() === "POST", { timeout: 30000 }).catch(() => null), dl.click()]);
+        await m.page.waitForTimeout(3000);
+        ok(`${T}: Management's download answers with a signed redirect / the PDF`, !!resp && resp.status() < 400, resp ? String(resp.status()) : "no response");
+      } else blocked(`${T}: Management download of the completed PDF`, "no download control found on the row");
+      await shot(m.page, "station-final-pdfs");
+    } catch (e) { ok(`${T}: management final PDF`, false, String(e.message).slice(0, 160)); }
+    await m.ctx.close();
+  }
+}
+
 async function isolationFlow(browser, state) {
-  // The Driver's movement is KUL - MAA -> HUB PEN. Staff at neither station (JHB, KCH receipt, BKI) and the Vendor cannot open it. (Station staff at the origin or destination
-  // station, Staff Profiling included, can: that is the pre-existing station read rule, asserted in verify-external-workflows-staging.mjs.)
+  // The Driver's movement is KUL - MAA -> HUB PEN. Least privilege (migration 20261119000001): staff at neither station (JHB, KCH receipt, BKI), the Vendor, Staff Profiling at PEN and an officer
+  // of a station without CaterLink capability cannot open it; station membership alone grants nothing.
   const T = "Isolation";
-  for (const label of ["aso-jhb", "aso-kch-receipt", "aso-bki-receipt", "caterlink-vendor"]) {
+  for (const label of ["aso-jhb", "aso-kch-receipt", "aso-bki-receipt", "caterlink-vendor", "profiling_aso", "aso-no-caterlink"]) {
     const { ctx, page } = await newCtx(browser);
     try {
       await login(page, label);
@@ -474,6 +537,7 @@ async function main() {
       } catch (e) { ok("Driver: vendor-url check", false, String(e.message).slice(0, 120)); }
       await ctx.close();
     })(); }
+    if (flows.includes("station")) await stationFlow(browser, state);
     if (flows.includes("management")) await managementFlow(browser, state);
     if (flows.includes("isolation")) await isolationFlow(browser, state);
     if (flows.includes("state")) await stateFlow(browser, state);
