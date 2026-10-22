@@ -178,6 +178,7 @@ async function main() {
   assert(after.hist === preCount + 1 && after.fn === 1 && after.policy !== JSON.parse(before).policy, `one history row added (${preCount} -> ${after.hist}), the function exists and the policy changed`);
   const v = await runner.verifyApplied(async (s, p) => (await db.query(s, p)).rows, { postCount: preCount + 1, postLast: runner.POST_LAST });
   assert(v.last === runner.POST_LAST, 'verifyApplied (the read-only post-apply check) passes on the applied state');
+  assert((await one("select count(*)::int n from public.transactions where transaction_number like 'VISPROBE-%'")).n === 0, 'the live pass left no probe movement behind (fixtures are removed before the commit)');
 
   // ---- the applied behaviour, independently of the runner's probes
   await db.exec('set session_replication_role = replica;');

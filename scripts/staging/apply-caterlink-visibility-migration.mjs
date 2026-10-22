@@ -143,7 +143,7 @@ async function unrelatedFingerprint(q) {
     profiles: (await q("select coalesce(md5(string_agg(md5(p::text), ',' order by p.id::text)), 'none') h from public.profiles p"))[0].h,
     assignments: (await q("select coalesce(md5(string_agg(md5(a::text), ',' order by a.id::text)), 'none') h from public.user_role_assignments a"))[0].h,
     capabilities: (await q("select coalesce(md5(string_agg(md5(c::text), ',' order by c.id::text)), 'none') h from public.caterlink_station_capabilities c"))[0].h,
-    transactions: (await q("select count(*)::text h from public.transactions where transaction_number not like 'VISPROBE-%'"))[0].h,
+    transactions: (await q("select count(*)::text h from public.transactions"))[0].h,
     authUsers: (await q("select count(*)::text h from auth.users"))[0].h,
   };
 }
@@ -279,7 +279,7 @@ export async function execute(client, ctx) {
       if (post.oldFnMd5 !== preObs.oldFnMd5) fail("the old station-membership function changed (it must stay untouched and unused)");
       probe("the old station-membership function is untouched (and unused by the policy)");
       const mid = await unrelatedFingerprint(q);
-      for (const k of Object.keys(pre)) if (mid[k] !== pre[k]) fail(`the migration changed something it must not (${k})`);
+      for (const k of Object.keys(pre)) if (k !== "transactions" && mid[k] !== pre[k]) fail(`the migration changed something it must not (${k})`);
       probe("every unrelated fingerprint is unchanged (other function bodies, properties and EXECUTE grants, all other policies, table privileges, columns, constraints, triggers, RLS, storage buckets, profiles, assignments, station capabilities, movements, Auth users)");
 
       // ---- behaviour after the change, with real roles
@@ -313,6 +313,14 @@ export async function execute(client, ctx) {
       if (typeof sc === "string" || sc.a !== true || sc.b !== true) fail(`the canonical capability functions changed behaviour (${JSON.stringify(sc)})`);
       probe("the canonical capability functions are unchanged for aso at PEN (scan and receipt both true)");
 
+      // the probe fixtures must never outlive the probes: remove exactly them before the commit (the dry run rolls back anyway)
+      await client.query("set local session_replication_role = replica");
+      await client.query("delete from public.seals where transaction_id = any($1::uuid[])", [[T1, T2, T3]]);
+      const removed = await client.query("delete from public.transactions where id = any($1::uuid[])", [[T1, T2, T3]]);
+      await client.query("set local session_replication_role = origin");
+      if (removed.rowCount !== 3) fail(`the probe fixtures were not removed exactly (${removed.rowCount} of 3)`);
+      if ((await q("select count(*)::int n from public.transactions where transaction_number like 'VISPROBE-%'"))[0].n !== 0) fail("a probe movement remains");
+      if ((await q("select count(*)::text h from public.transactions"))[0].h !== pre.transactions) fail("the movement count differs from the pre-state after the probes");
       if (real) await client.query("COMMIT"); else await client.query("ROLLBACK");
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});

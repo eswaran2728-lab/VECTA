@@ -75,8 +75,8 @@ test("gitGates keeps its default branch and only accepts a different one when a 
 
 test("the expected hosted baseline records the applied reconciliation: 93 migrations ending at 20261117000001 (set only after the guarded live apply was verified)", () => {
   const base = fs.readFileSync("scripts/staging/lib/expected-baseline.mjs", "utf8");
-  assert.match(base, /EXPECTED_MIGRATION_COUNT = 98;/);
-  assert.match(base, /EXPECTED_LATEST_MIGRATION = "20261118000005";/);
+  assert.match(base, /EXPECTED_MIGRATION_COUNT = 99;/);
+  assert.match(base, /EXPECTED_LATEST_MIGRATION = "20261119000001";/);
 });
 
 // ======================= revised reconciliation (SEC016 rev03 + ops_group + Bay Board) =======================

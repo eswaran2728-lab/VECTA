@@ -90,5 +90,5 @@ test("a second application is refused now that hosted staging is at 93 (the runn
   const client = { query: async (sql: string) => (/schema_migrations order by version/.test(sql) ? { rows: history } : { rows: [] }) };
   await assert.rejects(() => R.execute(client, { files: [{ ...R.MIGRATION, file: "x", sql: lf }], acct: () => "x", live: true, log: () => {}, preCount: R.PRE_COUNT, lastPre: R.LAST_PRE, hashes: R.PRE_STATE }), /history is not exactly 92/);
   const base = fs.readFileSync("scripts/staging/lib/expected-baseline.mjs", "utf8");
-  assert.match(base, /EXPECTED_MIGRATION_COUNT = 98;/);
+  assert.match(base, /EXPECTED_MIGRATION_COUNT = 99;/);
 });
