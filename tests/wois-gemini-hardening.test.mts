@@ -247,3 +247,11 @@ test("fallback: a generic 400 is bucketed by fixed keywords (tools / model / con
     assert.ok(!JSON.stringify(r).includes(SECRET) && !JSON.stringify(r).includes("parameters"));
   }
 });
+
+test("fallback: errors without an HTTP status are bucketed by our own message / error name (empty response, network, abort)", async () => {
+  const mk = (e: Error) => runWoisOrchestrator("q", { ...base, provider: scripted(() => { throw e; }), fallbackProvider: finalProvider("deterministic answer") });
+  assert.equal((await mk(new Error("Gemini returned no text content"))).fallbackReason, "provider_empty_response");
+  assert.equal((await mk(Object.assign(new Error("fetch failed"), { name: "TypeError" }))).fallbackReason, "provider_network");
+  assert.equal((await mk(Object.assign(new Error("aborted"), { name: "AbortError" }))).fallbackReason, "provider_aborted");
+  assert.equal((await mk(new Error("something unknown"))).fallbackReason, "provider_error");
+});

@@ -34,13 +34,20 @@ export interface WoisOrchestratorDeps {
   signal?: AbortSignal;
 }
 
-export type WoisFallbackReason = "timeout" | "provider_error" | "invalid_output" | "provider_rejected" | "provider_auth" | "provider_model_unavailable" | "provider_rate_limited" | "provider_unavailable" | "provider_precondition" | "provider_rejected_tools" | "provider_rejected_model" | "provider_rejected_config";
+export type WoisFallbackReason = "timeout" | "provider_error" | "invalid_output" | "provider_rejected" | "provider_auth" | "provider_model_unavailable" | "provider_rate_limited" | "provider_unavailable" | "provider_precondition" | "provider_rejected_tools" | "provider_rejected_model" | "provider_rejected_config" | "provider_empty_response" | "provider_network" | "provider_aborted";
 
 /** Reduces a provider error to a safe category from its numeric HTTP status ONLY -- the error text is never read, stored or returned. */
 function classifyProviderError(e: unknown): WoisFallbackReason {
   if (e instanceof Error && e.message === "provider_timeout") return "timeout";
   const status = typeof e === "object" && e !== null ? (e as { status?: unknown }).status : undefined;
-  if (typeof status !== "number") return "provider_error";
+  if (typeof status !== "number") {
+    if (e instanceof Error) {
+      if (e.message === "Gemini returned no text content") return "provider_empty_response";
+      if (e.name === "AbortError") return "provider_aborted";
+      if (e.name === "TypeError" && /fetch failed/i.test(e.message)) return "provider_network";
+    }
+    return "provider_error";
+  }
   if (status === 401 || status === 403) return "provider_auth";
   if (status === 404) return "provider_model_unavailable";
   if (status === 429) return "provider_rate_limited";
