@@ -97,8 +97,9 @@ async function main() {
   if (bad.length || oldStillWorks) throw new Error("credential verification failed");
 
   // confidential PDF + plain-text copy (outside the repository)
-  const merged = next.accounts.map((c) => ({ ...c, kind: manifest.find((m) => m.label === c.label)?.kind, expectedWorkspace: manifest.find((m) => m.label === c.label)?.expectedWorkspace ?? c.expectedWorkspace }));
-  const model = { url: url.replace(/\/$/, ""), password, accounts: merged };
+  const merged = next.accounts.map((c) => { const m = manifest.find((x) => x.label === c.label) ?? {}; return { ...c, kind: m.kind, roleCode: m.roleCode ?? c.roleCode, accountState: m.accountState ?? c.accountState ?? "approved", scope: m.scope ?? c.scope, display: m.display ?? c.display ?? c.label, expectedWorkspace: m.expectedWorkspace ?? c.expectedWorkspace }; });
+  const generatedAt = new Date().toLocaleString("en-GB", { timeZone: "Asia/Kuala_Lumpur", dateStyle: "full", timeStyle: "medium" }) + " (Malaysia time)";
+  const model = { url: url.replace(/\/$/, ""), password, accounts: merged, generatedAt };
   fs.writeFileSync(txtPath, renderCredentialText(model), { mode: 0o600 });
   const browser = await chromium.launch();
   try {

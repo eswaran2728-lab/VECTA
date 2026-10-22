@@ -36,16 +36,21 @@ export function accountExpectation(a) {
 
 const clean = (s) => String(s ?? "").replace(/[\r\n]+/g, " ").trim();
 
+const scopeText = (sc) => (sc && typeof sc === "object" ? Object.values(sc).filter(Boolean).join(" / ") : clean(sc)) || "no AOC / entity / station scope";
+
+/** Copy-friendly text: one block per account (role, email, password, expected access incl. scope, expected state). */
 export function renderCredentialText({ url, password, accounts }) {
-  const lines = ["VECTA STAGING", `URL: ${url}`, `PASSWORD FOR ALL POSITIVE TEST ACCOUNTS: ${password}`, "", "ROLE / ID / PASSWORD / EXPECTED"];
-  for (const a of accounts) lines.push(`${clean(a.display ?? a.label)} / ${a.email} / ${password} / ${clean(accountExpectation(a))}`);
-  return lines.join("\n") + "\n";
+  const lines = ["VECTA STAGING", `URL: ${url}`, ""];
+  for (const a of accounts) {
+    lines.push(`ROLE: ${clean(a.display ?? a.label)}`, `EMAIL: ${a.email}`, `PASSWORD: ${password}`, `EXPECTED ACCESS: ${clean(accountExpectation(a))} [scope: ${scopeText(a.scope)}]`, `EXPECTED STATE: ${clean(a.accountState ?? "approved")}`, "");
+  }
+  return lines.join("\n");
 }
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-export function renderCredentialHtml({ url, password, accounts }) {
-  const rows = accounts.map((a) => `<tr><td>${esc(a.display ?? a.label)}</td><td>${esc(a.email)}</td><td class="pw">${esc(password)}</td><td>${esc(a.scope)}</td><td>${esc(a.expectedWorkspace)}</td><td>${esc(a.accountState ?? a.kind)}</td><td>${esc(accountExpectation(a))}</td></tr>`).join("\n");
+export function renderCredentialHtml({ url, password, accounts, generatedAt = "" }) {
+  const rows = accounts.map((a) => `<tr><td>${esc(a.display ?? a.label)}</td><td>${esc(a.roleCode)}</td><td>${esc(a.email)}</td><td class="pw">${esc(password)}</td><td>${esc(scopeText(a.scope))}</td><td>${esc(a.expectedWorkspace)}</td><td>${esc(a.accountState ?? a.kind)}</td><td>${esc(accountExpectation(a))}</td></tr>`).join("\n");
   return `<!doctype html><html><head><meta charset="utf-8"><title>VECTA staging logins (confidential)</title>
 <style>
  body{font-family:Arial,Helvetica,sans-serif;font-size:9px;color:#111;margin:18px}
@@ -56,9 +61,9 @@ export function renderCredentialHtml({ url, password, accounts }) {
 </style></head><body>
 <div class="conf">CONFIDENTIAL - STAGING TEST ACCOUNTS - DO NOT SHARE OR COMMIT</div>
 <h1>VECTA staging: all-role test logins</h1>
-<div class="meta"><b>Preview URL:</b> ${esc(url)}<br><b>Shared password (all accounts):</b> <span class="pw">${esc(password)}</span><br>
+<div class="meta"><b>Preview URL:</b> ${esc(url)}<br><b>Generated (Malaysia time):</b> ${esc(generatedAt)}<br><b>Shared password (all accounts):</b> <span class="pw">${esc(password)}</span><br>
 Negative identities (pending, rejected, deactivated, revoked, expired, future-dated) sign in but must have no functional access.</div>
-<table><thead><tr><th>Role / persona</th><th>Email</th><th>Password</th><th>Scope (AOC / entity / station / team)</th><th>Landing page</th><th>State</th><th>Access expectation</th></tr></thead><tbody>
+<table><thead><tr><th>Role / persona</th><th>Role code</th><th>Email</th><th>Password</th><th>Scope (AOC / entity / station / team)</th><th>Landing page</th><th>State</th><th>Access expectation</th></tr></thead><tbody>
 ${rows}
 </tbody></table></body></html>`;
 }

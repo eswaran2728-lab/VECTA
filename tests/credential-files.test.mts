@@ -16,20 +16,25 @@ test("generated shared passwords are long, mixed, shell/URL-safe and different e
 });
 
 const accounts = [
-  { label: "aso", display: "ASO PEN", roleCode: "aso", accountState: "approved", scope: "MY / MAA / PEN / team A", email: "aso.pen@vecta.test", password: "PW-PLACEHOLDER-xyz", expectedWorkspace: "/avsec/home (ASO)", kind: "station_variant" },
-  { label: "neg-pending-profile", display: "Pending", roleCode: "aso", accountState: "pending", scope: "none", email: "pending.profile@vecta.test", password: "PW-PLACEHOLDER-xyz", expectedWorkspace: "/avsec/pending-approval", kind: "negative" },
+  { label: "aso", display: "ASO PEN", roleCode: "aso", accountState: "approved", scope: { aoc: "MY", entity: "MAA", station: "PEN", team: "team A" }, email: "aso.pen@vecta.test", password: "PW-PLACEHOLDER-xyz", expectedWorkspace: "/avsec/home (ASO)", kind: "station_variant" },
+  { label: "neg-pending-profile", display: "Pending", roleCode: "aso", accountState: "pending", scope: {}, email: "pending.profile@vecta.test", password: "PW-PLACEHOLDER-xyz", expectedWorkspace: "/avsec/pending-approval", kind: "negative" },
 ];
 
-test("the plain-text copy lists URL, the shared password once, and every account with role, id, password and expectation, in the requested layout", () => {
+test("the plain-text copy uses the requested block layout: URL, then ROLE / EMAIL / PASSWORD / EXPECTED ACCESS / EXPECTED STATE per account", () => {
   const t = renderCredentialText({ url: "https://preview.example.test", password: "PW-PLACEHOLDER-xyz", accounts });
   const lines = t.split("\n");
   assert.equal(lines[0], "VECTA STAGING");
   assert.equal(lines[1], "URL: https://preview.example.test");
-  assert.equal(lines[2], "PASSWORD FOR ALL POSITIVE TEST ACCOUNTS: PW-PLACEHOLDER-xyz");
-  assert.match(t, /ROLE \/ ID \/ PASSWORD \/ EXPECTED/);
-  assert.match(t, /ASO PEN \/ aso\.pen@vecta\.test \/ PW-PLACEHOLDER-xyz \/ /);
-  assert.match(t, /Pending \/ pending\.profile@vecta\.test \/ PW-PLACEHOLDER-xyz \/ .*(restricted|denied|no functional access)/i, "negative identities state the denial");
-  assert.equal(accounts.length, t.split("\n").filter((l) => l.includes("@vecta.test")).length);
+  assert.equal(lines[2], "");
+  assert.deepEqual(lines.slice(3, 8).map((l) => l.split(":")[0]), ["ROLE", "EMAIL", "PASSWORD", "EXPECTED ACCESS", "EXPECTED STATE"]);
+  assert.equal(lines[3], "ROLE: ASO PEN");
+  assert.equal(lines[4], "EMAIL: aso.pen@vecta.test");
+  assert.equal(lines[5], "PASSWORD: PW-PLACEHOLDER-xyz");
+  assert.match(lines[6], /\/avsec\/home/);
+  assert.match(lines[6], /MY \/ MAA \/ PEN/, "scope is included");
+  assert.equal(lines[7], "EXPECTED STATE: approved");
+  assert.match(t, /EXPECTED STATE: pending/);
+  assert.equal(t.split("\n").filter((l) => l.startsWith("EMAIL: ")).length, accounts.length);
 });
 
 test("expectations: positives name the landing page, negatives state that access is denied or restricted", () => {
@@ -39,11 +44,12 @@ test("expectations: positives name the landing page, negatives state that access
 });
 
 test("the PDF source marks the document confidential, includes every account and escapes HTML in values", () => {
-  const html = renderCredentialHtml({ url: "https://preview.example.test", password: "PW-PLACEHOLDER-xyz", accounts: [{ ...accounts[0], display: "<script>x</script>" }, accounts[1]] });
+  const html = renderCredentialHtml({ url: "https://preview.example.test", generatedAt: "2026-10-22 18:30 MYT", password: "PW-PLACEHOLDER-xyz", accounts: [{ ...accounts[0], display: "<script>x</script>" }, accounts[1]] });
   assert.match(html, /CONFIDENTIAL/);
   assert.match(html, /aso\.pen@vecta\.test/);
   assert.match(html, /pending\.profile@vecta\.test/);
   assert.doesNotMatch(html, /<script>x<\/script>/);
   assert.match(html, /&lt;script&gt;/);
-  for (const col of ["Role", "Email", "Scope", "Landing", "State"]) assert.match(html, new RegExp(col, "i"));
+  assert.match(html, /Generated \(Malaysia time\)/);
+  for (const col of ["Role", "Role code", "Email", "Scope", "Landing", "State"]) assert.match(html, new RegExp(col, "i"));
 });
