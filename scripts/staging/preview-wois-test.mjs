@@ -102,17 +102,18 @@ async function main() {
     }
 
     // ---- eligibility matrix ----
-    const eligible = ["aso", "sso", "so", "maa_admin", "aax_admin", "aso-kul", "aso-jhb"];
+    const eligible = ["aso", "sso", "so", "maa_admin", "aax_admin", "aso-kul", "aso-jhb", "maa_boss", "operation_manager"];
     for (const l of eligible) {
       const s = await open(l);
       const r = await chat(s, "Which sections of VECTA can I use with my role?");
       ok("authz", `${l}: eligible and answered`, r.status === 200 && (r.json?.response?.body ?? "").length > 0, `status ${r.status} provider=${r.json?.response?.provider} fallback=${r.json?.response?.usedFallback}`);
       if (r.json?.conversationId) (s.convs ??= []).push(r.json.conversationId);
     }
-    for (const l of ["ghod", "airasia_management", "super_admin", "operation_manager", "maa_boss", "aax_boss"]) {
+    // By design (is_wois_eligible_secure: approved + active assignment in AOC MY): group-level roles hold aoc=null assignments, so they are NOT eligible.
+    for (const l of ["ghod", "airasia_management", "super_admin"]) {
       const s = await open(l);
       const r = await chat(s, "Which sections of VECTA can I use with my role?");
-      info("authz", `${l}: observed WOIS eligibility`, `status ${r.status} ${r.json?.reason ?? r.json?.response?.provider ?? ""}`);
+      ok("authz", `${l}: group-level role (no MY-AOC assignment) is refused by design`, r.status === 403 && r.json?.reason === "not_eligible", `status ${r.status} ${r.json?.reason ?? ""}`);
       if (r.json?.conversationId) (s.convs ??= []).push(r.json.conversationId);
     }
     for (const l of ["neg-pending-profile", "neg-rejected-profile", "neg-deactivated-profile", "neg-revoked-assignment", "neg-expired-assignment", "neg-future-assignment", "caterlink_management", "caterlink-driver", "caterlink-vendor"]) {
