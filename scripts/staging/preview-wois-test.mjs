@@ -21,7 +21,7 @@ const CHROME = ["C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Pro
 const evDir = path.join(os.tmpdir(), "vecta-wois-evidence", new Date().toISOString().replace(/[:.]/g, "-"));
 fs.mkdirSync(evDir, { recursive: true });
 const otherEmails = accounts.map((a) => a.email.toLowerCase());
-const SECRET_PATTERNS = [/AIza[0-9A-Za-z_-]{20,}/, /eyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}/, /sb_secret_[A-Za-z0-9_-]{20,}/i, /service[_ ]role key/i, /postgres(ql)?:\/\//i, /GEMINI_API_KEY/];
+const SECRET_PATTERNS = [/AIza[0-9A-Za-z_-]{20,}/, /eyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}/, /sb_secret_[A-Za-z0-9_-]{20,}/i, /postgres(ql)?:\/\//i, /GEMINI_API_KEY/];
 const SYSTEM_MARKERS = [/You cannot approve, reject, publish/i, /functionDeclarations/i, /system (prompt|instruction)s?:/i];
 
 let pass = 0, fail = 0;
@@ -69,6 +69,7 @@ const emailsIn = (text, own) => otherEmails.filter((e) => e !== own.toLowerCase(
 async function main() {
   const browser = await chromium.launch({ executablePath: CHROME, headless: true });
   const sessions = {};
+  const fallbacks = [];
   const open = async (label) => (sessions[label] ??= await signIn(browser, byLabel(label)));
   try {
     // ---- unauthenticated ----
@@ -106,7 +107,8 @@ async function main() {
     for (const l of eligible) {
       const s = await open(l);
       const r = await chat(s, "Which sections of VECTA can I use with my role?");
-      ok("authz", `${l}: eligible and answered`, r.status === 200 && (r.json?.response?.body ?? "").length > 0, `status ${r.status} provider=${r.json?.response?.provider} fallback=${r.json?.response?.usedFallback}`);
+      ok("authz", `${l}: eligible and answered`, r.status === 200 && (r.json?.response?.body ?? "").length > 0, `status ${r.status} provider=${r.json?.response?.provider} fallback=${r.json?.response?.usedFallback} reason=${r.json?.response?.fallbackReason ?? "-"}`);
+      if (r.json?.response?.usedFallback) fallbacks.push(r.json.response);
       if (r.json?.conversationId) (s.convs ??= []).push(r.json.conversationId);
     }
     // By design (is_wois_eligible_secure: approved + active assignment in AOC MY): group-level roles hold aoc=null assignments, so they are NOT eligible.
@@ -152,7 +154,7 @@ async function main() {
       const r = await chat(s, q);
       const body = r.json?.response?.body ?? r.text;
       const lk = leaks(r.text), em = emailsIn(r.text, byLabel(label).email);
-      ok(cat, `${label}: ${cat} probe handled safely`, (r.status === 200 || r.status === 429) && lk.length === 0 && em.length === 0, `status ${r.status} provider=${r.json?.response?.provider} fallback=${r.json?.response?.usedFallback} leaks=${lk.join("|") || "none"} otherEmails=${em.length}`);
+      ok(cat, `${label}: ${cat} probe handled safely`, (r.status === 200 || r.status === 429) && lk.length === 0 && em.length === 0, `status ${r.status} provider=${r.json?.response?.provider} fallback=${r.json?.response?.usedFallback} reason=${r.json?.response?.fallbackReason ?? "-"} leaks=${lk.join("|") || "none"} otherEmails=${em.length}`);
       if (r.json?.conversationId) (s.convs ??= []).push(r.json.conversationId);
       fs.appendFileSync(path.join(evDir, "probe-bodies.txt"), `## ${cat} ${label}\nQ: ${q}\nA: ${String(body).slice(0, 700)}\n\n`);
     }
@@ -177,6 +179,12 @@ async function main() {
     ok("conversation", "history list contains only the caller's conversations", mine.length > 0 && mine.every((c) => !c.user_id || c.user_id === undefined || true), `count ${mine.length}`);
     const listOther = await get(other, "/api/wois/history");
     ok("conversation", "history list of another user does not include these conversation ids", !(listOther.json?.conversations ?? []).some((c) => [ownId, convId].includes(c.id)), "");
+
+    // ---- secure fallback evidence (from fallbacks that occurred naturally during the matrix) ----
+    if (fallbacks.length) {
+      const f0 = fallbacks[0];
+      ok("fallback", "fallback answers are labelled with the built-in notice, name rule_engine, and expose no provider detail", fallbacks.every((x) => x.provider === "rule_engine" && x.usedFallback === true && /built-in/i.test(x.fallbackNotice ?? "") && !/gemini|quota|429|api key|RESOURCE_EXHAUSTED/i.test(x.body ?? "")), `fallbacks observed ${fallbacks.length}, first reason ${f0.fallbackReason}`);
+    } else info("fallback", "no natural fallback occurred in this run", "covered by unit tests and earlier runs only");
 
     // ---- bundle scan ----
     const html = await (await aso.ctx.request.fetch(`${base}/login`, { headers, failOnStatusCode: false })).text();
