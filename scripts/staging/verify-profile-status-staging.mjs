@@ -45,7 +45,7 @@ async function movement(label) {
     partA: (await rows(sb, "caterlink_checkpoint_part_a", "transaction_id", mv.id)) === 1,
     signed: !(await sb.storage.from("signatures").createSignedUrl(mv.sig, 60)).error,
     download: !(await sb.storage.from("signatures").download(mv.sig)).error,
-    listed: ((await sb.storage.from("signatures").list(mv.sig.split("/")[0], { limit: 200 })).data ?? []).some((o) => `${mv.sig.split("/")[0]}/${o.name}` === mv.sig),
+    listed: ((await sb.storage.from("signatures").list(mv.sig.slice(0, mv.sig.lastIndexOf("/")), { limit: 200 })).data ?? []).some((o) => `${mv.sig.slice(0, mv.sig.lastIndexOf("/"))}/${o.name}` === mv.sig),
   };
 }
 async function vendor(label) {

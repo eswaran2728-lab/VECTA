@@ -146,3 +146,16 @@ test("CaterLink preview test expects the canonical landing page for every VECTA 
     assert.equal(expected, landsOnRoleDashboard([role]) ? "/avsec/my-dashboard" : "/", `${role} landing expectation`);
   }
 });
+
+test("portal verifier baseline: 8 buckets (completed-forms added by the reviewed migration) and the form-assignment refusal counts as an authorization refusal", () => {
+  const src = read("scripts/staging/verify-caterlink-portal-accounts.mjs");
+  assert.match(src, /18 org_teams; 8 buckets/);
+  assert.match(src, /storage\.buckets"\)\) === 8/);
+  assert.match(src, /assignment does not include the/);
+});
+
+test("profile-status verifier lists the object's own parent folder (works for nested signature paths), not only the first path segment", () => {
+  const src = read("scripts/staging/verify-profile-status-staging.mjs");
+  assert.match(src, /lastIndexOf\("\/"\)/);
+  assert.doesNotMatch(src, /list\(mv\.sig\.split\("\/"\)\[0\]/);
+});
