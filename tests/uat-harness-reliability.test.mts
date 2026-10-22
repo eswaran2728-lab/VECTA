@@ -135,3 +135,14 @@ test("mobile notification check targets the control the mobile layout actually s
   assert.match(block, /name: \/\^Alerts\//, "the mobile bell is the bottom-bar Alerts control");
   assert.doesNotMatch(block, /name: \/\^Notifications\//, "the desktop-only Notifications control is not clicked at 390px");
 });
+
+test("CaterLink preview test expects the canonical landing page for every VECTA representative (role dashboards land on /avsec/my-dashboard)", async () => {
+  const src = read("scripts/staging/preview-caterlink-test.mjs");
+  const { landsOnRoleDashboard } = await import("../lib/auth/role-capabilities.ts");
+  for (const role of ["operation_manager", "main_enforcement", "sso", "aso"]) {
+    const at = src.indexOf(`["${role}`);
+    assert.ok(at >= 0, `${role} is a representative`);
+    const expected = src.slice(at, src.indexOf("]", at)).split(",")[1].trim().replace(/"/g, "");
+    assert.equal(expected, landsOnRoleDashboard([role]) ? "/avsec/my-dashboard" : "/", `${role} landing expectation`);
+  }
+});

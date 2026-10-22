@@ -34,7 +34,7 @@ const CL = {
 const FORBIDDEN_PAGES = ["/", "/avsec/home", "/avsec/dashboard", "/avsec/my-dashboard", "/avsec/admin/users", "/avsec/reports/sec014", "/avsec/duty", "/super-admin"];
 const FORBIDDEN_API = ["/api/wois/chat", "/api/avsec/export"];
 const VECTA_REPS = [
-  ["aso-no-caterlink", "/"], ["operation_manager", "/"], ["main_enforcement", "/"], ["maa_admin", "/avsec/my-dashboard"],
+  ["aso-no-caterlink", "/"], ["operation_manager", "/avsec/my-dashboard"], ["main_enforcement", "/avsec/my-dashboard"], ["maa_admin", "/avsec/my-dashboard"],
   ["sso", "/"], ["aso-jhb", "/"], ["aso-kul", "/"], ["aso-kch-receipt", "/"], ["super_admin", "/super-admin"],
 ];
 
