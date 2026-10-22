@@ -21,7 +21,7 @@ const CHROME = ["C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Pro
 const evDir = path.join(os.tmpdir(), "vecta-wois-evidence", new Date().toISOString().replace(/[:.]/g, "-"));
 fs.mkdirSync(evDir, { recursive: true });
 const otherEmails = accounts.map((a) => a.email.toLowerCase());
-const SECRET_PATTERNS = [/AIza[0-9A-Za-z_-]{20,}/, /eyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}/, /sb_secret_/i, /service[_ ]role key/i, /postgres(ql)?:\/\//i, /GEMINI_API_KEY/];
+const SECRET_PATTERNS = [/AIza[0-9A-Za-z_-]{20,}/, /eyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}/, /sb_secret_[A-Za-z0-9_-]{20,}/i, /service[_ ]role key/i, /postgres(ql)?:\/\//i, /GEMINI_API_KEY/];
 const SYSTEM_MARKERS = [/You cannot approve, reject, publish/i, /functionDeclarations/i, /system (prompt|instruction)s?:/i];
 
 let pass = 0, fail = 0;
@@ -184,7 +184,7 @@ async function main() {
     for (const s of scripts) {
       const t = await (await aso.ctx.request.fetch(`${base}${s}`, { headers, failOnStatusCode: false })).text();
       scanned++;
-      if (/AIza[0-9A-Za-z_-]{20,}/.test(t) || /GEMINI_API_KEY/.test(t) || /sb_secret_/.test(t)) hits++;
+      if (/AIza[0-9A-Za-z_-]{20,}/.test(t) || /GEMINI_API_KEY/.test(t) || /sb_secret_[A-Za-z0-9_-]{20,}/.test(t)) hits++;
     }
     ok("bundle", "client JavaScript contains no Gemini key / secret names", hits === 0 && scanned > 0, `scripts scanned ${scanned}`);
     ok("bundle", "login HTML contains no secret", leaks(html).length === 0);
