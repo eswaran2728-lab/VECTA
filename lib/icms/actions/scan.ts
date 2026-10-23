@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { resolveOperatorScope } from "@/lib/auth/operator-scope";
 import { STATION_OPERATOR_CODES, hubDestinationError } from "@/lib/icms/canonical";
-import { parseCaterLinkQrPayload } from "@/lib/icms/qr-payload";
+import { parseCaterLinkQrPayload, isTransactionNumber } from "@/lib/icms/qr-payload";
 import { verifyQrToken } from "@/lib/icms/qr-token";
 import { nextStepFor } from "@/lib/icms/workflow";
 import { vendorNextStepFor } from "@/lib/icms/workflow-vendor";
@@ -19,7 +19,6 @@ export interface ScanResult {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const NUMBER_RE = /^(ICMS|CSCS)-\d{4}-\d{6}$/i;
 
 /**
  * Unified scan entry point (drives the "Scan" section of the unified
@@ -82,7 +81,7 @@ export async function scanTransaction(raw: string): Promise<ScanResult> {
   let lookup = supabase.from("transactions").select("id, status, direction, route, transaction_number, hub_destination");
   if (UUID_RE.test(ref)) {
     lookup = lookup.eq("id", ref);
-  } else if (NUMBER_RE.test(ref)) {
+  } else if (isTransactionNumber(ref)) {
     lookup = lookup.eq("transaction_number", ref.toUpperCase());
   } else {
     return { error: "Not a recognised transaction reference." };

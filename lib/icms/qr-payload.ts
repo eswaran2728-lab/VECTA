@@ -34,3 +34,12 @@ export function parseCaterLinkQrPayload(raw: string): { transactionId: string } 
 
   return { transactionId: trimmed };
 }
+
+/**
+ * A typed (manual) movement reference: the current CaterLink number "CL-YYYY-NNNNNN" or a legacy "ICMS-" / "CSCS-" number. Vendor delivery numbers
+ * (CLV-...) are deliberately not movement numbers: they are resolved through the signed vendor token, never through the transactions table.
+ */
+const TRANSACTION_NUMBER_RE = /^(CL|ICMS|CSCS)-\d{4}-\d{6}$/i;
+export function isTransactionNumber(ref: string): boolean {
+  return TRANSACTION_NUMBER_RE.test(ref.trim());
+}
