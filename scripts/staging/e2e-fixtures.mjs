@@ -70,7 +70,27 @@ export async function classify(q, base, owners) {
   const created = {};
   const unclassified = {};
   const known = new Set();
-  for (const s of TABLE_SPECS) {
+  // TABLE_SPECS is ordered children-first for deletion. Discovery needs the
+  // inverse dependency order so a fresh child can be attributed to its parent.
+  const specsByTable = new Map(TABLE_SPECS.map((s) => [s.t, s]));
+  const ordered = [];
+  const visiting = new Set();
+  const visited = new Set();
+  const visit = (s) => {
+    if (visited.has(s.t)) return;
+    if (visiting.has(s.t)) fail(`cyclic fixture dependency at ${s.t}`);
+    visiting.add(s.t);
+    for (const parent of [s.child?.parent, ...(s.payloadOf ?? [])].filter(Boolean)) {
+      const dependency = specsByTable.get(parent);
+      if (!dependency) fail(`unknown fixture parent ${parent}`);
+      visit(dependency);
+    }
+    visiting.delete(s.t);
+    visited.add(s.t);
+    ordered.push(s);
+  };
+  TABLE_SPECS.forEach(visit);
+  for (const s of ordered) {
     const baseline = new Set(base.ids[s.t]);
     const current = await allIds(q, s);
     const fresh = current.filter((k) => !baseline.has(k));
