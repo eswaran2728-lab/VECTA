@@ -448,6 +448,36 @@ async function stationFlow(browser, state) {
   const { ctx, page } = await newCtx(browser);
   try {
     ok(`${T}: PEN officer signs in`, await login(page, "aso"));
+    // ---- origin action: scan by manual reference (no camera), then the Part B checkpoint at PEN ----
+    await page.goto(`${base}/icms/scan`, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector("#unified-scan-manual", { timeout: 20000 });
+    ok(`${T}: the scanner offers manual reference entry without a running camera`, (await page.locator("#unified-scan-manual").count()) === 1);
+    await page.fill("#unified-scan-manual", state.txNumber ?? "NONE");
+    await page.locator("#unified-scan-manual").press("Enter");
+    await page.waitForURL(/\/icms\/transactions\/[0-9a-f-]{36}/, { timeout: 20000 }).catch(() => {});
+    const scanLanded = pathOf(page);
+    const scanMsg = ((await page.locator('[role="alert"], .text-destructive').allInnerTexts().catch(() => [])).join(" | ") || "none").slice(0, 200);
+    ok(`${T}: scanning the movement by its CL reference opens the checkpoint`, /\/icms\/transactions\/[0-9a-f-]{36}\/part-b/.test(scanLanded), `${scanLanded} | ${scanMsg}`);
+    if (/part-b/.test(scanLanded)) {
+      await page.waitForSelector("#observed_vehicle_number", { timeout: 20000 });
+      await page.fill("#observed_vehicle_number", "E2E1234A");
+      await page.fill("#observed_driver_name", "E2E Test Driver");
+      await page.fill("#observed_driver_id", "E2ED001");
+      await page.locator("#vehicle_verified").check({ force: true }).catch(async () => { await page.getByText(/vehicle verified|vehicle matches/i).first().click(); });
+      await page.locator("#driver_verified").check({ force: true }).catch(async () => { await page.getByText(/driver verified|driver matches/i).first().click(); });
+      const sealInput = page.getByLabel("Seal 1 number as read");
+      if (await sealInput.count()) {
+        await sealInput.fill(`E2E-UI-${tag}`);
+        await page.getByRole("button", { name: "Blue" }).click();
+      }
+      const partBSubmit = page.locator('form button[type="submit"]').last();
+      await drawUntilEnabled(page, partBSubmit);
+      await shot(page, "station-part-b-form");
+      await partBSubmit.click();
+      await page.waitForURL((u) => u.pathname === `/icms/transactions/${state.txId}` && u.searchParams.get("approved") === "1", { timeout: 30000 }).catch(() => {});
+      const bAlert = ((await page.locator('[role="alert"]').allInnerTexts().catch(() => [])).join(" | ") || "").slice(0, 200);
+      ok(`${T}: the PEN officer approves Part B from the UI (movement moves on)`, /approved=1/.test(page.url()) && !bAlert, `${pathOf(page)} | ${bAlert}`);
+    }
     await page.goto(`${base}/avsec/caterlink/receipt`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2500);
     ok(`${T}: the PEN officer reaches the final-receipt screen (capability at PEN)`, /\/avsec\/caterlink\/receipt/.test(pathOf(page)) && /Final receipt/i.test(await visibleText(page)), pathOf(page));
