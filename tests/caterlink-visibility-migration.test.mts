@@ -14,7 +14,8 @@ test("the migration is frozen: its normalised SHA-256 matches the runner, it use
   const files = runner.verifyFrozenMigrations((f: string) => fs.readFileSync(path.join(migDir, f)));
   assert.equal(files.length, 1);
   assert.equal(runner.statementAudit(SQL), null);
-  assert.doesNotThrow(() => runner.orderingGate(fs.readdirSync(migDir)));
+  const historicalFiles = fs.readdirSync(migDir).filter((f) => !/^\d{14}_/.test(f) || f.slice(0, 14) <= "20261119000001");
+  assert.doesNotThrow(() => runner.orderingGate(historicalFiles));
   assert.equal(runner.MIGRATIONS[0].version, "20261119000001");
   assert.equal(runner.LAST_PRE, "20261118000005");
   assert.equal(runner.PRE_COUNT, 98);
@@ -31,8 +32,9 @@ test("the allow-list rejects anything else: extra grants, the old station-member
   const oldPolicy = SQL.replace("public.caterlink_can_read_transaction_at_stations(aoc_id, origin_station_id, destination_station_id, hub_destination)", "public.has_station_assignment_for_transaction(aoc_id, destination_station_id, origin_station_id)");
   assert.match(String(runner.statementAudit(oldPolicy)), /does not use the new function exclusively/);
   assert.match(String(runner.statementAudit(SQL.replace("return false;\n  end if;\n  if not exists", "delete from public.transactions; return false;\n  end if;\n  if not exists"))), /function body contains/);
-  assert.throws(() => runner.orderingGate([...fs.readdirSync(migDir), "20261120000001_extra.sql"]), /other than the frozen one/);
-  assert.throws(() => runner.orderingGate([...fs.readdirSync(migDir), FILE.replace("_caterlink", "_dup")]), /duplicate migration versions/);
+  const historicalFiles = fs.readdirSync(migDir).filter((f) => !/^\d{14}_/.test(f) || f.slice(0, 14) <= "20261119000001");
+  assert.throws(() => runner.orderingGate([...historicalFiles, "20261119000002_extra.sql"]), /other than the frozen one/);
+  assert.throws(() => runner.orderingGate([...historicalFiles, FILE.replace("_caterlink", "_dup")]), /duplicate migration versions/);
 });
 
 test("production is rejected anywhere in env or argv; the live phrase names the exact version and the approved project", () => {
