@@ -21,7 +21,7 @@ const runGit = (...a) => execFileSync("git", a, { encoding: "utf8" }).trim();
 async function main() {
   environmentGates();
   if (runGit("branch", "--show-current") !== "ui/stitch-mobile-redesign") fail("Unexpected branch");
-  if (runGit("rev-parse", "--show-toplevel").toLowerCase() !== path.resolve(".").toLowerCase()) fail("Unexpected checkout");
+  if (path.resolve(runGit("rev-parse", "--show-toplevel")).toLowerCase() !== path.resolve(".").toLowerCase()) fail("Unexpected checkout");
   const head = runGit("rev-parse", "HEAD");
   if (!verify && (head !== expectedHead || runGit("status", "--porcelain"))) fail("Pushed HEAD or clean tree gate failed");
   if (live && confirm !== CONFIRM) fail("Exact staging confirmation required");
