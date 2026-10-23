@@ -115,8 +115,13 @@ export async function classify(q, base, owners) {
   const nowObjects = await q("select bucket_id, name, owner::text own from storage.objects");
   const freshObjects = nowObjects.filter((o) => !baseObjects.has(`${o.bucket_id}/${o.name}`));
   const ownerIds = new Set(Object.values(owners));
-  created.__storage = freshObjects.filter((o) => ownerIds.has(o.own)).map((o) => `${o.bucket_id}/${o.name}`);
-  const strayObjects = freshObjects.filter((o) => !ownerIds.has(o.own)).map((o) => `${o.bucket_id}/${o.name}`);
+  const pdfRows = created.caterlink_transaction_pdfs?.length && created.transactions?.length
+    ? await q("select storage_path from public.caterlink_transaction_pdfs where id::text = any($1::text[]) and transaction_id::text = any($2::text[])", [created.caterlink_transaction_pdfs, created.transactions])
+    : [];
+  const pdfPaths = new Set(pdfRows.map((r) => r.storage_path));
+  const isMine = (o) => ownerIds.has(o.own) || (o.bucket_id === "caterlink-final-pdfs" && pdfPaths.has(o.name));
+  created.__storage = freshObjects.filter(isMine).map((o) => `${o.bucket_id}/${o.name}`);
+  const strayObjects = freshObjects.filter((o) => !isMine(o)).map((o) => `${o.bucket_id}/${o.name}`);
   if (strayObjects.length) unclassified.__storage = strayObjects;
   // signature refs: new refs whose url is a created object name (or a signature_url of a created row)
   const baseRefs = new Set(base.refs);

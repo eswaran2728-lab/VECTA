@@ -10,10 +10,13 @@ test("Part B browser flow selects the actual seal colour button and waits for th
   assert.match(partB, /approved=1/);
   assert.doesNotMatch(partB, /\/INFLIGHT\|approved\/i\.test\(bBody\)/);
   assert.doesNotMatch(partB, /&& !bAlert/);
+  assert.match(partB, /waitForFunction\(\(\) =>/);
+  assert.match(partB, /getByRole\("button", \{ name: "Find" \}\)\.click\(\)/);
 });
 
 test("receipt and PDF checks use the completed state and include completed jobs", () => {
   const script = fs.readFileSync("scripts/staging/e2e-external-workflows.mjs", "utf8");
   assert.doesNotMatch(script, /gone && !\/not authori/);
   assert.match(script, /icms\/admin\/final-pdfs\?all=1/);
+  assert.doesNotMatch(script, /\/Completed\/i\.test\(t\)/);
 });

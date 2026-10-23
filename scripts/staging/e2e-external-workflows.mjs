@@ -451,12 +451,16 @@ async function stationFlow(browser, state) {
     // ---- origin action: scan by manual reference (no camera), then the Part B checkpoint at PEN ----
     await page.goto(`${base}/icms/scan`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector("#unified-scan-manual", { timeout: 20000 });
+    await page.waitForFunction(() => {
+      const input = document.querySelector("#unified-scan-manual");
+      return !!input && Object.keys(input).some((key) => key.startsWith("__react"));
+    }, null, { timeout: 30000 });
     ok(`${T}: the scanner offers manual reference entry without a running camera`, (await page.locator("#unified-scan-manual").count()) === 1);
     await page.fill("#unified-scan-manual", state.txNumber ?? "NONE");
-    await page.locator("#unified-scan-manual").press("Enter");
-    await page.waitForURL(/\/icms\/transactions\/[0-9a-f-]{36}/, { timeout: 20000 }).catch(() => {});
+    await page.getByRole("button", { name: "Find" }).click();
+    await page.waitForURL(/\/icms\/transactions\/[0-9a-f-]{36}/, { timeout: 30000 }).catch(() => {});
     const scanLanded = pathOf(page);
-    const scanMsg = ((await page.locator('[role="alert"], .text-destructive').allInnerTexts().catch(() => [])).join(" | ") || "none").slice(0, 200);
+    const scanMsg = ((await page.locator('[role="alert"], .text-destructive').allInnerTexts().catch(() => [])).join(" | ") || (await page.getByText("SCAN ERROR").count() ? (await visibleText(page)).slice(-200) : "none")).slice(0, 200);
     ok(`${T}: scanning the movement by its CL reference opens the checkpoint`, /\/icms\/transactions\/[0-9a-f-]{36}\/part-b/.test(scanLanded), `${scanLanded} | ${scanMsg}`);
     if (/part-b/.test(scanLanded)) {
       await page.waitForSelector("#observed_vehicle_number", { timeout: 20000 });
@@ -504,8 +508,8 @@ async function stationFlow(browser, state) {
     try {
       await login(d.page, "caterlink-driver");
       await d.page.goto(`${base}/icms/transactions/${state.txId}`, { waitUntil: "domcontentloaded" });
-      const t = await visibleText(d.page);
-      ok(`${T}: the Driver sees the movement COMPLETED after the receipt`, /Completed/i.test(t), pathOf(d.page));
+      const status = await d.page.locator("h1").filter({ hasText: state.txNumber ?? "NONE" }).locator("xpath=following-sibling::div[1]").locator("span").first().innerText().catch(() => "");
+      ok(`${T}: the Driver sees the movement COMPLETED after the receipt`, /^Completed$/i.test(status.trim()), `${pathOf(d.page)} | status=${status}`);
     } catch (e) { ok(`${T}: driver completion view`, false, String(e.message).slice(0, 160)); }
     await d.ctx.close();
     const m = await newCtx(browser);
