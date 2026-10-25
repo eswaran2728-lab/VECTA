@@ -169,3 +169,13 @@ test("hosted verifiers encode the least-privilege movement rule: PEN receipt off
   const e2e = read("scripts/staging/e2e-external-workflows.mjs");
   assert.match(e2e, /"profiling_aso", "aso-no-caterlink"\]/);
 });
+
+test("the UAT run window is configurable (default 360 minutes) in both the harness and the preflight, so a shorter clean rerun can still be guarded against midnight", () => {
+  const uat = read("scripts/staging/hosted-uat.mjs");
+  const pre = read("scripts/staging/uat-preflight.mjs");
+  assert.match(uat, /argVal\("max-run-minutes"\) \?\? "360"/);
+  assert.match(uat, /--max-run-minutes=\$\{maxRunMinutes\}/);
+  assert.doesNotMatch(uat, /"--max-run-minutes=360"/);
+  assert.match(pre, /argVal\("max-run-minutes"\) \?\? "360"/);
+  assert.match(pre, /\(maxRunMinutes \+ 45\) \* 60/);
+});

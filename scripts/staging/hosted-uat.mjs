@@ -25,6 +25,7 @@ const argVal = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split("=").slic
 const base = argVal("url");
 const runId = argVal("run-id");
 const phase = argVal("phase") ?? "main";
+const maxRunMinutes = Number.parseInt(argVal("max-run-minutes") ?? "360", 10);
 const only = argVal("only")?.split(",");
 const STAGING_REF = "ddlctzbnqewubltcavkh";
 const PROD_REF = "zsxneokqulktgnccxgkz";
@@ -257,7 +258,7 @@ async function sectionDutyGate(browser) {
 /** Creates the one active duty row per required account through the fixture tool (staging clock, window check, RLS-verified), then reloads the ledger. */
 function createDutyFixtures() {
   console.log("\n--- creating the tagged duty fixtures (controlled step; the clock window is checked first) ---");
-  const r = child_process.spawnSync(process.execPath, ["--env-file=.env.local", "scripts/staging/uat-fixtures.mjs", "--action=create-duty", `--run-id=${runId}`, "--live", "--max-run-minutes=360", "--margin-minutes=45"], { encoding: "utf8", cwd: process.cwd() });
+  const r = child_process.spawnSync(process.execPath, ["--env-file=.env.local", "scripts/staging/uat-fixtures.mjs", "--action=create-duty", `--run-id=${runId}`, "--live", `--max-run-minutes=${maxRunMinutes}`, "--margin-minutes=45"], { encoding: "utf8", cwd: process.cwd() });
   console.log((r.stdout || "").split("\n").filter(Boolean).slice(-4).join("\n"));
   check("duty", "duty fixtures created and verified active through the duty-gate predicate", r.status === 0, (r.stderr || "").slice(0, 160));
   reloadLedger();

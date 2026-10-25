@@ -14,6 +14,7 @@ const args = process.argv.slice(2);
 const argVal = (k) => args.find((a) => a.startsWith(`--${k}=`))?.split("=").slice(1).join("=");
 const runId = argVal("run-id");
 const appCommit = argVal("app-commit");
+const maxRunMinutes = Number.parseInt(argVal("max-run-minutes") ?? "360", 10);
 const expectDuty = Number.parseInt(argVal("expect-duty") ?? "0", 10);
 if (!runId || !appCommit) throw new Error("--run-id and --app-commit are required");
 let failures = 0;
@@ -65,7 +66,7 @@ try {
   if (expectDuty > 0) {
     check("every duty fixture is dated today (Malaysia) and ACTIVE through the duty-gate predicate under RLS", (await inactiveDutyLabels(client, ledger.duty, manifest)).length === 0 && ledger.duty.every((d) => d.date === clock.myDate) && DUTY_LABELS.every((l) => ledger.duty.some((d) => d.label === l)));
   }
-  check("the Malaysia-midnight window is sufficient for a 6 h run plus 45 min margin", clock.secondsLeft >= (360 + 45) * 60, `${Math.floor(clock.secondsLeft / 60)} min left`);
+  check(`the Malaysia-midnight window is sufficient for a ${maxRunMinutes} min run plus 45 min margin`, clock.secondsLeft >= (maxRunMinutes + 45) * 60, `${Math.floor(clock.secondsLeft / 60)} min left`);
 } finally {
   await client.end();
 }
