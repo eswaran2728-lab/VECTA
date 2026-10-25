@@ -73,9 +73,9 @@ test("preflight baseline: the expected migration count and latest version are ex
   const base = read("scripts/staging/lib/expected-baseline.mjs");
   const containment = read("scripts/staging/apply-containment-migration.mjs");
   assert.equal([...containment.matchAll(/\{ version: "(\d{14})", name:/g)].length, 9, "nine security migrations: 83 + 9 = 92");
-  const lastRunnerVersion = [...read("scripts/staging/apply-caterlink-visibility-migration.mjs").matchAll(/version: "(\d{14})", name: "/g)].map((m) => m[1]).pop();
-  assert.match(base, new RegExp(`EXPECTED_LATEST_MIGRATION = "${lastRunnerVersion}"`), "latest version equals the guarded CaterLink visibility runner's last frozen migration");
-  assert.match(base, /EXPECTED_MIGRATION_COUNT = 99;/, "92 + Bay Board + three P0 + two hardening + the CaterLink least-privilege migration");
+  const lastRunnerVersion = read("scripts/staging/apply-all-final-receipts-pdf.mjs").match(/const VERSION = "(\d{14})"/)?.[1];
+  assert.match(base, new RegExp(`EXPECTED_LATEST_MIGRATION = "${lastRunnerVersion}"`), "latest version equals the guarded final-receipt PDF migration");
+  assert.match(base, /EXPECTED_MIGRATION_COUNT = 100;/, "99 prior migrations plus the final-receipt PDF migration");
   assert.ok(PRE.includes("EXPECTED_MIGRATION_COUNT") && PRE.includes("EXPECTED_LATEST_MIGRATION") && !/82/.test(PRE), "preflight uses the explicit baseline, no literal 82");
 });
 
