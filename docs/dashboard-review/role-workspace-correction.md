@@ -123,3 +123,37 @@ Static component checks (`tests/role-workspaces-completion.test.mts`) assert, fo
 - Rotation of the staging credentials exposed in an earlier session, before wider organizational testing.
 - The external "Page 4" diagram needs the owner's update so both diagram pages agree on BKI/KCH final receipt.
 - A Compliance-style station filter on the movements list is not built.
+
+## Addendum (2026-10-27): DSE leave scope, Hub SE roster gate, Operation-Manager-only duty zones
+
+Owner decisions, implemented by migration `20261128000001_scope_dse_leave_and_operation_manager_zone_writes` (guarded staging rollout, 102 migrations) and application gates in `lib/auth/role-gates.ts`.
+
+| Authority | Who | Scope enforced where |
+|---|---|---|
+| Leave notices: list, read, review (table level) | **DSE** — assigned station **and** team (a notice with no station or no team is never a DSE's) · **Operation Manager** — all (department oversight) · **Main Enforcement** — read all (separate authority; Enforcement-department leave is decided only by Main Enforcement through the secure RPC) | `absence_notices` policies via `canon_dse_of_team(station, team)`; the secure RPCs `review_leave_request_secure` / `list_pending_leave_for_reviewer_secure` already enforced DSE team and Hub SE hub |
+| Leave review (RPC) | DSE own team; **Hub SE** every station of the assigned hub; Operation Manager all | `review_leave_request_secure` (unchanged) |
+| Roster cell / team schedule writes | **Operation Manager** any station · **Hub SE** stations of the assigned hub only · **DSE** own station and team only | Application gate: `requireCanonicalRole(ROSTER_MANAGER_ROLE_CODES)` (canonical `operation_manager` / `hub_se` / `dse`; Hub SE is named explicitly and no longer rides on the DSE compat rank). Database: `can_manage_roster_secure` / `upsert_roster_cell_secure` (unchanged; `team_rosters` has no direct write policy) |
+| Schedule presets, team creation | Operation Manager (legacy MANAGEMENT rank) | `requireRole(ADMIN_ROLES)` |
+| Duty geofence zones: create, edit, activate/deactivate | **Operation Manager only** | Page and both actions: `requireCanonicalRole(ZONE_ADMIN_ROLE_CODES)`; database: `duty_zones` INSERT/UPDATE/DELETE policies require `canon_has_role(['operation_manager'])` |
+| Duty zones: read for check-in | Everyone with visibility of the station (`canon_station_visible`) — ordinary staff keep reading and checking in | `duty_zones_scoped_read` (unchanged) |
+
+Correction to the earlier discrepancy list (`report-categories-activity-and-offload.md` §5): "Finding C" said the Hub SE was missing from the roster action gate. In fact `hub_se` maps onto the `DSE` compat rank, so the old rank list did admit a Hub SE implicitly; the gate is now explicit and canonical. `canon_can_admin_station()` stays in the database but no policy uses it any more.
+
+**Known staging-only blocker (not fixed here):** the staging `team_rosters` table lacks the `ops_group` column that `upsert_roster_cell_secure` (and `submit_leave_application_secure`) still reference, so **no role can write a roster cell on staging today** (`column "ops_group" of relation "team_rosters" does not exist`; zero roster rows exist). Authorization is correct and proven (the call is refused for the wrong hub or team and reaches the insert only for the right one); fixing it needs a separate, approved schema-repair migration (the repository's `20260922000005` / `20260923000001` shape was skipped on staging).
+
+### UAT scenarios added (S266–S277)
+
+| ID | Scenario | Expected |
+|---|---|---|
+| S266 | DSE (KUL - MAA / ALPHA) lists leave notices | Only ALPHA notices of KUL - MAA; not BRAVO at the same station, not another station, not an unscoped notice |
+| S267 | The same DSE approves an ALPHA notice, tries a BRAVO and a PEN notice | ALPHA succeeds; BRAVO and PEN refused ("No active Phase 3 role assignment…") |
+| S268 | Operation Manager and Main Enforcement list leave | Operation Manager sees and can review all; Main Enforcement sees all (read) and decides Enforcement-department leave only |
+| S269 | Hub SE (northern) opens the pending-leave list | Only stations of the northern hub (e.g. PEN); KUL and other hubs absent; reviewing a KUL notice is refused |
+| S270 | Hub SE opens Roster for PEN and for JHB | PEN: its officers and teams; JHB: no officers or teams; a write for another hub is refused |
+| S271 | DSE opens Roster for its own station | Own team only; BRAVO writes refused |
+| S272 | Operation Manager creates, edits and deactivates a duty zone | Succeeds |
+| S273 | DSE, Hub SE, ASO and Main Enforcement try to open the zone screen or write a zone | Sent away from the screen; direct writes refused |
+| S274 | ASO opens Duty Zones (view) and checks in inside a zone with a roster for today | Zones listed; check-in succeeds |
+| S275 | SO at PEN opens New Shift Handover with an unfinished PEN movement | The movement is listed under "Catering Movement"; JHB's is not |
+| S276 | Profiling ASO at PEN and an ASO at a station without CaterLink capability open New Shift Handover | No movement listed (unauthorized records excluded) |
+| S277 | Handover, zones and check-in on a phone, light and dark | Cards readable, no horizontal scroll, theme colours |

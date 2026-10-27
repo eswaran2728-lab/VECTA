@@ -38,8 +38,9 @@ test("offload-retirement runner: ordering, counts, live phrase and baseline tie-
   orderingGate(fs.readdirSync(MIG_DIR));
   assert.equal(PRE_COUNT, 100, "the runner's pre-state is the certified 100-migration staging baseline");
   assert.equal(LAST_PRE, "20261120000001");
-  assert.equal(POST_COUNT, EXPECTED_MIGRATION_COUNT, "after the guarded rollout the expected staging baseline is the post-state");
-  assert.equal(POST_LAST, EXPECTED_LATEST_MIGRATION);
+  assert.equal(POST_COUNT, 101, "after this guarded rollout staging held 101 migrations (a later guarded rollout moved the baseline on)");
+  assert.equal(POST_LAST, "20261127000001");
+  assert.ok(EXPECTED_MIGRATION_COUNT >= POST_COUNT && EXPECTED_LATEST_MIGRATION >= POST_LAST);
   assert.equal(POST_COUNT, PRE_COUNT + 1);
   assert.equal(POST_LAST, "20261127000001");
   assert.equal(LIVE_PHRASE, "APPLY 20261127000001 TO STAGING ddlctzbnqewubltcavkh");
