@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getFilteredSubmissions } from "@/lib/avsec/dashboard/queries";
 import { getMySubmissions } from "@/lib/avsec/reports/queries";
 import {
@@ -23,8 +24,17 @@ import {
 
 const RECENT_DAYS = 7;
 const MYT_OFFSET_MS = 8 * 60 * 60 * 1000;
-/** Station codes are short upper-case identifiers; anything else is refused before it can reach a PostgREST filter string. */
-const STATION_CODE = /^[A-Z0-9_-]{2,12}$/;
+
+/**
+ * Station id <-> code reference data. Signed-in users cannot read org_stations (its privileges are narrowed), so this one lookup is a server-side
+ * reference read of non-sensitive identifiers. It decides nothing about access: the movements themselves are still read with the caller's own
+ * session, so row-level security stays the authority for what is visible.
+ */
+async function stationDirectory(): Promise<{ codeById: Map<string, string>; idByCode: Map<string, string> }> {
+  const { data } = await createAdminClient().from("org_stations").select("id, code").eq("is_active", true);
+  const rows = (data ?? []) as Array<{ id: string; code: string }>;
+  return { codeById: new Map(rows.map((r) => [r.id, r.code])), idByCode: new Map(rows.map((r) => [r.code, r.id])) };
+}
 
 function mytDate(daysAgo = 0): string {
   return new Date(Date.now() + MYT_OFFSET_MS - daysAgo * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -86,14 +96,11 @@ export async function getMyRecentActivity(userId: string): Promise<PersonalActiv
 export async function getStationActivity(station: string | null): Promise<StationActivityRow[]> {
   const supabase = await createClient();
   const today = mytDate(0);
-  const safeStation = station && STATION_CODE.test(station) ? station : null;
+  const { codeById, idByCode } = await stationDirectory();
+  // A station is only ever filtered on when it is a known active station code; anything else yields an empty feed, never an unfiltered one.
+  const safeStation = station && idByCode.has(station) ? station : null;
   if (station && !safeStation) return [];
-
-  let stationId: string | null = null;
-  if (safeStation) {
-    const { data } = await supabase.from("org_stations").select("id").eq("code", safeStation).maybeSingle();
-    stationId = (data as { id: string } | null)?.id ?? null;
-  }
+  const stationId = safeStation ? (idByCode.get(safeStation) ?? null) : null;
 
   let dutyQuery = supabase
     .from("duty_records")
@@ -105,12 +112,13 @@ export async function getStationActivity(station: string | null): Promise<Statio
 
   let txQuery = supabase
     .from("transactions")
-    .select("transaction_number, status, direction, route, station, hub_destination, created_at, completed_at, origin:org_stations!origin_station_id(code), destination:org_stations!destination_station_id(code)")
+    .select("transaction_number, status, direction, route, station, hub_destination, origin_station_id, destination_station_id, created_at, completed_at")
     .eq("archived", false)
     .order("created_at", { ascending: false })
     .limit(20);
   if (safeStation) {
-    const ors = [`station.eq.${safeStation}`, `hub_destination.eq.${safeStation}`];
+    const quoted = `"${safeStation}"`; // known station codes only; quoted because a code may contain spaces (e.g. KUL - MAA)
+    const ors = [`station.eq.${quoted}`, `hub_destination.eq.${quoted}`];
     if (stationId) ors.push(`origin_station_id.eq.${stationId}`, `destination_station_id.eq.${stationId}`);
     txQuery = txQuery.or(ors.join(","));
   }
@@ -127,8 +135,12 @@ export async function getStationActivity(station: string | null): Promise<Statio
       .limit(20),
   ]);
 
-  const transactions: StationTransactionRow[] = ((txRes.data ?? []) as unknown as Array<Omit<StationTransactionRow, "origin_station_code" | "destination_station_code"> & { origin: { code: string } | null; destination: { code: string } | null }>).map(
-    ({ origin, destination, ...t }) => ({ ...t, origin_station_code: origin?.code ?? null, destination_station_code: destination?.code ?? null }),
+  const transactions: StationTransactionRow[] = ((txRes.data ?? []) as unknown as Array<Omit<StationTransactionRow, "origin_station_code" | "destination_station_code"> & { origin_station_id: string | null; destination_station_id: string | null }>).map(
+    ({ origin_station_id, destination_station_id, ...t }) => ({
+      ...t,
+      origin_station_code: origin_station_id ? (codeById.get(origin_station_id) ?? null) : null,
+      destination_station_code: destination_station_id ? (codeById.get(destination_station_id) ?? null) : null,
+    }),
   );
 
   const incidents: StationIncidentRow[] = ((incidentsRes.data ?? []) as unknown as Array<{ id: string; incident_type: string; created_at: string; transactions: { transaction_number: string; station: string | null } | null }>).map((i) => ({

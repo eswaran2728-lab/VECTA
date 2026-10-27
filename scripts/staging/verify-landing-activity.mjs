@@ -24,6 +24,8 @@ if (base.includes(PROD_REF)) throw new Error("production reference refused");
 const bypass = fs.readFileSync(path.join(defaultCredentialsDir("dashboard-review-20261005"), "vercel-bypass.txt"), "utf8").trim();
 const accounts = loadCurrentCredentials();
 const PERSONAS = ["aso", "profiling_aso", "aso-jhb", "aso-kul", "so", "dse", "sso", "hub_se", "operation_manager"];
+// Roles with their own workspace land on /avsec/my-dashboard (no legacy landing feeds); the others land on "/" which carries both feeds.
+const ROLE_DASHBOARD = new Set(["profiling_aso", "hub_se", "operation_manager"]);
 const targets = (only ?? PERSONAS).map((l) => accounts.find((a) => a.label === l)).filter(Boolean);
 const CHROME = ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"].find((p) => fs.existsSync(p));
 const VIEWPORTS = { desktop: { width: 1366, height: 900 }, mobile: { width: 390, height: 844 } };
@@ -94,6 +96,28 @@ async function main() {
           const s = await snapshot(page);
           all.push({ label: a.label, vp: vpName, s, errors });
           const tag = `${a.label} (${vpName})`;
+          if (ROLE_DASHBOARD.has(a.label)) {
+            ok(`${tag}: lands on its own role dashboard (no legacy landing feeds, existing behaviour)`, s.path === "/avsec/my-dashboard", `landed ${s.path}`);
+            ok(`${tag}: the role dashboard shows no report-category tiles, no Offload tile and no live-stream wording`, !/offload/i.test(s.reportsText) && !s.liveWording);
+            if (a.label === "profiling_aso" && vpName === "desktop") {
+              // the ASO "New report" selector (/avsec/home) groups the same way; Profiling ASO is not an ASO there, so it must not expose Aircraft forms
+              await page.goto(`${base}/avsec/home`, { waitUntil: "domcontentloaded" });
+              await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+              const hp = new URL(page.url()).pathname;
+              const hs = hp === "/avsec/home" ? await snapshot(page) : null;
+              ok(`${tag}: /avsec/home either refuses a Profiling ASO or shows only Daily Reports → SEC013`, !hs || JSON.stringify(forms(hs)) === JSON.stringify({ daily: ["sec013"] }), `path=${hp} forms=${hs ? JSON.stringify(forms(hs)) : "n/a"}`);
+              await page.goto(`${base}/avsec/reports/sec016`, { waitUntil: "domcontentloaded" });
+              await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+              ok(`${tag}: SEC016 (an Aircraft form) is refused to a Profiling ASO`, new URL(page.url()).pathname !== "/avsec/reports/sec016", new URL(page.url()).pathname);
+              await page.goto(`${base}/avsec/reports/sec013`, { waitUntil: "domcontentloaded" });
+              await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+              ok(`${tag}: SEC013 opens for a Profiling ASO`, new URL(page.url()).pathname === "/avsec/reports/sec013" && /AA\/SEC\/F\/013/.test((await page.textContent("body")) ?? ""));
+              await page.screenshot({ path: path.join(evDir, `profiling_aso-sec013.png`) });
+            }
+            await page.screenshot({ path: path.join(evDir, `${a.label}-${vpName}-landing.png`) });
+            await ctx.close();
+            continue;
+          }
           ok(`${tag}: lands on "/" (the legacy landing that carries both feeds)`, s.path === "/", `landed ${s.path}`);
           if (s.path !== "/") { await page.screenshot({ path: path.join(evDir, `${a.label}-${vpName}-landing.png`) }); await ctx.close(); continue; }
           ok(`${tag}: no horizontal overflow`, !s.horizontalOverflow);
@@ -108,7 +132,7 @@ async function main() {
             const f = forms(s);
             ok(`${tag}: Daily Reports lists SEC014 only (SEC013 not shown to an ordinary ASO)`, JSON.stringify(f.daily) === JSON.stringify(["sec014"]), JSON.stringify(f.daily));
             ok(`${tag}: Aircraft Reports lists SEC016, SEC029, SEC018, SEC033 in order`, JSON.stringify(f.aircraft) === JSON.stringify(["sec016", "sec029", "sec018", "sec033"]), JSON.stringify(f.aircraft));
-            ok(`${tag}: category order is Daily then Aircraft`, s.categories.map((c) => c.title).join("|") === "Daily Reports|Aircraft Reports");
+            ok(`${tag}: category order is Daily then Aircraft`, s.categories.map((c) => String(c.title).toLowerCase()).join("|") === "daily reports|aircraft reports");
             const labels = s.categories.flatMap((c) => c.forms.map((x) => x.text));
             ok(`${tag}: each card shows its form code and name`, labels.some((t) => /AA\/SEC\/F\/014 Rev\.03 ASO Daily Report/.test(t)) && labels.some((t) => /AA\/SEC\/F\/033 Rev\.02 Aircraft Hold Checklist/.test(t)), labels.join(" ; ").slice(0, 160));
           }
@@ -162,6 +186,14 @@ async function main() {
             }
           }
 
+          // the ASO "New report" selector groups identically
+          if (vpName === "desktop" && a.label === "aso") {
+            await page.goto(`${base}/avsec/home`, { waitUntil: "domcontentloaded" });
+            await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+            const hs = await snapshot(page);
+            ok(`${tag}: /avsec/home "New report" groups identically (Daily: SEC014; Aircraft: SEC016, SEC029, SEC018, SEC033)`, JSON.stringify(forms(hs)) === JSON.stringify({ daily: ["sec014"], aircraft: ["sec016", "sec029", "sec018", "sec033"] }), JSON.stringify(forms(hs)));
+            await page.screenshot({ path: path.join(evDir, "aso-home-selector.png"), fullPage: true });
+          }
           // old standalone Offload link
           if (vpName === "desktop" && ["aso", "profiling_aso"].includes(a.label)) {
             await page.goto(`${base}/avsec/reports/offload`, { waitUntil: "domcontentloaded" });

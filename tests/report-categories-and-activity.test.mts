@@ -256,7 +256,8 @@ test("station activity: 'Route' is the movement route, 'Station/Location' is sho
 test("station activity query: station-scoped in the query, validated station code, accurate 'loaded at' snapshot wording, Refresh link", () => {
   const q = read("lib/avsec/dashboard/activity-queries.ts");
   const st = q.slice(q.indexOf("export async function getStationActivity"));
-  assert.match(st, /STATION_CODE\.test\(station\)/);
+  assert.match(st, /idByCode\.has\(station\)/, "only a known active station code is ever filtered on");
+  assert.doesNotMatch(st, /supabase\.from\("org_stations"\)/, "signed-in users cannot read org_stations: the id/code lookup is a server-side reference read");
   assert.match(st, /dutyQuery\.eq\("station", safeStation\)/);
   assert.match(st, /txQuery\.or\(ors\.join\(","\)\)/);
   assert.match(st, /station: safeStation/);
