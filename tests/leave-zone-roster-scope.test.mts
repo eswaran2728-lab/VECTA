@@ -155,3 +155,34 @@ test("runner probes: another team at the same station, another station, another 
     "the probe fixtures (five leave notices, one zone, no roster rows) were removed exactly",
   ]) assert.ok(RUNNER.includes(needle), needle);
 });
+
+test("hosted verifier retrieves Malaysia date as database text without Date/toISOString timezone rollback", () => {
+  const verifier = read("scripts/staging/verify-scope-hosted.mjs");
+  assert.match(verifier, /select \(now\(\) at time zone 'Asia\/Kuala_Lumpur'\)::date::text d/, "retrieves date as text directly from Postgres");
+  assert.doesNotMatch(verifier, /::date d"\)\)\[0\]\.d\.toISOString\(\)/, "no Date.toISOString() conversion");
+
+  // Prove date calculations remain correct around Malaysia midnight (UTC+8):
+  // Malaysia midnight occurs at 16:00:00 UTC.
+  // 15:59:59.999 UTC = 23:59:59.999 MYT (Day 1)
+  // 16:00:00.000 UTC = 00:00:00.000 MYT (Day 2)
+  // 16:00:01.000 UTC = 00:00:01.000 MYT (Day 2)
+  const dBeforeMidnight = new Date("2026-10-27T15:59:59.999Z");
+  const dAtMidnight = new Date("2026-10-27T16:00:00.000Z");
+  const dAfterMidnight = new Date("2026-10-27T16:00:01.000Z");
+
+  const myDateOf = (d: Date) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+
+  assert.equal(myDateOf(dBeforeMidnight), "2026-10-27", "1 second before Malaysia midnight is Oct 27");
+  assert.equal(myDateOf(dAtMidnight), "2026-10-28", "at Malaysia midnight is Oct 28");
+  assert.equal(myDateOf(dAfterMidnight), "2026-10-28", "1 second after Malaysia midnight is Oct 28");
+
+  // Demonstrate the bug that was fixed:
+  // If a local midnight Date (e.g. 2026-10-27T00:00:00 in +08) is converted with .toISOString().slice(0, 10),
+  // in UTC it slips backward to the previous date (2026-10-26).
+  const localMidnightUtcEquivalent = new Date("2026-10-27T00:00:00+08:00");
+  const buggyDate = localMidnightUtcEquivalent.toISOString().slice(0, 10);
+  assert.equal(buggyDate, "2026-10-26", "flawed Date.toISOString() conversion rolls back by 1 day");
+  assert.notEqual(buggyDate, "2026-10-27", "flawed conversion fails to match the actual Malaysia date");
+});
+

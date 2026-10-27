@@ -132,7 +132,7 @@ const bodyText = async (page) => (await page.textContent("body")) ?? "";
 let browser;
 try {
   // ---- fixtures ----
-  const today = (await q("select (now() at time zone 'Asia/Kuala_Lumpur')::date d"))[0].d.toISOString().slice(0, 10);
+  const today = (await q("select (now() at time zone 'Asia/Kuala_Lumpur')::date::text d"))[0].d;
   const mkNotice = async (userLabel, station, team) => {
     const r = (await q(
       `insert into public.absence_notices (user_id, staff_name, role, station, team, duty_date, shift_start_time, remarks, leave_type, start_date, end_date, approval_status, status)
