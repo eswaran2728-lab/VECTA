@@ -65,7 +65,7 @@ test("offload-retirement runner: probes cover creation refusal, kept forms, kept
     "Profiling ASO keeps SEC013 only",
     "offload assignment rows are kept and revoked",
     "historical Offload is untouched",
-    "remain readable by their owner",
+    "still renders identically",
     "removed exactly",
     "every unrelated fingerprint is unchanged",
   ]) assert.ok(RUNNER.includes(needle), needle);

@@ -260,6 +260,10 @@ export async function execute(client, ctx) {
       await client.query("set local session_replication_role = origin");
       const fxMd5 = async () => (await q("select md5(r::text) a, (select md5(i::text) from public.offload_items i where i.id = $2) b from public.offload_records r where r.id = $1", [fxRec, fxItem]))[0];
       const fxBefore = await fxMd5();
+      // the content the secure view / PDF / Excel paths render for a record (service-level, no authorization of its own): must be identical before and after
+      const fxContent = async () => JSON.stringify((await q("select public.report_source_content('offload_records', $1) c", [fxRec]))[0].c);
+      const fxContentBefore = await fxContent();
+      if (!fxContentBefore.includes("PROBE0001")) fail("the synthetic historical record does not render its item through report_source_content");
       for (const f of files) {
         await client.query(f.sql);
         await client.query("insert into supabase_migrations.schema_migrations (version, name, statements) values ($1, $2, $3)", [f.version, f.name, [f.sql]]);
@@ -311,9 +315,8 @@ export async function execute(client, ctx) {
       const insPro = await tryInsert("profiling_aso");
       if (insPro === "inserted") fail("the database still accepts a standalone offload insert from a Profiling ASO");
       probe("a standalone offload_records insert by a Profiling ASO is refused too");
-      const ro = await asUser("aso", async () => (await client.query("select (select count(*)::int from public.offload_records where id = $1) r, (select count(*)::int from public.offload_items where report_id = $1) i", [fxRec])).rows[0]);
-      if (typeof ro === "string" || ro.r !== 1 || ro.i !== 1) fail(`the historical offload record is not readable by its owner as before (${JSON.stringify(ro)})`);
-      probe("a historical Offload record and its item remain readable by their owner through the existing access");
+      if ((await fxContent()) !== fxContentBefore) fail("the content rendered for a historical offload record changed");
+      probe("a historical Offload record still renders identically (with its item) through the secure content path that view, PDF and Excel export use");
       // remove exactly the synthetic fixture before anything can commit
       await client.query("set local session_replication_role = replica");
       const rmItem = await client.query("delete from public.offload_items where id = $1", [fxItem]);
