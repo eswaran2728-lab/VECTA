@@ -95,7 +95,7 @@ export function verifyFrozenMigrations(readFile) {
 export function orderingGate(fileNames) {
   const dated = fileNames.filter((f) => /^\d{14}_.*\.sql$/.test(f)).map((f) => f.slice(0, 14)).sort();
   if (new Set(dated).size !== dated.length) fail("duplicate migration versions in the repository");
-  const after = dated.filter((v) => v > LAST_PRE);
+  const after = dated.filter((v) => v > LAST_PRE && v <= POST_LAST); // later, separately guarded migrations are not this runner's concern
   if (after.join() !== MIGRATIONS.map((m) => m.version).join()) fail(`the repository holds migrations after ${LAST_PRE} other than the frozen one (${after.join()})`);
   if (!dated.includes(LAST_PRE)) fail(`${LAST_PRE} is not in the repository`);
 }

@@ -3,7 +3,8 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
+import { requireRole, requireCanonicalRole, ADMIN_ROLES } from "@/lib/avsec/auth";
+import { ROSTER_MANAGER_ROLE_CODES } from "@/lib/auth/role-gates";
 
 function backTo(station: string, week: string) {
   return `/avsec/admin/roster?station=${encodeURIComponent(station)}&week=${week}`;
@@ -11,14 +12,16 @@ function backTo(station: string, week: string) {
 
 /**
  * Roster authority is canonical (Phase 8): operation_manager (any station),
- * hub_se (stations of the assigned hub), dse (own station AND team). The
- * database RPCs enforce it; nothing here reads ops_group, and the historical
+ * hub_se (stations of the assigned hub), dse (own station AND team). The three
+ * writing actions are gated on those canonical role codes (Hub SE is named explicitly,
+ * not left to ride on the DSE compat rank) and the database RPCs enforce the exact
+ * station / team / hub; nothing here reads ops_group, and the historical
  * team_rosters.ops_group column is written only by the RPC as a fixed
  * compatibility value.
  */
 
 export async function upsertRosterCell(formData: FormData) {
-  await requireRole([...ADMIN_ROLES, "DSE"]);
+  await requireCanonicalRole(ROSTER_MANAGER_ROLE_CODES);
 
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();
@@ -52,7 +55,7 @@ export async function upsertRosterCell(formData: FormData) {
 }
 
 export async function clearRosterCell(formData: FormData) {
-  await requireRole([...ADMIN_ROLES, "DSE"]);
+  await requireCanonicalRole(ROSTER_MANAGER_ROLE_CODES);
 
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();
@@ -96,7 +99,7 @@ function isoDatesBetween(from: string, to: string): string[] {
 // team in one action, instead of clicking through an officer's cell per day. Writes the
 // exact same team_rosters rows upsertRosterCell would, just for a whole date range at once.
 export async function setTeamScheduleRange(formData: FormData) {
-  await requireRole([...ADMIN_ROLES, "DSE"]);
+  await requireCanonicalRole(ROSTER_MANAGER_ROLE_CODES);
 
   const station = String(formData.get("station") || "").trim();
   const team = String(formData.get("team") || "").trim();

@@ -3,7 +3,8 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
+import { requireCanonicalRole } from "@/lib/avsec/auth";
+import { ZONE_ADMIN_ROLE_CODES } from "@/lib/auth/role-gates";
 import type { Json } from "@/lib/supabase/database.types";
 import type { GeoPolygon } from "./geofence";
 
@@ -12,7 +13,7 @@ function backTo(station: string) {
 }
 
 export async function upsertZone(formData: FormData) {
-  const admin = await requireRole(ADMIN_ROLES);
+  const admin = await requireCanonicalRole(ZONE_ADMIN_ROLE_CODES);
 
   const id = String(formData.get("id") || "").trim();
   const station = String(formData.get("station") || "").trim();
@@ -63,7 +64,7 @@ export async function upsertZone(formData: FormData) {
 // Zones may be referenced by duty_records, so this deactivates rather than deletes —
 // deactivated zones drop off the check-in roster picker but keep historical records intact.
 export async function toggleZoneActive(formData: FormData) {
-  await requireRole(ADMIN_ROLES);
+  await requireCanonicalRole(ZONE_ADMIN_ROLE_CODES);
 
   const id = String(formData.get("id") || "");
   const station = String(formData.get("station") || "");

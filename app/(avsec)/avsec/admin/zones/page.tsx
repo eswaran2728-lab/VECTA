@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { requireRole, ADMIN_ROLES } from "@/lib/avsec/auth";
+import { requireCanonicalRole } from "@/lib/avsec/auth";
+import { ZONE_ADMIN_ROLE_CODES } from "@/lib/auth/role-gates";
 import { STATIONS } from "@/lib/avsec/reference-data";
 import { getZonesForStation, getZoneById } from "@/lib/avsec/duty/zone-queries";
 import { upsertZone, toggleZoneActive } from "@/lib/avsec/duty/zone-actions";
@@ -11,7 +12,7 @@ export default async function AdminZonesPage({
   searchParams: Promise<{ station?: string; edit?: string; error?: string }>;
 }) {
   const searchParams = await searchParamsPromise;
-  const profile = await requireRole(ADMIN_ROLES);
+  const profile = await requireCanonicalRole(ZONE_ADMIN_ROLE_CODES);
   const station = searchParams.station || profile.station || STATIONS[0];
 
   const [zones, editing] = await Promise.all([

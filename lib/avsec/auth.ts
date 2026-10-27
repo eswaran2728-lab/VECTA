@@ -7,6 +7,7 @@ import type { UserRole } from "./reference-data";
 import { getActiveRoleAssignments } from "@/lib/dashboard/context";
 import { deriveCanonicalAccess, accessSatisfiesRoles, type CanonicalAccess } from "@/lib/auth/canonical-access";
 import { routeAllows } from "@/lib/auth/route-access";
+import { accessHasAnyRoleCode } from "@/lib/auth/role-gates";
 import { classifyPortalAccess, isCaterLinkOnly, type PortalIdentity } from "@/lib/auth/caterlink-access";
 
 export async function getCurrentUser() {
@@ -131,6 +132,15 @@ export async function requireRole(roles: UserRole[]): Promise<Profile> {
   if (!accessSatisfiesRoles(access, roles)) {
     redirect(landingPathForAccess(access));
   }
+  return profile;
+}
+
+/** Gate on ACTIVE canonical role codes (never a compat rank): the caller must hold an assignment with one of these codes. Denied callers go to
+ *  their own landing page, exactly like requireRole(). The database still re-checks station / team / hub on every write. */
+export async function requireCanonicalRole(codes: readonly string[]): Promise<Profile> {
+  const profile = await requireProfile();
+  const access = profile.canonical as CanonicalAccess;
+  if (!accessHasAnyRoleCode(access, codes)) redirect(landingPathForAccess(access));
   return profile;
 }
 

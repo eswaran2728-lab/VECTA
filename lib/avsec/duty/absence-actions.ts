@@ -199,8 +199,9 @@ export async function reviewLeaveApplication(input: {
     return { error: "Leave application record not found.", success: false };
   }
 
-  if (isDSE && !isOrgWide && notice.station && notice.station !== profile.station) {
-    return { error: "Unauthorized: You can only review leave applications within your station.", success: false };
+  // DSE scope is the assigned station AND team (canonical accounts never reach this fallback: they use review_leave_request_secure, which enforces the same).
+  if (isDSE && !isOrgWide && (!notice.station || !notice.team || notice.station !== profile.station || notice.team !== profile.team)) {
+    return { error: "Unauthorized: You can only review leave applications within your station and team.", success: false };
   }
 
   // Check Annual Leave concurrency cap (max 3 approved overlapping per team for DSE)
