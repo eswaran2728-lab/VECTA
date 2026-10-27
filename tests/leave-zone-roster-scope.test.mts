@@ -186,3 +186,21 @@ test("hosted verifier retrieves Malaysia date as database text without Date/toIS
   assert.notEqual(buggyDate, "2026-10-27", "flawed conversion fails to match the actual Malaysia date");
 });
 
+test("duty checkin-actions does not write obsolete manual zone columns", () => {
+  const code = read("lib/avsec/duty/checkin-actions.ts");
+  assert.doesNotMatch(code, /check_in_manual_zone/, "submitDutyCheckIn does not write check_in_manual_zone");
+  assert.doesNotMatch(code, /check_out_manual_zone/, "submitDutyCheckOut does not write check_out_manual_zone");
+});
+
+test("todayISODateMY helper correctly computes Malaysia date at 23:59, 00:01, and 07:59 MYT", async () => {
+  const { todayISODateMY } = await import("../lib/avsec/datetime.ts");
+  const t2359 = new Date("2026-10-27T15:59:00.000Z");
+  const t0001 = new Date("2026-10-27T16:01:00.000Z");
+  const t0759 = new Date("2026-10-27T23:59:00.000Z");
+
+  assert.equal(todayISODateMY(t2359), "2026-10-27", "23:59 MYT is 2026-10-27");
+  assert.equal(todayISODateMY(t0001), "2026-10-28", "00:01 MYT is 2026-10-28");
+  assert.equal(todayISODateMY(t0759), "2026-10-28", "07:59 MYT is 2026-10-28");
+});
+
+

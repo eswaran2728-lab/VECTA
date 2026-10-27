@@ -19,8 +19,8 @@ export function formatTimeMY(iso: string | null | undefined) {
   return formatDateTimeMY(iso, "HH:mm");
 }
 
-export function todayISODateMY(): string {
-  return formatInTimeZone(new Date(), APP_TIMEZONE, "yyyy-MM-dd");
+export function todayISODateMY(referenceDate: Date = new Date()): string {
+  return formatInTimeZone(referenceDate, APP_TIMEZONE, "yyyy-MM-dd");
 }
 
 export function nowTimeMY(): string {

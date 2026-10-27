@@ -253,15 +253,15 @@ try {
     // check-in: inside zone 002 (BAY J), with the fixture roster row for KUL - MAA / ALPHA today
     const { ctx, page } = await pageFor(browser, "aso-kul", { width: 390, height: 844 }, "dark", { geolocation: { latitude: 2.74428867607854, longitude: 101.690063426833, accuracy: 10 }, permissions: ["geolocation"] });
     const p = await go(page, "/avsec/duty");
-    await page.waitForTimeout(2500);
     const btn = page.getByRole("button", { name: /^\s*Check in\s*$/i }).first();
-    const visible = (await btn.count()) > 0;
+    await btn.waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+    const visible = (await btn.count()) > 0 && await btn.isEnabled().catch(() => false);
     ok("UI: the check-in screen opens for an ordinary ASO with a roster and a zone to match", p === "/avsec/duty" && visible, p);
     await page.screenshot({ path: path.join(evDir, "checkin-aso-mobile-dark.png"), fullPage: true });
     if (visible) {
       await btn.click({ timeout: 8000 }).catch(() => {});
       let rec = [];
-      for (let i = 0; i < 10; i += 1) {
+      for (let i = 0; i < 15; i += 1) {
         await page.waitForTimeout(1500);
         rec = await q("select id from public.duty_records where profile_id = $1 and duty_date = $2::date", [uid("aso-kul"), today]);
         if (rec.length > 0) break;

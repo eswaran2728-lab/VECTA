@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database.types";
+import { todayISODateMY } from "@/lib/avsec/datetime";
 
 type WoisSupabaseClient = SupabaseClient<Database>;
 
@@ -167,7 +168,7 @@ async function callGetMyCurrentDuty(supabase: WoisSupabaseClient): Promise<WoisT
     return { ok: true, summary: "No station/team is assigned to your profile, so there is no roster to show.", data: null };
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISODateMY();
   const { data: roster } = await supabase
     .from("team_rosters")
     .select("shift_code, start_time, end_time")

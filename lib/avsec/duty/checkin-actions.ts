@@ -142,12 +142,9 @@ export async function submitDutyCheckIn(input: unknown): Promise<ActionResult> {
       check_in_accuracy_m: values.accuracy_m,
       check_in_inside_fence: insideFence,
       check_in_offline: values.offline,
-      check_in_manual_zone: false,
       status: lateMinutes > 0 ? "late" : "present",
       late_minutes: lateMinutes,
       late_remark: lateMinutes > 0 ? values.late_remark.trim() : null,
-      early_in_minutes: earlyInMinutes,
-      early_in_remark: earlyInMinutes > 0 ? values.early_in_remark.trim() : null,
     })
     .select("id")
     .single();
@@ -302,11 +299,8 @@ export async function submitDutyCheckOut(input: unknown): Promise<ActionResult> 
       check_out_lat: values.lat,
       check_out_lng: values.lng,
       check_out_inside_fence: insideFence,
-      check_out_manual_zone: false,
       early_out_minutes: earlyMinutes,
       early_out_remark: earlyMinutes > 0 ? values.early_out_remark.trim() : null,
-      late_out_minutes: lateOutMinutes,
-      late_out_remark: lateOutMinutes > 0 ? values.late_out_remark.trim() : null,
       total_minutes: totalMinutes,
       is_missing_checkout: false,
     })

@@ -132,3 +132,6 @@ export function isOperationalPathForbiddenForSuperAdmin(path: string, role: stri
   if (role !== "super_admin") return false;
   return path.startsWith("/avsec") || path.startsWith("/icms") || path.startsWith("/caterlink");
 }
+
+export { todayISODateMY } from "../avsec/datetime";
+

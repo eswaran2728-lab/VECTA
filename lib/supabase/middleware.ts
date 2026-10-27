@@ -1,7 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import {
-  isCheckinGateExempt,
   isAdminPathForbiddenFor,
   isSuperAdminPathForbidden,
   isOperationalPathForbiddenForSuperAdmin,
@@ -9,6 +8,7 @@ import {
   effectiveGateRole,
   isShiftBasedAccess,
   isMainEnforcementPathForbidden,
+  todayISODateMY,
 } from "./middleware-gate-logic";
 import { deriveCanonicalAccess, assignmentsFromRpcRows } from "../auth/canonical-access";
 import {
@@ -315,7 +315,7 @@ export async function updateSession(request: NextRequest) {
     }
 
     if (!exempt && !alreadyOnCheckin && path.startsWith("/avsec")) {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayISODateMY();
       const { data: dutyRecord, error } = await supabase
         .from("duty_records")
         .select("check_in_at, check_out_at")

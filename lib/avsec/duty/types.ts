@@ -31,10 +31,10 @@ export interface DutyRecordRow {
   late_remark: string | null;
   early_out_minutes: number;
   early_out_remark: string | null;
-  early_in_minutes: number;
-  early_in_remark: string | null;
-  late_out_minutes: number;
-  late_out_remark: string | null;
+  early_in_minutes?: number;
+  early_in_remark?: string | null;
+  late_out_minutes?: number;
+  late_out_remark?: string | null;
 }
 
 export interface TimesheetRosterDay {

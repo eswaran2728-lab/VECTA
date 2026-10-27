@@ -387,7 +387,7 @@ export function CheckInScreen({
             EARLY OUT {record.early_out_minutes} MIN — {record.early_out_remark}
           </p>
         )}
-        {record.late_out_minutes > 0 && (
+        {(record.late_out_minutes ?? 0) > 0 && (
           <p className="font-mono text-[10px] text-brand">
             LATE CHECKOUT {record.late_out_minutes} MIN — {record.late_out_remark}
           </p>

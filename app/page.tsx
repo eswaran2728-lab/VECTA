@@ -18,6 +18,7 @@ import { TransactionStageBar } from "@/components/layout/TransactionStageBar";
 import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries";
 import { getActiveRoleAssignments } from "@/lib/dashboard/context";
 import { deriveCanonicalAccess, isOrgWideOperator } from "@/lib/auth/canonical-access";
+import { todayISODateMY } from "@/lib/avsec/datetime";
 import { isStationOperator } from "@/lib/icms/canonical";
 import { classifyPortalAccess, isCaterLinkOnly } from "@/lib/auth/caterlink-access";
 import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
@@ -46,15 +47,6 @@ function formatRoleChip(role: string | null): string | null {
       return role.charAt(0).toUpperCase() + role.slice(1);
   }
 }
-
-function todayISODateMY(): string {
-  // Mirrors lib/avsec/datetime's MY-local "today" convention (UTC+8), used
-  // by the report tables' submitted_at filters this page reuses.
-  const now = new Date();
-  const my = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-  return my.toISOString().slice(0, 10);
-}
-
 
 export default async function LandingPage() {
   const supabase = await createClient();

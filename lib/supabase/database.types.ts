@@ -1636,17 +1636,15 @@ export type Database = {
           check_in_inside_fence: boolean | null
           check_in_lat: number | null
           check_in_lng: number | null
-          check_in_manual_zone: boolean
           check_in_offline: boolean
           check_out_at: string | null
           check_out_inside_fence: boolean | null
           check_out_lat: number | null
           check_out_lng: number | null
-          check_out_manual_zone: boolean
           created_at: string
           duty_date: string
-          early_in_minutes: number
-          early_in_remark: string | null
+          early_in_minutes?: number
+          early_in_remark?: string | null
           early_out_minutes: number
           early_out_remark: string | null
           handover_notes: string | null
@@ -1654,8 +1652,8 @@ export type Database = {
           is_missing_checkout: boolean
           is_off_schedule: boolean
           late_minutes: number
-          late_out_minutes: number
-          late_out_remark: string | null
+          late_out_minutes?: number
+          late_out_remark?: string | null
           late_remark: string | null
           post_assignment: string | null
           profile_id: string
@@ -1675,13 +1673,11 @@ export type Database = {
           check_in_inside_fence?: boolean | null
           check_in_lat?: number | null
           check_in_lng?: number | null
-          check_in_manual_zone?: boolean
           check_in_offline?: boolean
           check_out_at?: string | null
           check_out_inside_fence?: boolean | null
           check_out_lat?: number | null
           check_out_lng?: number | null
-          check_out_manual_zone?: boolean
           created_at?: string
           duty_date: string
           early_in_minutes?: number
@@ -1714,13 +1710,11 @@ export type Database = {
           check_in_inside_fence?: boolean | null
           check_in_lat?: number | null
           check_in_lng?: number | null
-          check_in_manual_zone?: boolean
           check_in_offline?: boolean
           check_out_at?: string | null
           check_out_inside_fence?: boolean | null
           check_out_lat?: number | null
           check_out_lng?: number | null
-          check_out_manual_zone?: boolean
           created_at?: string
           duty_date?: string
           early_in_minutes?: number
