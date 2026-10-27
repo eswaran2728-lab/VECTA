@@ -128,3 +128,14 @@ To be added from owner-provided templates. Needed before any work: the template 
 | S263 | PEN officer's Station Activity | Only PEN records; route shows HUB/AIRCRAFT as "Route"; station shown only when the record has one; "Loaded at … Refresh" wording |
 | S264 | Leadership landing / dashboards | Existing scope rules unchanged; no personal list invented |
 | S265 | MAA/AAX segregation and SO acknowledgement | Unchanged: classification at submission, acknowledgement separate |
+
+## 9. Observations from hosted verification (not changed here)
+
+* **Station codes are not readable by signed-in users.** `authenticated` has no SELECT on `public.org_stations` (verified with a real ASO session: `permission denied for table org_stations`). The first
+  Station Activity query embedded `org_stations` and silently returned no movements; it now resolves station id ↔ code with a server-side reference read (`stationDirectory()` in
+  `lib/avsec/dashboard/activity-queries.ts`) while movements are still read with the caller's own session, so row-level security stays the authority.
+* **Same cause, existing defect (not fixed, outside this task):** `getUnfinishedWorkSummary()` in `lib/avsec/duty/handover-queries.ts` looks up the station id with the user session, gets no row, and therefore always
+  reports an empty "unfinished movements / incidents" list in the shift handover summary. Fix options: the same server-side reference read, or a narrow `security definer` station-code lookup. Needs an owner/engineering decision on which.
+* **Role dashboards.** Profiling ASO, Hub SE and Operation Manager land on `/avsec/my-dashboard` (their own workspace), not on `/`; the Daily/Aircraft grouping and the two feeds therefore appear on the legacy landing
+  (ASO, SO, SSO, DSE) and the ASO "New report" selector (`/avsec/home`). Profiling ASO reaches SEC013 from its dashboard link; SEC016 is refused to it.
+* **Autosaved drafts.** Opening a report form autosaves a `report_drafts` row for the signed-in account; hosted browser verification therefore leaves one per form opened. The verification run removed exactly the rows it created.
