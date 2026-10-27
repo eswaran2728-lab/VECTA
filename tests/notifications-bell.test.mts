@@ -120,7 +120,8 @@ test("contrast, keyboard-scroll and mobile target fixes from the hosted accessib
   assert.match(read("components/layout/shell/MobileBottomNavigation.tsx"), /active \? "text-shell-active" : "text-shell-muted/);
   assert.match(read("components/avsec/duty/CheckInScreen.tsx"), /bg-brand\/10 px-5 py-4 text-sm font-medium text-foreground/);
   assert.match(read("app/(avsec)/avsec/duty/page.tsx"), /text-\[11px\] font-bold uppercase tracking-\[0\.06em\] text-foreground/);
-  assert.match(read("app/page.tsx"), /overflow-x-auto" tabIndex=\{0\} role="region" aria-label="Live activity stream/);
+  assert.match(read("app/page.tsx"), /overflow-x-auto" tabIndex=\{0\} role="region" aria-label="My recent activity/);
+  assert.match(read("app/page.tsx"), /overflow-x-auto" tabIndex=\{0\} role="region" aria-label="Station activity/);
   assert.match(read("components/icms/language-toggle.tsx"), /min-h-\[44px\] min-w-\[44px\][^"]*lg:min-h-\[28px\]/);
   assert.match(read("components/caterlink/CaterLinkShell.tsx"), /aria-label="Sign out" className="inline-flex min-h-\[44px\]/);
 });

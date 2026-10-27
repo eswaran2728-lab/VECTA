@@ -5,11 +5,10 @@ import { getOverdueAircraft, getMySubmissions } from "@/lib/avsec/reports/querie
 import { getTodayRoster, getTodayDutyRecord } from "@/lib/avsec/duty/checkin-queries";
 import { REPORT_META, type ReportType } from "@/lib/avsec/reference-data";
 import { getActiveAnnouncementsForUser } from "@/lib/avsec/announcements/queries";
+import { ReportCategoryGroups } from "@/components/avsec/reports/ReportCategoryGroups";
 import { AnnouncementBanner } from "@/components/avsec/announcements/AnnouncementBanner";
 import { formatTimeMY, nowTimeMY } from "@/lib/avsec/datetime";
 
-// The list shown is the person's ASSIGNED forms (report_form_assignments), not this constant.
-const REPORT_ORDER: ReportType[] = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013"];
 const RED_ACCENT: Partial<Record<ReportType, true>> = { sec029: true, sec033: true };
 
 function shortLabel(type: ReportType) {
@@ -26,7 +25,6 @@ function greeting() {
 export default async function HomePage() {
   const profile = await requireRole(["ASO"]);
   const allowedForms = await getAllowedReportForms();
-  const visibleForms = REPORT_ORDER.filter((t) => (allowedForms as string[]).includes(t));
   const [overdue, recent, roster, announcements] = await Promise.all([
     profile.station ? getOverdueAircraft(profile.station) : Promise.resolve([]),
     getMySubmissions({ profileId: profile.id, limit: 5 }),
@@ -101,40 +99,7 @@ export default async function HomePage() {
           <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground mb-3">
             New report
           </h2>
-          <div className="flex flex-col gap-2">
-            {visibleForms.map((type) => {
-              const meta = REPORT_META[type];
-              const isRed = RED_ACCENT[type];
-              return (
-                <Link
-                  key={type}
-                  href={`/avsec/reports/${type}`}
-                  className={`flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card transition-all hover:border-primary group ${
-                    isRed ? "border-l-4 border-l-destructive" : "border-l-4 border-l-primary"
-                  }`}
-                >
-                  <span
-                    className={`w-12 shrink-0 font-display text-sm font-bold leading-none ${
-                      isRed ? "text-destructive" : "text-primary"
-                    }`}
-                  >
-                    {shortLabel(type)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-sm text-foreground group-hover:text-primary transition-colors">
-                      {meta.name}
-                    </p>
-                    <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
-                      {meta.code}
-                    </p>
-                  </div>
-                  <span className="font-mono text-xs text-muted-foreground group-hover:text-primary transition-colors shrink-0">
-                    →
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
+          <ReportCategoryGroups allowed={allowedForms} layout="list" />
         </section>
 
         <section className="flex items-baseline justify-between pt-2">
