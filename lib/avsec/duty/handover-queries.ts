@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getShiftCompliance } from "@/lib/avsec/dashboard/queries";
 import { todayISODateMY } from "@/lib/avsec/datetime";
 
@@ -20,7 +21,9 @@ export async function getUnfinishedWorkSummary(station: string, team?: string): 
   const items: UnfinishedWorkItem[] = [];
 
   // Canonical CaterLink model: movements and incidents belong to a station by id (origin_station_id / station_id), not by a station text.
-  const { data: stationRow } = await supabase.from("org_stations").select("id").eq("code", station).maybeSingle();
+  // Signed-in users cannot read org_stations (narrowed privileges), so this id lookup is a server-side reference read; the movements and
+  // incidents below are still read with the caller's own session, so row-level security decides what is visible.
+  const { data: stationRow } = await createAdminClient().from("org_stations").select("id").eq("code", station).maybeSingle();
   const stationId = stationRow?.id ?? null;
 
   const [{ data: transactions }, { data: incidents }, compliance] = await Promise.all([

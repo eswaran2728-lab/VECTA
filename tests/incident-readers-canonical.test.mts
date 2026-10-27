@@ -28,5 +28,7 @@ test("the shift handover summary resolves the station by id and no longer reads 
   const src = fs.readFileSync("lib/avsec/duty/handover-queries.ts", "utf8");
   assert.match(src, /from\("org_stations"\)\.select\("id"\)\.eq\("code", station\)/);
   assert.match(src, /origin_station_id/);
+  assert.match(src, /createAdminClient\(\)\.from\("org_stations"\)/, "signed-in users cannot read org_stations: the id lookup is a server-side reference read");
+  assert.doesNotMatch(src, /supabase\.from\("org_stations"\)/);
   assert.doesNotMatch(src, /escort_officer_name|\.eq\("station", station\)/);
 });
