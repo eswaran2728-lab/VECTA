@@ -110,7 +110,7 @@ test("runner: frozen SHA, allow-list, ordering, baseline and live phrase", () =>
   assert.equal(POST_LAST, "20261128000001");
   assert.equal(LIVE_PHRASE, "APPLY 20261128000001 TO STAGING ddlctzbnqewubltcavkh");
   assert.ok(Object.values(PRE_STATE).every((v) => typeof v === "string" && v.length === 32));
-  assert.ok(EXPECTED_PROBES >= 0);
+  assert.equal(EXPECTED_PROBES, 10);
   // the certified staging baseline is the post-state once rolled out
   assert.ok(EXPECTED_MIGRATION_COUNT === PRE_COUNT || EXPECTED_MIGRATION_COUNT === POST_COUNT);
   assert.ok(EXPECTED_LATEST_MIGRATION === LAST_PRE || EXPECTED_LATEST_MIGRATION === POST_LAST);

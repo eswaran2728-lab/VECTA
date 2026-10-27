@@ -45,7 +45,7 @@ export const PRE_STATE = {
   zoneReadMd5: "25a7f710620715cf888b3073a03c4076",
   adminFnMd5: "ebef3c8b24360171dea94bcf809c46c0",
 };
-export const EXPECTED_PROBES = 0;
+export const EXPECTED_PROBES = 10;
 
 export const canonicalSql = (input) => String(Buffer.isBuffer(input) ? input.toString("utf8") : input).replace(/\r\n?/g, "\n");
 export const normalisedSha256 = (buf) => crypto.createHash("sha256").update(canonicalSql(buf)).digest("hex");
