@@ -149,6 +149,14 @@ try {
   const hasOps = (await q("select count(*)::int n from information_schema.columns where table_schema='public' and table_name='team_rosters' and column_name='ops_group'"))[0].n === 1;
   const ro = (await q(`insert into public.team_rosters (station, team, roster_date, shift_code, start_time, end_time, notes, set_by${hasOps ? ", ops_group" : ""}) values ('KUL - MAA', 'ALPHA', $1::date, 'M', null, null, $2, $3${hasOps ? ", 'operation_avsec'" : ""}) returning id`, [today, TAG, uid("dse")]))[0].id;
   ledger.roster.push(ro); save();
+  // DSE is a shift-based role: under the duty check-in gate, a shift-based user must be checked in
+  // on duty to open operational routes like the roster administration screen.
+  const dseDuty = (await q(
+    `insert into public.duty_records (profile_id, station, duty_date, shift_code, check_in_at, check_in_inside_fence, status, handover_notes)
+     values ($1, 'KUL - MAA', $2::date, 'M', now(), true, 'present', $3) returning id`,
+    [uid("dse"), today, TAG],
+  ))[0].id;
+  ledger.duty.push(dseDuty); save();
   const aoc = (await q("select id from public.aocs where code = 'MY'"))[0].id;
   const stationId = async (c) => (await q("select id from public.org_stations where code = $1", [c]))[0].id;
   await pg.query("begin"); await pg.query("set local session_replication_role = replica");
@@ -162,7 +170,7 @@ try {
   await mkTx("ICMS-2026-990001", "PEN");
   await mkTx("ICMS-2026-990002", "JHB");
   await pg.query("commit");
-  console.log(`fixtures: 3 leave notices, 1 roster row, 2 movements (ledger ${path.basename(ledgerPath)})`);
+  console.log(`fixtures: 3 leave notices, 1 roster row, 1 duty row, 2 movements (ledger ${path.basename(ledgerPath)})`);
 
   // ---- 1. leave: DSE team isolation, oversight, Hub SE hub isolation (real sessions) ----
   const mine = async (sb) => ((await sb.from("absence_notices").select("id").eq("remarks", TAG)).data ?? []).map((r) => r.id);
@@ -252,8 +260,12 @@ try {
     await page.screenshot({ path: path.join(evDir, "checkin-aso-mobile-dark.png"), fullPage: true });
     if (visible) {
       await btn.click({ timeout: 8000 }).catch(() => {});
-      await page.waitForTimeout(4000);
-      const rec = await q("select id from public.duty_records where profile_id = $1 and duty_date = $2::date", [uid("aso-kul"), today]);
+      let rec = [];
+      for (let i = 0; i < 10; i += 1) {
+        await page.waitForTimeout(1500);
+        rec = await q("select id from public.duty_records where profile_id = $1 and duty_date = $2::date", [uid("aso-kul"), today]);
+        if (rec.length > 0) break;
+      }
       for (const r of rec) if (!ledger.duty.includes(r.id)) ledger.duty.push(r.id);
       save();
       ok("an ordinary ASO checks in inside a zone (duty record created through the app)", rec.length === 1, `${rec.length} record(s)`);
