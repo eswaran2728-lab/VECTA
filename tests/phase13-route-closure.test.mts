@@ -27,6 +27,7 @@ const APP_DIR = path.join(REPO_ROOT, "app");
 const GATE_MARKERS = [
   "requireRole(",
   "requireRouteAccess(",
+  "requireCanonicalRole(", // canonical role-code gate (lib/auth/role-gates.ts): zone administration is Operation Manager only
   "requireProfile(",
   "requireEntityLeadership(", // MAA/AAX leadership pages: canonical role codes via requireProfile(), plus per-RPC database re-authorization
   "requireAttendanceProfile(",

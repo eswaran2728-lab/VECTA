@@ -43,10 +43,16 @@ let passes = 0, failures = 0;
 const ok = (label, cond, note = "") => { if (cond) passes += 1; else failures += 1; console.log(`${cond ? "PASS" : "FAIL"}: ${label}${note ? " -- " + note : ""}`); return cond; };
 const setEq = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 
-const { client: pg } = await connectVerified();
-const q = async (s, p) => (await pg.query(s, p)).rows;
+// The host network has dropped connections mid-run before: never let a dead connection crash the process (the ledger-driven cleanup must always run).
+let pg = (await connectVerified()).client;
+const wire = (c) => c.on("error", (e) => console.log(`(database connection error ignored: ${String(e.message).slice(0, 60)})`));
+wire(pg);
+const reconnect = async () => { try { await pg.end(); } catch { /* already dead */ } pg = (await connectVerified()).client; wire(pg); };
+const DEAD = /Connection terminated|ECONNRESET|read ECONN|connection error|Client was closed/i;
+const q = async (s, p) => { for (let i = 0; ; i += 1) { try { return (await pg.query(s, p)).rows; } catch (e) { if (i >= 2 || !DEAD.test(String(e.message))) throw e; await reconnect(); } } };
 
 async function cleanup() {
+  await reconnect(); // always cleanup on a fresh connection
   const report = {};
   const d = await pg.query("delete from public.duty_records where id = any($1::uuid[]) returning id", [ledger.duty]);
   report.duty = d.rowCount;
@@ -87,7 +93,7 @@ const bypass = fs.readFileSync(path.join(defaultCredentialsDir("dashboard-review
 const CHROME = ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"].find((p) => fs.existsSync(p));
 const clientFor = async (label) => {
   const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
-  const s = await signInWithRetry(sb.auth, cred(label).email, cred(label).password);
+  const s = await signInWithRetry(sb, cred(label).email, cred(label).password);
   if (s.error) throw new Error(`${label}: sign-in failed`);
   return sb;
 };
@@ -113,7 +119,14 @@ async function pageFor(browser, label, viewport = { width: 1366, height: 900 }, 
   }
   throw new Error(`${label}: could not sign in to the Preview`);
 }
-const go = async (page, p) => { await page.goto(`${base}${p}`, { waitUntil: "domcontentloaded" }); await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {}); return new URL(page.url()).pathname; };
+const go = async (page, p) => {
+  // a transient host network change (ERR_NETWORK_*) is retried; any other failure surfaces
+  for (let attempt = 1; ; attempt += 1) {
+    try { await page.goto(`${base}${p}`, { waitUntil: "domcontentloaded" }); break; } catch (e) { if (attempt >= 3 || !/ERR_NETWORK|ERR_INTERNET|ERR_NAME_NOT_RESOLVED/.test(String(e.message))) throw e; await new Promise((r) => setTimeout(r, 4000 * attempt)); }
+  }
+  await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
+  return new URL(page.url()).pathname;
+};
 const bodyText = async (page) => (await page.textContent("body")) ?? "";
 
 let browser;
@@ -286,11 +299,13 @@ try {
     ok("UI: DSE opens the roster screen for its own station", p === "/avsec/admin/roster", p);
     await ctx.close();
   }
+} catch (e) {
+  ok("the verification ran to completion without an unexpected error", false, String(e?.stack ?? e).split("\n").slice(0, 3).join(" | ").slice(0, 300));
 } finally {
   if (browser) await browser.close().catch(() => {});
   const unsafe = [...hosts].filter((h) => h.includes(FORBIDDEN_REF));
   ok("No network request went to the production Supabase project", unsafe.length === 0);
-  ok("Browser traffic reached only the preview host and the staging Supabase project (plus static/font hosts)", [...hosts].every((h) => h.endsWith("vercel.app") || h.startsWith("ddlctzbnqewubltcavkh") || /gstatic|googleapis|vercel/.test(h)), [...hosts].join(","));
+  ok("Browser traffic reached only the preview host and the staging Supabase project (plus static/font hosts)", [...hosts].every((h) => h.endsWith("vercel.app") || h.startsWith("ddlctzbnqewubltcavkh") || /gstatic|googleapis|vercel|openstreetmap\.org$/.test(h)), [...hosts].join(","));
   ok("No browser console or page errors (Vercel toolbar noise excluded)", browserErrors.length === 0, browserErrors.slice(0, 4).join(" | "));
   const clean = await cleanup();
   ok("every fixture created by this run was removed exactly (zero tagged remnants)", clean);

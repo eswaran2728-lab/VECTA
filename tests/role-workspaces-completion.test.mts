@@ -80,7 +80,8 @@ test("Operation Manager: no user administration (route, server actions, navigati
   assert.doesNotMatch(staff, /"use server"|<form[^>]*method="post"|action=\{/, "the staff page has no mutation");
   assert.match(MIG, /function public\.search_operation_staff_secure/);
   // the shared duty/zones/roster/leave/OT oversight stays with the Operation Manager
-  assert.match(read("app/(avsec)/avsec/admin/zones/page.tsx"), /requireRole\(ADMIN_ROLES\)/);
+  // zone administration is now an explicit canonical Operation Manager gate (a rank list cannot say "Operation Manager only")
+  assert.match(read("app/(avsec)/avsec/admin/zones/page.tsx"), /requireCanonicalRole\(ZONE_ADMIN_ROLE_CODES\)/);
 });
 
 // ---------------------------------------------------------------- 4. Main Enforcement: dedicated workspace only
