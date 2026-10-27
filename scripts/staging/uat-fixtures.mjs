@@ -11,6 +11,7 @@
 //   node --env-file=.env.local scripts/staging/uat-fixtures.mjs --action=cleanup-reports --run-id=<id> [--live]
 //   node --env-file=.env.local scripts/staging/uat-fixtures.mjs --action=create-partb|cleanup-partb --run-id=<id> [--live]   (tagged Part B movements WITH seals plus a tagged whitelisted vehicle/driver; cleanup deletes the recorded ids, their cascading checkpoint rows and their escalation notifications)
 //   node --env-file=.env.local scripts/staging/uat-fixtures.mjs --action=create-tx|cleanup-tx --run-id=<id> [--live]   (two synthetic CaterLink movements, origin PEN and JHB, for the scanner / duty-gate probe)
+//   node --env-file=.env.local scripts/staging/uat-fixtures.mjs --action=create-activity|cleanup-activity --run-id=<id> [--live]   (needs create-tx first: tagged checkpoint / receipt rows with KNOWN actors, to prove My Recent Activity lists only the signed-in officer's own actions)
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -35,13 +36,13 @@ const TAG = `[UAT:${runId}]`;
 const ledgerDir = path.join(os.tmpdir(), "vecta-uat-fixtures");
 fs.mkdirSync(ledgerDir, { recursive: true });
 const ledgerPath = path.join(ledgerDir, `${runId}.json`);
-const readLedger = () => ({ duty: [], reports: [], tx: [], partb: null, notifications: [], ...(fs.existsSync(ledgerPath) ? JSON.parse(fs.readFileSync(ledgerPath, "utf8")) : { runId }) });
+const readLedger = () => ({ duty: [], reports: [], tx: [], activity: [], partb: null, notifications: [], ...(fs.existsSync(ledgerPath) ? JSON.parse(fs.readFileSync(ledgerPath, "utf8")) : { runId }) });
 const writeLedger = (l) => fs.writeFileSync(ledgerPath, JSON.stringify(l, null, 2), { mode: 0o600 });
 const fail = (m) => { throw new Error(m); };
 const redact = (m) => String(m).replace(/postgres(ql)?:\/\/[^@\s]+@/g, "postgres://[REDACTED]@");
 
 async function main() {
-  if (!["status", "create-duty", "cleanup-duty", "create-reports", "cleanup-reports", "create-tx", "cleanup-tx", "create-partb", "cleanup-partb", "create-notifications", "cleanup-notifications", "verify-duty"].includes(action)) fail("unknown --action");
+  if (!["status", "create-duty", "cleanup-duty", "create-reports", "cleanup-reports", "create-tx", "cleanup-tx", "create-partb", "cleanup-partb", "create-notifications", "cleanup-notifications", "create-activity", "cleanup-activity", "verify-duty"].includes(action)) fail("unknown --action");
   environmentGates();
   if (JSON.stringify(process.env).includes(FORBIDDEN_REF)) fail("production reference present");
   const manifest = loadCurrentManifest();
@@ -172,6 +173,61 @@ async function main() {
       } catch (e) { await client.query("ROLLBACK"); throw e; }
       writeLedger(ledger);
       console.log(`created ${ledger.tx.length} synthetic movements: ${ledger.tx.map((t) => t.id).join(", ")}`);
+      return;
+    }
+
+    if (action === "create-activity") {
+      if (ledger.activity.length) fail("this run already holds activity fixtures; clean them up first");
+      const pen = ledger.tx.find((t) => t.station === "PEN");
+      const jhb = ledger.tx.find((t) => t.station === "JHB");
+      if (!pen || !jhb) fail("run create-tx for this run first: the activity rows hang off its two synthetic movements");
+      // Known actors: aso (PEN) acts twice; profiling_aso (PEN) and aso-jhb (JHB) each act once, so the signed-in officer's own list can be told apart from visible-but-foreign actions.
+      const plan = [
+        { table: "part_b_c", stage: "B", tx: pen, by: "aso", minutes: 90 },
+        { table: "part_b_c", stage: "C", tx: pen, by: "profiling_aso", minutes: 60 },
+        { table: "part_b_c", stage: "B", tx: jhb, by: "aso-jhb", minutes: 45 },
+        { table: "caterlink_checkpoint_hub", tx: pen, by: "aso", minutes: 30 },
+      ];
+      console.log(`plan: ${plan.map((p) => `${p.table}${p.stage ? "/" + p.stage : ""}@${p.tx.station} by ${p.by}`).join(", ")}`);
+      if (!LIVE) return console.log("DRY RUN: nothing written");
+      await client.query("BEGIN");
+      try {
+        await client.query("set local session_replication_role = replica"); // synthetic rows: skip the checkpoint-recording triggers for THIS transaction only
+        for (const p of plan) {
+          const a = account(p.by);
+          const prof = (await q("select name, staff_no from public.profiles where id = $1", [a.authUserId]))[0] ?? fail(`${p.by}: no profile`);
+          const r = p.table === "part_b_c"
+            ? (await q(
+              `insert into public.part_b_c (transaction_id, checkpoint_stage, avsec_name, avsec_staff_id, signature_url, result, remarks, completed_by, completed_at)
+               values ($1,$2,$3,$4,'uat/fixture','PASS',$5,$6, now() - ($7 || ' minutes')::interval) returning id`,
+              [p.tx.id, p.stage, prof.name, prof.staff_no ?? "UAT", TAG, a.authUserId, String(p.minutes)],
+            ))[0]
+            : (await q(
+              `insert into public.caterlink_checkpoint_hub (transaction_id, confirmed_destination, hub_avsec_name, hub_avsec_staff_id, signature_url, remarks, completed_by, completed_at)
+               values ($1,$2,$3,$4,'uat/fixture',$5,$6, now() - ($7 || ' minutes')::interval) returning id`,
+              [p.tx.id, p.tx.station, prof.name, prof.staff_no ?? "UAT", TAG, a.authUserId, String(p.minutes)],
+            ))[0];
+          ledger.activity.push({ id: r.id, table: p.table, by: p.by, station: p.tx.station });
+        }
+        await client.query("COMMIT");
+      } catch (e) { await client.query("ROLLBACK"); throw e; }
+      writeLedger(ledger);
+      console.log(`created ${ledger.activity.length} activity rows: ${ledger.activity.map((x) => `${x.table}:${x.by}`).join(", ")}`);
+      return;
+    }
+
+    if (action === "cleanup-activity") {
+      console.log(`ledger activity rows: ${ledger.activity.length}`);
+      if (!LIVE) return console.log("DRY RUN: nothing deleted");
+      let deleted = 0;
+      for (const x of ledger.activity) {
+        // exact id AND still carrying this run's tag; the tables are append-only for normal sessions, so this runs as the owner connection
+        const del = await q(`delete from public.${x.table === "part_b_c" ? "part_b_c" : "caterlink_checkpoint_hub"} where id = $1 and remarks = $2 returning id`, [x.id, TAG]);
+        deleted += del.length;
+      }
+      ledger.activity = [];
+      writeLedger(ledger);
+      console.log(`deleted ${deleted}`);
       return;
     }
 

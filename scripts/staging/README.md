@@ -82,3 +82,13 @@ object ID to `manifest-<run-id>.json`. Re-running reconciles by email/profile/as
 password. `verify-dashboard-review-accounts.mjs` performs the database checks and one real publishable-key
 sign-in per account. `teardown-test-accounts.mjs` is manifest-driven, dry-run by default and needs
 `--live --confirm-destructive=<run-id>` to delete anything.
+
+## Report grouping / activity feeds / Offload retirement (2026-10-27)
+
+| Script | Purpose |
+|---|---|
+| `apply-offload-retirement-migration.mjs` | Guarded runner for `20261127000001_retire_standalone_offload_report` (frozen SHA-256, statement allow-list, fresh authenticated backup, real-role probes, synthetic historical-record preservation proof, rolled-back dry run, `--live` only with the exact phrase, `--verify-applied`, `--observe`). |
+| `uat-fixtures.mjs --action=create-activity\|cleanup-activity` | Tagged checkpoint / receipt rows with known actors (needs `create-tx` first) so the personal activity feed can be proven to list only the signed-in officer's own actions. Cleanup deletes the ledger ids that still carry the run tag. |
+| `verify-landing-activity.mjs` | Hosted browser verification (desktop + mobile, light + dark) of the grouped report categories and the My Recent Activity / Station Activity feeds for ASO, Profiling ASO, SO, DSE, SSO, Hub SE and Operation Manager against a private Preview. |
+
+Details: `docs/dashboard-review/report-categories-activity-and-offload.md`.
