@@ -25,7 +25,6 @@ import {
   sec018EmailFields,
   sec033EmailFields,
   sec013EmailFields,
-  offloadEmailFields,
 } from "@/lib/avsec/email/reportFields";
 
 export interface ActionResult {
@@ -754,71 +753,18 @@ export async function submitSec013(input: unknown): Promise<ActionResult> {
 }
 
 // ---------- Offload Information (Departure Flight) ----------
+//
+// RETIRED AS A STANDALONE REPORT. Offload Information is part of the SEC016 Departure Attending Report (its own section, fields and
+// validation, saved with the SEC016 row). Nothing creates a standalone offload_records row any more: this action refuses before reading
+// the input, the database refuses it too (can_create_report_form('offload') is false and the report-table trigger enforces it), and
+// the /avsec/reports/offload link redirects to SEC016. Historical offload_records rows, their items, attachments, exports and audit
+// entries are untouched and stay readable. The export is kept only so an old queued offline item gets a clear answer instead of a crash.
+const OFFLOAD_RETIRED_MESSAGE =
+  "Offload Information is now part of the SEC016 Departure Attending Report. Open SEC016 and complete its Offload Information section.";
 
-export async function submitOffload(input: unknown): Promise<ActionResult> {
-  const profile = await requireProfileId("offload");
-  if (!profile) return { ok: false, error: "Not authenticated" };
-  const checkInError = await ensureCheckedIn(profile.id);
-  if (checkInError) return { ok: false, error: checkInError };
-
-  const parsed = offloadSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; ") };
-  }
-  const v = parsed.data;
-
-  const supabase = await createClient();
-  const { data: report, error } = await supabase
-    .from("offload_records")
-    .insert({
-      profile_id: profile.id,
-      status: "submitted",
-      ops_group: null, // historical column; deprecated for authorization
-      station: v.station,
-      team: v.team,
-      staff_name: v.staff_name,
-      staff_id: v.staff_id,
-      flight_no: v.flight_no,
-      destination: v.destination,
-      aircraft_registration: v.aircraft_registration,
-      flight_date: v.flight_date,
-      std: v.std || null,
-      total_bags: v.items.length,
-      remark: v.remark || null,
-      verified_by_dse_name: v.verified_by_dse_name || null,
-      verified_by_dse_id: v.verified_by_dse_id || null,
-    })
-    .select("id, submitted_at, report_no")
-    .single();
-
-  if (error) return { ok: false, error: error.message };
-
-  const rows = v.items.map((it, idx) => ({
-    report_id: report.id,
-    entry_no: idx + 1,
-    baggage_tag_no: it.baggage_tag_no,
-    reason: it.reason || null,
-    weight_kg: it.weight_kg ? Number(it.weight_kg) : null,
-  }));
-  const { error: itemsError } = await supabase.from("offload_items").insert(rows);
-  if (itemsError) return { ok: false, error: itemsError.message, id: report.id };
-
-  // Explicit indexing-readiness call, made only after the offload item
-  // child rows above have already been written.
-  const { error: readyError } = await supabase.rpc("mark_report_ready_for_indexing", { p_source_table: "offload_records", p_source_id: report.id, p_expected_child_count: v.items.length });
-  if (readyError) {
-    return { ok: false, error: `Report saved, but could not be finalized for search/audit: ${readyError.message}. Contact support with report id ${report.id}.` };
-  }
-  await clearDraft("offload");
-  await notifyReportSubmission({
-    reportType: "offload",
-    submittedAt: report.submitted_at ?? new Date().toISOString(),
-    submittedByName: v.staff_name,
-    submittedByStaffNo: v.staff_id,
-    fields: offloadEmailFields(v),
-  });
-  revalidatePath("/avsec/history");
-  return { ok: true, id: report.id, submittedAt: report.submitted_at ?? new Date().toISOString(), reportNo: report.report_no ?? undefined };
+export async function submitOffload(_input: unknown): Promise<ActionResult> {
+  void _input;
+  return { ok: false, error: OFFLOAD_RETIRED_MESSAGE };
 }
 
 // ---------- Bay Board ----------

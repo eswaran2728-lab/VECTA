@@ -1118,12 +1118,14 @@ test("INDEXING READINESS: mark_report_ready_for_indexing() only allows the repor
   assert.match(block, /if v_owner <> auth\.uid\(\) and auth\.role\(\) <> 'service_role' then/);
 });
 
-test("INDEXING READINESS: all 7 submit actions in lib/avsec/reports/actions.ts call mark_report_ready_for_indexing() with the correct source_table, after any child-row insert for that type has already completed", () => {
+// NOTE: the standalone Offload submit action was retired (Offload Information is part of SEC016), so six submit actions remain live.
+// offload_records stays an indexed source table for HISTORICAL rows only; nothing creates new ones.
+test("INDEXING READINESS: all 6 live submit actions in lib/avsec/reports/actions.ts call mark_report_ready_for_indexing() with the correct source_table, after any child-row insert for that type has already completed", () => {
   const actionsSrc = fs.readFileSync(
     path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
     "utf8",
   );
-  for (const table of ["report_sec013", "report_sec014", "report_sec016", "report_sec018", "report_sec029", "report_sec033", "offload_records"]) {
+  for (const table of ["report_sec013", "report_sec014", "report_sec016", "report_sec018", "report_sec029", "report_sec033"]) {
     assert.match(actionsSrc, new RegExp(`mark_report_ready_for_indexing", \\{ p_source_table: "${table}"`), `submit action for ${table} must call mark_report_ready_for_indexing()`);
   }
 });
@@ -1227,7 +1229,6 @@ test("CHILD FREEZE: legitimate child-row creation DURING submission is unaffecte
     ['.from("report_sec029_items").insert', "report_sec029"],
     ['.from("report_sec033_hold_checks").insert', "report_sec033"],
     ['.from("report_sec013_profiling_duties").insert', "report_sec013"],
-    ['.from("offload_items").insert', "offload_records"],
   ]) {
     const childIdx = actionsSrc.indexOf(childCall);
     const readyIdx = actionsSrc.indexOf(`p_source_table: "${table}"`);
@@ -1235,7 +1236,7 @@ test("CHILD FREEZE: legitimate child-row creation DURING submission is unaffecte
   }
 });
 
-test("PARTIAL FAILURE HANDLING: all 7 submit actions check and propagate mark_report_ready_for_indexing()'s error -- a failed finalization must not be reported to the caller as a successful submission", () => {
+test("PARTIAL FAILURE HANDLING: all 6 live submit actions check and propagate mark_report_ready_for_indexing()'s error -- a failed finalization must not be reported to the caller as a successful submission", () => {
   const actionsSrc = fs.readFileSync(
     path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
     "utf8",
@@ -1246,9 +1247,9 @@ test("PARTIAL FAILURE HANDLING: all 7 submit actions check and propagate mark_re
   // RPC instead, which internally calls mark_report_ready_for_indexing()
   // from WITHIN the same locked transaction (see the migration's PART S5).
   const matches = actionsSrc.match(/const \{ error: readyError \} = await supabase\.rpc\("mark_report_ready_for_indexing"/g) ?? [];
-  assert.equal(matches.length, 7, `expected exactly the 7 submit actions to check the finalization RPC's error directly, found ${matches.length}`);
+  assert.equal(matches.length, 6, `expected exactly the 6 live submit actions to check the finalization RPC's error directly, found ${matches.length}`);
   const guardMatches = actionsSrc.match(/if \(readyError\) \{\s*\n\s*return \{ ok: false, error: `Report saved, but could not be finalized/g) ?? [];
-  assert.equal(guardMatches.length, 7, `expected all 7 submit actions to return ok: false on a finalization error, found ${guardMatches.length}`);
+  assert.equal(guardMatches.length, 6, `expected all 6 live submit actions to return ok: false on a finalization error, found ${guardMatches.length}`);
 });
 
 test("PARTIAL FAILURE HANDLING: the finalization error message includes the report id, so a stranded (created but unfinalized) report can be identified and its finalization retried later without resubmitting -- mark_report_ready_for_indexing() is idempotent (ON CONFLICT DO NOTHING) so a bare retry of just that call is always safe", () => {
@@ -1257,7 +1258,7 @@ test("PARTIAL FAILURE HANDLING: the finalization error message includes the repo
     "utf8",
   );
   const matches = actionsSrc.match(/Contact support with report id \$\{(report|data)\.id\}/g) ?? [];
-  assert.equal(matches.length, 7);
+  assert.equal(matches.length, 6);
 });
 
 // =======================================================================
@@ -1546,7 +1547,7 @@ test("RESUME/RETRY: every child-row-insert failure return now includes the paren
     path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
     "utf8",
   );
-  for (const errVar of ["patrolError", "itemError", "holdCheckError", "dutyError", "itemsError"]) {
+  for (const errVar of ["patrolError", "itemError", "holdCheckError", "dutyError"]) {
     const re = new RegExp(`if \\(${errVar}\\) return \\{ ok: false, error: ${errVar}\\.message, id: report\\.id \\};`, "g");
     const matches = actionsSrc.match(re) ?? [];
     assert.ok(matches.length >= 1, `expected at least one id-carrying failure return for ${errVar}`);

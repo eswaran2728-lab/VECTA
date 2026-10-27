@@ -43,9 +43,12 @@ test("Bay Board: leadership read-only with selectors, rostered staff act, everyo
 
 test("report forms: every submit action names its form type and the role table decides", () => {
   const actions = read("lib/avsec/reports/actions.ts");
-  for (const [fn, type] of [["submitSec016", "sec016"], ["submitSec014", "sec014"], ["submitSec029", "sec029"], ["submitSec018", "sec018"], ["submitSec033", "sec033"], ["submitSec013", "sec013"], ["submitOffload", "offload"]]) {
+  for (const [fn, type] of [["submitSec016", "sec016"], ["submitSec014", "sec014"], ["submitSec029", "sec029"], ["submitSec018", "sec018"], ["submitSec033", "sec033"], ["submitSec013", "sec013"]]) {
     assert.match(actions, new RegExp(`export async function ${fn}\\(input: unknown\\): Promise<ActionResult> \\{\\n  const profile = await requireProfileId\\("${type}"\\)`), fn);
   }
+  // Standalone Offload is retired: the action refuses before any guard or insert, and no role may create it.
+  assert.match(actions, /export async function submitOffload\(_input: unknown\): Promise<ActionResult> \{\n  void _input;\n  return \{ ok: false, error: OFFLOAD_RETIRED_MESSAGE \};/);
+  assert.equal(canCreateReport(["aso"], "offload"), false, "no role may create a standalone offload report");
   assert.equal(canCreateReport(["profiling_so"], "sec013"), false, "Profiling SO has no report-creation action");
   assert.equal(canCreateReport(["profiling_aso"], "sec013"), true);
   assert.equal(canCreateReport(["sso"], "sec016"), false);

@@ -37,7 +37,8 @@ export interface RoleCapability {
   reportForms: readonly ReportFormType[];
 }
 
-const STANDARD_ASO_FORMS: readonly ReportFormType[] = ["sec016", "sec014", "sec029", "sec018", "sec033", "offload"];
+// Offload Information is a section of SEC016 (Departure); the standalone offload form was retired and is not creatable by any role.
+const STANDARD_ASO_FORMS: readonly ReportFormType[] = ["sec016", "sec014", "sec029", "sec018", "sec033"];
 
 const t = (
   code: string,
