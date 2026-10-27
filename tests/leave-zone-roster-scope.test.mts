@@ -150,7 +150,7 @@ test("runner probes: another team at the same station, another station, another 
     "Operation Manager and Main Enforcement still read every notice",
     "only the Operation Manager succeeds; a DSE of the station, a Hub SE of the hub, ordinary staff and Main Enforcement are refused",
     "check-in still works: ASO and SO at KUL - MAA read the station's zones",
-    "Hub SE manages stations of its assigned hub (PEN) and is refused JHB and KUL - MAA",
+    "Hub SE is authorized for stations of its assigned hub (PEN) and refused JHB and KUL - MAA",
     "not BRAVO at the same station or another station",
     "the probe fixtures (five leave notices, one zone, no roster rows) were removed exactly",
   ]) assert.ok(RUNNER.includes(needle), needle);

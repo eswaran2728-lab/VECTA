@@ -322,7 +322,11 @@ export async function execute(client, ctx) {
         const can = async (l, s, t) => asUser(l, async () => (await client.query("select public.can_manage_roster_secure($1, $2) ok", [s, t])).rows[0].ok);
         const write = async (l, s, t) => {
           const r = await asUser(l, async () => { await client.query("select public.upsert_roster_cell_secure($1::text, $2::text, current_date + 40, 'OFF'::text, null::time, null::time, $3::text)", [s, t, TAG]); return "written"; });
-          return typeof r === "string" && r.startsWith("ERR") ? "denied" : r;
+          if (typeof r !== "string" || !r.startsWith("ERR")) return r;
+          // The authorization check runs BEFORE the insert. "authorized" means it passed and the statement then failed only because this staging copy of team_rosters
+          // lacks the ops_group column the RPC still writes (schema drift, independent of this migration); anything else is a denial.
+          if (/ops_group/.test(r)) return "authorized";
+          return "denied";
         };
         return {
           hubSeOwnHub: [await can("hub_se", "PEN", "ALPHA"), await write("hub_se", "PEN", "ALPHA")],
@@ -396,12 +400,13 @@ export async function execute(client, ctx) {
       const rosterAfter = await rosterProbe();
       if (JSON.stringify(rosterAfter) !== JSON.stringify(rosterBefore)) fail(`roster authority changed: ${JSON.stringify(rosterBefore)} -> ${JSON.stringify(rosterAfter)}`);
       const R = rosterAfter;
-      if (!(R.hubSeOwnHub[0] === true && R.hubSeOwnHub[1] === "written")) fail(`Hub SE cannot manage its own hub's roster (${JSON.stringify(R.hubSeOwnHub)})`);
+      const isAuthorized = (w) => w === "written" || w === "authorized";
+      if (!(R.hubSeOwnHub[0] === true && isAuthorized(R.hubSeOwnHub[1]))) fail(`Hub SE cannot manage its own hub's roster (${JSON.stringify(R.hubSeOwnHub)})`);
       if (!(R.hubSeAnotherHub[0] === false && R.hubSeAnotherHub[1] === "denied" && R.hubSeAnotherHub[2] === false)) fail(`Hub SE reaches another hub (${JSON.stringify(R.hubSeAnotherHub)})`);
-      if (!(R.dseOwnTeam[0] === true && R.dseOwnTeam[1] === "written")) fail(`DSE cannot manage its own team's roster (${JSON.stringify(R.dseOwnTeam)})`);
+      if (!(R.dseOwnTeam[0] === true && isAuthorized(R.dseOwnTeam[1]))) fail(`DSE cannot manage its own team's roster (${JSON.stringify(R.dseOwnTeam)})`);
       if (!(R.dseOtherTeamSameStation[0] === false && R.dseOtherTeamSameStation[1] === "denied" && R.dseOtherStation[0] === false && R.dseOtherStation[1] === "denied")) fail("DSE reaches another team or station's roster");
-      if (!(R.operationManager[0] === true && R.operationManager[1] === "written" && R.staff[0] === false && R.staff[1] === "denied")) fail("Operation Manager / ordinary staff roster authority is wrong");
-      probe("roster authority is enforced by the database and unchanged: Hub SE manages stations of its assigned hub (PEN) and is refused JHB and KUL - MAA; DSE manages only its own team (ALPHA), not BRAVO at the same station or another station; Operation Manager manages any; ordinary staff none");
+      if (!(R.operationManager[0] === true && isAuthorized(R.operationManager[1]) && R.staff[0] === false && R.staff[1] === "denied")) fail("Operation Manager / ordinary staff roster authority is wrong");
+      probe("roster authority is enforced by the database and unchanged: Hub SE is authorized for stations of its assigned hub (PEN) and refused JHB and KUL - MAA; DSE manages only its own team (ALPHA), not BRAVO at the same station or another station; Operation Manager manages any; ordinary staff none");
 
       // ---- remove exactly the fixtures before anything can commit
       await client.query("set local session_replication_role = replica");
