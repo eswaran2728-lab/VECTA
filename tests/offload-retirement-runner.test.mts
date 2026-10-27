@@ -36,8 +36,10 @@ test("offload-retirement runner: anything beyond the reviewed statements is reje
 
 test("offload-retirement runner: ordering, counts, live phrase and baseline tie-in", () => {
   orderingGate(fs.readdirSync(MIG_DIR));
-  assert.equal(PRE_COUNT, EXPECTED_MIGRATION_COUNT, "the runner's pre-state is the certified staging baseline");
-  assert.equal(LAST_PRE, EXPECTED_LATEST_MIGRATION);
+  assert.equal(PRE_COUNT, 100, "the runner's pre-state is the certified 100-migration staging baseline");
+  assert.equal(LAST_PRE, "20261120000001");
+  assert.equal(POST_COUNT, EXPECTED_MIGRATION_COUNT, "after the guarded rollout the expected staging baseline is the post-state");
+  assert.equal(POST_LAST, EXPECTED_LATEST_MIGRATION);
   assert.equal(POST_COUNT, PRE_COUNT + 1);
   assert.equal(POST_LAST, "20261127000001");
   assert.equal(LIVE_PHRASE, "APPLY 20261127000001 TO STAGING ddlctzbnqewubltcavkh");
