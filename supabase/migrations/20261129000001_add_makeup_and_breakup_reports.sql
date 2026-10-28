@@ -354,8 +354,10 @@ begin
   end if;
 
   if v_explicit_entity_id is null and new.profile_id is not null then
-    select ura.aoc_id, coalesce(oe.id, oem.id), coalesce(oe.code, oem.code)
-    into v_assignment_aoc, new.operating_entity_id, new.operating_entity_code
+    select ura.aoc_id, coalesce(oe.id, oem.id), coalesce(oe.code, oem.code),
+           ura.department_id, ura.unit_id, ura.hub_id, ura.station_id, ura.team_id
+    into new.aoc_id, new.operating_entity_id, new.operating_entity_code,
+         new.department_id, new.unit_id, new.hub_id, new.org_station_id, new.org_team_id
     from public.user_role_assignments ura
     left join public.operating_entities oe on oe.id = ura.operating_entity_id
     left join public.user_entity_memberships uem on uem.id = ura.entity_membership_id and uem.status = 'active'

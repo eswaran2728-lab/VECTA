@@ -22,7 +22,7 @@ export const MIGRATIONS = [
   {
     version: "20261129000001",
     name: "add_makeup_and_breakup_reports",
-    sha256: "131f668a4c6ac3f7497dcfaea7ea4bb2f25ac6f7fcc9fe1a9814e9eab6b405ca",
+    sha256: "e04d1c556b6d904fce47cd9de6c2eb3536b897c0ce4bed094767e2dfd7989839",
   },
 ];
 
@@ -258,11 +258,16 @@ export async function execute(client, ctx) {
     await client.query("SAVEPOINT pr");
     try {
       await client.query("select set_config('request.jwt.claims', $1, true), set_config('role', $2, true)", [JSON.stringify(uid ? { sub: uid, role } : { role }), role]);
-      return await fn();
+      const res = await fn();
+      await client.query("RELEASE SAVEPOINT pr");
+      await client.query("reset role");
+      await client.query("select set_config('request.jwt.claims', '', true)");
+      return res;
     } catch (e) {
+      await client.query("ROLLBACK TO SAVEPOINT pr").catch(() => {});
+      await client.query("reset role").catch(() => {});
+      await client.query("select set_config('request.jwt.claims', '', true)").catch(() => {});
       return `ERR:${e.code ?? ""}:${String(e.message).slice(0, 110)}`;
-    } finally {
-      await client.query("ROLLBACK TO SAVEPOINT pr");
     }
   };
   const asUser = (label, fn) => asRole(acct(label), "authenticated", fn);
@@ -296,7 +301,7 @@ export async function execute(client, ctx) {
         );
         return res.rows[0].id;
       });
-      if (typeof draftMakeup !== "string" || !draftMakeup) fail(`ASO draft makeup insert failed: ${draftMakeup}`);
+      if (typeof draftMakeup !== "string" || !draftMakeup || draftMakeup.startsWith("ERR")) fail(`ASO draft makeup insert failed: ${draftMakeup}`);
       probe("ASO can insert draft report_makeup");
 
       // Probe 3: Non-ASO cannot insert report_makeup
@@ -322,7 +327,7 @@ export async function execute(client, ctx) {
         );
         return res.rows[0].id;
       });
-      if (typeof childEntry !== "string" || !childEntry) fail(`Child entry insert failed: ${childEntry}`);
+      if (typeof childEntry !== "string" || !childEntry || childEntry.startsWith("ERR")) fail(`Child entry insert failed: ${childEntry}`);
       probe("ASO can insert child baggage entries on draft report_makeup");
 
       // Probe 5: Submitting report_makeup triggers report_no generation and flight classification (AK -> MAA)
@@ -334,6 +339,7 @@ export async function execute(client, ctx) {
         );
         return res.rows[0];
       });
+      if (!submittedMakeup || typeof submittedMakeup === "string") fail(`Update failed: ${submittedMakeup}`);
       if (!submittedMakeup.report_no?.startsWith("AAMKP-")) fail(`Submitted makeup missing report_no: ${JSON.stringify(submittedMakeup)}`);
       if (submittedMakeup.operating_entity_code !== "MAA") fail(`Flight AK 123 did not classify to MAA: ${JSON.stringify(submittedMakeup)}`);
       probe("Submitting report_makeup sets AAMKP report_no and classifies AK 123 to MAA");
@@ -386,6 +392,7 @@ export async function execute(client, ctx) {
         );
         return res.rows[0];
       });
+      if (!draftBreakup || typeof draftBreakup === "string") fail(`Breakup insert failed: ${draftBreakup}`);
       if (!draftBreakup.report_no?.startsWith("AABKP-")) fail(`Submitted breakup missing report_no: ${JSON.stringify(draftBreakup)}`);
       if (draftBreakup.operating_entity_code !== "AAX") fail(`Flight D7 789 did not classify to AAX: ${JSON.stringify(draftBreakup)}`);
       probe("Breakup report creation with D7 789 classifies to AAX and receives AABKP report_no");
