@@ -15,12 +15,14 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8").repl
 
 const ALL = ["sec013", "sec014", "sec016", "sec018", "sec029", "sec033"];
 
-test("categories: Daily and Aircraft membership and order are exactly the approved grouping", () => {
+test("categories: Daily, Aircraft, Makeup and Breakup membership and order are exactly the approved grouping", () => {
   assert.deepEqual(
     REPORT_CATEGORIES.map((c) => [c.title, [...c.forms]]),
     [
       ["Daily Reports", ["sec014", "sec013"]],
       ["Aircraft Reports", ["sec016", "sec029", "sec018", "sec033"]],
+      ["Makeup Report", ["makeup"]],
+      ["Breakup Report", ["breakup"]],
     ],
   );
   const grouped = groupAllowedReportForms(ALL);
@@ -40,11 +42,13 @@ test("categories: Daily and Aircraft membership and order are exactly the approv
   assert.equal(reportDisplayTitle("sec018"), "Aircraft Security Patrol and Guarding Duty Log");
 });
 
-test("categories: ordinary ASO sees Daily (SEC014 only) and the four Aircraft forms; SEC013 is NOT shown just because it is a Daily Report", () => {
+test("categories: ordinary ASO sees Daily (SEC014 only), the four Aircraft forms, Makeup and Breakup; SEC013 is NOT shown just because it is a Daily Report", () => {
   const aso = groupAllowedReportForms(ROLE_CAPABILITIES.aso.reportForms);
   assert.deepEqual(aso.map((g) => [g.id, g.forms.map((f) => f.type)]), [
     ["daily", ["sec014"]],
     ["aircraft", ["sec016", "sec029", "sec018", "sec033"]],
+    ["makeup", ["makeup"]],
+    ["breakup", ["breakup"]],
   ]);
 });
 
@@ -72,19 +76,13 @@ test("categories: per-station visibility follows the database list, the grouping
   assert.deepEqual(groupAllowedReportForms(["sec029", "sec033"]).map((g) => [g.id, g.forms.length]), [["aircraft", 2]]);
 });
 
-test("Makeup and Breakup reports are deferred: no form, route, code, table or clickable card exists", () => {
-  const skip = new Set(["node_modules", ".next", ".git", "docs", "tests"]);
-  const hits: string[] = [];
-  const walk = (dir: string) => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (skip.has(e.name)) continue;
-      const full = path.join(dir, e.name);
-      if (e.isDirectory()) walk(full);
-      else if (/\.(tsx?|sql)$/.test(e.name) && /\b(makeup|breakup)[ _-]?report\b|report_(makeup|breakup)|reports\/(makeup|breakup)/i.test(fs.readFileSync(full, "utf8"))) hits.push(path.relative(ROOT, full));
-    }
-  };
-  for (const d of ["app", "components", "lib", "supabase/migrations"]) walk(path.join(ROOT, d));
-  assert.deepEqual(hits, []);
+test("Makeup and Breakup reports are active: separate categories, routes and metadata exist", () => {
+  assert.equal(reportDisplayTitle("makeup"), "Makeup Report");
+  assert.equal(reportDisplayTitle("breakup"), "Breakup Report");
+  const makeupCat = REPORT_CATEGORIES.find((c) => c.id === "makeup");
+  const breakupCat = REPORT_CATEGORIES.find((c) => c.id === "breakup");
+  assert.ok(makeupCat && makeupCat.forms.includes("makeup"));
+  assert.ok(breakupCat && breakupCat.forms.includes("breakup"));
 });
 
 test("landing and ASO home render the grouped component from the DATABASE form list, not a role constant", () => {

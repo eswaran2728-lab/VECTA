@@ -4,12 +4,10 @@ import { REPORT_META, type ReportType } from "@/lib/avsec/reference-data";
  * Security-report categories shown wherever a person picks a report to FILE. Pure (no framework imports) so the membership and
  * the per-person filtering are unit-testable. This is display grouping only: which forms a person may create stays the database's
  * decision (report_form_assignments / can_create_report_form), and every submit action and table trigger re-checks it.
- *
- * Makeup and Breakup reports are intentionally NOT here: their templates are owner-provided later, and no form, route, report code or
- * table exists for them yet.
+ * Report categories: Daily, Aircraft, Makeup, and Breakup.
  */
 export interface ReportCategory {
-  id: "daily" | "aircraft";
+  id: "daily" | "aircraft" | "makeup" | "breakup";
   title: string;
   forms: readonly ReportType[];
 }
@@ -17,6 +15,8 @@ export interface ReportCategory {
 export const REPORT_CATEGORIES: readonly ReportCategory[] = [
   { id: "daily", title: "Daily Reports", forms: ["sec014", "sec013"] },
   { id: "aircraft", title: "Aircraft Reports", forms: ["sec016", "sec029", "sec018", "sec033"] },
+  { id: "makeup", title: "Makeup Report", forms: ["makeup"] },
+  { id: "breakup", title: "Breakup Report", forms: ["breakup"] },
 ];
 
 export interface GroupedReportForm {

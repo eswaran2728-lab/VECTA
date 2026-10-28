@@ -60,7 +60,7 @@ test("report forms: one DB-backed resolver; pages, list and actions all use it; 
   assert.match(MIG, /\('profiling_aso', null, null, 'sec013'/);
   const staticDefaults = Object.fromEntries(Object.entries(ROLE_CAPABILITIES).filter(([, c]) => c.reportForms.length).map(([k, c]) => [k, [...c.reportForms].sort().join(",")]));
   // The migration SEEDED Offload for ASO; standalone Offload was retired later (20261127000001), so the static table no longer lists it.
-  assert.deepEqual(staticDefaults, { aso: "sec014,sec016,sec018,sec029,sec033", profiling_aso: "sec013" });
+  assert.deepEqual(staticDefaults, { aso: "breakup,makeup,sec014,sec016,sec018,sec029,sec033", profiling_aso: "sec013" });
   // required rules
   assert.equal(canCreateReport(["profiling_so"], "sec013"), false);
   for (const role of ["so", "sso", "dse", "hub_se", "sat_aso", "profiling_so"]) for (const f of ["sec013", "sec014", "sec016", "sec018", "sec029", "sec033", "offload"] as const) assert.equal(canCreateReport([role], f), false, `${role} ${f}`);

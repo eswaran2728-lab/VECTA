@@ -15,6 +15,8 @@ import type {
   Sec013ProfilingDutyEntry,
   OffloadRow,
   OffloadItemEntry,
+  MakeupRow,
+  BreakupRow,
 } from "@/lib/avsec/types";
 
 export function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -459,6 +461,151 @@ export function OffloadView({ report }: { report: OffloadRow & { items?: Offload
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+export function MakeupView({ report }: { report: MakeupRow }) {
+  return (
+    <div className="space-y-4">
+      <ViewSection title="Flight & Operational Details">
+        <Field label="Station" value={report.station} />
+        <Field label="Shift / Team" value={report.team} />
+        <Field label="Flight Number" value={report.flight_number} />
+        <Field label="Destination" value={report.destination} />
+        <Field label="Operational Date" value={formatDateMY(report.duty_date)} />
+        <Field label="Submitting Officer" value={`${report.staff_name} (${report.staff_id})`} />
+      </ViewSection>
+
+      <ViewSection title="Operational Timing">
+        <Field label="First Baggage Received Time" value={report.first_baggage_time} />
+        <Field label="Last Baggage Tag Received Time" value={report.last_baggage_tag_time} />
+      </ViewSection>
+
+      <section className="card p-4 sm:p-5 space-y-3 border-border/80 bg-surface/80">
+        <h2 className="section-title">Baggage Entries</h2>
+        {(!report.baggage_entries || report.baggage_entries.length === 0) && (
+          <p className="text-xs text-muted-foreground">No baggage entries recorded.</p>
+        )}
+        <div className="space-y-2">
+          {report.baggage_entries?.map((b) => (
+            <ViewEntryCard key={b.entry_no} label={`Entry ${b.entry_no}: ${b.container_pallet_trolley_no}`}>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                  <span className="font-mono text-[10px] text-muted-foreground uppercase">Seal No:</span>{" "}
+                  <span className="font-semibold text-foreground">{b.seal_no}</span>
+                </div>
+                <div>
+                  <span className="font-mono text-[10px] text-muted-foreground uppercase">Bay:</span>{" "}
+                  <span className="font-semibold text-foreground">{b.bay}</span>
+                </div>
+                <div>
+                  <span className="font-mono text-[10px] text-muted-foreground uppercase">Destination:</span>{" "}
+                  <span className="font-semibold text-foreground">{b.destination}</span>
+                </div>
+              </div>
+            </ViewEntryCard>
+          ))}
+        </div>
+      </section>
+
+      {report.discrepancies && report.discrepancies.length > 0 && (
+        <section className="card p-4 sm:p-5 space-y-3 border-border/80 bg-surface/80">
+          <h2 className="section-title">Baggage Discrepancies</h2>
+          <div className="space-y-2">
+            {report.discrepancies.map((d) => (
+              <ViewEntryCard key={d.entry_no} label={`Discrepancy ${d.entry_no}`}>
+                <p className="font-semibold text-foreground">
+                  {d.baggage_tag_no ? `Tag: ${d.baggage_tag_no}` : "No Tag Provided"}
+                </p>
+                {d.details && <p className="mt-1 text-muted-foreground">{d.details}</p>}
+              </ViewEntryCard>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <ViewSection title="Additional Information">
+        <Field
+          label="Ground Handling Personnel"
+          value={report.ground_handling_personnel || "None / Not applicable"}
+        />
+        <Field label="Remarks / Observations" value={report.remarks || "None / Not applicable"} />
+      </ViewSection>
+
+      <section className="card p-4 sm:p-5 space-y-2 border-border/80 bg-surface/80">
+        <h2 className="section-title">Officer Confirmation</h2>
+        <p className="text-xs font-medium text-foreground">
+          {report.officer_confirmation ? "✓ Confirmed by Officer" : "Not confirmed"}
+        </p>
+      </section>
+    </div>
+  );
+}
+
+export function BreakupView({ report }: { report: BreakupRow }) {
+  return (
+    <div className="space-y-4">
+      <ViewSection title="Flight & Operational Details">
+        <Field label="Station" value={report.station} />
+        <Field label="Shift / Team" value={report.team} />
+        <Field label="Flight Number" value={report.flight_number} />
+        <Field label="Origin" value={report.origin} />
+        <Field label="Operational Date" value={formatDateMY(report.duty_date)} />
+        <Field label="Submitting Officer" value={`${report.staff_name} (${report.staff_id})`} />
+      </ViewSection>
+
+      <ViewSection title="Operational Timing">
+        <Field label="First Container Received Time" value={report.first_container_time} />
+        <Field label="Last Container Received Time" value={report.last_container_time} />
+      </ViewSection>
+
+      <section className="card p-4 sm:p-5 space-y-3 border-border/80 bg-surface/80">
+        <h2 className="section-title">Arrival Baggage Entries</h2>
+        {(!report.baggage_entries || report.baggage_entries.length === 0) && (
+          <p className="text-xs text-muted-foreground">No arrival baggage entries recorded.</p>
+        )}
+        <div className="space-y-2">
+          {report.baggage_entries?.map((b) => (
+            <ViewEntryCard key={b.entry_no} label={`Container ${b.entry_no}: ${b.container_pallet_trolley_no}`}>
+              <div className="space-y-1">
+                {b.baggage_tag_no && (
+                  <div>
+                    <span className="font-mono text-[10px] text-muted-foreground uppercase">Baggage Tag:</span>{" "}
+                    <span className="font-semibold text-foreground">{b.baggage_tag_no}</span>
+                  </div>
+                )}
+                {b.discrepancy_details && (
+                  <div>
+                    <span className="font-mono text-[10px] text-muted-foreground uppercase">Discrepancy Details:</span>{" "}
+                    <span className="text-xs text-muted-foreground">{b.discrepancy_details}</span>
+                  </div>
+                )}
+                {!b.baggage_tag_no && !b.discrepancy_details && (
+                  <p className="text-xs text-muted-foreground italic">No discrepancy noted</p>
+                )}
+              </div>
+            </ViewEntryCard>
+          ))}
+        </div>
+      </section>
+
+      <ViewSection title="Additional Information">
+        <Field
+          label="Ground Handling Personnel"
+          value={report.ground_handling_personnel || "None / Not applicable"}
+        />
+        <Field label="PIR / DPR Details" value={report.pir_dpr_details || "None / Not applicable"} />
+      </ViewSection>
+
+      <section className="card p-4 sm:p-5 space-y-2 border-border/80 bg-surface/80">
+        <h2 className="section-title">Officer Confirmation</h2>
+        <p className="text-xs font-medium text-foreground">
+          {report.containers_inspected_clean
+            ? "✓ Confirmed: Arrival baggage containers inspected after offloading and nothing was left behind"
+            : "Not confirmed"}
+        </p>
+      </section>
     </div>
   );
 }

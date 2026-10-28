@@ -132,6 +132,8 @@ export async function getTodayCounts(filters: DashboardFilters) {
     sec018: 0,
     sec033: 0,
     sec013: 0,
+    makeup: 0,
+    breakup: 0,
   };
   for (const s of submissions) counts[s.type]++;
   return { counts, submissions };

@@ -1236,20 +1236,21 @@ test("CHILD FREEZE: legitimate child-row creation DURING submission is unaffecte
   }
 });
 
-test("PARTIAL FAILURE HANDLING: all 6 live submit actions check and propagate mark_report_ready_for_indexing()'s error -- a failed finalization must not be reported to the caller as a successful submission", () => {
+test("PARTIAL FAILURE HANDLING: all 8 live submit actions check and propagate mark_report_ready_for_indexing()'s error -- a failed finalization must not be reported to the caller as a successful submission", () => {
   const actionsSrc = fs.readFileSync(
     path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "avsec", "reports", "actions.ts"),
     "utf8",
   );
-  // Exactly the 7 submit actions call mark_report_ready_for_indexing()
-  // directly. resumeReportSubmission() (round 9) no longer calls it
+  // Exactly the 8 submit actions call mark_report_ready_for_indexing()
+  // directly: sec014, sec016, sec029, sec018, sec033, sec013, makeup, breakup.
+  // resumeReportSubmission() (round 9) no longer calls it
   // directly either -- it calls the atomic resume_report_submission_secure()
   // RPC instead, which internally calls mark_report_ready_for_indexing()
   // from WITHIN the same locked transaction (see the migration's PART S5).
   const matches = actionsSrc.match(/const \{ error: readyError \} = await supabase\.rpc\("mark_report_ready_for_indexing"/g) ?? [];
-  assert.equal(matches.length, 6, `expected exactly the 6 live submit actions to check the finalization RPC's error directly, found ${matches.length}`);
+  assert.equal(matches.length, 8, `expected exactly the 8 live submit actions to check the finalization RPC's error directly, found ${matches.length}`);
   const guardMatches = actionsSrc.match(/if \(readyError\) \{\s*\n\s*return \{ ok: false, error: `Report saved, but could not be finalized/g) ?? [];
-  assert.equal(guardMatches.length, 6, `expected all 6 live submit actions to return ok: false on a finalization error, found ${guardMatches.length}`);
+  assert.equal(guardMatches.length, 8, `expected all 8 live submit actions to return ok: false on a finalization error, found ${guardMatches.length}`);
 });
 
 test("PARTIAL FAILURE HANDLING: the finalization error message includes the report id, so a stranded (created but unfinalized) report can be identified and its finalization retried later without resubmitting -- mark_report_ready_for_indexing() is idempotent (ON CONFLICT DO NOTHING) so a bare retry of just that call is always safe", () => {
@@ -1258,7 +1259,7 @@ test("PARTIAL FAILURE HANDLING: the finalization error message includes the repo
     "utf8",
   );
   const matches = actionsSrc.match(/Contact support with report id \$\{(report|data)\.id\}/g) ?? [];
-  assert.equal(matches.length, 6);
+  assert.equal(matches.length, 8);
 });
 
 // =======================================================================

@@ -20,6 +20,8 @@ import {
   submitSec033,
   submitSec013,
   submitOffload,
+  submitMakeup,
+  submitBreakup,
 } from "@/lib/avsec/reports/actions";
 import { submitDutyCheckIn, submitDutyCheckOut } from "@/lib/avsec/duty/checkin-actions";
 import { uploadReportAttachment } from "@/lib/avsec/attachments/actions";
@@ -36,6 +38,8 @@ const SUBMIT_FNS: Record<
   sec033: submitSec033,
   sec013: submitSec013,
   offload: submitOffload,
+  makeup: submitMakeup,
+  breakup: submitBreakup,
   duty_checkin: submitDutyCheckIn,
   duty_checkout: submitDutyCheckOut,
 };

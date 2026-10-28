@@ -107,14 +107,15 @@ export function TextAreaField<T extends FieldValues>({
   error,
   className,
   rows = 3,
-}: BaseProps<T> & { rows?: number }) {
+  placeholder,
+}: BaseProps<T> & { rows?: number; placeholder?: string }) {
   return (
     <div className={className}>
       <label className="field-label" htmlFor={name}>
         {label}
         {required && <span className="text-destructive"> *</span>}
       </label>
-      <textarea id={name} rows={rows} className="input-base" {...register(name)} />
+      <textarea id={name} rows={rows} placeholder={placeholder} className="input-base" {...register(name)} />
       {hint && <p className="field-hint text-[11px] text-muted-foreground font-mono mt-1">{hint}</p>}
       <ErrorText error={error} />
     </div>

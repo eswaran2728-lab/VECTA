@@ -324,7 +324,7 @@ export interface BayBoardRow {
   created_at: string;
 }
 
-export type AnyReportRow = Sec016Row | Sec014Row | Sec029Row | Sec018Row | Sec033Row | Sec013Row | OffloadRow;
+export type AnyReportRow = Sec016Row | Sec014Row | Sec029Row | Sec018Row | Sec033Row | Sec013Row | OffloadRow | MakeupRow | BreakupRow;
 
 export interface ReportListItem {
   id: string;
@@ -619,11 +619,96 @@ export interface WoisEligibility {
   eligible: boolean;
   reason?: "unauthenticated" | "not_approved" | "not_eligible" | "authorization_check_failed";
 }
-
 export interface WoisSuggestedAction {
   label: string;
   query: string;
 }
 
+export interface MakeupBaggageEntry {
+  id?: string;
+  report_id?: string;
+  entry_no: number;
+  container_pallet_trolley_no: string;
+  seal_no: string;
+  bay: string;
+  destination: string;
+  created_at?: string;
+}
 
+export interface MakeupDiscrepancy {
+  id?: string;
+  report_id?: string;
+  entry_no: number;
+  baggage_tag_no: string | null;
+  details: string | null;
+  created_at?: string;
+}
 
+export interface MakeupRow {
+  id: string;
+  profile_id: string;
+  status: ReportStatus;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  report_no: string | null;
+
+  station: string;
+  team: string;
+  staff_name: string;
+  staff_id: string;
+  flight_number: string;
+  duty_date: string;
+  destination: string;
+  first_baggage_time: string;
+  last_baggage_tag_time: string;
+
+  ground_handling_personnel: string | null;
+  remarks: string | null;
+  officer_confirmation: boolean;
+
+  operating_entity_id?: string | null;
+  operating_entity_code?: string | null;
+
+  baggage_entries?: MakeupBaggageEntry[];
+  discrepancies?: MakeupDiscrepancy[];
+}
+
+export interface BreakupBaggageEntry {
+  id?: string;
+  report_id?: string;
+  entry_no: number;
+  container_pallet_trolley_no: string;
+  baggage_tag_no: string | null;
+  discrepancy_details: string | null;
+  created_at?: string;
+}
+
+export interface BreakupRow {
+  id: string;
+  profile_id: string;
+  status: ReportStatus;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  report_no: string | null;
+
+  station: string;
+  team: string;
+  staff_name: string;
+  staff_id: string;
+  flight_number: string;
+  duty_date: string;
+  origin: string;
+  first_container_time: string;
+  last_container_time: string;
+
+  ground_handling_personnel: string | null;
+  pir_dpr_details: string | null;
+  containers_inspected_clean: boolean;
+
+  operating_entity_id?: string | null;
+  operating_entity_code?: string | null;
+
+  baggage_entries?: BreakupBaggageEntry[];
+}

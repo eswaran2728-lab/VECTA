@@ -7,7 +7,7 @@
  * every RPC, RLS policy, Storage policy and export re-checks the caller (approved profile, active in-window assignment, exact scope).
  * An unknown role code has NO entry and therefore no capability (fail closed) -- there is no default role.
  */
-export type ReportFormType = "sec013" | "sec014" | "sec016" | "sec018" | "sec029" | "sec033" | "offload";
+export type ReportFormType = "sec013" | "sec014" | "sec016" | "sec018" | "sec029" | "sec033" | "offload" | "makeup" | "breakup";
 
 export type DashboardKind =
   | "executive" // AirAsia Management, GHOD
@@ -38,7 +38,7 @@ export interface RoleCapability {
 }
 
 // Offload Information is a section of SEC016 (Departure); the standalone offload form was retired and is not creatable by any role.
-const STANDARD_ASO_FORMS: readonly ReportFormType[] = ["sec016", "sec014", "sec029", "sec018", "sec033"];
+const STANDARD_ASO_FORMS: readonly ReportFormType[] = ["sec016", "sec014", "sec029", "sec018", "sec033", "makeup", "breakup"];
 
 const t = (
   code: string,

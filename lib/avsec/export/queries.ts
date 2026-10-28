@@ -27,6 +27,8 @@ export async function getFullRowsForExport(
     sec018: [],
     sec033: [],
     sec013: [],
+    makeup: [],
+    breakup: [],
   };
 
   const { data } = await supabase.rpc("export_reports_secure", {

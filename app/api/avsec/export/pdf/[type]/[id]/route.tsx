@@ -11,7 +11,9 @@ import { Sec029Pdf } from "@/lib/avsec/export/pdf/Sec029Pdf";
 import { Sec018Pdf } from "@/lib/avsec/export/pdf/Sec018Pdf";
 import { Sec033Pdf } from "@/lib/avsec/export/pdf/Sec033Pdf";
 import { Sec013Pdf } from "@/lib/avsec/export/pdf/Sec013Pdf";
-import type { Sec016Row, Sec014Row, Sec029Row, Sec018Row, Sec033Row, Sec013Row } from "@/lib/avsec/types";
+import { MakeupPdf } from "@/lib/avsec/export/pdf/MakeupPdf";
+import { BreakupPdf } from "@/lib/avsec/export/pdf/BreakupPdf";
+import type { Sec016Row, Sec014Row, Sec029Row, Sec018Row, Sec033Row, Sec013Row, MakeupRow, BreakupRow } from "@/lib/avsec/types";
 
 export async function GET(
   _request: Request,
@@ -75,6 +77,14 @@ export async function GET(
     case "sec013":
       buffer = await renderToBuffer(<Sec013Pdf report={report as unknown as Sec013Row} qrDataUrl={qrDataUrl} />);
       break;
+    case "makeup":
+      buffer = await renderToBuffer(<MakeupPdf report={report as unknown as MakeupRow} qrDataUrl={qrDataUrl} />);
+      break;
+    case "breakup":
+      buffer = await renderToBuffer(<BreakupPdf report={report as unknown as BreakupRow} qrDataUrl={qrDataUrl} />);
+      break;
+    default:
+      return NextResponse.json({ error: "Unsupported report type for PDF" }, { status: 400 });
   }
 
   return new NextResponse(new Uint8Array(buffer), {

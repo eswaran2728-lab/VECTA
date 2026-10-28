@@ -76,7 +76,7 @@ export const ROLE_LABELS: Record<string, string> = {
 export const PROFILE_STATUSES = ["pending", "approved", "rejected", "deactivated"] as const;
 export type ProfileStatus = (typeof PROFILE_STATUSES)[number];
 
-export const REPORT_TYPES = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013"] as const;
+export const REPORT_TYPES = ["sec016", "sec014", "sec029", "sec018", "sec033", "sec013", "makeup", "breakup"] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];
 
 // SEC 013 Section 2 "Duty Area" — fixed/pre-filled value (no longer user-selectable;
@@ -135,6 +135,18 @@ export const REPORT_META: Record<
     code: "AVSEC-OFL Digital",
     table: "offload_records",
     route: "offload",
+  },
+  makeup: {
+    name: "MAKEUP REPORT",
+    code: "Makeup Report",
+    table: "report_makeup",
+    route: "makeup",
+  },
+  breakup: {
+    name: "BREAKUP REPORT",
+    code: "Breakup Report",
+    table: "report_breakup",
+    route: "breakup",
   },
 };
 

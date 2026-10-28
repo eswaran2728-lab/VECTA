@@ -4016,6 +4016,282 @@ export type Database = {
           },
         ]
       }
+      report_makeup: {
+        Row: {
+          id: string
+          profile_id: string
+          status: Database["public"]["Enums"]["report_status"]
+          submitted_at: string | null
+          created_at: string
+          updated_at: string
+          report_no: string | null
+          station: string
+          team: string
+          staff_name: string
+          staff_id: string
+          flight_number: string
+          duty_date: string
+          destination: string
+          first_baggage_time: string
+          last_baggage_tag_time: string
+          ground_handling_personnel: string | null
+          remarks: string | null
+          officer_confirmation: boolean
+          aoc_id: string | null
+          operating_entity_id: string | null
+          operating_entity_code: string | null
+          department_id: string | null
+          unit_id: string | null
+          hub_id: string | null
+          org_station_id: string | null
+          org_team_id: string | null
+          ops_group: string | null
+        }
+        Insert: {
+          id?: string
+          profile_id: string
+          status?: Database["public"]["Enums"]["report_status"]
+          submitted_at?: string | null
+          created_at?: string
+          updated_at?: string
+          report_no?: string | null
+          station: string
+          team: string
+          staff_name: string
+          staff_id: string
+          flight_number: string
+          duty_date: string
+          destination: string
+          first_baggage_time: string
+          last_baggage_tag_time: string
+          ground_handling_personnel?: string | null
+          remarks?: string | null
+          officer_confirmation?: boolean
+          aoc_id?: string | null
+          operating_entity_id?: string | null
+          operating_entity_code?: string | null
+          department_id?: string | null
+          unit_id?: string | null
+          hub_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          ops_group?: string | null
+        }
+        Update: {
+          id?: string
+          profile_id?: string
+          status?: Database["public"]["Enums"]["report_status"]
+          submitted_at?: string | null
+          created_at?: string
+          updated_at?: string
+          report_no?: string | null
+          station?: string
+          team?: string
+          staff_name?: string
+          staff_id?: string
+          flight_number?: string
+          duty_date?: string
+          destination?: string
+          first_baggage_time?: string
+          last_baggage_tag_time?: string
+          ground_handling_personnel?: string | null
+          remarks?: string | null
+          officer_confirmation?: boolean
+          aoc_id?: string | null
+          operating_entity_id?: string | null
+          operating_entity_code?: string | null
+          department_id?: string | null
+          unit_id?: string | null
+          hub_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          ops_group?: string | null
+        }
+        Relationships: []
+      }
+      report_makeup_baggage_entries: {
+        Row: {
+          id: string
+          report_id: string
+          entry_no: number
+          container_pallet_trolley_no: string
+          seal_no: string
+          bay: string
+          destination: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          report_id: string
+          entry_no: number
+          container_pallet_trolley_no: string
+          seal_no: string
+          bay: string
+          destination: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          report_id?: string
+          entry_no?: number
+          container_pallet_trolley_no?: string
+          seal_no?: string
+          bay?: string
+          destination?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      report_makeup_discrepancies: {
+        Row: {
+          id: string
+          report_id: string
+          entry_no: number
+          baggage_tag_no: string | null
+          details: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          report_id: string
+          entry_no: number
+          baggage_tag_no?: string | null
+          details?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          report_id?: string
+          entry_no?: number
+          baggage_tag_no?: string | null
+          details?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      report_breakup: {
+        Row: {
+          id: string
+          profile_id: string
+          status: Database["public"]["Enums"]["report_status"]
+          submitted_at: string | null
+          created_at: string
+          updated_at: string
+          report_no: string | null
+          station: string
+          team: string
+          staff_name: string
+          staff_id: string
+          flight_number: string
+          duty_date: string
+          origin: string
+          first_container_time: string
+          last_container_time: string
+          ground_handling_personnel: string | null
+          pir_dpr_details: string | null
+          containers_inspected_clean: boolean
+          aoc_id: string | null
+          operating_entity_id: string | null
+          operating_entity_code: string | null
+          department_id: string | null
+          unit_id: string | null
+          hub_id: string | null
+          org_station_id: string | null
+          org_team_id: string | null
+          ops_group: string | null
+        }
+        Insert: {
+          id?: string
+          profile_id: string
+          status?: Database["public"]["Enums"]["report_status"]
+          submitted_at?: string | null
+          created_at?: string
+          updated_at?: string
+          report_no?: string | null
+          station: string
+          team: string
+          staff_name: string
+          staff_id: string
+          flight_number: string
+          duty_date: string
+          origin: string
+          first_container_time: string
+          last_container_time: string
+          ground_handling_personnel?: string | null
+          pir_dpr_details?: string | null
+          containers_inspected_clean?: boolean
+          aoc_id?: string | null
+          operating_entity_id?: string | null
+          operating_entity_code?: string | null
+          department_id?: string | null
+          unit_id?: string | null
+          hub_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          ops_group?: string | null
+        }
+        Update: {
+          id?: string
+          profile_id?: string
+          status?: Database["public"]["Enums"]["report_status"]
+          submitted_at?: string | null
+          created_at?: string
+          updated_at?: string
+          report_no?: string | null
+          station?: string
+          team?: string
+          staff_name?: string
+          staff_id?: string
+          flight_number?: string
+          duty_date?: string
+          origin?: string
+          first_container_time?: string
+          last_container_time?: string
+          ground_handling_personnel?: string | null
+          pir_dpr_details?: string | null
+          containers_inspected_clean?: boolean
+          aoc_id?: string | null
+          operating_entity_id?: string | null
+          operating_entity_code?: string | null
+          department_id?: string | null
+          unit_id?: string | null
+          hub_id?: string | null
+          org_station_id?: string | null
+          org_team_id?: string | null
+          ops_group?: string | null
+        }
+        Relationships: []
+      }
+      report_breakup_baggage_entries: {
+        Row: {
+          id: string
+          report_id: string
+          entry_no: number
+          container_pallet_trolley_no: string
+          baggage_tag_no: string | null
+          discrepancy_details: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          report_id: string
+          entry_no: number
+          container_pallet_trolley_no: string
+          baggage_tag_no?: string | null
+          discrepancy_details?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          report_id?: string
+          entry_no?: number
+          container_pallet_trolley_no?: string
+          baggage_tag_no?: string | null
+          discrepancy_details?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       seal_verifications: {
         Row: {
           checkpoint: string

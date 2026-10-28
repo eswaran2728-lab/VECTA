@@ -16,6 +16,8 @@ import { sec018Schema } from "@/lib/avsec/schemas/sec018";
 import { sec033Schema } from "@/lib/avsec/schemas/sec033";
 import { sec013Schema } from "@/lib/avsec/schemas/sec013";
 import { offloadSchema } from "@/lib/avsec/schemas/offload";
+import { makeupSchema } from "@/lib/avsec/schemas/makeup";
+import { breakupSchema } from "@/lib/avsec/schemas/breakup";
 import { clearDraft } from "@/lib/avsec/reports/drafts";
 import { notifyReportSubmission } from "@/lib/avsec/email/notifyReportSubmission";
 import {
@@ -40,6 +42,8 @@ async function requireProfileId(reportType?: ReportFormType | "bayboard"): Promi
   station: string;
   team: string;
   role: string;
+  name: string;
+  staff_id: string;
 } | null> {
   const profile = await getCurrentProfile();
   if (!profile || !profile.station || !profile.team) return null;
@@ -53,6 +57,8 @@ async function requireProfileId(reportType?: ReportFormType | "bayboard"): Promi
     station: profile.station,
     team: profile.team,
     role: profile.role,
+    name: profile.name,
+    staff_id: profile.staff_no || "",
   };
 }
 
@@ -71,6 +77,8 @@ const SOURCE_TABLE_BY_TYPE: Record<string, string> = {
   sec029: "report_sec029",
   sec033: "report_sec033",
   offload: "offload_records",
+  makeup: "report_makeup",
+  breakup: "report_breakup",
 };
 
 /** Builds the jsonb child-row payload resume_report_submission_secure()
@@ -146,6 +154,25 @@ function buildChildRowsForResume(reportType: string, input: unknown): unknown[] 
     }
     case "sec016":
       return [];
+    case "makeup": {
+      const parsed = makeupSchema.safeParse(input);
+      if (!parsed.success) return { error: parsed.error.issues.map((i) => i.message).join("; ") };
+      return parsed.data.baggage_entries.map((b) => ({
+        container_pallet_trolley_no: b.container_pallet_trolley_no,
+        seal_no: b.seal_no,
+        bay: b.bay,
+        destination: b.destination,
+      }));
+    }
+    case "breakup": {
+      const parsed = breakupSchema.safeParse(input);
+      if (!parsed.success) return { error: parsed.error.issues.map((i) => i.message).join("; ") };
+      return parsed.data.baggage_entries.map((b) => ({
+        container_pallet_trolley_no: b.container_pallet_trolley_no,
+        baggage_tag_no: b.baggage_tag_no || null,
+        discrepancy_details: b.discrepancy_details || null,
+      }));
+    }
     default:
       return { error: "Unknown report type." };
   }
@@ -815,3 +842,140 @@ export async function clearBayBoardEntry(id: string): Promise<ActionResult> {
   revalidatePath("/avsec/bay-board");
   return { ok: true };
 }
+
+// ---------- MAKEUP REPORT ----------
+
+export async function submitMakeup(input: unknown): Promise<ActionResult> {
+  const profile = await requireProfileId("makeup");
+  if (!profile) return { ok: false, error: "Not authenticated" };
+  const checkInError = await ensureCheckedIn(profile.id);
+  if (checkInError) return { ok: false, error: checkInError };
+
+  const parsed = makeupSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; ") };
+  }
+  const v = parsed.data;
+
+  const supabase = await createClient();
+  const { data: report, error } = await supabase
+    .from("report_makeup")
+    .insert({
+      profile_id: profile.id,
+      status: "submitted",
+      station: v.station,
+      team: v.team,
+      staff_name: profile.name,
+      staff_id: profile.staff_id,
+      flight_number: v.flight_number,
+      duty_date: v.duty_date,
+      destination: v.destination,
+      first_baggage_time: v.first_baggage_time,
+      last_baggage_tag_time: v.last_baggage_tag_time,
+      ground_handling_personnel: v.ground_handling_personnel || null,
+      remarks: v.remarks || null,
+      officer_confirmation: v.officer_confirmation,
+    })
+    .select("id, submitted_at, report_no")
+    .single();
+
+  if (error) return { ok: false, error: error.message };
+
+  const baggageRows = v.baggage_entries.map((b, idx) => ({
+    report_id: report.id,
+    entry_no: idx + 1,
+    container_pallet_trolley_no: b.container_pallet_trolley_no,
+    seal_no: b.seal_no,
+    bay: b.bay,
+    destination: b.destination,
+  }));
+  const { error: baggageError } = await supabase.from("report_makeup_baggage_entries").insert(baggageRows);
+  if (baggageError) return { ok: false, error: baggageError.message, id: report.id };
+
+  if (v.discrepancies && v.discrepancies.length > 0) {
+    const discRows = v.discrepancies.map((d, idx) => ({
+      report_id: report.id,
+      entry_no: idx + 1,
+      baggage_tag_no: d.baggage_tag_no || null,
+      details: d.details || null,
+    }));
+    const { error: discError } = await supabase.from("report_makeup_discrepancies").insert(discRows);
+    if (discError) return { ok: false, error: discError.message, id: report.id };
+  }
+
+  const { error: readyError } = await supabase.rpc("mark_report_ready_for_indexing", {
+    p_source_table: "report_makeup",
+    p_source_id: report.id,
+    p_expected_child_count: v.baggage_entries.length,
+  });
+  if (readyError) {
+    return { ok: false, error: `Report saved, but could not be finalized for search/audit: ${readyError.message}. Contact support with report id ${report.id}.` };
+  }
+
+  await clearDraft("makeup");
+  revalidatePath("/avsec/history");
+  return { ok: true, id: report.id, submittedAt: report.submitted_at ?? new Date().toISOString(), reportNo: report.report_no ?? undefined };
+}
+
+// ---------- BREAKUP REPORT ----------
+
+export async function submitBreakup(input: unknown): Promise<ActionResult> {
+  const profile = await requireProfileId("breakup");
+  if (!profile) return { ok: false, error: "Not authenticated" };
+  const checkInError = await ensureCheckedIn(profile.id);
+  if (checkInError) return { ok: false, error: checkInError };
+
+  const parsed = breakupSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; ") };
+  }
+  const v = parsed.data;
+
+  const supabase = await createClient();
+  const { data: report, error } = await supabase
+    .from("report_breakup")
+    .insert({
+      profile_id: profile.id,
+      status: "submitted",
+      station: v.station,
+      team: v.team,
+      staff_name: profile.name,
+      staff_id: profile.staff_id,
+      flight_number: v.flight_number,
+      duty_date: v.duty_date,
+      origin: v.origin,
+      first_container_time: v.first_container_time,
+      last_container_time: v.last_container_time,
+      ground_handling_personnel: v.ground_handling_personnel || null,
+      pir_dpr_details: v.pir_dpr_details || null,
+      containers_inspected_clean: v.containers_inspected_clean,
+    })
+    .select("id, submitted_at, report_no")
+    .single();
+
+  if (error) return { ok: false, error: error.message };
+
+  const baggageRows = v.baggage_entries.map((b, idx) => ({
+    report_id: report.id,
+    entry_no: idx + 1,
+    container_pallet_trolley_no: b.container_pallet_trolley_no,
+    baggage_tag_no: b.baggage_tag_no || null,
+    discrepancy_details: b.discrepancy_details || null,
+  }));
+  const { error: baggageError } = await supabase.from("report_breakup_baggage_entries").insert(baggageRows);
+  if (baggageError) return { ok: false, error: baggageError.message, id: report.id };
+
+  const { error: readyError } = await supabase.rpc("mark_report_ready_for_indexing", {
+    p_source_table: "report_breakup",
+    p_source_id: report.id,
+    p_expected_child_count: v.baggage_entries.length,
+  });
+  if (readyError) {
+    return { ok: false, error: `Report saved, but could not be finalized for search/audit: ${readyError.message}. Contact support with report id ${report.id}.` };
+  }
+
+  await clearDraft("breakup");
+  revalidatePath("/avsec/history");
+  return { ok: true, id: report.id, submittedAt: report.submitted_at ?? new Date().toISOString(), reportNo: report.report_no ?? undefined };
+}
+
