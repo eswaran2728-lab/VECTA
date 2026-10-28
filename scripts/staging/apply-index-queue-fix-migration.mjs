@@ -112,7 +112,7 @@ export async function execute(client, { files, acct, live = false, log = console
   const q = async (sql, p) => (await client.query(sql, p)).rows;
   await verifyPreState(q, { preCount, lastPre, files });
 
-  const asoId = acct("aso-kul").profileId;
+  const asoId = acct("aso-kul");
 
   async function asRole(profileId, role, fn) {
     await client.query("savepoint probe_user");
@@ -316,11 +316,7 @@ async function main() {
   const files = verifyFrozenMigrations((f) => fs.readFileSync(path.join(migrationsDir, f)));
 
   const manifest = loadCurrentManifest();
-  const acct = (label) => {
-    const a = manifest.accounts[label];
-    if (!a) fail(`Account label ${label} missing in manifest`);
-    return a;
-  };
+  const acct = (label) => manifest.find((a) => a.label === label)?.authUserId ?? manifest.find((a) => a.label === label)?.id ?? fail(`manifest has no ${label}`);
 
   const { client } = await connectVerified();
   try {
