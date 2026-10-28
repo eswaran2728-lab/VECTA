@@ -130,8 +130,8 @@ export async function runGuardedMigration({ files, live = false, confirm = "", e
 
   if (!maaAdminId || !aaxAdminId) fail("manifest missing maa_admin or aax_admin entries");
 
-  async function asRole(userId, role, fn) {
-    await client.query("savepoint probe_user");
+  async function asRole(userId, role, fn, { rollback = true } = {}) {
+    if (rollback) await client.query("savepoint probe_user");
     try {
       const claims = userId ? { sub: userId, role } : { role };
       await client.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify(claims)]);
@@ -140,7 +140,7 @@ export async function runGuardedMigration({ files, live = false, confirm = "", e
     } catch (e) {
       return `ERR:${e.code ?? ""}:${e.message}`;
     } finally {
-      await client.query("rollback to savepoint probe_user");
+      if (rollback) await client.query("rollback to savepoint probe_user");
       await client.query("reset role");
       await client.query('reset "request.jwt.claims"');
     }
@@ -235,7 +235,7 @@ export async function runGuardedMigration({ files, live = false, confirm = "", e
           [testReqId, org.aoc, org.ent, org.dept, org.hub, org.st, org.team]
         );
         return res.rows[0]?.assignment_id;
-      });
+      }, { rollback: false });
       if (typeof approveRes !== "string" || approveRes.startsWith("ERR")) {
         fail(`Probe 5 failed: approve_registration_request error: ${approveRes}`);
       }
