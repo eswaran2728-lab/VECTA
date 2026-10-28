@@ -212,8 +212,8 @@ test("the runner's PRE-state stays 92 migrations ending at 20261116000001 (so it
   assert.equal(PRE_COUNT, 92);
   assert.equal(LAST_PRE, "20261116000001");
   const base = fs.readFileSync("scripts/staging/lib/expected-baseline.mjs", "utf8");
-  assert.match(base, /EXPECTED_MIGRATION_COUNT = 103;/);
-  assert.match(base, /EXPECTED_LATEST_MIGRATION = "20261129000001";/);
+  assert.match(base, /EXPECTED_MIGRATION_COUNT = 104;/);
+  assert.match(base, /EXPECTED_LATEST_MIGRATION = "20261130000001";/);
   const core = fs.readFileSync("supabase/tests/integration/verify_bay_board_runner_core.mjs", "utf8");
   assert.match(core, /a wrong history count is refused/);
   assert.match(core, /a wrong last migration is refused/);
