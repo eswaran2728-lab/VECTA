@@ -5921,6 +5921,7 @@ export type Database = {
           station: string | null
           team: string | null
           secondary_identifier: string | null
+          flight_type: string | null
         }[]
       }
       flagged_reports_secure: {

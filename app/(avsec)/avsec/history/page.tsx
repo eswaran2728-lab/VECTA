@@ -45,7 +45,7 @@ export default async function HistoryPage({
     if (newStatus !== "ALL") params.set("status", newStatus);
     if (newFlight !== "ALL") params.set("flight_type", newFlight);
     const qs = params.toString();
-    return qs ? `/history?${qs}` : "/history";
+    return qs ? `/avsec/history?${qs}` : "/avsec/history";
   };
 
   return (

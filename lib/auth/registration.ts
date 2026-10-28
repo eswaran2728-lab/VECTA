@@ -22,6 +22,8 @@ export interface RegistrationDeps {
     from: (table: string) => {
       select: (cols: string) => { eq: (col: string, v: string) => { maybeSingle: () => PromiseLike<{ data: unknown; error?: unknown }> } };
       upsert: (row: Record<string, unknown>, opts: { onConflict: string }) => PromiseLike<{ error: { message?: string } | null }>;
+      insert: (row: Record<string, unknown>) => PromiseLike<{ error: { message?: string } | null }>;
+      delete: () => { eq: (col: string, v: string) => PromiseLike<{ error: { message?: string } | null }> };
     };
     auth: {
       admin: {
@@ -190,6 +192,24 @@ export async function handleRegistration(request: Request, deps: RegistrationDep
       try { await admin.auth.admin.deleteUser(created.user.id); } catch { deps.log("registration_rollback_failed", { target: v.systemType }); }
       return reply(500, { error: "Could not complete your registration. Please try again." });
     }
+
+    if (v.systemType === "avsec") {
+      const requestWrite = await admin.from("user_registration_requests").insert({
+        profile_id: created.user.id,
+        requested_operating_entity_id: null,
+        requested_aoc_id: null,
+        requested_role_code: v.role.toLowerCase(),
+        status: "pending",
+        applicant_notes: `Public registration (${v.station} / ${v.team})`,
+      });
+      if (requestWrite.error) {
+        deps.log("registration_request_failed", { target: v.systemType });
+        try { await admin.from("profiles").delete().eq("id", created.user.id); } catch { deps.log("registration_profile_cleanup_failed"); }
+        try { await admin.auth.admin.deleteUser(created.user.id); } catch { deps.log("registration_rollback_failed", { target: v.systemType }); }
+        return reply(500, { error: "Could not complete your registration. Please try again." });
+      }
+    }
+
     return padded(reply(200, { success: REGISTRATION_SUCCESS }));
   } catch {
     deps.log("registration_unexpected_error");

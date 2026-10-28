@@ -98,7 +98,8 @@ export async function getMySubmissions({
 }: MySubmissionsOptions): Promise<ReportListItem[]> {
   const supabase = await createClient();
 
-  const { data } = await supabase.rpc("list_my_submissions_secure", { p_limit: limit });
+  const { data, error } = await supabase.rpc("list_my_submissions_secure", { p_limit: limit });
+  if (error) throw new Error("Could not load your submission history. Please try again.");
 
   return (data ?? [])
     .map((row): ReportListItem | null => {
@@ -114,7 +115,7 @@ export async function getMySubmissions({
         team: row.team ?? "",
         summary: row.secondary_identifier ?? row.staff_name ?? "",
         report_no: row.report_no,
-        flight_type: undefined,
+        flight_type: row.flight_type?.toLowerCase() === "arrival" ? "arrival" : row.flight_type?.toLowerCase() === "departure" ? "departure" : undefined,
       };
     })
     .filter((item): item is ReportListItem => item !== null);

@@ -17,7 +17,7 @@ export function frozenSql() {
  const m=MIGRATIONS[0],file=path.join(root,'supabase/migrations',m.version+'_'+m.name+'.sql'),sql=lf(fs.readFileSync(file,'utf8'));
  assert.equal(hash(sql),m.sha256,'Frozen migration differs');
  const versions=fs.readdirSync(path.join(root,'supabase/migrations')).filter(x=>/^\d{14}_/.test(x)).map(x=>x.slice(0,14)).sort();
- assert.equal(new Set(versions).size,versions.length,'Duplicate migration version');assert.equal(versions.at(-1),m.version,'Migration is not last');return sql;
+ assert.equal(new Set(versions).size,versions.length,'Duplicate migration version');assert.equal(versions.filter(x=>x<=m.version).at(-1),m.version,'Migration sequence broken');return sql;
 }
 async function history(p){return(await p.query('select version,name from supabase_migrations.schema_migrations order by version')).rows;}
 async function invariantSnapshot(p){

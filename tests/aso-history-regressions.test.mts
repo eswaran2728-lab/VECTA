@@ -1,0 +1,8 @@
+import test,{mock}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';
+let response:{data:unknown;error:unknown}={data:[],error:null};const calls:unknown[]=[];
+mock.module('@/lib/supabase/server',{namedExports:{createClient:async()=>({rpc:async(name:string,args:unknown)=>{calls.push({name,args});return response;},from:()=>{throw Error('Direct source read forbidden');}})}});
+mock.module('@/lib/supabase/admin',{namedExports:{createAdminClient:()=>{throw Error('Admin fallback forbidden');}}});
+const{getMySubmissions}=await import('../lib/avsec/reports/queries.ts');
+test('history preserves explicit arrival/departure values from the caller-scoped RPC',async()=>{calls.length=0;response={data:['ARRIVAL','DEPARTURE'].map((flight_type,i)=>({id:String(i),source_table:'report_sec016',status:'submitted',flight_type,created_at:'2026-10-28',submitted_at:null,station:'KUL - MAA',team:'ALPHA'})),error:null};const rows=await getMySubmissions({profileId:'must-not-be-forwarded',limit:200});assert.deepEqual(rows.map(x=>x.flight_type),['arrival','departure']);assert.deepEqual(calls,[{name:'list_my_submissions_secure',args:{p_limit:200}}]);});
+test('a broken history RPC cannot masquerade as an empty successful history',async()=>{response={data:null,error:{message:'internal source failure'}};await assert.rejects(()=>getMySubmissions({profileId:'x'}),/Could not load your submission history/);});
+test('history filter links stay on the actual avsec route',()=>{const s=fs.readFileSync('app/(avsec)/avsec/history/page.tsx','utf8');assert.ok(!s.includes('`/history?')&&!s.includes('"/history"'));assert.ok(s.includes('/avsec/history'));});

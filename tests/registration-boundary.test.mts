@@ -3,10 +3,26 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { handleRegistration, REGISTRATION_SUCCESS } from "../lib/auth/registration.ts";
 
-type Calls = { createUser: unknown[]; deleteUser: string[]; profiles: unknown[]; users: unknown[]; lookups: string[]; logs: string[] };
+type Calls = {
+  createUser: unknown[];
+  deleteUser: string[];
+  profiles: unknown[];
+  requests: unknown[];
+  users: unknown[];
+  lookups: string[];
+  logs: string[];
+  deleteProfiles: string[];
+};
 
-function fake(opts: { existing?: boolean; authError?: string | null; profileError?: string | null; userError?: string | null; deleteFails?: boolean } = {}) {
-  const calls: Calls = { createUser: [], deleteUser: [], profiles: [], users: [], lookups: [], logs: [] };
+function fake(opts: {
+  existing?: boolean;
+  authError?: string | null;
+  profileError?: string | null;
+  requestError?: string | null;
+  userError?: string | null;
+  deleteFails?: boolean;
+} = {}) {
+  const calls: Calls = { createUser: [], deleteUser: [], profiles: [], requests: [], users: [], lookups: [], logs: [], deleteProfiles: [] };
   const admin = {
     from(table: string) {
       return {
@@ -16,6 +32,19 @@ function fake(opts: { existing?: boolean; authError?: string | null; profileErro
           const message = table === "profiles" ? opts.profileError : opts.userError;
           return { error: message ? { message } : null };
         },
+        insert: async (row: unknown) => {
+          if (table === "user_registration_requests") {
+            calls.requests.push(row);
+            return { error: opts.requestError ? { message: opts.requestError } : null };
+          }
+          return { error: null };
+        },
+        delete: () => ({
+          eq: async (_col: string, val: string) => {
+            if (table === "profiles") calls.deleteProfiles.push(val);
+            return { error: null };
+          },
+        }),
       };
     },
     auth: {
@@ -62,6 +91,13 @@ test("a valid AVSEC request creates a pending, operational-role account only", a
   assert.equal(p.status, "pending");
   assert.equal(p.role, "ASO");
   assert.equal(p.station, "KUL - MAA");
+  assert.equal(f.calls.requests.length, 1);
+  const reqRow = f.calls.requests[0] as Record<string, unknown>;
+  assert.equal(reqRow.profile_id, "u-1");
+  assert.equal(reqRow.requested_role_code, "aso");
+  assert.equal(reqRow.requested_operating_entity_id, null);
+  assert.equal(reqRow.requested_aoc_id, null);
+  assert.equal(reqRow.status, "pending");
 });
 
 test("a valid CaterLink request creates a pending vendor user", async () => {
@@ -72,6 +108,7 @@ test("a valid CaterLink request creates a pending vendor user", async () => {
   assert.equal(u.status, "pending");
   assert.equal(u.role, "vendor");
   assert.equal(f.calls.profiles.length, 0);
+  assert.equal(f.calls.requests.length, 0);
   assert.equal(((f.calls.createUser[0] as { user_metadata: Record<string, unknown> }).user_metadata).vehicle_plate, "WXX 1234");
 });
 
@@ -218,6 +255,17 @@ test("a profile or shadow-user failure rolls the Auth user back and exposes noth
   const f = fake({ profileError: "boom", deleteFails: true });
   const r = await handleRegistration(req(baseBody), deps(f));
   assert.equal(r.status, 500, "a failed rollback still ends in a safe error");
+});
+
+test("a registration request failure rolls back the profile and Auth user cleanly", async () => {
+  const f = fake({ requestError: 'null value in column "profile_id" violates not-null constraint' });
+  const r = await handleRegistration(req(baseBody), deps(f));
+  assert.equal(r.status, 500);
+  assert.deepEqual(f.calls.deleteProfiles, ["u-1"], "the profile row is deleted");
+  assert.deepEqual(f.calls.deleteUser, ["u-1"], "the Auth user is deleted");
+  const text = JSON.stringify(await json(r));
+  assert.equal(/constraint|relation|permission|profiles|users|user_registration_requests/i.test(text), false);
+  assert.ok(f.calls.logs.includes("registration_request_failed"));
 });
 
 test("diagnostics are logged without personal data", async () => {
