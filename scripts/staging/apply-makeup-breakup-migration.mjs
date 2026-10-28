@@ -348,8 +348,11 @@ export async function execute(client, ctx) {
       const mutateBlocked = await asUser("aso-kul", async () => {
         return await client.query("update public.report_makeup set destination = 'BKI' where id = $1", [draftMakeup]);
       });
-      if (!String(mutateBlocked).startsWith("ERR")) fail(`Submitted makeup mutation was not blocked: ${JSON.stringify(mutateBlocked)}`);
-      probe("Submitted report_makeup cannot be modified (immutability trigger enforced)");
+      const blocked = String(mutateBlocked).startsWith("ERR") || mutateBlocked?.rowCount === 0;
+      if (!blocked) fail(`Submitted makeup mutation was not blocked: ${JSON.stringify(mutateBlocked)}`);
+      const checkDest = await q("select destination from public.report_makeup where id = $1", [draftMakeup]);
+      if (checkDest[0]?.destination !== "PEN") fail(`destination was mutated: ${checkDest[0]?.destination}`);
+      probe("Submitted report_makeup cannot be modified (immutability / RLS enforced)");
 
       // Probe 7: Immutability blocks child entry modification on submitted report_makeup
       const childMutateBlocked = await asUser("aso-kul", async () => {
