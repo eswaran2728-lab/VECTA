@@ -19,11 +19,11 @@ const row = (code: string, station: string | null) => ({
   role_code: code, role_category: "x", aoc_code: null, operating_entity_code: null, department_code: null, unit_code: null,
   hub_code: null, station_code: station, team_name: station ? "ALPHA" : null, starts_at: "2026-01-01T00:00:00Z", ends_at: null,
 });
-// The database answers the station capability: scanning is enabled at PEN and JHB only.
+// The current database decision includes PEN/JHB and the owner-authorized KUL - MAA addition.
 const stationCanScan = (st: string) => SCAN_ENABLED_STATIONS.includes(st);
 
-test("decision table: every role x station -- only sso/so/aso/dse at PEN or JHB may scan", () => {
-  assert.deepEqual([...SCAN_ENABLED_STATIONS].sort(), ["JHB", "PEN"]);
+test("decision table: every role x station -- only sso/so/aso/dse at approved scan stations may scan", () => {
+  assert.deepEqual([...SCAN_ENABLED_STATIONS].sort(), ["JHB", "KUL - MAA", "PEN"]);
   for (const role of ALL_ROLE_CODES) {
     for (const st of STATIONS) {
       const access = deriveCanonicalAccess(assignmentsFromRpcRows([row(role, STATIONED.includes(role) ? st : null)]));
@@ -53,7 +53,7 @@ test("a station without the scan capability denies every operator, and an unknow
   }
 });
 
-test("the 36-account plan documents scanning only for sso/so/aso at PEN and JHB", () => {
+test("the 36-account plan documents scanning only for eligible operators at approved stations", () => {
   for (const a of buildAccountPlan()) {
     const eligible = a.positiveOrNegative === "positive" && SCAN_ROLES.includes(a.roleCode) && SCAN_ENABLED_STATIONS.includes(a.scope.station);
     assert.equal(/^scan\/movement allowed/.test(a.caterlinkCapability), eligible, `${a.label}: ${a.caterlinkCapability}`);
