@@ -504,7 +504,7 @@ async function main() {
   const manifest = loadCurrentManifest();
   const acct = (label) => manifest.find((a) => a.label === label)?.authUserId ?? manifest.find((a) => a.label === label)?.id ?? fail(`manifest has no ${label}`);
 
-  const client = await connectVerified(process.env);
+  const { client } = await connectVerified();
   try {
     await execute(client, {
       files: frozen,
