@@ -296,3 +296,15 @@ test("runner: frozen SHA, baseline, and live phrase for source-secure migration"
   assert.equal(R.POST_LAST, "20261130000001");
   assert.equal(R.LIVE_PHRASE, "APPLY 20261130000001 TO STAGING ddlctzbnqewubltcavkh");
 });
+
+test("runner: frozen SHA, baseline, and live phrase for child-policy-fix migration", async () => {
+  // @ts-expect-error plain .mjs tooling modules
+  const R = await import("../scripts/staging/apply-child-policy-fix-migration.mjs");
+  assert.equal(R.MIGRATIONS.length, 1);
+  assert.equal(R.MIGRATIONS[0].version, "20261130000002");
+  assert.equal(R.PRE_COUNT, 104);
+  assert.equal(R.LAST_PRE, "20261130000001");
+  assert.equal(R.POST_COUNT, 105);
+  assert.equal(R.POST_LAST, "20261130000002");
+  assert.equal(R.LIVE_PHRASE, "APPLY 20261130000002 TO STAGING ddlctzbnqewubltcavkh");
+});
