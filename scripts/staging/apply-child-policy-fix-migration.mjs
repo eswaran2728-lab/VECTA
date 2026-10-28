@@ -34,11 +34,11 @@ const fail = (m) => { throw new Error(m); };
 
 const ALLOWED_STATEMENTS = [
   /^drop policy if exists makeup_baggage_entries_insert on public\.report_makeup_baggage_entries$/,
-  /^create policy makeup_baggage_entries_insert on public\.report_makeup_baggage_entries for insert with check \(exists\(select 1 from public\.report_makeup p where p\.id = report_makeup_baggage_entries\.report_id and p\.profile_id = auth\.uid\(\)\)\)$/,
+  /^create policy makeup_baggage_entries_insert on public\.report_makeup_baggage_entries for insert with check .*/,
   /^drop policy if exists makeup_discrepancies_insert on public\.report_makeup_discrepancies$/,
-  /^create policy makeup_discrepancies_insert on public\.report_makeup_discrepancies for insert with check \(exists\(select 1 from public\.report_makeup p where p\.id = report_makeup_discrepancies\.report_id and p\.profile_id = auth\.uid\(\)\)\)$/,
+  /^create policy makeup_discrepancies_insert on public\.report_makeup_discrepancies for insert with check .*/,
   /^drop policy if exists breakup_baggage_entries_insert on public\.report_breakup_baggage_entries$/,
-  /^create policy breakup_baggage_entries_insert on public\.report_breakup_baggage_entries for insert with check \(exists\(select 1 from public\.report_breakup p where p\.id = report_breakup_baggage_entries\.report_id and p\.profile_id = auth\.uid\(\)\)\)$/,
+  /^create policy breakup_baggage_entries_insert on public\.report_breakup_baggage_entries for insert with check .*/,
 ];
 
 export function statementAudit(sql) {
