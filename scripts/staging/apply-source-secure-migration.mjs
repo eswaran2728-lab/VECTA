@@ -181,27 +181,31 @@ export async function execute(client, ctx) {
       const makeupId = submitted.id;
 
       // Index the report in central_reports_index using service_role
-      const indexed = await client.query(
-        `select public.index_report(
-          'report_makeup', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
-        ) as rid`,
-        [
-          makeupId,
-          submitted.report_no,
-          submitted.aoc_id,
-          submitted.operating_entity_id,
-          submitted.department_id,
-          submitted.unit_id,
-          submitted.hub_id,
-          submitted.org_station_id,
-          submitted.org_team_id,
-          "AK 456",
-          "2026-10-28",
-          submitted.profile_id,
-        ]
-      );
-      const rid = indexed.rows[0]?.rid;
-      if (!rid) fail("Failed to index report_makeup in central_reports_index");
+      const indexed = await asRole(null, "service_role", async () => {
+        const res = await client.query(
+          `select public.index_report(
+            'report_makeup', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+          ) as rid`,
+          [
+            makeupId,
+            submitted.report_no,
+            submitted.aoc_id,
+            submitted.operating_entity_id,
+            submitted.department_id,
+            submitted.unit_id,
+            submitted.hub_id,
+            submitted.org_station_id,
+            submitted.org_team_id,
+            "AK 456",
+            "2026-10-28",
+            submitted.profile_id,
+          ]
+        );
+        return res.rows[0]?.rid;
+      });
+      if (!indexed || typeof indexed !== "string" || indexed.startsWith("ERR")) {
+        fail(`Failed to index report_makeup in central_reports_index: ${indexed}`);
+      }
       probe("report_makeup can be indexed in central_reports_index");
 
       // Probe 2: get_report_by_source_secure retrieves the makeup report
