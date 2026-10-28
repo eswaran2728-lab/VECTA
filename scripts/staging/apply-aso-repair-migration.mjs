@@ -212,7 +212,7 @@ export async function main(args = process.argv.slice(2)) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch(e => {
-    console.error('RUNNER FAILED:', e.message);
+    console.error('RUNNER FAILED:', e.message, '\nSTACK:', e.stack);
     process.exitCode = 1;
   });
 }
