@@ -488,21 +488,21 @@ async function main() {
   }
 
   if (!expectedHeadArg) fail("--expected-head=<sha> is required");
-  runnerGitGates({ expectedHead: expectedHeadArg, repoPath });
+  const git = runnerGitGates({ expectedHead: expectedHeadArg, repoPath });
 
   if (!backupArg) fail("--backup=<fresh.enc.json> is required");
-  backupGates({ backupPath: backupArg, repoRoot: repoPath });
+  const backups = backupGates(git.root);
+  const nb = decryptBackupPayload(fs.readFileSync(backupArg, "utf8"), process.env.VECTA_BACKUP_PASSPHRASE);
+  if (!path.relative(git.root, path.resolve(backupArg)).startsWith("..")) fail("fresh backup is inside the repository");
+  if (!nb.exportedAt || Date.now() - new Date(nb.exportedAt).getTime() > 6 * 3600 * 1000) fail("fresh backup is older than 6 hours");
+  console.log(`existing backups authenticate (x${backups.length}); fresh backup authenticates (exportedAt=${nb.exportedAt}, authUsers=${nb.authUsers?.length})`);
 
   if (isLive && confirmArg !== LIVE_PHRASE) {
     fail(`Confirmation phrase mismatch. Expected: --confirm="${LIVE_PHRASE}"`);
   }
 
   const manifest = loadCurrentManifest();
-  const acct = (label) => {
-    const a = manifest.find((x) => x.label === label);
-    if (!a?.id) fail(`account label "${label}" not found in current review manifest`);
-    return a.id;
-  };
+  const acct = (label) => manifest.find((a) => a.label === label)?.authUserId ?? manifest.find((a) => a.label === label)?.id ?? fail(`manifest has no ${label}`);
 
   const client = await connectVerified(process.env);
   try {
@@ -524,7 +524,7 @@ async function main() {
 const isEntry = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
 if (isEntry) {
   main().catch((e) => {
-    console.error("FATAL ERROR:", e.message);
+    console.error("FATAL ERROR:", e.stack || e.message);
     process.exit(1);
   });
 }
