@@ -63,3 +63,4 @@ vecta-staging-backups/
 *.enc
 auth-users-inventory.json
 storage-inventory.json
+scratch/

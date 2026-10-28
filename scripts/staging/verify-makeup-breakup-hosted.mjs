@@ -83,35 +83,40 @@ async function cleanup() {
   await reconnect();
   const report = {};
 
-  if (ledger.ack.length > 0) {
-    const dAck = await pg.query("delete from public.report_acknowledgements where id = any($1::uuid[]) returning id", [ledger.ack]);
-    report.ack = dAck.rowCount;
-  }
+  await pg.query("set session_replication_role = replica;");
+  try {
+    if (ledger.ack.length > 0) {
+      const dAck = await pg.query("delete from public.report_acknowledgements where id = any($1::uuid[]) returning id", [ledger.ack]);
+      report.ack = dAck.rowCount;
+    }
 
-  if (ledger.makeup.length > 0) {
-    // Child rows cascade, but delete explicitly for verification
-    await pg.query("delete from public.report_makeup_discrepancies where report_id = any($1::uuid[])", [ledger.makeup]);
-    await pg.query("delete from public.report_makeup_baggage_entries where report_id = any($1::uuid[])", [ledger.makeup]);
-    await pg.query("delete from public.central_reports_index where source_table = 'report_makeup' and source_id = any($1::uuid[])", [ledger.makeup]);
-    const dMakeup = await pg.query("delete from public.report_makeup where id = any($1::uuid[]) returning id", [ledger.makeup]);
-    report.makeup = dMakeup.rowCount;
-  }
+    if (ledger.makeup.length > 0) {
+      // Child rows cascade, but delete explicitly for verification
+      await pg.query("delete from public.report_makeup_discrepancies where report_id = any($1::uuid[])", [ledger.makeup]);
+      await pg.query("delete from public.report_makeup_baggage_entries where report_id = any($1::uuid[])", [ledger.makeup]);
+      await pg.query("delete from public.central_reports_index where source_table = 'report_makeup' and source_id = any($1::uuid[])", [ledger.makeup]);
+      const dMakeup = await pg.query("delete from public.report_makeup where id = any($1::uuid[]) returning id", [ledger.makeup]);
+      report.makeup = dMakeup.rowCount;
+    }
 
-  if (ledger.breakup.length > 0) {
-    await pg.query("delete from public.report_breakup_baggage_entries where report_id = any($1::uuid[])", [ledger.breakup]);
-    await pg.query("delete from public.central_reports_index where source_table = 'report_breakup' and source_id = any($1::uuid[])", [ledger.breakup]);
-    const dBreakup = await pg.query("delete from public.report_breakup where id = any($1::uuid[]) returning id", [ledger.breakup]);
-    report.breakup = dBreakup.rowCount;
-  }
+    if (ledger.breakup.length > 0) {
+      await pg.query("delete from public.report_breakup_baggage_entries where report_id = any($1::uuid[])", [ledger.breakup]);
+      await pg.query("delete from public.central_reports_index where source_table = 'report_breakup' and source_id = any($1::uuid[])", [ledger.breakup]);
+      const dBreakup = await pg.query("delete from public.report_breakup where id = any($1::uuid[]) returning id", [ledger.breakup]);
+      report.breakup = dBreakup.rowCount;
+    }
 
-  if (ledger.duty.length > 0) {
-    const dDuty = await pg.query("delete from public.duty_records where id = any($1::uuid[]) returning id", [ledger.duty]);
-    report.duty = dDuty.rowCount;
-  }
+    if (ledger.duty.length > 0) {
+      const dDuty = await pg.query("delete from public.duty_records where id = any($1::uuid[]) returning id", [ledger.duty]);
+      report.duty = dDuty.rowCount;
+    }
 
-  if (ledger.drafts.length > 0) {
-    const dDraft = await pg.query("delete from public.report_drafts where id = any($1::uuid[]) returning id", [ledger.drafts]);
-    report.drafts = dDraft.rowCount;
+    if (ledger.drafts.length > 0) {
+      const dDraft = await pg.query("delete from public.report_drafts where id = any($1::uuid[]) returning id", [ledger.drafts]);
+      report.drafts = dDraft.rowCount;
+    }
+  } finally {
+    await pg.query("set session_replication_role = origin;").catch(() => {});
   }
 
   const remaining = {
@@ -302,7 +307,7 @@ try {
     console.log("Real validation errors on page after submit click:", realErrors);
   }
 
-  await mPage.waitForSelector("text=/Report Submitted/i, text=/OFFICIAL REPORT NUMBER/i", { timeout: 25000 });
+  await mPage.getByRole("heading", { name: /Report Submitted/i }).waitFor({ timeout: 25000 });
   const mScreenshotPath = path.join(evDir, "makeup-mobile-submitted.png");
   await mPage.screenshot({ path: mScreenshotPath, fullPage: true });
   console.log(`Captured screenshot: ${mScreenshotPath}`);
@@ -358,7 +363,7 @@ try {
   await dPage.waitForTimeout(600);
 
   // Fill in Header & Flight Details
-  await dPage.fill('input[name="station"]', "KUL - AAX");
+  await dPage.fill('input[name="station"]', "KUL - MAA");
   await dPage.fill('input[name="team"]', "ALPHA");
   await dPage.fill('input[name="duty_date"]', today);
   await dPage.fill('input[name="flight_number"]', "D7 789");
@@ -381,7 +386,7 @@ try {
   // Submit
   await dPage.getByRole("button", { name: /Submit Breakup Report/i }).click();
   await dPage.waitForTimeout(2000);
-  await dPage.waitForSelector("text=/Report Submitted/i, text=/OFFICIAL REPORT NUMBER/i", { timeout: 25000 });
+  await dPage.getByRole("heading", { name: /Report Submitted/i }).waitFor({ timeout: 25000 });
 
   const dScreenshotPath = path.join(evDir, "breakup-desktop-submitted.png");
   await dPage.screenshot({ path: dScreenshotPath, fullPage: true });
@@ -421,21 +426,17 @@ try {
   // Helper to execute SQL under user role JWT
   const asUser = async (label, fn) => {
     const userUid = uid(label);
-    await pg.query("SAVEPOINT pr");
+    await pg.query("BEGIN");
     try {
       await pg.query(
         "select set_config('request.jwt.claims', $1, true), set_config('role', 'authenticated', true)",
         [JSON.stringify({ sub: userUid, role: "authenticated" })]
       );
       const res = await fn();
-      await pg.query("RELEASE SAVEPOINT pr");
-      await pg.query("reset role");
-      await pg.query("select set_config('request.jwt.claims', '', true)");
+      await pg.query("COMMIT");
       return res;
     } catch (e) {
-      await pg.query("ROLLBACK TO SAVEPOINT pr").catch(() => {});
-      await pg.query("reset role").catch(() => {});
-      await pg.query("select set_config('request.jwt.claims', '', true)").catch(() => {});
+      await pg.query("ROLLBACK").catch(() => {});
       return `ERR:${e.code ?? ""}:${String(e.message).slice(0, 110)}`;
     }
   };
@@ -449,8 +450,8 @@ try {
 
   const soAckId = await asUser("so-kul", async () => {
     const res = await pg.query(
-      `insert into public.report_acknowledgements (report_type, report_id, acknowledged_by, notes)
-       values ('makeup', $1, $2, 'Reviewed and verified - operations normal') returning id`,
+      `insert into public.report_acknowledgements (report_type, report_id, acknowledged_by)
+       values ('makeup', $1, $2) returning id`,
       [makeupReport.id, uid("so-kul")]
     );
     return res.rows[0].id;
@@ -463,17 +464,17 @@ try {
     ok("Acknowledgement: SO acknowledgement successfully recorded for Makeup report", false, String(soAckId));
   }
 
-  // 2. sso-kul acknowledges Breakup report (Station KUL - AAX, Team ALPHA)
+  // 2. sso-kul acknowledges Breakup report (SSO at KUL - MAA, Team ALPHA)
   const ssoCanAck = await asUser("sso-kul", async () => {
     const res = await pg.query("select public.can_acknowledge_report('breakup', $1) as ok", [breakupReport.id]);
     return res.rows[0].ok;
   });
-  ok("Acknowledgement: SSO at KUL - AAX ALPHA can acknowledge ASO Breakup report", ssoCanAck === true);
+  ok("Acknowledgement: SSO at KUL - MAA ALPHA can acknowledge ASO Breakup report", ssoCanAck === true);
 
   const ssoAckId = await asUser("sso-kul", async () => {
     const res = await pg.query(
-      `insert into public.report_acknowledgements (report_type, report_id, acknowledged_by, notes)
-       values ('breakup', $1, $2, 'Containers clean - operations normal') returning id`,
+      `insert into public.report_acknowledgements (report_type, report_id, acknowledged_by)
+       values ('breakup', $1, $2) returning id`,
       [breakupReport.id, uid("sso-kul")]
     );
     return res.rows[0].id;
@@ -511,7 +512,7 @@ try {
   });
 
   // Also index explicitly via service_role context for instant test availability
-  await pg.query("SAVEPOINT srv_idx");
+  await pg.query("BEGIN");
   try {
     await pg.query("select set_config('request.jwt.claims', $1, true), set_config('role', 'service_role', true)", [JSON.stringify({ role: "service_role" })]);
     const mSource = (await pg.query(
@@ -536,12 +537,9 @@ try {
         bSource.unit_id, bSource.hub_id, bSource.org_station_id, bSource.org_team_id, today, bSource.profile_id
       ]
     );
-    await pg.query("RELEASE SAVEPOINT srv_idx");
+    await pg.query("COMMIT");
   } catch (e) {
-    await pg.query("ROLLBACK TO SAVEPOINT srv_idx").catch(() => {});
-  } finally {
-    await pg.query("reset role").catch(() => {});
-    await pg.query("select set_config('request.jwt.claims', '', true)").catch(() => {});
+    await pg.query("ROLLBACK").catch(() => {});
   }
 
   const viewSession = await createBrowserSession(browser, "aso-kul", {

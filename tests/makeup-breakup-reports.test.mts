@@ -321,3 +321,14 @@ test("runner: frozen SHA, baseline, and live phrase for index-queue-fix migratio
   assert.equal(R.LIVE_PHRASE, "APPLY 20261130000003 TO STAGING ddlctzbnqewubltcavkh");
 });
 
+test("runner: frozen SHA, baseline, and live phrase for registration-queue-fix migration", async () => {
+  // @ts-expect-error plain .mjs tooling modules
+  const R = await import("../scripts/staging/apply-registration-queue-fix-migration.mjs");
+  assert.equal(R.MIGRATIONS.length, 1);
+  assert.equal(R.MIGRATIONS[0].version, "20261130000004");
+  assert.equal(R.PRE_COUNT, 106);
+  assert.equal(R.LAST_PRE, "20261130000003");
+  assert.equal(R.POST_COUNT, 107);
+  assert.equal(R.POST_LAST, "20261130000004");
+  assert.equal(R.LIVE_PHRASE, "APPLY 20261130000004 TO STAGING ddlctzbnqewubltcavkh");
+});
