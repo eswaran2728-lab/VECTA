@@ -115,9 +115,13 @@ export async function runGuardedMigration({ files, live = false, confirm = "", e
   productionGate();
   const repo = path.resolve(".");
   const git = runnerGitGates({ expectedHead, repoPath: repo });
-  const backup = backupGates({ backupPath, expectedRepoPath: repo, maxAgeMinutes: 60 });
-  const decrypted = decryptBackupPayload(backup.path);
-  if (!decrypted.metadata?.preMigrationVersion) fail("backup missing preMigrationVersion metadata");
+
+  if (!backupPath) fail("--backup=<fresh.enc.json> is required");
+  const backups = backupGates(git.root);
+  const nb = decryptBackupPayload(fs.readFileSync(backupPath, "utf8"), process.env.VECTA_BACKUP_PASSPHRASE);
+  if (!path.relative(git.root, path.resolve(backupPath)).startsWith("..")) fail("fresh backup is inside the repository");
+  if (!nb.exportedAt || Date.now() - new Date(nb.exportedAt).getTime() > 6 * 3600 * 1000) fail("fresh backup is older than 6 hours");
+  log(`existing backups authenticate (x${backups.length}); fresh backup authenticates (exportedAt=${nb.exportedAt}, authUsers=${nb.authUsers?.length})`);
 
   const { client, connectionInfo } = await connectVerified();
   const manifest = loadCurrentManifest();
