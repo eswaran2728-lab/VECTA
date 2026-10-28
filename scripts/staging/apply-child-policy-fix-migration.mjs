@@ -239,15 +239,25 @@ export async function execute(client, ctx) {
       }
       probe("so-kul denied inserting child entry into aso-kul report_makeup");
 
-      // Probe 5: Attempting to UPDATE or DELETE the inserted child rows on submitted report is blocked by trigger
-      const badUpdate = await asUser("aso-kul", async () => {
+      // Probe 5: Modifications on child rows of submitted report are blocked:
+      // a) Under aso-kul, RLS update policy requires draft status, so 0 rows are updated
+      const asoUpdate = await asUser("aso-kul", async () => {
+        const res = await client.query(`update public.report_makeup_baggage_entries set bay = 'B99' where id = $1`, [bagInsert]);
+        return res.rowCount;
+      });
+      if (asoUpdate !== 0) {
+        fail(`Probe 5 aso-kul was able to update child row on submitted report (rowCount = ${asoUpdate})`);
+      }
+
+      // b) Under service_role, trigger block_submitted_child_mutation_makeup fires and throws
+      const srvUpdate = await asRole(null, "service_role", async () => {
         await client.query(`update public.report_makeup_baggage_entries set bay = 'B99' where id = $1`, [bagInsert]);
         return "UPDATED";
       });
-      if (badUpdate === "UPDATED" || !String(badUpdate).includes("Cannot modify entries of a submitted report")) {
-        fail(`Probe 5 update on submitted report child row was not blocked: ${badUpdate}`);
+      if (srvUpdate === "UPDATED" || !String(srvUpdate).includes("Cannot modify entries of a submitted report")) {
+        fail(`Probe 5 service_role update was not blocked by trigger: ${srvUpdate}`);
       }
-      probe("block_submitted_child_mutation trigger strictly blocks update on submitted child entries");
+      probe("modifications on child entries of submitted report are strictly blocked (RLS rowCount 0 + trigger exception)");
 
       if (real) {
         log("recording migration in supabase_migrations.schema_migrations...");
