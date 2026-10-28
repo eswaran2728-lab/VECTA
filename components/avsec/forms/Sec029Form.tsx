@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { SEC029_STATIONS, REPORT_META, SEC029_ITEMS } from "@/lib/avsec/reference-data";
+import { REPORT_META, SEC029_ITEMS } from "@/lib/avsec/reference-data";
+import { withSec029Scope } from "@/lib/avsec/reports/sec029-scope";
 import { sec029Schema } from "@/lib/avsec/schemas/sec029";
 import { submitSec029 } from "@/lib/avsec/reports/actions";
 import { useOfflineSubmit } from "@/lib/avsec/offline/useOfflineSubmit";
@@ -68,7 +69,7 @@ const DECLARATION_DISCREPANCY =
 
 function buildDefaults(profile: Profile, serverDraft?: UIValues | null): UIValues {
   const draft = readLocalDraft<UIValues>(profile.id, "sec029") ?? serverDraft;
-  if (draft) return draft;
+  if (draft) return withSec029Scope(draft, {station:profile.station ?? '',team:profile.team ?? ''});
   return {
     station: profile.station ?? "",
     team: profile.team ?? "",
@@ -252,7 +253,7 @@ export function Sec029Form({
       <FormSection title="Staff Details">
         <p className="field-hint">Email: {profile.email}</p>
         <FieldRow>
-          <SelectField name="station" register={register} label="Station" required options={SEC029_STATIONS} error={errors.station} />
+          <SelectField name="station" register={register} label="Station" required options={[profile.station ?? ""]} error={errors.station} />
           <TextField name="team" register={register} label="Team" required placeholder="e.g. Alpha" error={errors.team} />
         </FieldRow>
 
