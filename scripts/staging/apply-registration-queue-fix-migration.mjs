@@ -17,7 +17,7 @@ import { loadCurrentManifest } from "./lib/review-accounts.mjs";
 import { gitGates, backupGates, connectVerified, APPROVED_REF, FORBIDDEN_REF } from "./lib/run-gates.mjs";
 
 export const MIGRATIONS = [
-  { version: "20261130000004", name: "combined_admin_registration_queue", sha256: "cd6632e55f37b6c1f77d70e850f6160da55020cdaf0c0908f5b379df55d45f20" },
+  { version: "20261130000004", name: "combined_admin_registration_queue", sha256: "5b3919801137cbdbf0f188152b06b0f2e407fd9fff76c8678fe2a7f0c435e5b0" },
 ];
 
 export const RUNNER_BRANCH = "ui/stitch-mobile-redesign";
@@ -225,8 +225,8 @@ export async function runGuardedMigration({ files, live = false, confirm = "", e
       const maaEntity = (await client.query("select id, aoc_id from public.operating_entities where code = 'MAA'")).rows[0];
       const approveRes = await asRole(maaAdminId, "authenticated", async () => {
         const res = await client.query(
-          `select public.approve_registration_request($1, $2, $3, null, null, null, null, null, 'aso', null) as assignment_id`,
-          [testReqId, maaEntity.id, maaEntity.aoc_id]
+          `select public.approve_registration_request($1, 'aso', $2, $3, null, null, null, null, null, null) as assignment_id`,
+          [testReqId, maaEntity.aoc_id, maaEntity.id]
         );
         return res.rows[0]?.assignment_id;
       });

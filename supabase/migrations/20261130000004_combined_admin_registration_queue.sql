@@ -159,14 +159,14 @@ grant execute on function public.list_registration_assignment_options_secure(uui
 -- -------------------------------------------------------------------------------------------------
 create or replace function public.approve_registration_request(
   p_request_id uuid,
-  p_operating_entity_id uuid,
+  p_role_code text,
   p_aoc_id uuid,
+  p_operating_entity_id uuid,
   p_department_id uuid default null,
   p_unit_id uuid default null,
   p_hub_id uuid default null,
   p_station_id uuid default null,
   p_team_id uuid default null,
-  p_role_code text default 'aso',
   p_ops_group text default null
 )
 returns uuid
@@ -314,8 +314,8 @@ begin
 end;
 $function$;
 
-revoke execute on function public.approve_registration_request(uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, text) from public, anon;
-grant execute on function public.approve_registration_request(uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, text) to authenticated, service_role;
+revoke execute on function public.approve_registration_request(uuid, text, uuid, uuid, uuid, uuid, uuid, uuid, uuid, text) from public, anon;
+grant execute on function public.approve_registration_request(uuid, text, uuid, uuid, uuid, uuid, uuid, uuid, uuid, text) to authenticated, service_role;
 
 -- -------------------------------------------------------------------------------------------------
 -- 4. Rejection: permit rejection by either entity admin for unassigned requests
