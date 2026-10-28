@@ -12,6 +12,7 @@ import { hasOpenDutyCheckIn } from "@/lib/avsec/duty/checkin-queries";
 import { sec016Schema } from "@/lib/avsec/schemas/sec016";
 import { sec014Schema } from "@/lib/avsec/schemas/sec014";
 import { sec029Schema } from "@/lib/avsec/schemas/sec029";
+import { withSec029Scope } from "@/lib/avsec/reports/sec029-scope";
 import { sec018Schema } from "@/lib/avsec/schemas/sec018";
 import { sec033Schema } from "@/lib/avsec/schemas/sec033";
 import { sec013Schema } from "@/lib/avsec/schemas/sec013";
@@ -497,7 +498,7 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; ") };
   }
-  const v = parsed.data;
+  const v = withSec029Scope(parsed.data, profile);
 
   const supabase = await createClient();
 
