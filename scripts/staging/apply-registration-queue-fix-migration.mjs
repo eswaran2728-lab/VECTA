@@ -207,6 +207,7 @@ export async function runGuardedMigration({ files, live = false, confirm = "", e
 
       // Probe 5: Dual-queue approval test with separate fixture applicant (preserves eswaran3561 as pending!)
       const testApplicantId = crypto.randomUUID();
+      await client.query("set session_replication_role = replica;");
       await client.query(`
         insert into public.profiles (id, email, name, staff_no, role, team, station, status)
         values ($1, 'probe_test_applicant@airasia.test', 'Probe Applicant', 'TEST-999', 'ASO', 'ALPHA', 'KUL - MAA', 'pending')
@@ -217,6 +218,7 @@ export async function runGuardedMigration({ files, live = false, confirm = "", e
         values (gen_random_uuid(), $1, null, null, 'aso', 'pending', 'Test probe request', now())
         returning id
       `, [testApplicantId]);
+      await client.query("set session_replication_role = origin;");
       const testReqId = testReqRes.rows[0].id;
 
       // MAA Admin approves the test applicant request
