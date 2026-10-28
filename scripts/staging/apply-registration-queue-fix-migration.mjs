@@ -264,7 +264,7 @@ export async function runGuardedMigration({ files, live = false, confirm = "", e
       await client.query("delete from public.user_entity_memberships where profile_id = $1", [testApplicantId]);
       await client.query("delete from public.user_registration_requests where id = $1", [testReqId]);
       await client.query("delete from public.user_admin_audit_log where request_id = $1", [testReqId]);
-      await client.query("delete from public.notifications where recipient_id = $1", [testApplicantId]);
+      await client.query("delete from public.user_notifications where recipient_profile_id = $1", [testApplicantId]);
       await client.query("delete from public.profiles where id = $1", [testApplicantId]);
       await client.query("delete from auth.users where id = $1", [testApplicantId]);
       await client.query("set session_replication_role = origin;");
