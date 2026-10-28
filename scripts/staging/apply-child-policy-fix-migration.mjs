@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import child_process from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { decryptBackupPayload } from "./lib/backup-crypto.mjs";
 import { loadCurrentManifest } from "./lib/review-accounts.mjs";
 import { gitGates, backupGates, connectVerified, APPROVED_REF, FORBIDDEN_REF } from "./lib/run-gates.mjs";
