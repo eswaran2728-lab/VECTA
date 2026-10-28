@@ -46,3 +46,4 @@ test('ASO repair runner keeps explicit backup, git, environment, transactional a
   }
   assert.ok(s.indexOf('const dryProbes = await pass(false)') < s.indexOf('await pass(true)'));
 });
+

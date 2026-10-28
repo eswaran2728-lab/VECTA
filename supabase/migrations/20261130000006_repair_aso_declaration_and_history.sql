@@ -79,6 +79,5 @@ begin
   limit v_limit;
 end;
 $function$;
-alter function public.list_my_submissions_secure(integer) owner to service_role;
 revoke execute on function public.list_my_submissions_secure(integer) from public, anon;
 grant execute on function public.list_my_submissions_secure(integer) to authenticated, service_role;

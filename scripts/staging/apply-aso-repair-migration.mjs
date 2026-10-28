@@ -10,7 +10,7 @@ export const MIGRATIONS = [
   {
     version: '20261130000006',
     name: 'repair_aso_declaration_and_history',
-    sha256: '69dfa9698d05fb1e365b169cb4405a5b50dde0f8cc4133a15ecf4b07016f5458'
+    sha256: 'e2d778a161922742541edcf8e379e14bd1a7553972a39ded1af6c7b9d07262b2'
   }
 ];
 
@@ -48,36 +48,43 @@ async function invariantSnapshot(p) {
   return { functions, constraints };
 }
 
+async function unaffectedSnapshot(p) {
+  const definitions = (await p.query("select p.oid::regprocedure::text signature, replace(pg_get_functiondef(p.oid),chr(13),'') definition,p.proacl::text acl,p.proowner,p.prosecdef,p.proconfig from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind='f' and p.proname not in ('list_my_submissions_secure','report_source_summary') order by 1")).rows;
+  const policies = (await p.query("select * from pg_policies where schemaname='public' order by tablename,policyname")).rows;
+  const triggers = (await p.query("select t.tgrelid::regclass::text relation,t.tgname,pg_get_triggerdef(t.oid) definition from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not t.tgisinternal order by 1,2")).rows;
+  const counts = (await p.query('select (select count(*) from auth.users)::int users,(select count(*) from public.profiles)::int profiles,(select count(*) from public.user_role_assignments)::int assignments,(select count(*) from storage.objects)::int storage')).rows;
+  return {definitions,policies,triggers,counts};
+}
+
 async function probes(p, accounts) {
   let probeCount = 0;
   const asoAccount = accounts.find(x => x.label === 'aso-kul') || accounts.find(x => x.label === 'aso');
   assert.ok(asoAccount, 'ASO test account required');
 
-  // 1. SEC029 declaration check constraint probe (tested under service_role connection)
+  // Evaluate the actual hosted constraint on a transaction-local scratch relation.
+  // No incomplete report is inserted and no application trigger is bypassed.
   await p.query('savepoint sec029_probe');
   try {
+    const expression=(await p.query("select pg_get_expr(conbin,conrelid) expression from pg_constraint where conrelid='public.report_sec029'::regclass and conname='report_sec029_declaration_check'")).rows[0].expression;
+    await p.query('create temporary table aso_declaration_probe(declaration text check ('+expression+')) on commit drop');
     // Current Rev.03 non-discrepancy
     await p.query(
-      "insert into public.report_sec029 (profile_id, declaration) values ($1, 'I CERTIFY THAT THE ABOVE SEARCH HAS BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.')",
-      [asoAccount.authUserId]
+      "insert into aso_declaration_probe values ('I CERTIFY THAT THE ABOVE SEARCH HAS BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.')"
     );
     probeCount++;
     // Current Rev.03 discrepancy
     await p.query(
-      "insert into public.report_sec029 (profile_id, declaration) values ($1, 'DISCREPANCIES FOUND AND DUTY SECURITY EXECUTIVE / DUTY OFFICER IS NOTIFIED (PROVIDE DETAILS BELOW).')",
-      [asoAccount.authUserId]
+      "insert into aso_declaration_probe values ('DISCREPANCIES FOUND AND DUTY SECURITY EXECUTIVE / DUTY OFFICER IS NOTIFIED (PROVIDE DETAILS BELOW).')"
     );
     probeCount++;
     // Legacy non-discrepancy
     await p.query(
-      "insert into public.report_sec029 (profile_id, declaration) values ($1, 'I CERTIFY THAT THE ABOVE CHECKS HAVE BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.')",
-      [asoAccount.authUserId]
+      "insert into aso_declaration_probe values ('I CERTIFY THAT THE ABOVE CHECKS HAVE BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.')"
     );
     probeCount++;
     // Legacy discrepancy
     await p.query(
-      "insert into public.report_sec029 (profile_id, declaration) values ($1, 'DISCREPANCIES FOUND AND DUTY OFFICER IS NOTIFIED (PROVIDE DETAILS BELOW)')",
-      [asoAccount.authUserId]
+      "insert into aso_declaration_probe values ('DISCREPANCIES FOUND AND DUTY OFFICER IS NOTIFIED (PROVIDE DETAILS BELOW)')"
     );
     probeCount++;
 
@@ -85,11 +92,10 @@ async function probes(p, accounts) {
     let arbitraryFailed = false;
     try {
       await p.query(
-        "insert into public.report_sec029 (profile_id, declaration) values ($1, 'ARBITRARY DECLARATION TEXT')",
-        [asoAccount.authUserId]
+        "insert into aso_declaration_probe values ('ARBITRARY DECLARATION TEXT')"
       );
-    } catch {
-      arbitraryFailed = true;
+    } catch (e) {
+      arbitraryFailed = e.code === '23514';
     }
     assert.ok(arbitraryFailed, 'Arbitrary declaration rejected');
     probeCount++;
@@ -109,11 +115,15 @@ async function probes(p, accounts) {
   await p.query('set local role authenticated');
   const historyRows = (await p.query('select * from public.list_my_submissions_secure(200)')).rows;
   assert.ok(Array.isArray(historyRows), 'History rows returned');
+  for (const row of historyRows) {
+    assert.ok(['report_sec013','report_sec014','report_sec016','report_sec018','report_sec029','report_sec033','offload_records','report_makeup','report_breakup'].includes(row.source_table));
+  }
   probeCount++;
   await p.query('reset role');
 
   // 4. Reset role to unauthenticated and verify signed-out protection
-  await p.query("select set_config('request.jwt.claims', '', true)");
+  await p.query("select set_config('request.jwt.claims', '{}', true)");
+  await p.query('savepoint unauth_probe');
   let unauthBlocked = false;
   try {
     await p.query('select * from public.list_my_submissions_secure(20)');
@@ -121,6 +131,7 @@ async function probes(p, accounts) {
     if (/must be signed in/i.test(e.message)) unauthBlocked = true;
   }
   assert.ok(unauthBlocked, 'Unauthenticated access rejected with "Must be signed in."');
+  await p.query('rollback to savepoint unauth_probe');
   probeCount++;
 
   return probeCount;
@@ -160,6 +171,8 @@ export async function main(args = process.argv.slice(2)) {
     assert.equal(original.at(-1).version, LAST_PRE);
 
     const before = await invariantSnapshot(p);
+    for (const fn of before.functions) assert.equal((await p.query('select pg_get_userbyid($1::oid) owner',[fn.proowner])).rows[0].owner,'postgres','Reviewed function owner changed');
+    const unaffected = await unaffectedSnapshot(p);
 
     async function pass(commit) {
       await p.query('begin isolation level serializable');
@@ -170,8 +183,14 @@ export async function main(args = process.argv.slice(2)) {
 
         const after = await invariantSnapshot(p);
         assert.notDeepEqual(after, before, 'Snapshots must reflect repair changes');
+        for (const fn of after.functions) {
+          const old=before.functions.find(x=>x.signature===fn.signature);
+          assert.ok(old);
+          for (const property of ['acl','proowner','prosecdef','provolatile','proconfig']) assert.deepEqual(fn[property],old[property],property+' changed');
+        }
 
         const n = await probes(p, accounts);
+        assert.deepEqual(await unaffectedSnapshot(p),unaffected,'Unrelated schema or protected counts changed');
 
         await p.query('insert into supabase_migrations.schema_migrations(version, name) values($1, $2)', [
           MIGRATIONS[0].version,

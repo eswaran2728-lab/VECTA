@@ -447,3 +447,18 @@ test("list_my_submissions_secure includes makeup and breakup, preserves movement
     await db.close();
   }
 });
+
+test('history RPC works as authenticated without direct table access and rejects anon', async()=>{
+ const db=await setupDatabase();
+ try {
+  await db.exec(fs.readFileSync(file,'utf8'));
+  await db.exec(`insert into public.report_makeup(profile_id,report_no) values ('${USER_A}','OWN'),('${USER_B}','OTHER')`);
+  await asUser(db,USER_A);
+  await db.exec('set role authenticated');
+  const result=await db.query<{report_no:string}>('select report_no from public.list_my_submissions_secure(200)');
+  assert.deepEqual(result.rows.map(x=>x.report_no),['OWN']);
+  await assert.rejects(()=>db.query('select * from public.report_makeup'),/permission denied/i);
+  await db.exec('reset role; set role anon');
+  await assert.rejects(()=>db.query('select * from public.list_my_submissions_secure(200)'),/permission denied/i);
+ } finally {await db.exec('reset role');await db.close();}
+});
