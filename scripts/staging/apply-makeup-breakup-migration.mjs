@@ -19,11 +19,7 @@ import { loadCurrentManifest } from "./lib/review-accounts.mjs";
 import { gitGates, environmentGates, backupGates, connectVerified, APPROVED_REF, FORBIDDEN_REF } from "./lib/run-gates.mjs";
 
 export const MIGRATIONS = [
-  {
-    version: "20261129000001",
-    name: "add_makeup_and_breakup_reports",
-    sha256: "e04d1c556b6d904fce47cd9de6c2eb3536b897c0ce4bed094767e2dfd7989839",
-  },
+  { version: "20261129000001", name: "add_makeup_and_breakup_reports", sha256: "e04d1c556b6d904fce47cd9de6c2eb3536b897c0ce4bed094767e2dfd7989839" },
 ];
 
 export const RUNNER_BRANCH = "ui/stitch-mobile-redesign";
@@ -475,7 +471,7 @@ async function main() {
   orderingGate(fs.readdirSync(sqlDir));
 
   if (isObserve) {
-    const client = await connectVerified(process.env);
+    const { client } = await connectVerified();
     try {
       const obs = await observe((s, p) => client.query(s, p).then((r) => r.rows));
       console.log("OBSERVE:", JSON.stringify(obs, null, 2));
@@ -486,7 +482,7 @@ async function main() {
   }
 
   if (isVerify) {
-    const client = await connectVerified(process.env);
+    const { client } = await connectVerified();
     try {
       const res = await verifyApplied((s, p) => client.query(s, p).then((r) => r.rows));
       console.log(`VERIFIED APPLIED: history = ${res.history}, last = ${res.last}`);

@@ -111,9 +111,9 @@ test("runner: frozen SHA, allow-list, ordering, baseline and live phrase", () =>
   assert.equal(LIVE_PHRASE, "APPLY 20261128000001 TO STAGING ddlctzbnqewubltcavkh");
   assert.ok(Object.values(PRE_STATE).every((v) => typeof v === "string" && v.length === 32));
   assert.equal(EXPECTED_PROBES, 10);
-  // the certified staging baseline is the post-state once rolled out
-  assert.equal(EXPECTED_MIGRATION_COUNT, POST_COUNT, "the certified staging baseline is this migration's post-state");
-  assert.equal(EXPECTED_LATEST_MIGRATION, POST_LAST);
+  // the certified staging baseline is at least this migration's post-state
+  assert.ok(EXPECTED_MIGRATION_COUNT >= POST_COUNT, "the certified staging baseline is at least this migration's post-state");
+  assert.ok(EXPECTED_LATEST_MIGRATION >= POST_LAST);
 });
 
 test("runner: anything beyond the reviewed statements, or a weakened policy, is rejected before it can run", () => {

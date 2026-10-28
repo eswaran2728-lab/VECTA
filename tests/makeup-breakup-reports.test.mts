@@ -272,3 +272,15 @@ test("categories: ASO with makeup and breakup assignments sees the new separate 
     ],
   );
 });
+
+test("runner: frozen SHA, baseline, and live phrase for makeup/breakup migration", async () => {
+  // @ts-expect-error plain .mjs tooling modules
+  const R = await import("../scripts/staging/apply-makeup-breakup-migration.mjs");
+  assert.equal(R.MIGRATIONS.length, 1);
+  assert.equal(R.MIGRATIONS[0].version, "20261129000001");
+  assert.equal(R.PRE_COUNT, 102);
+  assert.equal(R.LAST_PRE, "20261128000001");
+  assert.equal(R.POST_COUNT, 103);
+  assert.equal(R.POST_LAST, "20261129000001");
+  assert.equal(R.LIVE_PHRASE, "APPLY 20261129000001 TO STAGING ddlctzbnqewubltcavkh");
+});
