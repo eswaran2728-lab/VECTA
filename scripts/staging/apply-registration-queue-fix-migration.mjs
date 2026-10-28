@@ -207,26 +207,32 @@ export async function runGuardedMigration({ files, live = false, confirm = "", e
 
       // Probe 5: Dual-queue approval test with separate fixture applicant (preserves eswaran3561 as pending!)
       const testApplicantId = crypto.randomUUID();
-      await client.query("set session_replication_role = replica;");
       await client.query(`
-        insert into public.profiles (id, email, name, staff_no, role, team, station, status)
-        values ($1, 'probe_test_applicant@airasia.test', 'Probe Applicant', 'TEST-999', 'ASO', 'ALPHA', 'KUL - MAA', 'pending')
+        insert into auth.users (id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+        values ($1, 'authenticated', 'authenticated', 'probe_test_applicant@airasia.test', '{"provider":"email","providers":["email"]}', '{"name":"Probe Applicant"}', now(), now())
       `, [testApplicantId]);
+
+      const org = (await client.query(`
+        select s.id st, s.hub_id hub,
+          (select t.id from public.org_teams t where t.station_id = s.id order by t.name limit 1) team,
+          oe.id ent, oe.aoc_id aoc,
+          (select d.id from public.departments d where d.aoc_id = oe.aoc_id and d.code = 'operation') dept
+        from public.org_stations s, public.operating_entities oe
+        where s.code = 'KUL - MAA' and oe.code = 'MAA'
+      `)).rows[0];
 
       const testReqRes = await client.query(`
         insert into public.user_registration_requests (id, profile_id, requested_operating_entity_id, requested_aoc_id, requested_role_code, status, applicant_notes, submitted_at)
         values (gen_random_uuid(), $1, null, null, 'aso', 'pending', 'Test probe request', now())
         returning id
       `, [testApplicantId]);
-      await client.query("set session_replication_role = origin;");
       const testReqId = testReqRes.rows[0].id;
 
       // MAA Admin approves the test applicant request
-      const maaEntity = (await client.query("select id, aoc_id from public.operating_entities where code = 'MAA'")).rows[0];
       const approveRes = await asRole(maaAdminId, "authenticated", async () => {
         const res = await client.query(
-          `select public.approve_registration_request($1, 'aso', $2, $3, null, null, null, null, null, null) as assignment_id`,
-          [testReqId, maaEntity.aoc_id, maaEntity.id]
+          `select public.approve_registration_request($1, 'aso', $2, $3, $4, null, $5, $6, $7, null) as assignment_id`,
+          [testReqId, org.aoc, org.ent, org.dept, org.hub, org.st, org.team]
         );
         return res.rows[0]?.assignment_id;
       });
@@ -234,21 +240,22 @@ export async function runGuardedMigration({ files, live = false, confirm = "", e
         fail(`Probe 5 failed: approve_registration_request error: ${approveRes}`);
       }
 
-      // Verify assignment created in user_role_assignments
+      // Verify assignment created in user_role_assignments with MAA membership
       const testAssignment = await client.query(`
-        select ura.id, ura.operating_entity_id, ura.aoc_id, rd.code as role_code
+        select ura.id, ura.operating_entity_id, ura.aoc_id, ura.entity_membership_id, rd.code as role_code, uem.operating_entity_id as mem_entity
         from public.user_role_assignments ura
         join public.role_definitions rd on rd.id = ura.role_definition_id
+        left join public.user_entity_memberships uem on uem.id = ura.entity_membership_id
         where ura.id = $1
       `, [approveRes]);
-      if (testAssignment.rows[0]?.operating_entity_id !== maaEntity.id || testAssignment.rows[0]?.role_code !== "aso") {
+      if (testAssignment.rows[0]?.mem_entity !== org.ent || testAssignment.rows[0]?.role_code !== "aso") {
         fail(`Probe 5 failed: scoped assignment did not match MAA entity: ${JSON.stringify(testAssignment.rows[0])}`);
       }
 
       // Verify request transitioned to 'approved' and disappeared from both queues
-      const testReqPost = (await client.query("select status from public.user_registration_requests where id = $1", [testReqId])).rows[0];
-      if (testReqPost?.status !== "approved") {
-        fail(`Probe 5 failed: test request status is not approved: ${testReqPost?.status}`);
+      const testReqPost = (await client.query("select status, requested_operating_entity_id from public.user_registration_requests where id = $1", [testReqId])).rows[0];
+      if (testReqPost?.status !== "approved" || testReqPost?.requested_operating_entity_id !== org.ent) {
+        fail(`Probe 5 failed: test request status is not approved or entity not set: ${JSON.stringify(testReqPost)}`);
       }
 
       // Clean up test applicant fixture
@@ -259,6 +266,7 @@ export async function runGuardedMigration({ files, live = false, confirm = "", e
       await client.query("delete from public.user_admin_audit_log where request_id = $1", [testReqId]);
       await client.query("delete from public.notifications where recipient_id = $1", [testApplicantId]);
       await client.query("delete from public.profiles where id = $1", [testApplicantId]);
+      await client.query("delete from auth.users where id = $1", [testApplicantId]);
       await client.query("set session_replication_role = origin;");
       probe("Dual-queue unassigned request approved by MAA Admin creates correct scoped assignment and cleans up cleanly");
 
