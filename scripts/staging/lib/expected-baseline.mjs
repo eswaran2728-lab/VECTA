@@ -7,6 +7,7 @@
 // 20261130000001 = 104, plus child-policy-fix 20261130000002 = 105, plus index-queue-fix 20261130000003 = 106,
 // plus combined MAA/AAX Admin registration queue fix 20261130000004 = 107. Each rollout was guarded and independently verified on approved staging. Change ONLY with a reviewed
 // migration rollout; tests/uat-harness-reliability.test.mts ties the latest version to the last guarded runner.
-export const EXPECTED_MIGRATION_COUNT = 107;
-export const EXPECTED_LATEST_MIGRATION = "20261130000004";
+// KUL - MAA CaterLink scanning was applied by the guarded runner after 401 dry-run and 401 live probes.
+export const EXPECTED_MIGRATION_COUNT = 108;
+export const EXPECTED_LATEST_MIGRATION = "20261130000005";
 
