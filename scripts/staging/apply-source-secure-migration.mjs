@@ -17,7 +17,7 @@ import { loadCurrentManifest } from "./lib/review-accounts.mjs";
 import { gitGates, backupGates, connectVerified, APPROVED_REF, FORBIDDEN_REF } from "./lib/run-gates.mjs";
 
 export const MIGRATIONS = [
-  { version: "20261130000001", name: "source_secure_makeup_and_breakup", sha256: "2f0c82707c4da6934302468c6334105999817b3fc429719fd2ae19833a36eb4f" },
+  { version: "20261130000001", name: "source_secure_makeup_and_breakup", sha256: "a6a5de73e58d5c06516a02c4b4f87562b53cfdea4b5e160e04ac6410e117ce90" },
 ];
 
 export const RUNNER_BRANCH = "ui/stitch-mobile-redesign";
@@ -33,6 +33,8 @@ export const normalisedSha256 = (buf) => crypto.createHash("sha256").update(cano
 const fail = (m) => { throw new Error(m); };
 
 const ALLOWED_STATEMENTS = [
+  /^alter table public\.report_makeup add column if not exists .*/,
+  /^alter table public\.report_breakup add column if not exists .*/,
   /^create or replace function public\.get_report_by_source_secure\(.*\) returns table \(.*\) language plpgsql security definer set search_path to 'public' as ''$/,
   /^revoke execute on function public\.get_report_by_source_secure\(.*\) from public, anon$/,
   /^grant execute on function public\.get_report_by_source_secure\(.*\) to authenticated, service_role$/,

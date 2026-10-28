@@ -2,6 +2,25 @@
 -- Enables source-keyed retrieval, PDF generation authorization, flight-date extraction,
 -- filtered search, flag info and access request stubs for report_makeup and report_breakup.
 
+-- 0. Standard flag and severity columns for report_makeup and report_breakup
+alter table public.report_makeup
+  add column if not exists severity text check (severity in ('low', 'medium', 'high', 'critical')),
+  add column if not exists flag_state text not null default 'unflagged' check (flag_state in ('unflagged', 'flagged')),
+  add column if not exists flagged_by uuid references public.profiles(id),
+  add column if not exists flagged_reason text,
+  add column if not exists flagged_at timestamptz,
+  add column if not exists unflagged_by uuid references public.profiles(id),
+  add column if not exists unflagged_at timestamptz;
+
+alter table public.report_breakup
+  add column if not exists severity text check (severity in ('low', 'medium', 'high', 'critical')),
+  add column if not exists flag_state text not null default 'unflagged' check (flag_state in ('unflagged', 'flagged')),
+  add column if not exists flagged_by uuid references public.profiles(id),
+  add column if not exists flagged_reason text,
+  add column if not exists flagged_at timestamptz,
+  add column if not exists unflagged_by uuid references public.profiles(id),
+  add column if not exists unflagged_at timestamptz;
+
 -- 1. Source-keyed retrieval
 create or replace function public.get_report_by_source_secure(p_source_table text, p_source_id uuid, p_version_number integer default null)
 returns table (
