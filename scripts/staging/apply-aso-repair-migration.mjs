@@ -53,22 +53,7 @@ async function probes(p, accounts) {
   const asoAccount = accounts.find(x => x.label === 'aso-kul') || accounts.find(x => x.label === 'aso');
   assert.ok(asoAccount, 'ASO test account required');
 
-  // 1. Signed-in ASO probe
-  await p.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: asoAccount.authUserId, role: 'authenticated' })]);
-  await p.query('set local role authenticated');
-
-  const historyRows = (await p.query('select * from public.list_my_submissions_secure(200)')).rows;
-  assert.ok(Array.isArray(historyRows), 'History rows returned');
-  probeCount++;
-
-  // 2. report_source_summary SEC016 casting probe
-  const summarySec016 = await p.query(
-    "select * from public.report_source_summary('report_sec016', '00000000-0000-0000-0000-000000000000')"
-  );
-  assert.equal(summarySec016.rowCount, 0, 'Zero rows for non-existent row, no 42804 type error');
-  probeCount++;
-
-  // 3. SEC029 declaration check constraint probe
+  // 1. SEC029 declaration check constraint probe (tested under service_role connection)
   await p.query('savepoint sec029_probe');
   try {
     // Current Rev.03 non-discrepancy
@@ -112,8 +97,22 @@ async function probes(p, accounts) {
     await p.query('rollback to savepoint sec029_probe');
   }
 
-  // 4. Reset role to unauthenticated and verify signed-out protection
+  // 2. report_source_summary SEC016 casting probe (verifies no 42804 time casting error)
+  const summarySec016 = await p.query(
+    "select * from public.report_source_summary('report_sec016', '00000000-0000-0000-0000-000000000000')"
+  );
+  assert.equal(summarySec016.rowCount, 0, 'Zero rows for non-existent row, no 42804 type error');
+  probeCount++;
+
+  // 3. Signed-in ASO probe via RPC
+  await p.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: asoAccount.authUserId, role: 'authenticated' })]);
+  await p.query('set local role authenticated');
+  const historyRows = (await p.query('select * from public.list_my_submissions_secure(200)')).rows;
+  assert.ok(Array.isArray(historyRows), 'History rows returned');
+  probeCount++;
   await p.query('reset role');
+
+  // 4. Reset role to unauthenticated and verify signed-out protection
   await p.query("select set_config('request.jwt.claims', '', true)");
   let unauthBlocked = false;
   try {
