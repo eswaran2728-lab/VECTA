@@ -91,6 +91,7 @@ export function CheckInScreen({
   const [geoError, setGeoError] = useState<string | null>(null);
   const [forceShow, setForceShow] = useState(false);
   const [remark, setRemark] = useState("");
+  const [serverRequiresRemark, setServerRequiresRemark] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [queuedKind, setQueuedKind] = useState<"in" | "out" | null>(null);
   const [tick, setTick] = useState(0);
@@ -128,7 +129,7 @@ export function CheckInScreen({
   const insideZone = useMemo(() => matchZone(position, zones), [position, zones]);
   const zoneBlocked = zones.length > 0 && !insideZone;
 
-  // Lateness / early-out calculations
+  // Mirror all four server timing checks, using the same grace window.
   const predictedLate = useMemo(() => {
     if (!scheduled || checkedIn) return 0;
     return computeLateMinutes(scheduled.start, now);
@@ -139,7 +140,19 @@ export function CheckInScreen({
     return computeEarlyMinutes(scheduled.end, now);
   }, [scheduled, checkedIn, now]);
 
-  const requiresRemark = !checkedIn ? predictedLate > 0 : predictedEarlyOut > 0;
+  const predictedEarlyIn = useMemo(() => {
+    if (!scheduled || checkedIn) return 0;
+    return computeEarlyMinutes(scheduled.start, now);
+  }, [scheduled, checkedIn, now]);
+
+  const predictedLateOut = useMemo(() => {
+    if (!scheduled || !checkedIn) return 0;
+    return computeLateMinutes(scheduled.end, now);
+  }, [scheduled, checkedIn, now]);
+
+  const requiresRemark = serverRequiresRemark || (!checkedIn
+    ? predictedLate > 0 || predictedEarlyIn > 0
+    : predictedEarlyOut > 0 || predictedLateOut > 0);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("geolocation" in navigator)) {
@@ -212,15 +225,19 @@ export function CheckInScreen({
       lat: fresh.lat,
       lng: fresh.lng,
       accuracy_m: fresh.accuracy,
-      late_remark: predictedLate > 0 ? remark : "",
-      early_in_remark: predictedLate <= 0 ? remark : "",
+      // Server time decides which timing category applies; don't discard an
+      // entered explanation because the device clock predicted another category.
+      late_remark: remark,
+      early_in_remark: remark,
       offline,
       client_timestamp: new Date().toISOString(),
     });
     if (outcome.kind === "error") {
       setSubmitError(outcome.message);
+      if (/remark/i.test(outcome.message)) setServerRequiresRemark(true);
       return;
     }
+    setServerRequiresRemark(false);
     setRemark("");
     if (outcome.kind === "queued") {
       setQueuedKind("in");
@@ -256,8 +273,10 @@ export function CheckInScreen({
     });
     if (outcome.kind === "error") {
       setSubmitError(outcome.message);
+      if (/remark/i.test(outcome.message)) setServerRequiresRemark(true);
       return;
     }
+    setServerRequiresRemark(false);
     setRemark("");
     if (outcome.kind === "queued") {
       setQueuedKind("out");
@@ -520,19 +539,22 @@ export function CheckInScreen({
         </div>
       )}
 
-      {/* Remark input if early / late checkin or checkout */}
-      {requiresRemark && (
+      {/* Always offer a remark, including when device/server clocks differ. */}
         <div className="vecta-panel space-y-2 !py-4">
-          <p className="vecta-label">
-            {!checkedIn
+          <label htmlFor="duty-remark" className="vecta-label">
+            {!requiresRemark ? "Remark (optional)" : serverRequiresRemark ? "Remark required — explain your check-in or check-out" : !checkedIn
               ? predictedLate > 0
                 ? "Checking in late — explanation required"
                 : "Checking in early — explanation required"
               : predictedEarlyOut > 0
                 ? "Checking out early — explanation required"
                 : "Checking out late — explanation required"}
-          </p>
+          </label>
           <textarea
+            id="duty-remark"
+            name="duty_remark"
+            required={requiresRemark}
+            aria-required={requiresRemark}
             className="vecta-input h-auto py-2.5"
             rows={2}
             value={remark}
@@ -541,7 +563,6 @@ export function CheckInScreen({
           />
           <QuickPhrases value={remark} onChange={setRemark} phrases={LATE_PHRASES} />
         </div>
-      )}
 
       {/* Consolidated Apply Leave Modal / Form */}
       {showLeaveForm && !checkedIn && (
