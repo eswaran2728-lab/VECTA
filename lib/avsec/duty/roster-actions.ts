@@ -15,9 +15,8 @@ function backTo(station: string, week: string) {
  * hub_se (stations of the assigned hub), dse (own station AND team). The three
  * writing actions are gated on those canonical role codes (Hub SE is named explicitly,
  * not left to ride on the DSE compat rank) and the database RPCs enforce the exact
- * station / team / hub; nothing here reads ops_group, and the historical
- * team_rosters.ops_group column is written only by the RPC as a fixed
- * compatibility value.
+ * station / team / hub. Roster storage and its RPC use the canonical
+ * station / team / roster_date key; no historical grouping column is needed.
  */
 
 export async function upsertRosterCell(formData: FormData) {

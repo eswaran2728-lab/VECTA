@@ -9,6 +9,7 @@
 // migration rollout; tests/uat-harness-reliability.test.mts ties the latest version to the last guarded runner.
 // KUL - MAA CaterLink scanning was applied by the guarded runner after 401 dry-run and 401 live probes.
 // ASO declaration/history repair passed guarded dry-run, rollback and live verification.
-export const EXPECTED_MIGRATION_COUNT = 109;
-export const EXPECTED_LATEST_MIGRATION = "20261130000006";
+// Canonical roster-save repair passed guarded dry/live probes and independent read-only verification.
+export const EXPECTED_MIGRATION_COUNT = 110;
+export const EXPECTED_LATEST_MIGRATION = "20261130000007";
 
