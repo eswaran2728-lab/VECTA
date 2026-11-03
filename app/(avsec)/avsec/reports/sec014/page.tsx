@@ -1,12 +1,12 @@
 import { requireReportFormAccess } from "@/lib/avsec/reports/form-capability";
-import { loadDraft } from "@/lib/avsec/reports/drafts";
+import { loadDraftWithTime } from "@/lib/avsec/reports/drafts";
 import { Sec014Form } from "@/components/avsec/forms/Sec014Form";
 import { REPORT_META } from "@/lib/avsec/reference-data";
 
 export default async function Sec014Page() {
   const profile = await requireReportFormAccess("sec014");
 
-  const serverDraft = await loadDraft("sec014");
+  const serverDraft = await loadDraftWithTime("sec014");
 
   return (
     <main className="min-h-screen pb-16">

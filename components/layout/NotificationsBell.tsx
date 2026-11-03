@@ -26,6 +26,7 @@ const TITLES: Record<string, string> = {
   deactivation: "Account deactivated",
   caterlink_movement_received: "CaterLink movement received",
   handover_received: "Shift handover for you",
+  dse_report_submitted: "Report submitted by your team",
 };
 
 function humanize(eventType: string): string {
@@ -37,7 +38,7 @@ export function toAppNotification(r: NotificationRow): AppNotification {
   const payload = (r.payload ?? {}) as { source_table?: string; source_id?: string; transaction_id?: string };
   let body = "";
   let href: string | null = null;
-  if (r.event_type === "entity_report_submitted") {
+  if (r.event_type === "entity_report_submitted" || r.event_type === "dse_report_submitted") {
     body = REPORT_TYPE_OPTIONS.find((o) => o.value === payload.source_table)?.label ?? "Report";
     // The link opens the report through the secure route, which authorizes again; the payload carries identifiers only.
     href = payload.source_table && payload.source_id ? reportViewHref(payload.source_table, payload.source_id) : null;

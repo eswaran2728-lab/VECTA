@@ -42,6 +42,21 @@ export function readLocalDraft<T>(userId: string, type: string): T | null {
 export function clearLocalDraft(userId: string, type: string) {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(scopedKey(userId, type));
+  window.localStorage.removeItem(timeKey(userId, type));
+}
+
+function timeKey(userId: string, type: string) {
+  return `avsec-ops:draftat:${userId}:${type}`;
+}
+
+/** When this device's draft was last written (ISO), or "" when unknown. */
+export function readLocalDraftTime(userId: string, type: string): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(timeKey(userId, type)) ?? "";
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -49,7 +64,8 @@ export function clearLocalDraft(userId: string, type: string) {
  * and best-effort mirrors to the server draft table when online. Keys are scoped to
  * `userId` — a shared device must never let one signed-in user see another's local draft.
  */
-export function useDraftAutosave<T>(userId: string, type: string, values: T, enabled = true) {
+export function useDraftAutosave<T>(userId: string, type: string, values: T, enabled = true, options: { mirror?: boolean } = {}) {
+  const mirror = options.mirror !== false;
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -57,7 +73,9 @@ export function useDraftAutosave<T>(userId: string, type: string, values: T, ena
     if (!enabled) return;
     if (typeof window !== "undefined") {
       window.localStorage.setItem(scopedKey(userId, type), JSON.stringify(values));
+      window.localStorage.setItem(timeKey(userId, type), new Date().toISOString());
     }
+    if (!mirror) return;
 
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {

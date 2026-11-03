@@ -6,7 +6,9 @@ import { STATIONS, REPORT_META } from "@/lib/avsec/reference-data";
 import { sec014Schema } from "@/lib/avsec/schemas/sec014";
 import { submitSec014 } from "@/lib/avsec/reports/actions";
 import { useOfflineSubmit } from "@/lib/avsec/offline/useOfflineSubmit";
-import { useDraftAutosave, readLocalDraft, clearLocalDraft } from "@/lib/avsec/offline/useDraftAutosave";
+import { useDraftAutosave, readLocalDraft, readLocalDraftTime, clearLocalDraft } from "@/lib/avsec/offline/useDraftAutosave";
+import { saveDraft, clearDraft } from "@/lib/avsec/reports/drafts";
+import { decideDraftResume, shouldClearDraftsAfter, type TimedDraft } from "@/lib/avsec/reports/draft-resume";
 import { combineDateTimeMY } from "@/lib/avsec/datetime";
 import {
   TextField,
@@ -49,9 +51,16 @@ interface UIValues {
   acknowledgement: boolean;
 }
 
-function buildDefaults(profile: Profile, serverDraft?: UIValues | null): UIValues {
-  const draft = readLocalDraft<UIValues>(profile.id, "sec014") ?? serverDraft;
-  if (draft) return draft;
+function localDraftOf(profile: Profile): TimedDraft<UIValues> | null {
+  const data = readLocalDraft<UIValues>(profile.id, "sec014");
+  return data ? { data, savedAt: readLocalDraftTime(profile.id, "sec014") } : null;
+}
+
+function buildDefaults(profile: Profile, serverDraft?: TimedDraft<UIValues> | null): UIValues {
+  const local = localDraftOf(profile);
+  const resume = decideDraftResume(local, serverDraft ?? null);
+  if (resume.kind === "server") return serverDraft!.data;
+  if (resume.kind === "local" || resume.kind === "conflict") return local!.data;
   return {
     station: profile.station ?? "",
     team: profile.team ?? "",
@@ -72,7 +81,7 @@ export function Sec014Form({
   serverDraft,
 }: {
   profile: Profile;
-  serverDraft?: UIValues | null;
+  serverDraft?: TimedDraft<UIValues> | null;
 }) {
   const meta = REPORT_META.sec014;
   const [result, setResult] = useState<
@@ -82,6 +91,13 @@ export function Sec014Form({
   >(null);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [recovery, setRecovery] = useState<{ id: string; message: string; payload: unknown } | null>(null);
+  // Resolved once on the device: a draft on another device that differs from this device's draft is the user's choice, never silently overwritten.
+  const [conflict, setConflict] = useState(() => {
+    const r = decideDraftResume(localDraftOf(profile), serverDraft ?? null);
+    return r.kind === "conflict" ? r : null;
+  });
+  const [draftStatus, setDraftStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
 
   const {
     register,
@@ -96,7 +112,7 @@ export function Sec014Form({
 
   const { fields, append, remove } = useFieldArray({ control, name: "patrols" });
   const values = watch();
-  const { savedAt } = useDraftAutosave(profile.id, "sec014", values);
+  useDraftAutosave(profile.id, "sec014", values, true, { mirror: false });
   const { submit } = useOfflineSubmit("sec014", submitSec014, profile.id);
 
   const onSubmit = handleSubmit(async (v) => {
@@ -132,6 +148,7 @@ export function Sec014Form({
     );
     if (outcome.kind === "submitted") {
       clearLocalDraft(profile.id, "sec014");
+      if (shouldClearDraftsAfter("submitted")) void clearDraft("sec014");
       revokeAttachmentPreviews(attachments);
       setAttachments([]);
       setResult({
@@ -142,7 +159,7 @@ export function Sec014Form({
         attachmentErrors: outcome.attachmentErrors,
       });
     } else if (outcome.kind === "queued") {
-      clearLocalDraft(profile.id, "sec014");
+      // Queued is not confirmed: the draft stays until the server confirms the submission.
       setResult({ kind: "queued", pendingAttachments: attachments.length });
       revokeAttachmentPreviews(attachments);
       setAttachments([]);
@@ -183,6 +200,7 @@ export function Sec014Form({
           onRecovered={(r) => {
             setRecovery(null);
             clearLocalDraft(profile.id, "sec014");
+            void clearDraft("sec014");
             revokeAttachmentPreviews(attachments);
             setAttachments([]);
             setResult({ kind: "submitted", id: r.id, submittedAt: r.submittedAt, reportNo: r.reportNo });
@@ -190,9 +208,23 @@ export function Sec014Form({
           onGiveUp={() => setRecovery(null)}
         />
       )}
+      {conflict && (
+        <div className="card p-3 space-y-2 border border-warning/50" role="alert">
+          <p className="font-mono text-xs font-bold text-foreground">Two different drafts of this report exist</p>
+          <p className="font-mono text-[11px] text-muted-foreground">
+            This device: {conflict.localSavedAt ? new Date(conflict.localSavedAt).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" }) : "time unknown"} ·
+            Saved to your account: {new Date(conflict.serverSavedAt).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" })}
+            {conflict.newer === "unknown" ? "" : ` · the ${conflict.newer === "local" ? "device" : "account"} copy is newer`}
+          </p>
+          <div className="flex gap-2">
+            <button type="button" className="btn-primary text-xs px-3 py-1" onClick={() => { reset(serverDraft!.data); setConflict(null); }}>Use the account draft</button>
+            <button type="button" className="btn-secondary text-xs px-3 py-1" onClick={() => setConflict(null)}>Keep this device&apos;s draft</button>
+          </div>
+        </div>
+      )}
       <FormStepIndicator
         code={meta.code}
-        draftNote={savedAt ? `DRAFT SAVED ${savedAt.toLocaleTimeString()}` : "AUTOSAVING…"}
+        draftNote={draftStatus?.ok ? draftStatus.text : "KEPT ON THIS DEVICE · USE SAVE DRAFT TO RESUME ELSEWHERE"}
         activeIndex={values.acknowledgement ? 2 : 1}
       />
 
@@ -305,6 +337,28 @@ export function Sec014Form({
 
       <AttachmentUpload value={attachments} onChange={setAttachments} disabled={isSubmitting} />
 
+      <button
+        type="button"
+        className="btn-secondary w-full"
+        disabled={savingDraft || isSubmitting}
+        onClick={async () => {
+          setSavingDraft(true);
+          setDraftStatus(null);
+          try {
+            const r = await saveDraft("sec014", watch());
+            if (r.ok) setDraftStatus({ ok: true, text: `DRAFT SAVED TO YOUR ACCOUNT ${new Date(r.savedAt ?? Date.now()).toLocaleTimeString("en-MY", { timeZone: "Asia/Kuala_Lumpur" })}` });
+            else setDraftStatus({ ok: false, text: r.error ?? "The draft could not be saved." });
+          } catch {
+            setDraftStatus({ ok: false, text: "The draft could not be saved. It is still kept on this device." });
+          } finally {
+            setSavingDraft(false);
+          }
+        }}
+      >
+        {savingDraft ? "Saving draft…" : "Save draft"}
+      </button>
+      {draftStatus && <p className={`text-xs font-mono ${draftStatus.ok ? "text-success" : "text-destructive"}`}>{draftStatus.ok ? draftStatus.text : `${draftStatus.text} Your entries are still kept on this device.`}</p>}
+      <p className="font-mono text-[10px] text-muted-foreground">Save draft stores the whole form (not attached photos) so you can continue on another device.</p>
       <button type="submit" className="btn-primary w-full" disabled={isSubmitting}>
         {isSubmitting ? "Submitting…" : "Submit report ▸"}
       </button>
