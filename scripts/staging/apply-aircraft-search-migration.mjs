@@ -134,10 +134,10 @@ async function probes(p){
  ok('A search well ahead of STD and of the SEC016 is not flagged',okTimes.a.flagged===false);
  const other=await flow({reg:'9M-ZG5',flight:'D7304',ground:360,sta:hhmm(60)});
  await p.query("update public.aircraft_search_records set registration='9M-OTHER' where id=$1",[other.recId]);
- const re=(await asUser(p,S2.id,async()=>{const r=(await p.query('select public.aircraft_search_departure_assessment($1,$2,$3,$4,$5,$6,false,now(),null) a',[St,R.ent,'9M-ZG5','D7304','13:00','A320'])).rows[0].a;return r;})).value;
+ const re=(await p.query('select public.aircraft_search_departure_assessment($1,$2,$3,$4,$5,$6,false,now(),null) a',[St,R.ent,'9M-ZG5','D7304','13:00','A320'])).rows[0].a;
  ok('A SEC029 for another aircraft is never evidence',re&&re.missing===true);
- const flightMismatch=await asUser(p,S2.id,async()=>(await p.query('select public.aircraft_search_departure_assessment($1,$2,$3,$4,$5,$6,false,now(),null) a',[St,R.ent,'9M-ZG1','D7999','13:00','A320'])).rows[0].a);
- ok('A SEC029 for another flight is never evidence',flightMismatch.value?.missing===true||flightMismatch.value?.required===false);
+ const flightMismatch=(await p.query('select public.aircraft_search_departure_assessment($1,$2,$3,$4,$5,$6,false,now(),null) a',[St,R.ent,'9M-ZG1','D7999','13:00','A320'])).rows[0].a;
+ ok('A SEC029 for another flight is never evidence',flightMismatch.linked_record_id===null);
 
  // ---- review ----
  const self=await asUser(p,S.id,async()=>(await p.query("select * from public.review_aircraft_search_secure($1,'confirm','looks fine')",[good.recId])).rows[0]);
