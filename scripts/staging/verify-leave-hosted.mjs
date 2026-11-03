@@ -65,7 +65,7 @@ const clientFor = async (label) => {
 let browser;
 try {
   const idOf = async (l) => (await q("select pr.id from public.profiles pr join auth.users u on u.id=pr.id where lower(u.email)=lower($1)", [cred(l).email]))[0]?.id;
-  const dseId = await idOf("dse");
+  const dseId = (await q("select a.profile_id id from public.user_role_assignments a join public.role_definitions r on r.id=a.role_definition_id where r.code='dse' and a.revoked_at is null order by a.profile_id limit 1"))[0]?.id; // scope only: no DSE session credentials exist on staging, so DSE paths are covered by the guarded dry run
   const scope = (await q(`select s.code station, t.name team from public.user_role_assignments a join public.role_definitions r on r.id=a.role_definition_id join public.org_teams t on t.id=a.team_id
     join public.stations s on s.code is not null cross join lateral public.resolve_legacy_station(s.code) rs where rs.station_id=a.station_id and r.code='dse' and a.profile_id=$1 and a.revoked_at is null limit 1`, [dseId]))[0];
   ok("DSE fixture scope resolved", Boolean(scope), scope ? `${scope.station}/${scope.team}` : "");
@@ -80,19 +80,17 @@ try {
     ledger.notices.push(id); save(); return id;
   };
   const row = async (id) => (await q("select approval_status s, end_date::text e, original_end_date::text o, cancellation_kind k, overlap_exception x, cancelled_by from public.absence_notices where id=$1", [id]))[0];
-  const sb = { dse: await clientFor("dse"), om: await clientFor("operation_manager"), maa: await clientFor("maa_boss"), aax: await clientFor("aax_boss") };
+  const sb = { om: await clientFor("operation_manager"), maa: await clientFor("maa_boss"), aax: await clientFor("aax_boss") };
   const rpc = async (c, fn, a) => { const r = await c.rpc(fn, a); return { data: Array.isArray(r.data) ? r.data[0] : r.data, error: r.error }; };
   const review = (c, id, action = "approve") => rpc(c, "review_leave_request_secure", { p_notice_id: id, p_action: action, p_review_notes: "hosted check" });
   const cancel = (c, id, reason = "Operational reassignment") => rpc(c, "cancel_approved_leave_secure", { p_notice_id: id, p_reason: reason });
 
   // ---- unpaid routing ----
   const two = await add(maaUser.id, "unpaid", 20, 21);
-  ok("unpaid 2 days: DSE cannot finalise", /Operation Manager/.test((await review(sb.dse, two)).error?.message ?? ""));
   ok("unpaid 2 days: Boss cannot finalise", /Operation Manager/.test((await review(sb.maa, two)).error?.message ?? ""));
   ok("unpaid 2 days: Operation Manager finalises", (await review(sb.om, two)).data?.result_status === "approved");
   const three = await add(maaUser.id, "unpaid", 20, 22);
   ok("unpaid 3 days: Operation Manager cannot finalise", /MAA Boss/.test((await review(sb.om, three)).error?.message ?? ""));
-  ok("unpaid 3 days: DSE cannot finalise", Boolean((await review(sb.dse, three)).error));
   ok("unpaid 3 days: other entity's Boss cannot finalise", Boolean((await review(sb.aax, three)).error));
   ok("unpaid 3 days: own entity Boss rejects (final)", (await review(sb.maa, three, "reject")).data?.result_status === "rejected");
   const aax = await add(aaxUser.id, "unpaid", 30, 33);
@@ -102,30 +100,29 @@ try {
   // ---- same-day overlap exception ----
   for (const u of applicants.slice(0, 3)) await add(u.id, "annual", 50, 52, "approved");
   const fourth = await add(applicants[3].id, "annual", 51, 51);
-  ok("fourth same-day officer: DSE refused", /capacity reached/.test((await review(sb.dse, fourth)).error?.message ?? ""));
   const om4 = await review(sb.om, fourth);
   ok("fourth same-day officer: Operation Manager approves, exception recorded", om4.data?.result_status === "approved" && (await row(fourth)).x === true);
 
   // ---- cancellation ----
   const fut = await add(applicants[4].id, "annual", 70, 72, "approved");
-  ok("cancel needs a reason", /reason/.test((await cancel(sb.dse, fut, "no")).error?.message ?? ""));
   ok("Operation Manager cannot cancel an ordinary approval", /exception/.test((await cancel(sb.om, fut)).error?.message ?? ""));
   ok("Boss has no cancellation authority", Boolean((await cancel(sb.maa, fut)).error));
-  ok("DSE cancels future leave in full", (await cancel(sb.dse, fut)).data?.result_kind === "full" && (await row(fut)).s === "cancelled");
-  ok("repeated cancellation refused", /already been cancelled/.test((await cancel(sb.dse, fut)).error?.message ?? ""));
-  const under = await add(applicants[5].id, "annual", -3, 4, "approved");
+  const exF = await add(applicants[5].id, "annual", 70, 72, "approved", true);
+  ok("cancel needs a reason", /reason/.test((await cancel(sb.om, exF, "no")).error?.message ?? ""));
+  ok("Operation Manager cancels a recorded exception in full", (await cancel(sb.om, exF)).data?.result_kind === "full" && (await row(exF)).s === "cancelled");
+  ok("repeated cancellation refused", /already been cancelled/.test((await cancel(sb.om, exF)).error?.message ?? ""));
+  const under = await add(applicants[6].id, "annual", -3, 4, "approved", true);
   const today = (await q("select (now() at time zone 'Asia/Kuala_Lumpur')::date::text d"))[0].d;
   const plus4 = (await q("select ((now() at time zone 'Asia/Kuala_Lumpur')::date+4)::text d"))[0].d;
-  const u1 = await cancel(sb.dse, under);
+  const u1 = await cancel(sb.om, under);
   const ur = await row(under);
   ok("underway: today and earlier stay taken, only tomorrow onward released", u1.data?.result_kind === "partial" && ur.e === today && ur.o === plus4 && ur.s === "approved");
-  ok("underway leave cannot be cancelled twice", Boolean((await cancel(sb.dse, under)).error));
-  const done = await add(applicants[6].id, "annual", -5, -1, "approved");
-  ok("completed leave cannot be cancelled", /Completed/.test((await cancel(sb.dse, done)).error?.message ?? ""));
-  const exc = await add(applicants[7].id, "annual", 90, 91, "approved", true);
-  ok("Operation Manager cancels a recorded exception", (await cancel(sb.om, exc)).data?.result_kind === "full");
-  ok("cancelled leave notifies the officer", (await q("select count(*)::int n from public.user_notifications where dedup_key=$1", [`phase8_leave_${exc}_cancelled`]))[0].n === 1);
-  ok("cancellation is audited with the reason", (await q("select count(*)::int n from public.phase8_audit_log where entity_id=$1 and action='leave_cancelled_directly'", [exc]))[0].n === 1);
+  ok("underway leave cannot be cancelled twice", Boolean((await cancel(sb.om, under)).error));
+  const done = await add(applicants[7].id, "annual", -5, -1, "approved", true);
+  ok("completed leave cannot be cancelled", /Completed/.test((await cancel(sb.om, done)).error?.message ?? ""));
+  ok("cancelled leave notifies the officer", (await q("select count(*)::int n from public.user_notifications where dedup_key=$1", [`phase8_leave_${exF}_cancelled`]))[0].n === 1);
+  ok("cancellation is audited with the reason", (await q("select count(*)::int n from public.phase8_audit_log where entity_id=$1 and action='leave_cancelled_directly'", [exF]))[0].n === 1);
+  console.log("NOTE: DSE-session paths (own team cancel, other-team refusal, DSE refused on unpaid/fourth overlap) are NOT exercised hosted: staging has no DSE credentials. They are covered by the guarded dry run (24 probes with a real DSE identity).");
 
   // ---- UI: the DSE sees the control on the real page, mobile and desktop ----
   const target = await add(applicants[8].id, "annual", 100, 101, "approved");
@@ -135,15 +132,15 @@ try {
     const page = await ctx.newPage();
     await page.goto(`${base}/login?x-vercel-protection-bypass=${bypass}&x-vercel-set-bypass-cookie=true`, { waitUntil: "domcontentloaded" });
     await page.goto(`${base}/login`, { waitUntil: "domcontentloaded" });
-    await page.fill('input[name="email"]', cred("dse").email);
-    await page.fill('input[name="password"]', cred("dse").password);
+    await page.fill('input[name="email"]', cred("operation_manager").email);
+    await page.fill('input[name="password"]', cred("operation_manager").password);
     await page.getByRole("button", { name: /Sign in with Credentials/i }).click();
     await page.waitForURL((u) => !/\/login/.test(u.pathname), { timeout: 25000 }).catch(() => {});
     await page.goto(`${base}/avsec/admin/absences`, { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
     const btn = page.getByRole("button", { name: /Cancel approved leave/i }).first();
     const shown = await btn.waitFor({ timeout: 15000 }).then(() => true).catch(() => false);
-    ok(`${name}: DSE sees the cancel-approved-leave control`, shown);
+    ok(`${name}: Operation Manager sees the cancel-approved-leave control`, shown);
     if (shown && name === "desktop") {
       await btn.click();
       const confirm = page.getByRole("button", { name: /Confirm cancellation/i }).first();
