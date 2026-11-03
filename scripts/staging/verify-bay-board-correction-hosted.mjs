@@ -136,18 +136,19 @@ try {
     await page.waitForURL((u) => !/\/login/.test(u.pathname), { timeout: 25000 }).catch(() => {});
     await page.goto(`${base}/avsec/bay-board`, { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("networkidle", { timeout: 25000 }).catch(() => {});
-    const btn = page.getByRole("button", { name: /Correct entry/i }).first();
+    const card = page.locator("div.card", { hasText: `9M-${TAG}F` }).first();
+    const btn = card.getByRole("button", { name: /Correct entry/i }).first();
     ok(`${name}: the board offers "Correct entry" and no one-click Clear`, (await btn.waitFor({ timeout: 15000 }).then(() => true).catch(() => false)) && (await page.getByRole("button", { name: /^Clear$/i }).count()) === 0);
     await btn.click();
-    const confirm = page.getByRole("button", { name: /Confirm correction/i }).first();
+    const confirm = card.getByRole("button", { name: /Confirm correction/i }).first();
     ok(`${name}: the correction cannot be confirmed without a reason`, await confirm.isDisabled());
     ok(`${name}: it says the entry is recorded as a correction, not a completed search`, /recorded as a correction, not as a completed search/.test(((await page.textContent("body")) ?? "").replace(/\s+/g, " ")));
     ok(`${name}: no horizontal page scroll`, (await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 1);
     if (name === "desktop") {
-      await page.locator("textarea").last().fill("Entered for the wrong station by mistake during the UAT run");
+      await card.locator("textarea").fill("Entered for the wrong station by mistake during the UAT run");
       await confirm.click();
-      await page.waitForTimeout(3000);
-      ok("desktop: an authorised correction through the page records it as a correction", (await state(shown)).cleared_kind === "correction");
+      for (let i = 0; i < 30 && (await state(shown)).cleared_kind !== "correction"; i += 1) await page.waitForTimeout(1000); // the first server action on a cold deployment can be slow
+      ok("desktop: an authorised correction through the page records it as a correction", (await state(shown)).cleared_kind === "correction", (await card.locator(".text-destructive").allTextContents().catch(() => [])).join(" | ").slice(0, 160));
     }
     await ctx.close();
   }
