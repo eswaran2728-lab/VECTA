@@ -142,7 +142,8 @@ async function probes(p){
  // ---- review ----
  const self=await asUser(p,S.id,async()=>(await p.query("select * from public.review_aircraft_search_secure($1,'confirm','looks fine')",[good.recId])).rows[0]);
  ok('Self-review is refused',self.value?.ok===false&&self.value.code!=='OK');
- const noDutyRev=await (async()=>{await p.query("update public.duty_records set check_out_at=now() where profile_id=$1",[R.uid]);const r=await asUser(p,R.uid,async()=>(await p.query("select * from public.review_aircraft_search_secure($1,'confirm','looks fine')",[good.recId])).rows[0]);await openDuty(R.uid);return r;})();
+ const offDutyReviewer=dse.find(x=>x.station===St&&x.uid!==R.uid);assert.ok(offDutyReviewer,'A second reviewer-eligible officer (not checked in) is required');
+ const noDutyRev=await asUser(p,offDutyReviewer.uid,async()=>(await p.query("select * from public.review_aircraft_search_secure($1,'confirm','looks fine')",[good.recId])).rows[0]);
  ok('An off-duty reviewer is refused',noDutyRev.value?.code==='OFF_DUTY');
  const aso=await asUser(p,S2.id,async()=>(await p.query("select * from public.review_aircraft_search_secure($1,'confirm','looks fine')",[good.recId])).rows[0]);
  ok('A non-supervisory officer is refused',aso.value?.code==='NOT_ELIGIBLE');
