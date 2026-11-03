@@ -38,7 +38,7 @@ async function asUser(p,uid,cb){
 // Same impersonation but the effects are KEPT (inside the outer rolled-back transaction); used where a later probe depends on the earlier writes.
 async function asUserKeep(p,uid,cb){
  await p.query("select set_config('request.jwt.claims',$1,true),set_config('role','authenticated',true)",[JSON.stringify({sub:uid,role:'authenticated'})]);
- try{return {value:await cb()};}catch(e){throw e;}finally{await p.query("select set_config('role','postgres',true)");}
+ let failed=null;try{return {value:await cb()};}catch(e){failed=e;console.error('probe step failed:',e.message);throw e;}finally{if(!failed)await p.query("select set_config('role','postgres',true)");}
 }
 // Inserts a row filling every NOT NULL column that has no default with a type-appropriate value, then applies overrides.
 async function fixture(p,table,over){
