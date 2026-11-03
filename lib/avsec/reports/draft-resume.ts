@@ -1,3 +1,10 @@
+/** JSON with object keys sorted, so two drafts with the same content compare equal whatever order a database returned the keys in. */
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
+  if (v && typeof v === "object") return `{${Object.keys(v as object).sort().map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`).join(",")}}`;
+  return JSON.stringify(v) ?? "null";
+}
+
 /** A saved draft with the time it was saved (ISO). An empty time means it was never recorded. */
 export interface TimedDraft<T = unknown> {
   data: T;
@@ -18,7 +25,7 @@ export function decideDraftResume(local: TimedDraft | null, server: TimedDraft |
   if (!local && !server) return { kind: "none" };
   if (local && !server) return { kind: "local" };
   if (!local && server) return { kind: "server" };
-  if (JSON.stringify(local!.data) === JSON.stringify(server!.data)) return { kind: "local" };
+  if (canonical(local!.data) === canonical(server!.data)) return { kind: "local" };
   const l = Date.parse(local!.savedAt);
   const s = Date.parse(server!.savedAt);
   const newer = Number.isFinite(l) && Number.isFinite(s) ? (l >= s ? "local" : "server") : "unknown";

@@ -37,3 +37,9 @@ test("drafts are cleared only after a confirmed submission, never when queued, f
   assert.equal(shouldClearDraftsAfter("failed"), false);
   assert.equal(shouldClearDraftsAfter("recovery"), false);
 });
+
+test("the server stores drafts as jsonb, which reorders keys: identical content in a different key order is still not a conflict", () => {
+  const local = { data: { remark: "x", patrols: [{ location: "A", description: "d" }], time_in: "08:00" }, savedAt: "2026-11-03T10:00:00.000Z" };
+  const server = { data: { time_in: "08:00", patrols: [{ description: "d", location: "A" }], remark: "x" }, savedAt: "2026-11-03T11:00:00.000Z" };
+  assert.deepEqual(decideDraftResume(local, server), { kind: "local" });
+});
