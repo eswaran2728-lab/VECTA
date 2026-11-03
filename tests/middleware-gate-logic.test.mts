@@ -97,10 +97,12 @@ test("todayISODateMY: calculates correct Malaysia duty-date across midnight boun
   assert.notEqual(defectiveDateAt0759, todayISODateMY(t0759), "UTC calculation diverges from Malaysia date at 07:59 MYT");
 });
 
-test("middleware check-in gate uses todayISODateMY() instead of raw UTC date", () => {
+test("the middleware no longer gates off-duty staff; the check-in date rule lives in the server-side check, on the Malaysia date", () => {
   const code = fs.readFileSync(new URL("../lib/supabase/middleware.ts", import.meta.url), "utf8");
-  assert.match(code, /const today = todayISODateMY\(\);/, "middleware uses established Malaysia-date helper");
-  assert.doesNotMatch(code, /const today = new Date\(\)\.toISOString\(\)\.slice\(0, 10\);/, "middleware does not use raw UTC date");
+  assert.doesNotMatch(code, /duty_records/, "no check-in query in the edge middleware");
+  assert.doesNotMatch(code, /new Date\(\)\.toISOString\(\)\.slice\(0, 10\)/, "no raw UTC date");
+  const queries = fs.readFileSync(new URL("../lib/avsec/duty/checkin-queries.ts", import.meta.url), "utf8");
+  assert.match(queries, /\.eq\("duty_date", todayISODateMY\(\)\)/, "the open-duty check uses the Malaysia date");
 });
 
 

@@ -234,22 +234,25 @@ async function assertDutyWindow(where) {
   } finally { await client.end(); }
 }
 
-/** Before any duty fixture exists: every rostered officer is held at the duty gate on its direct routes. */
+/** Before any duty fixture exists: approved officers browse every page their role allows WITHOUT checking in; submission and physical work are still refused server-side. */
 async function sectionDutyGate(browser) {
-  console.log("\n=== B0. Duty-gate behaviour BEFORE duty (no duty fixture exists yet) ===");
-  if (ledger.duty.length) { check("duty", "no duty fixture exists before the gate section", false, `${ledger.duty.length} present`); return; }
+  console.log("\n=== B0. Off-duty access BEFORE duty (no duty fixture exists yet): browsing is open, physical work is refused ===");
+  if (ledger.duty.length) { check("duty", "no duty fixture exists before the off-duty section", false, `${ledger.duty.length} present`); return; }
   for (const label of DUTY_LABELS) {
     const a = acct(label);
     const s = await newSession(browser, VIEWPORTS.desktop, `${label}/gate`);
     try {
       await login(s.page, a, label);
-      console.log(`INFO: ${label} signs in (before duty) and lands on ${pathOf(s.page)}; the gate is asserted on its protected routes below`);
+      console.log(`INFO: ${label} signs in (before duty) and lands on ${pathOf(s.page)}`);
       for (const route of ["/avsec/reports/lookup", "/avsec/discussions", "/avsec/bay-board"]) {
         await s.page.goto(`${base}${route}`, { waitUntil: "domcontentloaded" });
         await s.page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
-        check("duty", `${label}: before duty, ${route} redirects to the duty gate`, pathOf(s.page) === "/avsec/duty" && s.page.url().includes("next="), pathOf(s.page));
+        check("duty", `${label}: before duty, ${route} opens without check-in`, pathOf(s.page) === route && !s.page.url().includes("next="), pathOf(s.page));
       }
-    } catch (e) { check("duty", `${label} gate session`, false, String(e.message).slice(0, 100)); }
+      // physical work and submission stay refused server-side without an open check-in, even by a direct call
+      const refused = await rpc(label, "start_aircraft_search_secure", { p_flight: "D7000", p_registration: "9M-UAT", p_station: man(label)?.scope?.station ?? "", p_aircraft_type: "A320", p_lat: 3.1, p_lng: 101.7, p_accuracy_m: 10, p_unavailable_reason: null }).catch((e) => ({ error: { message: String(e.message) } }));
+      check("duty", `${label}: starting an aircraft search without an open duty check-in is refused`, Boolean(refused.error), refused.error?.message?.slice(0, 80) ?? "accepted");
+    } catch (e) { check("duty", `${label} off-duty session`, false, String(e.message).slice(0, 100)); }
     recordIssues(`${label}/gate`, s.issues);
     await s.ctx.close();
   }
@@ -283,12 +286,12 @@ async function sectionAuthAndRoutes(browser) {
     try {
       await login(s.page, a, label);
       const landed = pathOf(s.page);
-      // A rostered officer without an open duty check-in is sent to the duty check-in page: that gate must stay in force.
+      // Approved shift staff land on their workspace whether or not they have checked in (check-in only gates submission and physical work).
       const rostered = m.kind !== "negative" && isRostered(m.roleCode);
       const hasDuty = ledger.duty.some((d) => d.label === label);
-      const dutyGated = rostered && !hasDuty && landed === "/avsec/duty";
+      const dutyGated = false;
       const want = dutyGated ? "/avsec/duty" : expectedLanding(m);
-      check("auth", `${label} signs in and lands on ${want}${dutyGated ? " (duty check-in gate: no open duty fixture)" : ""}`, landed === want, `landed ${landed}`);
+      check("auth", `${label} signs in and lands on ${want}${dutyGated ? " (off duty is allowed)" : ""}`, landed === want, `landed ${landed}`);
       if (dutyGated) { totals.inconclusive = totals.inconclusive ?? { pass: 0, fail: 0 }; totals.inconclusive.pass += 1; console.log(`INFO [inconclusive] ${label}: route authorization not exercised (rostered, no duty fixture by design)`); }
       await captureToken(s.ctx, label);
       const heading = await headingOf(s.page);
@@ -318,11 +321,9 @@ async function sectionAuthAndRoutes(browser) {
           const p = pathOf(s.page); const hd = await headingOf(s.page);
           const txt = (await s.page.textContent("body").catch(() => "")) ?? "";
           if (p === want && hd.length > 0 && !/application error/i.test(txt)) opened += 1;
-          else if (p === "/avsec/duty" && isRostered(m.roleCode) && !ledger.duty.some((d) => d.label === label)) gatedHere += 1; // the duty check-in gate redirected (kept in force)
           else bad.push(`${h}->${p}${hd ? "" : " (no heading)"}`);
         }
-        check("routes", `${label}: ${opened}/${hrefs.length} navigation destinations open with a heading${gatedHere ? ` (+${gatedHere} behind the duty check-in gate)` : ""}`, bad.length === 0, bad.slice(0, 4).join(" "));
-        if (gatedHere) { totals.inconclusive = totals.inconclusive ?? { pass: 0, fail: 0 }; totals.inconclusive.pass += gatedHere; }
+        check("routes", `${label}: ${opened}/${hrefs.length} navigation destinations open with a heading`, bad.length === 0, bad.slice(0, 4).join(" "));
         if (isRostered(m.roleCode) && ledger.duty.some((d) => d.label === label)) {
           for (const route of ["/avsec/admin/users", "/super-admin", "/avsec/entity-reports", "/icms/admin/final-pdfs", "/avsec/dashboard"]) {
             await s.page.goto(`${base}${route}`, { waitUntil: "domcontentloaded" });
@@ -633,7 +634,7 @@ async function main() {
     else {
       // 1) the gate before any duty fixture exists, 2) controlled fixture creation, 3) everything else on duty
       if (!argVal("sections")) {
-        await run("duty gate (before duty)", () => sectionDutyGate(browser));
+        await run("off-duty access (before duty)", () => sectionDutyGate(browser));
         createDutyFixtures();
         await assertDutyWindow("start of the on-duty sections");
       }

@@ -47,9 +47,9 @@ This runbook provides actionable troubleshooting procedures for 24/7 aviation se
 
 ## 5. Attendance & Check-In Gate Failures
 
-### Symptom: Operational staff locked out of AVSEC modules with check-in gate prompt
+### Symptom: Staff cannot submit a report or do physical work ("check in for duty")
 - **Check:** Check if staff checked in on `/avsec/duty` for today's date (`duty_date = CURRENT_DATE`).
-- **Likely Cause:** Shift staff have not completed their mandatory daily check-in or duty record has `check_in_at = NULL`.
+- **Likely Cause:** Approved staff can sign in and open every page their role allows without checking in. Submitting a security report and recording physical work (aircraft search start/finish, CaterLink checkpoints, handover completion) need an open check-in; the staff member has not checked in today or the duty record has `check_in_at = NULL` or is already checked out.
 - **Safe Action:** Direct staff to `/avsec/duty` to complete check-in with GPS verification.
 - **Escalate When:** Geolocation fails persistently due to airport indoor shielding (use manual zone fallback if authorized).
 

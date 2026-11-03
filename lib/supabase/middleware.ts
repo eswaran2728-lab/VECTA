@@ -6,9 +6,7 @@ import {
   isOperationalPathForbiddenForSuperAdmin,
   isReadinessPath,
   effectiveGateRole,
-  isShiftBasedAccess,
   isMainEnforcementPathForbidden,
-  todayISODateMY,
 } from "./middleware-gate-logic";
 import { deriveCanonicalAccess, assignmentsFromRpcRows } from "../auth/canonical-access";
 import {
@@ -27,12 +25,8 @@ import {
 // role columns/enums are untouched, see that migration's header comment
 // for why a rename-in-place was too risky to do live.
 
-// Seniority/vendor check-in exemptions and the admin-path gate now live in
-// ./middleware-gate-logic (pure, framework-free — see that module and
-// tests/middleware-gate-logic.test.mts).
-
-// so / aso / dse are all subject to the check-in gate regardless of
-// duty_post/station — there is no station-based exemption.
+// Approved shift staff may browse their authorized pages off duty. Server
+// actions still require an open check-in for submissions and physical work.
 
 // No self-registration: accounts are admin/management-created only, via
 // the Admin panel (/avsec/admin/users, app/(icms)/icms/admin/users) —
@@ -286,17 +280,6 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // ICMS-origin accounts (public.users, no profiles row) have no duty
-    // check-in concept. Canonical accounts are subject to the check-in gate
-    // only when they hold a shift-based (ASO/SO/DSE rank) role.
-    const icmsOnlyExempt = !avsecProfile && Boolean(icmsProfile);
-    const checkinRequired = access.hasAssignment ? isShiftBasedAccess(access) : false;
-    const exempt = !checkinRequired || icmsOnlyExempt || path.startsWith("/icms") || path.startsWith("/caterlink") || path.startsWith("/super-admin");
-    const alreadyOnCheckin =
-      path.startsWith("/avsec/duty") ||
-      path.startsWith("/avsec/profile-setup") ||
-      path.startsWith("/avsec/pending-approval");
-
     // Main Enforcement: dedicated workspace only (the generic legacy management surface is closed, deny by default).
     if (path.startsWith("/avsec") && isMainEnforcementPathForbidden(path, access)) {
       const url = request.nextUrl.clone();
@@ -314,42 +297,6 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    if (!exempt && !alreadyOnCheckin && path.startsWith("/avsec")) {
-      const today = todayISODateMY();
-      const { data: dutyRecord, error } = await supabase
-        .from("duty_records")
-        .select("check_in_at, check_out_at")
-        .eq("profile_id", user.id)
-        .eq("duty_date", today)
-        .not("check_in_at", "is", null)
-        .order("check_in_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      // duty_records now exists in this shared project (migrated from
-      // ICMS/created by AVSEC — see the merge report), so a query error
-      // here is a real failure, not "table doesn't exist yet". Fail
-      // CLOSED: block access and log, rather than silently letting a
-      // non-exempt user through with no check-in record.
-      if (error) {
-        console.error("[middleware] duty_records check-in gate query failed", {
-          userId: user.id,
-          path,
-          error: error.message,
-        });
-        const url = request.nextUrl.clone();
-        url.pathname = "/login";
-        url.searchParams.set("error", "checkin-gate-unavailable");
-        return NextResponse.redirect(url);
-      }
-
-      if (!dutyRecord) {
-        const url = request.nextUrl.clone();
-        url.pathname = "/avsec/duty";
-        url.searchParams.set("next", path);
-        return NextResponse.redirect(url);
-      }
-    }
   }
 
   return supabaseResponse;

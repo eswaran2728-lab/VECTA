@@ -52,7 +52,7 @@ decision and needs your review.**
   RPC returns no row, so the same "No workspace assigned yet" state.
 * Canonical `super_admin` -> `/super-admin` only; kept off operational routes.
 * Canonical roles with no legacy rank land on `/avsec/my-dashboard`.
-* Duty check-in gate applies only to roles whose dashboard includes the duty terminal
+* Off duty, approved staff can sign in and open every page their role already allows (no check-in redirect). Check-in is required, server-side, only to SUBMIT a security report and to record physical work; it also still drives attendance and overtime. The duty terminal belongs to roles whose dashboard includes it
   (`aso, so, sso, dse, sat_aso, profiling_so, profiling_aso`).
 * Email text and `user_metadata` no longer route or authorise anyone (the old `includes("driver")` etc. heuristics are gone).
 
