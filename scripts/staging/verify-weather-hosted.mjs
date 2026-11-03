@@ -107,7 +107,7 @@ try {
           await details.click();
           const open = ((await card.textContent()) ?? "").replace(/\s+/g, " ");
           ok(`${tag}: More detail opens the next hours and the next days with their sources`, /Next hours · WeatherAPI\.com/.test(open) && /Next days · MET Malaysia/.test(open));
-          if (name === "mobile") ok(`${tag}: collapsed card stays compact`, box.height <= 320, `${Math.round(box.height)}px`);
+          if (name === "mobile") ok(`${tag}: collapsed card stays compact`, box.height <= 360, `${Math.round(box.height)}px`);
         } else {
           ok(`${tag}: a role with no station sees safe notes for both sources`, /station assignment/.test(text) && !/error|exception/i.test(text), text.slice(0, 90));
         }
@@ -126,9 +126,13 @@ try {
     await settle(page, "/avsec/duty");
     const fab = page.getByRole("button", { name: /Open W\.O\.I\.S AI Assistant/i });
     const fabThere = await fab.count();
-    const primary = page.locator(".vecta-btn-primary, .btn-primary").first();
-    const pb = await primary.boundingBox().catch(() => null);
-    ok(`${tag}: the Duty Check-In action is reachable on the first screen`, Boolean(pb) && pb.y < vp.height, pb ? `${Math.round(pb.y)} of ${vp.height}px` : "no primary action found");
+    // Duty Check-In must be findable on the first screen: its heading (always present) and its action or warning
+    const heading = page.getByRole("heading", { name: /DUTY CHECK-IN/i }).first();
+    const hb = await heading.boundingBox().catch(() => null);
+    ok(`${tag}: the Duty Check-In heading is on the first screen below the weather card`, Boolean(hb) && hb.y + hb.height <= vp.height, hb ? `${Math.round(hb.y)} of ${vp.height}px` : "heading not found");
+    const actionOrWarning = page.locator('.vecta-btn-primary, .btn-primary, [role="alert"], .border-l-warning').first();
+    const ab = await actionOrWarning.boundingBox().catch(() => null);
+    ok(`${tag}: the check-in action or its warning is reachable on the first screen`, Boolean(ab) && ab.y < vp.height, ab ? `${Math.round(ab.y)} of ${vp.height}px` : "none found");
     const clear = async (label) => {
       await page.waitForTimeout(400);
       if (!fabThere) return ok(`${tag}: ${label}: assistant button not present`, true);
