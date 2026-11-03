@@ -87,7 +87,7 @@ async function probes(p){
    return {first,second,after};
   });};
  const good=await full(B.id,{reuse:true});ok('Valid scan completes once with recipient evidence',good.value?.first.ok===true&&good.value.after.handover_status==='completed'&&good.value.after.acknowledged_by===B.id&&good.value.after.done);
- ok('Replay of a consumed QR is refused',good.value?.second.ok===false&&good.value.second.code==='CONSUMED');
+ ok('Replay of a consumed QR is refused',good.value?.second.ok===false&&good.value.second.code==='NOT_PENDING');
  const thirdId=(await p.query("select id from public.profiles where status='approved' and id not in ($1,$2) limit 1",[A.id,B.id])).rows[0].id;
  const third=await full(thirdId);ok('Third person cannot complete',third.value?.first.code==='NOT_AVAILABLE');
  const stale=await full(B.id,{ageS:31});ok('Stale recipient location refused and stays pending',stale.value?.first.code==='RECIPIENT_LOCATION_STALE'&&stale.value.after.handover_status==='pending');
