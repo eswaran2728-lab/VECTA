@@ -10,7 +10,8 @@ import { SuperAdminDashboard } from "@/components/dashboard/SuperAdminDashboard"
 import { GenericLinkHubDashboard } from "@/components/dashboard/GenericLinkHubDashboard";
 import { LINK_HUB_CONFIG } from "@/lib/dashboard/linkHubConfig";
 import { capabilityFor } from "@/lib/auth/role-capabilities";
-import { StationWeatherCard } from "@/components/weather/StationWeatherCard";
+import { Suspense } from "react";
+import { StationWeatherCard, StationWeatherSkeleton } from "@/components/weather/StationWeatherCard";
 
 /**
  * Phase 7 dashboard-context entry point (/avsec/my-dashboard). Placed
@@ -123,7 +124,9 @@ export default async function DashboardEntryPage(props: { searchParams: Promise<
   return (
     <>
       <div className="mx-auto max-w-4xl px-4 pt-4">
-        <StationWeatherCard station={profile.station} />
+        <Suspense fallback={<StationWeatherSkeleton />}>
+          <StationWeatherCard station={profile.station} />
+        </Suspense>
       </div>
       <DashboardEntryContent {...props} />
     </>
