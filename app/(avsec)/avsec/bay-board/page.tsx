@@ -7,6 +7,7 @@ import { entityLeadershipFromRoleCodes } from "@/lib/dashboard/entity-leadership
 import { AddBayBoardForm } from "@/components/avsec/forms/AddBayBoardForm";
 import { BayBoardList } from "@/components/avsec/bay-board/BayBoardList";
 import { EntityBayBoard } from "@/components/avsec/bay-board/EntityBayBoard";
+import { StationWeatherCard } from "@/components/weather/StationWeatherCard";
 
 export default async function BayBoardPage({ searchParams: searchParamsPromise }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const profile = await requireProfile();
@@ -35,6 +36,7 @@ export default async function BayBoardPage({ searchParams: searchParamsPromise }
     <main className="min-h-screen pb-32">
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
         <h1 className="font-display text-xl font-bold">Bay Board</h1>
+        <StationWeatherCard station={profile.station} />
         <p className="text-sm text-slate-600 dark:text-slate-400">
           All originating flights, including aircraft brought into service for the first flight of the day, aircraft parked overnight, night stop aircraft, long layover aircraft, or unattended aircraft, shall undergo a security search before Scheduled Time of Departure (STD).
           Arrival SEC016 submissions automatically place aircraft on this board, and Departure SEC016 submissions clear them.

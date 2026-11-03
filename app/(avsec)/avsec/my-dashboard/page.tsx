@@ -10,6 +10,7 @@ import { SuperAdminDashboard } from "@/components/dashboard/SuperAdminDashboard"
 import { GenericLinkHubDashboard } from "@/components/dashboard/GenericLinkHubDashboard";
 import { LINK_HUB_CONFIG } from "@/lib/dashboard/linkHubConfig";
 import { capabilityFor } from "@/lib/auth/role-capabilities";
+import { StationWeatherCard } from "@/components/weather/StationWeatherCard";
 
 /**
  * Phase 7 dashboard-context entry point (/avsec/my-dashboard). Placed
@@ -29,7 +30,7 @@ import { capabilityFor } from "@/lib/auth/role-capabilities";
  *   sub-cases aside) falls back to the legacy dashboard -- see the Phase 7
  *   closure report for the exact classification of every Phase 3 role.
  */
-export default async function DashboardEntryPage({
+async function DashboardEntryContent({
   searchParams: searchParamsPromise,
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
@@ -113,5 +114,18 @@ export default async function DashboardEntryPage({
         <p className="font-mono text-xs text-muted-foreground">Contact your administrator. Nothing else is shown until a workspace exists for this role.</p>
       </section>
     </div>
+  );
+}
+
+/** Every role lands here, so the station forecast sits above whichever dashboard the role gets. A role with no station sees a short note instead. */
+export default async function DashboardEntryPage(props: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const profile = await requireProfile();
+  return (
+    <>
+      <div className="mx-auto max-w-4xl px-4 pt-4">
+        <StationWeatherCard station={profile.station} />
+      </div>
+      <DashboardEntryContent {...props} />
+    </>
   );
 }

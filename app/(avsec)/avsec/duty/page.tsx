@@ -4,6 +4,7 @@ import { getTodayRoster, getTodayDutyRecord } from "@/lib/avsec/duty/checkin-que
 import { getZonesForStation } from "@/lib/avsec/duty/zone-queries";
 import { getTodayAbsenceNotice } from "@/lib/avsec/duty/absence-queries";
 import { CheckInScreen } from "@/components/avsec/duty/CheckInScreen";
+import { StationWeatherCard } from "@/components/weather/StationWeatherCard";
 
 export default async function DutyPage() {
   const profile = await requireRouteAccess("/avsec/duty", DUTY_ROLES);
@@ -21,6 +22,7 @@ export default async function DutyPage() {
   return (
     <main className="min-h-screen bg-background pb-28">
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
+        <StationWeatherCard station={profile.station} />
         <div className="flex items-center justify-between gap-2">
           <h1 className="font-display text-base font-extrabold tracking-[0.06em] text-foreground">
             DUTY CHECK-IN
