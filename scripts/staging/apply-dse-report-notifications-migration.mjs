@@ -70,8 +70,8 @@ async function probes(p){
  await p.query('savepoint real');
  const rid=await ins(sub.id,'[ROLLED-BACK DSE NOTIFICATION PROBE]');
  ok('A real submitted SEC014 alerts the scoped DSE',(await p.query("select count(*)::int n from public.user_notifications where recipient_profile_id=$1 and dedup_key=$2",[D.uid,'dse_report:report_sec014:'+rid+':'+D.uid])).rows[0].n===1);
- const seen=await asUser(p,D.uid,async()=>(await p.query('select id from public.report_sec014 where id=$1',[rid])).rows.length);
- ok('The DSE can open the report the alert links to (row-level security)',seen.value===1);
+ const seen=await asUser(p,D.uid,async()=>(await p.query("select public.can_view_report('report_sec014',$1) ok",[rid])).rows[0].ok);
+ ok('The DSE is authorised to view the report the alert links to (can_view_report)',seen.value===true);
  await p.query('rollback to savepoint real');await p.query('release savepoint real');
  if(noEntity){
   await p.query('savepoint real2');
