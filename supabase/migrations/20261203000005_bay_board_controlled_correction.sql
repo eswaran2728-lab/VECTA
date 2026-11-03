@@ -3,10 +3,10 @@
 -- Before: any station-visible user could UPDATE bay_board directly (the "Clear" button, or a crafted request) and make a required-search aircraft disappear as if
 -- normally cleared. Now no client can write cleared_at, search state or any clearing column. An aircraft leaves the board only through the departure/search rules
 -- (apply_departure_search_rules, review_aircraft_search_secure) or through ONE controlled, audited correction path for a genuinely incorrect entry:
---   * a required reason (10+ characters);
---   * supervisor authority: an SO, SSO or DSE of the station, or the Operation Manager;
+--   * a required reason (10+ characters),
+--   * supervisor authority: an SO, SSO or DSE of the station, or the Operation Manager,
 --   * an entry whose search is still required and unconfirmed can only be corrected by a DSE of the station or the Operation Manager, and never by the officer
---     who created the entry;
+--     who created the entry,
 --   * the entry is marked as a CORRECTION (never as a normal clear, never as a confirmed search), kept in bay_board_corrections, audited, and a required-but-
 --     unconfirmed search additionally becomes an exception record in the aircraft search review queue.
 
