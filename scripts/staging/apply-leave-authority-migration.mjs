@@ -56,8 +56,9 @@ async function probes(p){
  const add=async(user,type,off0,off1,status='pending',team=D.team,extra=false)=>(await p.query(`insert into public.absence_notices(user_id,staff_name,role,station,team,duty_date,shift_start_time,remarks,leave_type,start_date,end_date,approval_status,status,overlap_exception)
   values($1,'[ROLLED-BACK LEAVE PROBE]','ASO',$2,$3,current_date,now(),'[ROLLED-BACK LEAVE PROBE]',$4,(now() at time zone 'Asia/Kuala_Lumpur')::date+$5::int,(now() at time zone 'Asia/Kuala_Lumpur')::date+$6::int,$7,'green',$8) returning id`,[user,D.station,team,type,off0,off1,status,extra])).rows[0].id;
  const scenario=async fn=>{await p.query('savepoint sc');try{return await fn();}finally{await p.query('rollback to savepoint sc');await p.query('release savepoint sc');}};
- const review=(uid,id,action='approve')=>asUser(p,uid,async()=>(await p.query('select * from public.review_leave_request_secure($1,$2,$3)',[id,action,'probe'])).rows[0]);
- const cancel=(uid,id,reason='Operational reassignment')=>asUser(p,uid,async()=>(await p.query('select * from public.cancel_approved_leave_secure($1,$2)',[id,reason])).rows[0]);
+ const stateOf=async id=>{await p.query("select set_config('role','postgres',true)");return (await p.query('select approval_status,end_date::text e,overlap_exception,cancellation_kind,original_end_date::text o from public.absence_notices where id=$1',[id])).rows[0];};
+ const review=(uid,id,action='approve')=>asUser(p,uid,async()=>{const r=(await p.query('select * from public.review_leave_request_secure($1,$2,$3)',[id,action,'probe'])).rows[0];return {...r,state:await stateOf(id)};});
+ const cancel=(uid,id,reason='Operational reassignment')=>asUser(p,uid,async()=>{const r=(await p.query('select * from public.cancel_approved_leave_secure($1,$2)',[id,reason])).rows[0];return {...r,state:await stateOf(id)};});
  const status=async id=>(await p.query('select approval_status,end_date::text e,overlap_exception,cancellation_kind,original_end_date::text o from public.absence_notices where id=$1',[id])).rows[0];
 
  // ---- unpaid routing ----
@@ -81,24 +82,24 @@ async function probes(p){
   for(const u of others.slice(0,3))await add(u.id,'annual',50,52,'approved');
   const fourth=await add(others[3].id,'annual',51,51);
   ok('Fourth same-day officer: DSE refused',/capacity reached/.test((await review(D.uid,fourth)).error?.message||''));
-  ok('Fourth same-day officer: Operation Manager approves and the exception is recorded',(await review(om,fourth)).value?.result_status==='approved'&&(await status(fourth)).overlap_exception===true);
+  ok('Fourth same-day officer: Operation Manager approves and the exception is recorded',(await review(om,fourth)).value?.state.overlap_exception===true);
  });
  await scenario(async()=>{
   await add(others[0].id,'annual',60,61,'approved');await add(others[1].id,'annual',62,63,'approved');await add(others[2].id,'annual',64,65,'approved');
   const chain=await add(others[3].id,'annual',60,65);
-  ok('Ranges that never overlap on one day do not trigger the exception',(await review(D.uid,chain)).value?.result_status==='approved'&&(await status(chain)).overlap_exception===false);
+  ok('Ranges that never overlap on one day do not trigger the exception',(await review(D.uid,chain)).value?.state.overlap_exception===false);
  });
  // ---- direct cancellation ----
  await scenario(async()=>{
   const fut=await add(others[0].id,'annual',70,72,'approved');
   ok('Reason is required',/reason/.test((await cancel(D.uid,fut,'no')).error?.message||''));
   ok('Another team DSE scope: refused',Boolean((await cancel(maaBoss,fut)).error));
-  ok('DSE cancels future approved annual leave in full',(await cancel(D.uid,fut)).value?.result_kind==='full'&&(await status(fut)).approval_status==='cancelled');
+  ok('DSE cancels future approved annual leave in full',(await cancel(D.uid,fut)).value?.state.approval_status==='cancelled');
   ok('Repeated cancellation refused',/already been cancelled/.test((await cancel(D.uid,fut)).error?.message||''));
  });
  await scenario(async()=>{
   const under=await add(others[0].id,'annual',-3,4,'approved');
-  const r=await cancel(D.uid,under);const s=await status(under);
+  const r=await cancel(D.uid,under);const s=r.value?.state||{};
   ok('Underway: today and earlier stay taken, tomorrow onward released',r.value?.result_kind==='partial'&&s.approval_status==='approved'&&s.e===today&&s.o===plus4);
   ok('Underway leave cannot be cancelled twice',Boolean((await cancel(D.uid,under)).error));
   const done=await add(others[1].id,'annual',-5,-1,'approved');ok('Completed leave cannot be cancelled',/Completed/.test((await cancel(D.uid,done)).error?.message||''));
