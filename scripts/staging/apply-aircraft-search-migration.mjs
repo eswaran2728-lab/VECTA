@@ -109,6 +109,7 @@ async function probes(p){
  const hhmm=(minOffset)=>(new Date(Date.now()+8*3600000+minOffset*60000)).toISOString().slice(11,16);
 
  const notReq=await flow({reg:'9M-ZN1',flight:'D7200',ground:120,skipSearch:true,sta:hhmm(60)});
+ if(process.env.ACS_DEBUG)console.log(JSON.stringify(notReq.a),JSON.stringify(await boardRow(notReq.board)));
  ok('Under four hours, same day, not towed: no search required, board cleared',notReq.a.required===false&&(await boardRow(notReq.board)).cleared===true&&(await boardRow(notReq.board)).search_state==='not_required');
  const tow=await flow({reg:'9M-ZN2',flight:'D7201',ground:60,towed:true,skipSearch:true,sta:hhmm(60)});
  ok('Towed from a hangar requires a search; missing search is recorded as an exception and the board entry stays',tow.a.required===true&&tow.a.missing===true&&(await boardRow(tow.board)).cleared===false&&(await boardRow(tow.board)).dep===true);
