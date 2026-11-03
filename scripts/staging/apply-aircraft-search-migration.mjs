@@ -8,7 +8,7 @@ import {encryptBackupPayload,decryptBackupPayload} from './lib/backup-crypto.mjs
 
 // Guarded rollout of Aircraft Search Verification. Usage (dry run, then --live):
 //   node --env-file=<staging env> scripts/staging/apply-aircraft-search-migration.mjs --expected-head=<sha> --backup=<outside-repo>.enc.json [--live --confirm="<LIVE_PHRASE>"]
-export const MIGRATION={version:'20261203000004',name:'aircraft_search_verification',sha256:'6928e3ecc1214ad290a6339eae2def951feb20f9aeaaa4e3cd655e9f56125bd3'};
+export const MIGRATION={version:'20261203000004',name:'aircraft_search_verification',sha256:'2a0e71d79403e00ff856b75bacf1e804944f587eea9a99ccd9e27d1bc172b478'};
 export const PRE_COUNT=113,PRE_LAST='20261203000003',BRANCH='fix/roster-canonical-save';
 export const LIVE_PHRASE='APPLY AIRCRAFT SEARCH VERIFICATION TO STAGING ddlctzbnqewubltcavkh';
 const ROOT=path.resolve(import.meta.dirname,'../..');

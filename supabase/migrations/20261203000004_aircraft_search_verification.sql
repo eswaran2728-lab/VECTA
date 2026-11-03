@@ -340,9 +340,9 @@ begin
   select * into b from public.bay_board where station = p_station and upper(reg_no) = upper(btrim(p_registration)) and cleared_at is null order by on_ground_since desc limit 1;
   v_ground_since := b.on_ground_since;
   v_towed := coalesce(p_towed, false) or coalesce(b.towed_from_hangar, false);
-  if v_ground_since is not null and p_departure_at - v_ground_since >= interval '4 hours' then v_reasons := v_reasons || 'ground_4h'; end if;
-  if v_ground_since is not null and (p_departure_at at time zone 'Asia/Kuala_Lumpur')::date > (v_ground_since at time zone 'Asia/Kuala_Lumpur')::date then v_reasons := v_reasons || 'night_stop'; end if;
-  if v_towed then v_reasons := v_reasons || 'towed_from_hangar'; end if;
+  if v_ground_since is not null and p_departure_at - v_ground_since >= interval '4 hours' then v_reasons := array_append(v_reasons, 'ground_4h'::text); end if;
+  if v_ground_since is not null and (p_departure_at at time zone 'Asia/Kuala_Lumpur')::date > (v_ground_since at time zone 'Asia/Kuala_Lumpur')::date then v_reasons := array_append(v_reasons, 'night_stop'::text); end if;
+  if v_towed then v_reasons := array_append(v_reasons, 'towed_from_hangar'::text); end if;
   v_req := coalesce(array_length(v_reasons, 1), 0) > 0;
 
   select m.id, m.dups, m.submitted_at into v_match, v_dups, v_search_at from (
