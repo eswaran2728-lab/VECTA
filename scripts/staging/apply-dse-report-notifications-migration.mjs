@@ -55,7 +55,7 @@ async function probes(p){
  const otherTeam=(await p.query("select t.name from public.org_teams t join public.stations s on s.code is not null cross join lateral public.resolve_legacy_station(s.code) rs where rs.station_id=t.station_id and s.code=$1 and t.name<>$2 limit 1",[D.station,D.team])).rows[0]?.name;
  if(otherTeam)ok('A DSE of another team is not a recipient',!(await rec(D.station,otherTeam,sub.id)).includes(D.uid));
  const otherStation=(await p.query("select code from public.stations where code<>$1 limit 1",[D.station])).rows[0]?.code;
- if(otherStation){let res=[];try{res=await rec(otherStation,D.team,sub.id);}catch{res=[];}ok('A DSE of another station is not a recipient',!res.includes(D.uid));}
+ if(otherStation){let res=[];await p.query('savepoint os');try{res=await rec(otherStation,D.team,sub.id);}catch{res=[];await p.query('rollback to savepoint os');}await p.query('release savepoint os');ok('A DSE of another station is not a recipient',!res.includes(D.uid));}
  const deliver=async(id)=>(await p.query("select public.deliver_dse_report_notifications('report_sec014',$1,$2,$3,$4,'PROBE-1','') n",[id,D.station,D.team,sub.id])).rows[0].n;
  const sid=(await p.query('select gen_random_uuid() id')).rows[0].id;
  const first=await deliver(sid);const second=await deliver(sid);
