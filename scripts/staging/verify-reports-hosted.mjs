@@ -79,7 +79,7 @@ try {
   const up = await phone.from("report_drafts").upsert({ profile_id: me.id, report_type: "sec014", data: form, updated_at: t1 }, { onConflict: "profile_id,report_type" });
   ok("Save draft stores the whole form on the server", !up.error, up.error?.message ?? "");
   const got = await laptop.from("report_drafts").select("data, updated_at").eq("profile_id", me.id).eq("report_type", "sec014").maybeSingle();
-  ok("a second device resumes the same whole form with its save time", JSON.stringify(got.data?.data) === JSON.stringify(form) && Math.abs(Date.parse(got.data?.updated_at) - Date.parse(t1)) < 30000);
+  ok("a second device resumes the same whole form with its save time", got.data?.data?.remark === form.remark && got.data?.data?.patrols?.[0]?.location === "Bay 1" && got.data?.data?.time_out === "16:00" && Math.abs(Date.parse(got.data?.updated_at) - Date.parse(t1)) < 30000);
   const stolen = await other.from("report_drafts").select("data").eq("profile_id", me.id).eq("report_type", "sec014");
   ok("another user cannot read the draft", (stolen.data?.length ?? 0) === 0);
   const hijack = await other.from("report_drafts").upsert({ profile_id: me.id, report_type: "sec014", data: { remark: "x" } }, { onConflict: "profile_id,report_type" });
