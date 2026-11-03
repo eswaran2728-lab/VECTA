@@ -25,6 +25,7 @@ const TITLES: Record<string, string> = {
   assignment_ended: "Assignment ended",
   deactivation: "Account deactivated",
   caterlink_movement_received: "CaterLink movement received",
+  handover_received: "Shift handover for you",
 };
 
 function humanize(eventType: string): string {
@@ -40,6 +41,11 @@ export function toAppNotification(r: NotificationRow): AppNotification {
     body = REPORT_TYPE_OPTIONS.find((o) => o.value === payload.source_table)?.label ?? "Report";
     // The link opens the report through the secure route, which authorizes again; the payload carries identifiers only.
     href = payload.source_table && payload.source_id ? reportViewHref(payload.source_table, payload.source_id) : null;
+  }
+  if (r.event_type === "handover_received") {
+    const hp = (r.payload ?? {}) as { from_name?: string };
+    body = hp.from_name ? `From ${hp.from_name}. Open Shift Handover to receive it in person.` : "Open Shift Handover to receive it in person.";
+    href = "/avsec/duty/handover";
   }
   return { id: r.id, title: TITLES[r.event_type] ?? humanize(r.event_type), body, isRead: r.read_at !== null, createdAt: r.created_at, href };
 }

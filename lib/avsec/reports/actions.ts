@@ -300,6 +300,8 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
     .eq("station", v.station)
     .ilike("flight_number", v.flight.trim())
     .neq("outgoing_profile_id", profile.id)
+    // Only an earlier (unverified) record or a handover this officer completed in person is context; pending or uncompleted ones are not.
+    .or(`handover_status.eq.historical,and(handover_status.eq.completed,recipient_profile_id.eq.${profile.id})`)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();

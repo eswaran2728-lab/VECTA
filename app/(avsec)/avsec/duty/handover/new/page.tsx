@@ -46,9 +46,9 @@ export default async function NewHandoverPage() {
         </section>
 
         <NewHandoverForm
-          defaultTeam={profile.team ?? ""}
-          defaultStaffName={profile.name}
-          defaultStaffId={profile.staff_no}
+          senderName={profile.name}
+          senderStaffId={profile.staff_no}
+          senderTeam={profile.team ?? ""}
         />
       </div>
     </main>

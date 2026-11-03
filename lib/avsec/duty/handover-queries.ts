@@ -98,14 +98,24 @@ export interface ShiftHandoverRow {
   acknowledged_at: string | null;
   acknowledgment_notes: string | null;
   created_at: string;
+  recipient_profile_id: string | null;
+  recipient_staff_id: string | null;
+  recipient_name: string | null;
+  handover_status: "historical" | "pending" | "completed";
+  /** Pending becomes uncompleted once the sender has checked out or the duty date has ended. */
+  effective_status: "historical" | "pending" | "completed" | "uncompleted";
+  completed_at: string | null;
+  verification: { distance_m?: number; disclaimer?: string } | null;
 }
 
 /** RLS scopes this to the caller's own handovers, their station+team, or
  * org-wide roles — same visibility shape as overtime_requests. */
 export async function getVisibleHandovers(): Promise<ShiftHandoverRow[]> {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("shift_handovers")
+  // The generated types predate this view (it is defined in 20261203000001), so the call is untyped and the row type is asserted below.
+  const untyped = supabase as unknown as { from: (t: string) => { select: (c: string) => { order: (c: string, o: { ascending: boolean }) => { limit: (n: number) => Promise<{ data: unknown }> } } } };
+  const { data } = await untyped
+    .from("shift_handovers_with_status")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(100);
