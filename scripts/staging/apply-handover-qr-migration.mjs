@@ -50,8 +50,8 @@ async function probes(p){
  const [A,B]=byStation[st];
  const other=officers.find(o=>o.station!==st);
  const ZONE={type:'Polygon',coordinates:[[[101.699,3.099],[101.701,3.099],[101.701,3.101],[101.699,3.101],[101.699,3.099]]]};
- await p.query("insert into public.duty_zones(station,code,name,polygon,active) values($1,'ZZ-PROBE','Probe zone',$2::jsonb,true)",[st,JSON.stringify(ZONE)]);
- const duty=async(id,station)=>p.query("insert into public.duty_records(profile_id,station,duty_date,check_in_at) values($1,$2,(now() at time zone 'Asia/Kuala_Lumpur')::date,now()) returning id",[id,station]);
+ await p.query("insert into public.duty_zones(station,code,name,polygon,center_lat,center_lng,active) values($1,'ZZ-PROBE','Probe zone',$2::jsonb,3.1,101.7,true)",[st,JSON.stringify(ZONE)]);
+ const duty=async(id,station)=>p.query("insert into public.duty_records(profile_id,station,duty_date,shift_code,check_in_at) values($1,$2,(now() at time zone 'Asia/Kuala_Lumpur')::date,coalesce((select shift_code from public.duty_records limit 1),'D'),now()) returning id",[id,station]);
  await duty(A.id,st);await duty(B.id,st);
  const file=async(uid,staff)=>asUser(p,uid,async()=>(await p.query("select public.file_handover_secure($1,'Bay','Bay 12','','probe notes','[]'::jsonb) id",[staff])).rows[0].id);
  const self=await file(A.id,A.staff_no);ok('Self handover rejected',/yourself/.test(self.error?.message||''));
