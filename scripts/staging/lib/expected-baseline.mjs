@@ -10,9 +10,10 @@
 // KUL - MAA CaterLink scanning was applied by the guarded runner after 401 dry-run and 401 live probes.
 // ASO declaration/history repair passed guarded dry-run, rollback and live verification.
 // Canonical roster-save repair passed guarded dry/live probes and independent read-only verification.
-export const EXPECTED_MIGRATION_COUNT = 113;
-export const EXPECTED_LATEST_MIGRATION = "20261203000003";
+export const EXPECTED_MIGRATION_COUNT = 114;
+export const EXPECTED_LATEST_MIGRATION = "20261203000004";
 
 // Recipient-bound QR-verified handover migration 20261203000001 passed guarded dry run and live probes (21) = 111.
 // Leave authority and cancellation migration 20261203000002 = 112 (guarded dry run 24 probes; see apply-leave-authority-migration.mjs).
 // DSE report notifications migration 20261203000003 = 113 (guarded dry run 12 probes).
+// Aircraft search verification migration 20261203000004 = 114 (guarded dry run 26 probes).

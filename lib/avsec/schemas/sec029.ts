@@ -55,6 +55,10 @@ export const sec029Schema = z
       "DISCREPANCIES FOUND AND DUTY SECURITY EXECUTIVE / DUTY OFFICER IS NOTIFIED (PROVIDE DETAILS BELOW).",
     ]),
     d_remark: z.string().trim().optional().default(""),
+    // Aircraft search verification evidence (server-timed start/finish; GPS is reported location, not proof of presence)
+    search_record_id: z.string().trim().optional().default(""),
+    search_gps_reason: z.string().trim().optional().default(""),
+    search_below_min_reason: z.string().trim().optional().default(""),
     acknowledgement: z
       .boolean()
       .refine((v) => v === true, { message: "Acknowledgement is required" }),
@@ -116,5 +120,8 @@ export const sec029Defaults: Sec029FormValues = {
   declaration:
     "I CERTIFY THAT THE ABOVE SEARCH HAS BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.",
   d_remark: "",
+  search_record_id: "",
+  search_gps_reason: "",
+  search_below_min_reason: "",
   acknowledgement: false,
 };

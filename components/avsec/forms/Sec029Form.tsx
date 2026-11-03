@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { SearchTimerPanel } from "@/components/avsec/aircraft-search/SearchTimerPanel";
 import { REPORT_META, SEC029_ITEMS } from "@/lib/avsec/reference-data";
 import { withSec029Scope } from "@/lib/avsec/reports/sec029-scope";
 import { sec029Schema } from "@/lib/avsec/schemas/sec029";
@@ -59,6 +60,9 @@ interface UIValues {
   pic_informed: "YES" | "NO";
   declaration: string;
   d_remark: string;
+  search_record_id: string;
+  search_gps_reason: string;
+  search_below_min_reason: string;
   acknowledgement: boolean;
 }
 
@@ -98,6 +102,9 @@ function buildDefaults(profile: Profile, serverDraft?: UIValues | null): UIValue
     pic_informed: "YES",
     declaration: DECLARATION_CLEAN,
     d_remark: "",
+    search_record_id: "",
+    search_gps_reason: "",
+    search_below_min_reason: "",
     acknowledgement: false,
   };
 }
@@ -383,6 +390,21 @@ export function Sec029Form({
           );
         })}
       </FormSection>
+
+      <SearchTimerPanel
+        station={values.station}
+        flight={values.flight_no}
+        registration={values.aircraft_registration}
+        aircraftType={values.aircraft_type}
+        recordId={values.search_record_id}
+        gpsReason={values.search_gps_reason}
+        belowMinReason={values.search_below_min_reason}
+        onChange={(patch) => {
+          if (patch.recordId !== undefined) setValue("search_record_id", patch.recordId, { shouldDirty: true });
+          if (patch.gpsReason !== undefined) setValue("search_gps_reason", patch.gpsReason, { shouldDirty: true });
+          if (patch.belowMinReason !== undefined) setValue("search_below_min_reason", patch.belowMinReason, { shouldDirty: true });
+        }}
+      />
 
       {/* 4. External Area */}
       <FormSection title="External Area">

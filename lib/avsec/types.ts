@@ -322,6 +322,11 @@ export interface BayBoardRow {
   cleared_at: string | null;
   created_by: string;
   created_at: string;
+  /** Aircraft search verification (migration 20261203000004); absent before it is applied. */
+  search_state?: "not_required" | "pending" | "submitted" | "confirmed" | "exception";
+  search_reasons?: string[];
+  departed_without_confirmed_search?: boolean;
+  towed_from_hangar?: boolean;
 }
 
 export type AnyReportRow = Sec016Row | Sec014Row | Sec029Row | Sec018Row | Sec033Row | Sec013Row | OffloadRow | MakeupRow | BreakupRow;

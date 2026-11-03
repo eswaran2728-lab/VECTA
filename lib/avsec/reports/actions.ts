@@ -257,34 +257,29 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
   let searchRemark: string | null = null;
   let discrepanciesFinal = v.discrepancies;
 
-  // For departures: check if aircraft was on ground >= 4 hours on Bay Board
+  // Departures: the search requirement (4 h on ground, night stop, towed from hangar), the linked SEC029 and both timing gaps are decided in the database
+  // (preview_departure_search_secure). A late or missing search needs a reason and is escalated to the reviewer, but never blocks the SEC016 itself.
   if (v.flight_type === "departure") {
-    const { data: openBay } = await supabase
-      .from("bay_board")
-      .select("id, on_ground_since")
-      .eq("station", v.station)
-      .eq("reg_no", regNoUpper)
-      .is("cleared_at", null)
-      .order("on_ground_since", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (openBay) {
-      const hoursOnGround = (Date.now() - new Date(openBay.on_ground_since).getTime()) / 3600000;
-      if (hoursOnGround >= 4 && !v.aircraft_search_completed) {
-        searchOverdueFlag = true;
-        searchRemark = "Aircraft Search not completed — aircraft on ground >4h";
-        if (
-          !discrepanciesFinal ||
-          discrepanciesFinal === "N/A" ||
-          discrepanciesFinal === "NONE" ||
-          discrepanciesFinal === "NIL"
-        ) {
-          discrepanciesFinal = searchRemark;
-        } else if (!discrepanciesFinal.includes("Aircraft Search not completed")) {
-          discrepanciesFinal = `${discrepanciesFinal}\n[AUTO-FLAG] ${searchRemark}`;
-        }
+    const rpc = supabase as unknown as { rpc: (n: string, a: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }> };
+    const { data: pv } = await rpc.rpc("preview_departure_search_secure", {
+      p_station: v.station,
+      p_registration: regNoUpper,
+      p_flight: v.flight.trim().toUpperCase(),
+      p_sta_std: v.sta_std,
+      p_aircraft_type: v.aircraft_type === "Other" ? v.aircraft_type_other : v.aircraft_type,
+      p_towed: v.towed_from_hangar,
+    });
+    const a = (pv ?? null) as { required?: boolean; flagged?: boolean; missing?: boolean } | null;
+    if (a?.flagged) {
+      const lateReason = (v.search_late_reason ?? "").trim();
+      if (lateReason.length < 5) {
+        return { ok: false, error: a.missing ? "An aircraft search is required for this departure but no SEC029 is linked. Enter a reason for the missing search." : "The aircraft search was late against the STD or this report. Enter a reason." };
       }
+      searchOverdueFlag = true;
+      searchRemark = a.missing ? `Aircraft Search required but not recorded — ${lateReason}` : `Aircraft Search late against STD/SEC016 threshold — ${lateReason}`;
+      discrepanciesFinal =
+        !discrepanciesFinal || ["N/A", "NONE", "NIL"].includes(discrepanciesFinal) ? searchRemark : `${discrepanciesFinal}
+[AUTO-FLAG] ${searchRemark}`;
     }
   }
 
@@ -376,20 +371,14 @@ export async function submitSec016(input: unknown): Promise<ActionResult> {
         on_ground_since: new Date().toISOString(),
         is_manual: false,
         created_by: profile.id,
-      });
+        towed_from_hangar: v.towed_from_hangar,
+      } as never);
       if (bayInsertError) console.error("[reports] bay_board linkage failed (arrival):", bayInsertError.code);
     } else if (v.flight_type === "departure") {
-      const { error: bayClearError } = await supabase
-        .from("bay_board")
-        .update({
-          cleared_at: new Date().toISOString(),
-          cleared_by_report_id: data.id,
-          departure_report_id: data.id,
-        })
-        .eq("station", v.station)
-        .eq("reg_no", regNoUpper)
-        .is("cleared_at", null);
-      if (bayClearError) console.error("[reports] bay_board linkage failed (departure):", bayClearError.code);
+      // Records both gaps and the escalation, and clears the board ONLY when no search is required or the search is confirmed by a reviewer.
+      const rpc = supabase as unknown as { rpc: (n: string, a: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }> };
+      const { error: ruleError } = await rpc.rpc("apply_departure_search_rules", { p_departure_id: data.id, p_towed: v.towed_from_hangar, p_reason: v.search_late_reason ?? "" });
+      if (ruleError) console.error("[reports] aircraft search rules failed (departure):", ruleError.message);
     }
     revalidatePath("/avsec/bay-board");
   }
@@ -560,14 +549,18 @@ export async function submitSec029(input: unknown): Promise<ActionResult> {
   const { error: itemError } = await supabase.from("report_sec029_items").insert(itemRows);
   if (itemError) return { ok: false, error: itemError.message, id: report.id };
 
-  // Clear any open Bay Board entry for this registration at this station.
-  const { error: bayClearError2 } = await supabase
-    .from("bay_board")
-    .update({ cleared_by_report_id: report.id, cleared_at: new Date().toISOString() })
-    .eq("station", v.station)
-    .eq("reg_no", v.aircraft_registration)
-    .is("cleared_at", null);
-  if (bayClearError2) console.error("[reports] bay_board linkage failed (clear):", bayClearError2.code);
+  // Link the physical-search evidence. SEC029 submission alone NEVER clears the Bay Board: the entry shows "submitted" until a different on-duty
+  // SO/SSO/DSE confirms the search (review_aircraft_search_secure). A short search or missing location needs a reason, enforced in the database.
+  {
+    const rpc = supabase as unknown as { rpc: (n: string, a: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }> };
+    const { error: attachError } = await rpc.rpc("attach_search_to_sec029", {
+      p_sec029_id: report.id,
+      p_record_id: v.search_record_id || null,
+      p_below_minimum_reason: v.search_below_min_reason || null,
+      p_gps_reason: v.search_gps_reason || null,
+    });
+    if (attachError) return { ok: false, error: `Report saved, but the search evidence could not be linked: ${attachError.message ?? "unknown error"}. Report id ${report.id}.`, id: report.id };
+  }
 
   // Explicit indexing-readiness call, made only after the item child
   // rows above have already been written.

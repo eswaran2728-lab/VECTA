@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { DepartureSearchPanel } from "@/components/avsec/aircraft-search/DepartureSearchPanel";
 import { STATIONS, REPORT_META } from "@/lib/avsec/reference-data";
 import { sec016Schema } from "@/lib/avsec/schemas/sec016";
 import { submitSec016 } from "@/lib/avsec/reports/actions";
@@ -28,6 +29,8 @@ import { FlightEntityBadge } from "@/components/avsec/forms/FlightEntityBadge";
 interface UIValues {
   flight_type: "arrival" | "departure";
   aircraft_search_completed: boolean;
+  towed_from_hangar: boolean;
+  search_late_reason: string;
   station: string;
   team: string;
   staff_name: string;
@@ -70,6 +73,8 @@ function buildDefaults(profile: Profile, serverDraft?: UIValues | null): UIValue
   return {
     flight_type: "arrival",
     aircraft_search_completed: false,
+    towed_from_hangar: false,
+    search_late_reason: "",
     station: profile.station ?? "",
     team: profile.team ?? "",
     staff_name: profile.name,
@@ -415,23 +420,23 @@ export function Sec016Form({
       </div>
 
       {!isArrival && (
-        <div className="card p-4 space-y-2 border-warning/30 bg-warning/5">
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              {...register("aircraft_search_completed")}
-              className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
-            />
-            <div>
-              <p className="text-xs font-bold text-foreground">
-                Aircraft Search Completed (SEC 029)
-              </p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                Recommended if aircraft has been on ground for $\ge$ 4 hours. If not completed, an audit remark will be logged automatically on this departure report.
-              </p>
-            </div>
-          </label>
-        </div>
+        <DepartureSearchPanel
+          station={values.station}
+          registration={values.reg_no}
+          flight={values.flight}
+          std={values.sta_std}
+          aircraftType={values.aircraft_type === "Other" ? values.aircraft_type_other : values.aircraft_type}
+          towed={values.towed_from_hangar}
+          reason={values.search_late_reason}
+          onTowedChange={(v) => setValue("towed_from_hangar", v, { shouldDirty: true })}
+          onReasonChange={(v) => setValue("search_late_reason", v, { shouldDirty: true })}
+        />
+      )}
+      {isArrival && (
+        <label className="flex items-center gap-2 text-xs px-1">
+          <input type="checkbox" {...register("towed_from_hangar")} className="h-4 w-4" />
+          Aircraft was towed from a hangar (an aircraft search will be required at departure)
+        </label>
       )}
 
       {/* 3. Smart Input */}

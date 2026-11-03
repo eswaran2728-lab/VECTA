@@ -10,6 +10,9 @@ export const sec016Schema = z
     // flight direction
     flight_type: z.enum(["arrival", "departure"]).default("arrival"),
     aircraft_search_completed: z.boolean().default(false),
+    // Aircraft search verification: a tow from a hangar is one of the three triggers; the reason is required when the search is late or missing.
+    towed_from_hangar: z.boolean().default(false),
+    search_late_reason: z.string().trim().optional().default(""),
 
     // staff details
     station: requiredText("Station"),
@@ -111,6 +114,8 @@ export type Sec016FormValues = z.infer<typeof sec016Schema>;
 export const sec016Defaults: Sec016FormValues = {
   flight_type: "arrival",
   aircraft_search_completed: false,
+  towed_from_hangar: false,
+  search_late_reason: "",
   station: "",
   team: "",
   staff_name: "",

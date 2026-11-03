@@ -1275,6 +1275,10 @@ export type Database = {
           org_id: string
           reg_no: string
           station: string
+          towed_from_hangar: boolean
+          search_state: string
+          search_reasons: string[]
+          departed_without_confirmed_search: boolean
         }
         Insert: {
           aircraft_type?: string | null
@@ -1309,6 +1313,10 @@ export type Database = {
           org_id?: string
           reg_no?: string
           station?: string
+          towed_from_hangar?: boolean
+          search_state?: string
+          search_reasons?: string[]
+          departed_without_confirmed_search?: boolean
         }
         Relationships: [
           {

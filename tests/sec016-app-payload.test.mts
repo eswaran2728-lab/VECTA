@@ -24,9 +24,9 @@ test("the probe's SEC016 insert has exactly the keys the application sends (name
 test("the probe's Bay Board arrival insert, departure clear and manual entry match the application", () => {
   const arrival = keysBetween('supabase.from("bay_board").insert({', "});", src.indexOf("Bay Board auto-linkage"), 8);
   assert.deepEqual(F.BAY_ARRIVAL_COLUMNS, arrival);
-  const depStart = src.indexOf('.from("bay_board")\n        .update({');
-  const dep = [...src.slice(depStart, src.indexOf('})\n        .eq("station", v.station)', depStart)).matchAll(/^\s{10}([a-z_0-9]+):/gm)].map((m) => m[1]);
-  assert.deepEqual(F.BAY_DEPARTURE_UPDATE_COLUMNS, dep);
+  // the departure no longer writes the board directly: the database rules function clears it only when no search is required or it is confirmed
+  assert.match(src, /apply_departure_search_rules/);
+  assert.doesNotMatch(src, /\.from\("bay_board"\)\s*\.update\(\{\s*cleared_at: new Date/);
   const manualStart = src.indexOf("export async function addBayBoardEntry");
   const manual = keysBetween('.from("bay_board")\n    .insert({', "})\n    .select", manualStart);
   assert.deepEqual(F.BAY_MANUAL_COLUMNS, manual);
@@ -42,7 +42,7 @@ test("every column the application writes is declared in the generated types for
   const sec = block("report_sec016");
   for (const c of F.SEC016_APP_COLUMNS) assert.match(sec, new RegExp(`\\b${c}\\??:`), `report_sec016.${c} is in the generated types`);
   const bay = block("bay_board");
-  for (const c of [...F.BAY_ARRIVAL_COLUMNS, ...F.BAY_DEPARTURE_UPDATE_COLUMNS, ...F.BAY_MANUAL_COLUMNS]) assert.match(bay, new RegExp(`\\b${c}\\??:`), `bay_board.${c} is in the generated types`);
+  for (const c of [...F.BAY_ARRIVAL_COLUMNS, ...F.BAY_MANUAL_COLUMNS]) assert.match(bay, new RegExp(`\\b${c}\\??:`), `bay_board.${c} is in the generated types`);
 });
 
 test("the sixteen legacy NOT NULL columns are exactly those relaxed by the canonical rev03 migration, and the application never sends eight of them", () => {

@@ -13,7 +13,7 @@ export const SEC016_APP_COLUMNS = [
 ];
 
 /** bay_board arrival insert in submitSec016(). */
-export const BAY_ARRIVAL_COLUMNS = ["station", "reg_no", "aircraft_type", "bay", "flight", "arrival_report_id", "on_ground_since", "is_manual", "created_by"];
+export const BAY_ARRIVAL_COLUMNS = ["station", "reg_no", "aircraft_type", "bay", "flight", "arrival_report_id", "on_ground_since", "is_manual", "created_by", "towed_from_hangar"];
 /** bay_board departure clear in submitSec016() (the filter columns are station, reg_no, cleared_at). */
 export const BAY_DEPARTURE_UPDATE_COLUMNS = ["cleared_at", "cleared_by_report_id", "departure_report_id"];
 /** bay_board manual entry in addBayBoardEntry(); manual clear updates only cleared_at. */

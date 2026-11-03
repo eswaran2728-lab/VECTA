@@ -78,6 +78,20 @@ export function BayBoardList({
                       · {e.aircraft_type}
                     </span>
                   )}
+                  {e.search_state && e.search_state !== "pending" && (
+                    <span
+                      data-testid="search-state"
+                      className={cn(
+                        "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold uppercase border",
+                        e.search_state === "confirmed" && "bg-success/10 text-success border-success/30",
+                        e.search_state === "submitted" && "bg-warning/10 text-warning border-warning/30",
+                        e.search_state === "exception" && "bg-destructive/10 text-destructive border-destructive/30",
+                        e.search_state === "not_required" && "bg-muted text-muted-foreground border-border",
+                      )}
+                    >
+                      {e.search_state === "submitted" ? "Search submitted · awaiting review" : e.search_state === "confirmed" ? "Search confirmed" : e.search_state === "exception" ? (e.departed_without_confirmed_search ? "Departed · search exception" : "Search exception") : "Search not required"}
+                    </span>
+                  )}
                   {e.is_manual ? (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold uppercase bg-warning/10 text-warning border border-warning/20">
                       Manual Entry

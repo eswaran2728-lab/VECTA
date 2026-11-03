@@ -66,5 +66,7 @@ test("zone activation toggles and whitelist approve/activate/expiry changes surf
 
 test("bay-board linkage failures are logged, not swallowed", () => {
   const src = fs.readFileSync("lib/avsec/reports/actions.ts", "utf8");
-  assert.equal((src.match(/bay_board linkage failed/g) ?? []).length, 3);
+  assert.equal((src.match(/bay_board linkage failed/g) ?? []).length, 1, "the arrival insert");
+  assert.match(src, /aircraft search rules failed/, "the departure rules call is logged");
+  assert.match(src, /search evidence could not be linked/, "a failed SEC029 evidence link is returned, not swallowed");
 });
