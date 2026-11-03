@@ -8,7 +8,7 @@ import {encryptBackupPayload,decryptBackupPayload} from './lib/backup-crypto.mjs
 
 // Guarded rollout of DSE in-app report notifications. Usage (dry run, then --live):
 //   node --env-file=<staging env> scripts/staging/apply-dse-report-notifications-migration.mjs --expected-head=<sha> --backup=<outside-repo>.enc.json [--live --confirm="<LIVE_PHRASE>"]
-export const MIGRATION={version:'20261203000003',name:'dse_report_notifications',sha256:'1a945cb28894d1f07067a701a9c83b4bb241add5c5ac29cbca400c24bd1f83d8'};
+export const MIGRATION={version:'20261203000003',name:'dse_report_notifications',sha256:'29833b4fd33a5e0f091d5e0d28e9a572a57d1b7995453c6028f6c1d652d53350'};
 export const PRE_COUNT=112,PRE_LAST='20261203000002',BRANCH='fix/roster-canonical-save';
 export const LIVE_PHRASE='APPLY DSE REPORT NOTIFICATIONS TO STAGING ddlctzbnqewubltcavkh';
 const ROOT=path.resolve(import.meta.dirname,'../..');
@@ -39,7 +39,8 @@ const TABLES=['report_sec013','report_sec014','report_sec016','report_sec018','r
 async function probes(p){
  let n=0;const ok=(name,c)=>{assert.ok(c,name);n++;console.log('PROBE PASS: '+name);};
  const om=(await p.query("select a.profile_id uid from public.user_role_assignments a join public.role_definitions r on r.id=a.role_definition_id where r.code='operation_manager' and a.revoked_at is null limit 1")).rows[0].uid;
- const dse=(await p.query(`select a.profile_id uid,s.code station,t.name team,a.operating_entity_id eid from public.user_role_assignments a join public.role_definitions r on r.id=a.role_definition_id
+ const dse=(await p.query(`select a.profile_id uid,s.code station,t.name team,m.operating_entity_id eid from public.user_role_assignments a join public.role_definitions r on r.id=a.role_definition_id
+  join public.user_entity_memberships m on m.id=a.entity_membership_id and m.status='active' and m.revoked_at is null
   join public.profiles pr on pr.id=a.profile_id join public.org_teams t on t.id=a.team_id join public.stations s on s.code is not null
   cross join lateral public.resolve_legacy_station(s.code) rs where rs.station_id=a.station_id and r.code='dse' and pr.status='approved' and a.revoked_at is null and (a.ends_at is null or a.ends_at>now()) order by a.profile_id`)).rows;
  assert.ok(dse.length>=1,'A DSE scope is required');

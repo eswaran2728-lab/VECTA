@@ -15,7 +15,8 @@ test("every submitted report type except retired Offload has an after-insert not
 
 test("recipients are active approved DSEs of the same entity, station and team, never the submitter", () => {
   assert.match(sql, /rd\.code = 'dse'/);
-  assert.match(sql, /ura\.operating_entity_id = v_entity_id/);
+  assert.match(sql, /m\.operating_entity_id = v_entity_id/);
+  assert.match(sql, /m\.id = ura\.entity_membership_id/);
   assert.match(sql, /ura\.station_id = v_station_id/);
   assert.match(sql, /ura\.team_id = v_team_id/);
   assert.match(sql, /ura\.profile_id <> p_submitter/);

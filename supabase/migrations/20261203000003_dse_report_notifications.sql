@@ -75,7 +75,8 @@ begin
     from public.user_role_assignments ura
     join public.role_definitions rd on rd.id = ura.role_definition_id and rd.is_active and rd.code = 'dse'
     join public.profiles p on p.id = ura.profile_id and p.status = 'approved'
-    where ura.operating_entity_id = v_entity_id
+    join public.user_entity_memberships m on m.id = ura.entity_membership_id and m.status = 'active' and m.revoked_at is null
+    where m.operating_entity_id = v_entity_id
       and ura.station_id = v_station_id
       and ura.team_id = v_team_id
       and ura.profile_id <> p_submitter
