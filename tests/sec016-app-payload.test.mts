@@ -26,7 +26,8 @@ test("the probe's Bay Board arrival insert, departure clear and manual entry mat
   assert.deepEqual(F.BAY_ARRIVAL_COLUMNS, arrival);
   // the departure no longer writes the board directly: the database rules function clears it only when no search is required or it is confirmed
   assert.match(src, /apply_departure_search_rules/);
-  assert.doesNotMatch(src, /\.from\("bay_board"\)\s*\.update\(\{\s*cleared_at: new Date/);
+  const sec016Body = src.slice(src.indexOf("export async function submitSec016"), src.indexOf("export async function submitSec029"));
+  assert.doesNotMatch(sec016Body, /\.from\("bay_board"\)\s*\.update\(/);
   const manualStart = src.indexOf("export async function addBayBoardEntry");
   const manual = keysBetween('.from("bay_board")\n    .insert({', "})\n    .select", manualStart);
   assert.deepEqual(F.BAY_MANUAL_COLUMNS, manual);
