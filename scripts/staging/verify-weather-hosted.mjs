@@ -91,9 +91,15 @@ try {
             await strip.evaluate((el) => { el.scrollLeft = 0; });
             await page.keyboard.press("ArrowRight");
             ok(`${tag}: the strip is keyboard focusable and scrolls with the arrow key`, (await strip.getAttribute("tabindex")) === "0" && (await strip.getAttribute("aria-label")).length > 10 && (await strip.evaluate((el) => el.scrollLeft)) > 0);
-            const timeEl = strip.locator("li span").first();
-            const fg = parseRgb(await timeEl.evaluate((e) => getComputedStyle(e).color));
-            const bg = parseRgb(await card.evaluate((e) => { let n = e; while (n) { const b = getComputedStyle(n).backgroundColor; if (b && !/rgba\(0, 0, 0, 0\)|transparent/.test(b)) return b; n = n.parentElement; } return "rgb(255,255,255)"; }));
+            // computed colours can be oklch()/color(); a canvas normalises any CSS colour to plain sRGB before the ratio is measured
+            const [fg, bg] = await card.evaluate((cardEl) => {
+              const toRgb = (c) => { const k = document.createElement("canvas"); k.width = k.height = 1; const x = k.getContext("2d"); x.clearRect(0, 0, 1, 1); x.fillStyle = "#000"; x.fillStyle = c; x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3]]; };
+              const label = cardEl.querySelector('[data-testid="hourly-strip"] li span');
+              const fgc = toRgb(getComputedStyle(label).color);
+              let n = label, bgc = null;
+              while (n && !bgc) { const c = toRgb(getComputedStyle(n).backgroundColor); if (c[3] === 255) bgc = c; n = n.parentElement; }
+              return [fgc, bgc ?? [255, 255, 255, 255]];
+            });
             ok(`${tag}: text contrast is at least 4.5:1`, contrast(fg, bg) >= 4.5, contrast(fg, bg).toFixed(2));
           }
           ok(`${tag}: today's MET Malaysia daily outlook is shown`, (await page.getByTestId("met-today").count()) === 1 && /Morning/.test(text) && /Afternoon/.test(text) && /Night/.test(text));
@@ -101,7 +107,7 @@ try {
           await details.click();
           const open = ((await card.textContent()) ?? "").replace(/\s+/g, " ");
           ok(`${tag}: More detail opens the next hours and the next days with their sources`, /Next hours · WeatherAPI\.com/.test(open) && /Next days · MET Malaysia/.test(open));
-          if (name === "mobile") ok(`${tag}: collapsed card stays compact`, box.height <= 330, `${Math.round(box.height)}px`);
+          if (name === "mobile") ok(`${tag}: collapsed card stays compact`, box.height <= 320, `${Math.round(box.height)}px`);
         } else {
           ok(`${tag}: a role with no station sees safe notes for both sources`, /station assignment/.test(text) && !/error|exception/i.test(text), text.slice(0, 90));
         }
