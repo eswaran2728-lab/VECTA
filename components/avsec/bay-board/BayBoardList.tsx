@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { formatDateTimeMY } from "@/lib/avsec/datetime";
 import { cn } from "@/lib/avsec/utils";
-import { clearBayBoardEntry } from "@/lib/avsec/reports/actions";
+import { correctBayBoardEntry } from "@/lib/avsec/reports/actions";
 import { Plane, AlertTriangle, CheckCircle2, Clock, X, Loader2 } from "lucide-react";
 import type { BayBoardRow } from "@/lib/avsec/types";
 
@@ -17,17 +17,20 @@ export function BayBoardList({
 }) {
   const [entries, setEntries] = useState(initialEntries);
   const [clearingId, setClearingId] = useState<string | null>(null);
+  const [correctingId, setCorrectingId] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  const handleClear = async (id: string, regNo: string) => {
-    if (!confirm(`Are you sure you want to remove aircraft ${regNo} from the Bay Board?`)) {
-      return;
-    }
+  const handleCorrect = async (id: string) => {
     setClearingId(id);
-    const res = await clearBayBoardEntry(id);
+    setError(null);
+    const res = await correctBayBoardEntry(id, reason);
     if (res.ok) {
       setEntries((prev) => prev.filter((e) => e.id !== id));
+      setCorrectingId(null);
+      setReason("");
     } else {
-      alert(res.error || "Failed to remove aircraft");
+      setError(res.error || "Failed to correct the entry");
     }
     setClearingId(null);
   };
@@ -139,22 +142,28 @@ export function BayBoardList({
 
                 <button
                   type="button"
-                  disabled={isClearing}
-                  onClick={() => handleClear(e.id, e.reg_no)}
-                  className="rounded-lg border border-border/80 bg-surface/70 px-2.5 py-1.5 text-xs font-mono text-muted-foreground hover:text-brand hover:border-brand/40 hover:bg-brand/5 transition-colors cursor-pointer disabled:opacity-50"
-                  title="Manually clear/remove from Bay Board"
+                  onClick={() => { setCorrectingId(correctingId === e.id ? null : e.id); setReason(""); setError(null); }}
+                  className="rounded-lg border border-border/80 bg-surface/70 px-2.5 py-1.5 text-xs font-mono text-muted-foreground hover:text-brand hover:border-brand/40"
+                  title="Correct an incorrect entry (supervisor, reason required, audited)"
                 >
-                  {isClearing ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <span className="flex items-center gap-1">
-                      <X className="h-3.5 w-3.5" />
-                      <span>Clear</span>
-                    </span>
-                  )}
+                  <span className="flex items-center gap-1">
+                    <X className="h-3.5 w-3.5" />
+                    <span>Correct entry</span>
+                  </span>
                 </button>
               </div>
             </div>
+            {correctingId === e.id && (
+              <div className="mt-3 space-y-2 border-t border-border/60 pt-3">
+                <p className="font-mono text-[11px] text-muted-foreground">For an entry that was genuinely made in error. A supervisor (SO, SSO or DSE; an aircraft that still needs a search needs a DSE or the Operation Manager) must give a reason. This is recorded as a correction, not as a completed search.</p>
+                <textarea className="input-base text-xs" rows={2} value={reason} onChange={(ev) => setReason(ev.target.value)} placeholder="Reason (at least 10 characters)" />
+                {error && <p className="font-mono text-xs text-destructive">{error}</p>}
+                <div className="flex gap-2">
+                  <button type="button" className="btn-primary text-xs px-3 py-1" disabled={isClearing || reason.trim().length < 10} onClick={() => handleCorrect(e.id)}>{isClearing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm correction"}</button>
+                  <button type="button" className="btn-secondary text-xs px-3 py-1" onClick={() => setCorrectingId(null)}>Cancel</button>
+                </div>
+              </div>
+            )}
           </div>
         );
       })}

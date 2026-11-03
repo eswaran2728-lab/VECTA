@@ -824,18 +824,22 @@ export async function addBayBoardEntry(input: {
   return { ok: true, id: data.id };
 }
 
-export async function clearBayBoardEntry(id: string): Promise<ActionResult> {
+/**
+ * The ONLY way to take an entry off the Bay Board by hand: a correction for a genuinely incorrect entry. A reason is required, the database checks supervisor
+ * authority (SO/SSO/DSE of the station, or the Operation Manager; an aircraft that still needs a search needs a DSE or the Operation Manager and never the
+ * officer who created the entry), and the entry is recorded as a CORRECTION: never as a normal clear, never as a confirmed search. There is no direct write.
+ */
+export async function correctBayBoardEntry(id: string, reason: string): Promise<ActionResult> {
   const profile = await requireProfileId("bayboard");
   if (!profile) return { ok: false, error: "Not authenticated" };
 
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("bay_board")
-    .update({ cleared_at: new Date().toISOString() })
-    .eq("id", id);
-
-  if (error) return { ok: false, error: error.message };
+  const rpc = (await createClient()) as unknown as { rpc: (n: string, a: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }> };
+  const { data, error } = await rpc.rpc("correct_bay_board_entry_secure", { p_id: id, p_reason: reason });
+  const row = (Array.isArray(data) ? data[0] : data) as { ok?: boolean; message?: string } | null;
+  if (error || !row) return { ok: false, error: error?.message?.trim() || "Could not correct the entry." };
+  if (!row.ok) return { ok: false, error: row.message ?? "Could not correct the entry." };
   revalidatePath("/avsec/bay-board");
+  revalidatePath("/avsec/aircraft-search");
   return { ok: true };
 }
 
