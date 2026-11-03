@@ -62,6 +62,7 @@ async function probes(p){
 
  // ---- authority and reason ----
  const asoTry=await correct(ASO,e1,'Entered against the wrong registration');
+ if(process.env.BBC_DEBUG)console.log(JSON.stringify(asoTry));
  ok('An ASO cannot correct an entry',asoTry.value?.code==='NOT_AUTHORISED'&&asoTry.value.after.cleared===false);
  const short=await correct(dse.uid,e1,'wrong');
  ok('A correction without a real reason is refused',short.value?.code==='REASON_REQUIRED'&&short.value.after.cleared===false);
