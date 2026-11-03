@@ -97,11 +97,11 @@ async function probes(p){
    await p.query("update public.aircraft_search_records set started_at=clock_timestamp()-interval '31 minutes' where id=$1",[recId]);
    await asUser(p,S.id,()=>p.query("select * from public.finish_aircraft_search_secure($1,3.1,101.7,10,null)",[recId]));
    await p.query("update public.aircraft_search_records set finished_at=clock_timestamp() where id=$1 and finished_at is null",[recId]);
-   sec029=await fixture(p,'report_sec029',{profile_id:S.id,status:'submitted',station:St,team:'ALPHA',flight_no:flight,aircraft_registration:reg,aircraft_type:'A320',assisted_by_id:'NOPE',operating_entity_code:R.ent,submitted_at:new Date(Date.now()-(searchAfterMin??90)*60000).toISOString()});
+   sec029=await fixture(p,'report_sec029',{profile_id:S.id,status:'submitted',station:St,team:'ALPHA',flight_no:flight,aircraft_registration:reg,aircraft_type:'A320',assisted_by_id:'NOPE',pic_informed:'YES',declaration:'I CERTIFY THAT THE ABOVE SEARCH HAS BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.',acknowledgement:true,operating_entity_code:R.ent,submitted_at:new Date(Date.now()-(searchAfterMin??90)*60000).toISOString()});
    const att=await asUser(p,S.id,async()=>(await p.query('select public.attach_search_to_sec029($1,$2,null,null) id',[sec029,recId])).rows[0].id);
    if(att.error)throw new Error('attach failed: '+att.error.message);
   }
-  const dep=await fixture(p,'report_sec016',{profile_id:S2.id,status:'submitted',station:St,team:'ALPHA',flight,reg_no:reg,flight_type:'departure',aircraft_type:'A 320',sta_std:sta??std,operating_entity_code:R.ent,submitted_at:new Date().toISOString()});
+  const dep=await fixture(p,'report_sec016',{profile_id:S2.id,status:'submitted',station:St,team:'ALPHA',flight,reg_no:reg,flight_type:'departure',cargo_hold_checked:'YES',do_infmd:'NO',staff_frisked:'YES',aircraft_type:'A 320',sta_std:sta??std,operating_entity_code:R.ent,submitted_at:new Date().toISOString()});
   const out=await asUser(p,S2.id,async()=>{const r=(await p.query('select public.apply_departure_search_rules($1,$2,$3) a',[dep,towed,'delayed by ramp'])).rows[0].a;await p.query("select set_config('role','postgres',true)");return r;});
   if(out.error)throw new Error('apply failed: '+out.error.message);
   return {board,recId,sec029,dep,a:out.value};
