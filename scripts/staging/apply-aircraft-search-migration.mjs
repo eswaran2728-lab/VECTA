@@ -35,6 +35,11 @@ async function asUser(p,uid,cb){
  catch(e){return {error:{code:e.code,message:e.message}};}
  finally{await p.query('rollback to savepoint sp');await p.query('release savepoint sp');}
 }
+// Same impersonation but the effects are KEPT (inside the outer rolled-back transaction); used where a later probe depends on the earlier writes.
+async function asUserKeep(p,uid,cb){
+ await p.query("select set_config('request.jwt.claims',$1,true),set_config('role','authenticated',true)",[JSON.stringify({sub:uid,role:'authenticated'})]);
+ try{return {value:await cb()};}catch(e){throw e;}finally{await p.query("select set_config('role','postgres',true)");}
+}
 // Inserts a row filling every NOT NULL column that has no default with a type-appropriate value, then applies overrides.
 async function fixture(p,table,over){
  const cols=(await p.query("select column_name,data_type,udt_name from information_schema.columns where table_schema='public' and table_name=$1 and is_nullable='NO' and column_default is null",[table])).rows;
@@ -93,16 +98,16 @@ async function probes(p){
   const board=await bay(reg,ground,towed);
   let recId=null,sec029=null;
   if(!skipSearch){
-   recId=(await asUser(p,S.id,async()=>(await p.query("select public.start_aircraft_search_secure($1,$2,$3,'A320',3.1,101.7,10,null) id",[flight,reg,St])).rows[0].id)).value;
+   recId=(await asUserKeep(p,S.id,async()=>(await p.query("select public.start_aircraft_search_secure($1,$2,$3,'A320',3.1,101.7,10,null) id",[flight,reg,St])).rows[0].id)).value;
    await p.query("update public.aircraft_search_records set started_at=clock_timestamp()-interval '31 minutes' where id=$1",[recId]);
-   await asUser(p,S.id,()=>p.query("select * from public.finish_aircraft_search_secure($1,3.1,101.7,10,null)",[recId]));
+   await asUserKeep(p,S.id,()=>p.query("select * from public.finish_aircraft_search_secure($1,3.1,101.7,10,null)",[recId]));
    await p.query("update public.aircraft_search_records set finished_at=clock_timestamp() where id=$1 and finished_at is null",[recId]);
    sec029=await fixture(p,'report_sec029',{profile_id:S.id,status:'submitted',station:St,team:'ALPHA',flight_no:flight,aircraft_registration:reg,aircraft_type:'A320',assisted_by_id:'NOPE',pic_informed:'YES',declaration:'I CERTIFY THAT THE ABOVE SEARCH HAS BEEN CARRIED OUT AND NO DISCREPANCY WAS FOUND.',acknowledgement:true,operating_entity_code:R.ent,submitted_at:new Date(Date.now()-(searchAfterMin??90)*60000).toISOString()});
-   const att=await asUser(p,S.id,async()=>(await p.query('select public.attach_search_to_sec029($1,$2,null,null) id',[sec029,recId])).rows[0].id);
+   const att=await asUserKeep(p,S.id,async()=>(await p.query('select public.attach_search_to_sec029($1,$2,null,null) id',[sec029,recId])).rows[0].id);
    if(att.error)throw new Error('attach failed: '+att.error.message);
   }
   const dep=await fixture(p,'report_sec016',{profile_id:S2.id,status:'submitted',station:St,team:'ALPHA',flight,reg_no:reg,flight_type:'departure',cargo_hold_checked:'YES',do_infmd:'NO',staff_frisked:'YES',aircraft_type:'A 320',sta_std:sta??std,operating_entity_code:R.ent,submitted_at:new Date().toISOString()});
-  const out=await asUser(p,S2.id,async()=>{const r=(await p.query('select public.apply_departure_search_rules($1,$2,$3) a',[dep,towed,'delayed by ramp'])).rows[0].a;await p.query("select set_config('role','postgres',true)");return r;});
+  const out=await asUserKeep(p,S2.id,async()=>{const r=(await p.query('select public.apply_departure_search_rules($1,$2,$3) a',[dep,towed,'delayed by ramp'])).rows[0].a;await p.query("select set_config('role','postgres',true)");return r;});
   if(out.error)throw new Error('apply failed: '+out.error.message);
   return {board,recId,sec029,dep,a:out.value};
  };
