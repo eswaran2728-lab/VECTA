@@ -47,8 +47,9 @@ const parseRgb = (s) => (s.match(/[\d.]+/g) ?? []).slice(0, 4).map(Number);
 const lum = ([r, g, b]) => { const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
 const contrast = (a, b) => { const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x); return (l1 + 0.05) / (l2 + 0.05); };
 
+const onlyDuty = process.argv.includes("--only-duty");
 try {
-  for (const c of cases) {
+  for (const c of onlyDuty ? [] : cases) {
     for (const [vp, name] of [[{ width: 390, height: 844 }, "mobile"], [{ width: 1366, height: 900 }, "desktop"]]) {
       for (const scheme of ["light", "dark"]) {
         if (scheme === "dark" && c.label !== "sso-kul") continue; // both themes are checked on the primary account; the others in light
@@ -130,7 +131,7 @@ try {
     const heading = page.getByRole("heading", { name: /DUTY CHECK-IN/i }).first();
     const hb = await heading.boundingBox().catch(() => null);
     ok(`${tag}: the Duty Check-In heading is on the first screen below the weather card`, Boolean(hb) && hb.y + hb.height <= vp.height, hb ? `${Math.round(hb.y)} of ${vp.height}px` : "heading not found");
-    const actionOrWarning = page.getByText(/No roster set for today|Check In for Duty|Check-In|already checked in|on leave/i).first();
+    const actionOrWarning = page.getByText(/No roster set for today|Check In for Duty|already checked in|on leave|Check out/i).filter({ visible: true }).first();
     const ab = await actionOrWarning.boundingBox().catch(() => null);
     ok(`${tag}: the check-in action or its warning is reachable on the first screen`, Boolean(ab) && ab.y < vp.height, ab ? `${Math.round(ab.y)} of ${vp.height}px` : "none found");
     const clear = async (label) => {
