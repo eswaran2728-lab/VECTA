@@ -62,7 +62,7 @@ begin
   if b.cleared_at is not null then return query select false, 'ALREADY_CLEARED', 'This entry has already left the Bay Board.'; return; end if;
   if char_length(v_reason) < 10 then return query select false, 'REASON_REQUIRED', 'A reason of at least 10 characters is required to correct a Bay Board entry.'; return; end if;
 
-  select id into v_aoc from public.aocs where code = 'MY';
+  select ao.id into v_aoc from public.aocs ao where ao.code = 'MY';
   v_is_om := public.has_active_role_for_aoc('operation_manager', v_aoc);
   select rd.code into v_role
     from public.user_role_assignments ura join public.role_definitions rd on rd.id = ura.role_definition_id and rd.is_active and rd.code in ('so', 'sso', 'dse')

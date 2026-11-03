@@ -8,7 +8,7 @@ import {encryptBackupPayload,decryptBackupPayload} from './lib/backup-crypto.mjs
 
 // Guarded rollout of the Bay Board manual-removal bypass closure and controlled correction. Usage (dry run, then --live):
 //   node --env-file=<staging env> scripts/staging/apply-bay-board-correction-migration.mjs --expected-head=<sha> --backup=<outside-repo>.enc.json [--live --confirm="<LIVE_PHRASE>"]
-export const MIGRATION={version:'20261203000005',name:'bay_board_controlled_correction',sha256:'acbf979fecb1c15335fef8753b20c6379ca8a09b8a97954630de0d4dc8d921a2'};
+export const MIGRATION={version:'20261203000005',name:'bay_board_controlled_correction',sha256:'f6378b5eb0584b2dd0e17a630a828a3618457847f00544b0ed1e9c5d55768e79'};
 export const PRE_COUNT=114,PRE_LAST='20261203000004',BRANCH='fix/roster-canonical-save';
 export const LIVE_PHRASE='APPLY BAY BOARD CONTROLLED CORRECTION TO STAGING ddlctzbnqewubltcavkh';
 const ROOT=path.resolve(import.meta.dirname,'../..');
