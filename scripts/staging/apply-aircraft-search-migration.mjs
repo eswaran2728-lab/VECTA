@@ -128,7 +128,7 @@ async function probes(p){
  ok('A linked, unconfirmed search keeps the board entry (SEC029 submission alone never clears it)',(await boardRow(good.board)).cleared===false&&(await boardRow(good.board)).search_state!=='confirmed');
  const late=await flow({reg:'9M-ZG2',flight:'D7301',ground:360,searchAfterMin:20,sta:hhmm(10)});
  ok('D7: a search 10 minutes before the entered STD is flagged late',late.a.std_flag===true&&late.a.flagged===true);
- const lateFiling=await flow({reg:'9M-ZG3',flight:'D7302',ground:360,searchAfterMin:600,sta:hhmm(-540)});
+ const lateFiling=await flow({reg:'9M-ZG3',flight:'D7302',ground:700,searchAfterMin:600,sta:hhmm(-540)});
  ok('Delaying the SEC016 does not hide a search that missed the STD threshold',lateFiling.a.std_flag===true&&lateFiling.a.departure_flag===false);
  const okTimes=await flow({reg:'9M-ZG4',flight:'D7303',ground:360,searchAfterMin:120,sta:hhmm(60)});
  ok('A search well ahead of STD and of the SEC016 is not flagged',okTimes.a.flagged===false);
