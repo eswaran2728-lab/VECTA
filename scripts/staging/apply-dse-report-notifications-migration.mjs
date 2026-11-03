@@ -46,7 +46,7 @@ async function probes(p){
  assert.ok(dse.length>=1,'A DSE scope is required');
  const D=dse[0];
  const sub=(await p.query(`select pr.id,pr.name,pr.staff_no from public.profiles pr join public.user_entity_memberships m on m.profile_id=pr.id and m.status='active' and m.revoked_at is null
-  where pr.status='approved' and m.operating_entity_id=$1 and pr.id<>$2 and (select count(*) from public.user_entity_memberships x where x.profile_id=pr.id and x.status='active' and x.revoked_at is null)=1 order by pr.id limit 1`,[D.eid,D.uid])).rows[0];
+  where pr.status='approved' and m.operating_entity_id=$1 and pr.id<>$2 and exists (select 1 from public.user_role_assignments u join public.role_definitions rd on rd.id=u.role_definition_id where u.profile_id=pr.id and u.revoked_at is null and rd.code in ('aso','so','sso')) and not exists (select 1 from public.user_role_assignments u join public.role_definitions rd on rd.id=u.role_definition_id where u.profile_id=pr.id and u.revoked_at is null and rd.code not in ('aso','so','sso')) and (select count(*) from public.user_entity_memberships x where x.profile_id=pr.id and x.status='active' and x.revoked_at is null)=1 order by pr.id limit 1`,[D.eid,D.uid])).rows[0];
  assert.ok(sub,'A submitter in the DSE entity is required');
  const noEntity=(await p.query("select pr.id from public.profiles pr where pr.status='approved' and not exists (select 1 from public.user_entity_memberships m where m.profile_id=pr.id and m.status='active' and m.revoked_at is null) limit 1")).rows[0];
  const rec=async(st,tm,sb)=>(await p.query('select profile_id from public.dse_report_recipients($1,$2,$3)',[st,tm,sb])).rows.map(r=>r.profile_id);
@@ -70,7 +70,7 @@ async function probes(p){
  await p.query('savepoint real');
  const rid=await ins(sub.id,'[ROLLED-BACK DSE NOTIFICATION PROBE]');
  ok('A real submitted SEC014 alerts the scoped DSE',(await p.query("select count(*)::int n from public.user_notifications where recipient_profile_id=$1 and dedup_key=$2",[D.uid,'dse_report:report_sec014:'+rid+':'+D.uid])).rows[0].n===1);
- const seen=await asUser(p,D.uid,async()=>(await p.query("select public.can_view_report('report_sec014',$1) ok",[rid])).rows[0].ok);
+ const seen=await asUser(p,D.uid,async()=>(await p.query("select public.can_view_report('sec014',$1) ok",[rid])).rows[0].ok);
  ok('The DSE is authorised to view the report the alert links to (can_view_report)',seen.value===true);
  await p.query('rollback to savepoint real');await p.query('release savepoint real');
  if(noEntity){
