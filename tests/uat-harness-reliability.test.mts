@@ -73,9 +73,9 @@ test("preflight baseline: the expected migration count and latest version are ex
   const base = read("scripts/staging/lib/expected-baseline.mjs");
   const containment = read("scripts/staging/apply-containment-migration.mjs");
   assert.equal([...containment.matchAll(/\{ version: "(\d{14})", name:/g)].length, 9, "nine security migrations: 83 + 9 = 92");
-  const lastRunnerVersion = read("scripts/staging/apply-leave-authority-migration.mjs").match(/version:\s*["'](\d{14})["']/)?.[1];
+  const lastRunnerVersion = read("scripts/staging/apply-dse-report-notifications-migration.mjs").match(/version:\s*["'](\d{14})["']/)?.[1];
   assert.match(base, new RegExp(`EXPECTED_LATEST_MIGRATION = "${lastRunnerVersion}"`), "latest version equals the guarded KUL scan migration");
-  assert.match(base, /EXPECTED_MIGRATION_COUNT = 112;/, "111 prior migrations plus the leave authority and cancellation migration");
+  assert.match(base, /EXPECTED_MIGRATION_COUNT = 113;/, "112 prior migrations plus the DSE report notifications migration");
   assert.ok(PRE.includes("EXPECTED_MIGRATION_COUNT") && PRE.includes("EXPECTED_LATEST_MIGRATION") && !/82/.test(PRE), "preflight uses the explicit baseline, no literal 82");
 });
 
