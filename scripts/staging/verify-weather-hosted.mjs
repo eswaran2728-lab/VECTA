@@ -130,7 +130,7 @@ try {
     const heading = page.getByRole("heading", { name: /DUTY CHECK-IN/i }).first();
     const hb = await heading.boundingBox().catch(() => null);
     ok(`${tag}: the Duty Check-In heading is on the first screen below the weather card`, Boolean(hb) && hb.y + hb.height <= vp.height, hb ? `${Math.round(hb.y)} of ${vp.height}px` : "heading not found");
-    const actionOrWarning = page.locator('.vecta-btn-primary, .btn-primary, [role="alert"], .border-l-warning').first();
+    const actionOrWarning = page.getByText(/No roster set for today|Check In for Duty|Check-In|already checked in|on leave/i).first();
     const ab = await actionOrWarning.boundingBox().catch(() => null);
     ok(`${tag}: the check-in action or its warning is reachable on the first screen`, Boolean(ab) && ab.y < vp.height, ab ? `${Math.round(ab.y)} of ${vp.height}px` : "none found");
     const clear = async (label) => {
