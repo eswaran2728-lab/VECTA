@@ -276,3 +276,21 @@ export async function reviewLeaveApplication(input: {
   return { error: null, success: true };
 }
 
+
+/**
+ * Directly cancel an APPROVED ANNUAL leave. Authority (DSE of the same station and team, or the Operation Manager for a recorded same-day overlap
+ * exception), the required reason, the Malaysia-date release rules and the officer notification are all enforced inside cancel_approved_leave_secure().
+ */
+export async function cancelApprovedAnnualLeave(input: { noticeId: string; reason: string }): Promise<LeaveReviewResult & { kind?: "full" | "partial"; releasedFrom?: string }> {
+  await requireAttendanceProfile();
+  const supabase = await createClient();
+  const client = supabase as unknown as { rpc: (n: string, a: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }> };
+  const { data, error } = await client.rpc("cancel_approved_leave_secure", { p_notice_id: input.noticeId, p_reason: input.reason });
+  if (error) return { error: error.message?.trim() || "Could not cancel this leave.", success: false };
+  const row = (Array.isArray(data) ? data[0] : data) as { result_kind?: "full" | "partial"; released_from?: string } | null;
+  revalidatePath("/avsec/duty");
+  revalidatePath("/avsec/duty/absences");
+  revalidatePath("/avsec/admin/absences");
+  revalidatePath("/avsec/admin/roster");
+  return { error: null, success: true, kind: row?.result_kind, releasedFrom: row?.released_from };
+}

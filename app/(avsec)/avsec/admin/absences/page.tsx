@@ -12,6 +12,7 @@ import {
 } from "@/lib/avsec/duty/absence-logic";
 import { formatDateTimeMY, formatDateMY, todayISODateMY } from "@/lib/avsec/datetime";
 import { LeaveReviewControls } from "@/components/avsec/duty/LeaveReviewControls";
+import { DirectCancelLeave } from "@/components/avsec/duty/DirectCancelLeave";
 
 function daysAgo(dateStr: string, days: number): string {
   const d = new Date(dateStr + "T00:00:00Z");
@@ -430,6 +431,11 @@ export default async function AdminLeaveAuditPage({
                                 leaveTypeLabel={typeLabel}
                                 mode="application"
                               />
+                            </div>
+                          )}
+                          {isApproved && isAnnual && n.end_date >= todayISODateMY() && (
+                            <div className="pt-1">
+                              <DirectCancelLeave noticeId={n.id} staffName={n.staff_name} />
                             </div>
                           )}
                           {isPendingCancel && (
