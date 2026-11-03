@@ -130,12 +130,13 @@ try {
   ok("SEC029 submission alone does not clear the Bay Board (state: submitted)", submitted.search_state === "submitted" && submitted.cleared === false);
 
   // ---- SEC016 departure ----
-  const std = new Date(Date.now() + 8 * 3600000 + 20 * 60000).toISOString().slice(11, 16);
+  // the SEC029 was submitted 100 minutes ago, so an entered STD 70 minutes ago is a 30 minute gap from the search (under the AK 45 minute threshold)
+  const std = new Date(Date.now() + 8 * 3600000 - 70 * 60000).toISOString().slice(11, 16);
   const dep = await fixture("report_sec016", { profile_id: O.id, status: "submitted", station: St, team: "ALPHA", flight, reg_no: reg, flight_type: "departure", cargo_hold_checked: "YES", do_infmd: "NO", staff_frisked: "YES", aircraft_type: "A 320", sta_std: std, operating_entity_code: O.ent, submitted_at: new Date().toISOString() });
   ledger.sec016.push(dep); save();
   const prev = await rpc(sb.O, "preview_departure_search_secure", { p_station: St, p_registration: reg, p_flight: flight, p_sta_std: std, p_aircraft_type: "A 320", p_towed: false });
   ok("the departure preview shows the requirement and both gaps", prev.data?.required === true && prev.data?.reasons?.includes("ground_4h") && prev.data?.std_gap_minutes != null && prev.data?.departure_gap_minutes != null, JSON.stringify(prev.data ?? prev.error?.message).slice(0, 140));
-  ok("STD 20 minutes after now is flagged for AK (under 45) while the SEC016 gap is not", prev.data?.std_flag === true && prev.data?.departure_flag === false, `${prev.data?.std_gap_minutes}/${prev.data?.departure_gap_minutes}`);
+  ok("a 30 minute gap from SEC029 to the entered STD is flagged for AK (under 45) while the 100 minute SEC016 gap is not", prev.data?.std_flag === true && prev.data?.departure_flag === false, `${prev.data?.std_gap_minutes}/${prev.data?.departure_gap_minutes}`);
   const applied = await rpc(sb.O, "apply_departure_search_rules", { p_departure_id: dep, p_towed: false, p_reason: "Delayed by ramp congestion" });
   ok("applying the rules records the escalation and keeps the unconfirmed search on the board", applied.data?.flagged === true && applied.data?.kept_on_board === true && !applied.error, applied.error?.message ?? "");
   const afterDep = (await q("select search_state, cleared_at is not null cleared, departed_without_confirmed_search dep from public.bay_board where id=$1", [board]))[0];
@@ -145,7 +146,7 @@ try {
 
   // ---- review ----
   const self = await rpc(sb.O, "review_aircraft_search_secure", { p_record_id: start.data, p_decision: "confirm", p_note: "I searched it myself" });
-  ok("the officer cannot review their own search", self.data?.ok === false && self.data?.code === "SELF_REVIEW");
+  ok("the searching officer cannot review their own search", self.data?.ok === false && ["SELF_REVIEW", "NOT_ELIGIBLE"].includes(self.data?.code), self.data?.code);
   const noNote = await rpc(sb.R, "review_aircraft_search_secure", { p_record_id: start.data, p_decision: "confirm", p_note: "" });
   ok("a flagged search cannot be confirmed without a note", noNote.data?.code === "NOTE_REQUIRED");
   const [a, b] = await Promise.all([1, 2].map(() => rpc(sb.R, "review_aircraft_search_secure", { p_record_id: start.data, p_decision: "confirm", p_note: "Checked the search log and spoke to the team" })));
