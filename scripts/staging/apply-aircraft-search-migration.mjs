@@ -56,34 +56,33 @@ async function probes(p){
   where r.code in ('dse','so','sso') and pr.status='approved' and a.revoked_at is null and (a.ends_at is null or a.ends_at>now()) order by a.profile_id`)).rows;
  assert.ok(dse.length>=1,'A reviewer-eligible officer is required');
  const R=dse[0];
- const people=(await p.query(`select pr.id,pr.staff_no from public.profiles pr join public.user_entity_memberships m on m.profile_id=pr.id and m.status='active' and m.revoked_at is null
-  where pr.status='approved' and m.operating_entity_id=$1 and pr.id<>$2 and (select count(*) from public.user_entity_memberships x where x.profile_id=pr.id and x.status='active' and x.revoked_at is null)=1 order by pr.id limit 3`,[R.eid,R.uid])).rows;
- assert.ok(people.length>=2,'Two more officers in the reviewer entity are required');
+ const people=(await p.query(`select pr.id,pr.staff_no from public.user_role_assignments a join public.role_definitions rd on rd.id=a.role_definition_id and rd.code='aso' join public.org_stations st on st.id=a.station_id and st.code=$1
+  join public.user_entity_memberships m on m.id=a.entity_membership_id and m.status='active' and m.revoked_at is null join public.profiles pr on pr.id=a.profile_id
+  where pr.status='approved' and a.revoked_at is null and m.operating_entity_id=$2 and pr.id<>$3 order by pr.id limit 2`,[R.station,R.eid,R.uid])).rows;
+ assert.ok(people.length>=2,'Two ASOs at the reviewer station and entity are required');
  const [S,S2]=people;
  const St=R.station;
- // the legacy profile station drives current_station(); align the fixture officers inside this rolled-back transaction
- for(const x of [S,S2])await p.query("update public.profiles set station=$2 where id=$1",[x.id,St]);
  const openDuty=async id=>p.query("insert into public.duty_records(profile_id,station,duty_date,shift_code,check_in_at) values($1,$2,(now() at time zone 'Asia/Kuala_Lumpur')::date,coalesce((select shift_code from public.duty_records limit 1),'D'),now()) on conflict (profile_id,duty_date,shift_code) do update set check_in_at=now(),check_out_at=null,station=excluded.station",[id,St]);
  await openDuty(S.id);await openDuty(R.uid);
- const bay=async(reg,ground,towed=false)=>(await p.query("insert into public.bay_board(station,reg_no,aircraft_type,bay,flight,on_ground_since,is_manual,created_by,towed_from_hangar) values($1,$2,'A320','10','AK1',now()-($3||' minutes')::interval,true,$4,$5) returning id",[St,reg,String(ground),S.id,towed])).rows[0].id;
+ const bay=async(reg,ground,towed=false)=>(await p.query("insert into public.bay_board(station,reg_no,aircraft_type,bay,flight,on_ground_since,is_manual,created_by,towed_from_hangar) values($1,$2,'A320','10','D71',now()-($3||' minutes')::interval,true,$4,$5) returning id",[St,reg,String(ground),S.id,towed])).rows[0].id;
  const boardRow=async id=>(await p.query('select search_state,cleared_at is not null cleared,departed_without_confirmed_search dep from public.bay_board where id=$1',[id])).rows[0];
- const start=(uid,reg='9M-ZP1',flight='AK100',type='A320',fix=[3.1,101.7,10],reason=null)=>asUser(p,uid,async()=>(await p.query('select public.start_aircraft_search_secure($1,$2,$3,$4,$5,$6,$7,$8) id',[flight,reg,St,type,fix?.[0]??null,fix?.[1]??null,fix?.[2]??null,reason])).rows[0].id);
+ const start=(uid,reg='9M-ZP1',flight='D7100',type='A320',fix=[3.1,101.7,10],reason=null)=>asUser(p,uid,async()=>(await p.query('select public.start_aircraft_search_secure($1,$2,$3,$4,$5,$6,$7,$8) id',[flight,reg,St,type,fix?.[0]??null,fix?.[1]??null,fix?.[2]??null,reason])).rows[0].id);
 
  // ---- recording ----
  const noDuty=await start(S2.id);ok('Search cannot start when not checked in',/checked in/.test(noDuty.error?.message||''));
- const noGps=await start(S.id,'9M-ZP1','AK100','A320',null,null);ok('No GPS and no reason is refused',/reason is required/.test(noGps.error?.message||''));
+ const noGps=await start(S.id,'9M-ZP1','D7100','A320',null,null);ok('No GPS and no reason is refused',/reason is required/.test(noGps.error?.message||''));
  const rec=await asUser(p,S.id,async()=>{
-  const id=(await p.query("select public.start_aircraft_search_secure('AK100','9M-ZP1',$1,'A320',3.1,101.7,10,null) id",[St])).rows[0].id;
-  const again=(await p.query("select public.start_aircraft_search_secure('AK100','9M-ZP1',$1,'A320',3.1,101.7,10,null) id",[St])).rows[0].id;
+  const id=(await p.query("select public.start_aircraft_search_secure('D7100','9M-ZP1',$1,'A320',3.1,101.7,10,null) id",[St])).rows[0].id;
+  const again=(await p.query("select public.start_aircraft_search_secure('D7100','9M-ZP1',$1,'A320',3.1,101.7,10,null) id",[St])).rows[0].id;
   await p.query("select set_config('role','postgres',true)");
   const row=(await p.query('select presence_status,started_at is not null st,station,entity from public.aircraft_search_records where id=$1',[id])).rows[0];
   return {id,again,row};
  });
  ok('Start records server time, reported GPS and the entity, and a repeat start reuses the open record',rec.value&&rec.value.id===rec.value.again&&rec.value.row.presence_status==='reported'&&rec.value.row.st&&rec.value.row.entity===R.ent);
- const gpsOff=await asUser(p,S.id,async()=>{const id=(await p.query("select public.start_aircraft_search_secure('AK101','9M-ZP2',$1,'A320',null,null,null,'Phone GPS switched off at the bay') id",[St])).rows[0].id;await p.query("select set_config('role','postgres',true)");return (await p.query('select presence_status from public.aircraft_search_records where id=$1',[id])).rows[0].presence_status;});
+ const gpsOff=await asUser(p,S.id,async()=>{const id=(await p.query("select public.start_aircraft_search_secure('D7101','9M-ZP2',$1,'A320',null,null,null,'Phone GPS switched off at the bay') id",[St])).rows[0].id;await p.query("select set_config('role','postgres',true)");return (await p.query('select presence_status from public.aircraft_search_records where id=$1',[id])).rows[0].presence_status;});
  ok('GPS unavailable with a reason is accepted and marked unverified',gpsOff.value==='unverified');
  const dur=async(type,seconds)=>asUser(p,S.id,async()=>{
-  const id=(await p.query("select public.start_aircraft_search_secure('AK102','9M-ZP3',$1,$2,3.1,101.7,10,null) id",[St,type])).rows[0].id;
+  const id=(await p.query("select public.start_aircraft_search_secure('D7102','9M-ZP3',$1,$2,3.1,101.7,10,null) id",[St,type])).rows[0].id;
   await p.query("select set_config('role','postgres',true)");await p.query("update public.aircraft_search_records set started_at=clock_timestamp()-($2||' seconds')::interval where id=$1",[id,String(seconds)]);await p.query("select set_config('role','authenticated',true)");
   return (await p.query('select * from public.finish_aircraft_search_secure($1,3.1,101.7,10,null)',[id])).rows[0];});
  ok('A320 minimum 30 minutes: 30:30 passes, 29:00 is below minimum',(await dur('A320',1830)).value?.below_minimum===false&&(await dur('A320',1740)).value?.below_minimum===true);
@@ -109,29 +108,29 @@ async function probes(p){
  };
  const hhmm=(minOffset)=>(new Date(Date.now()+8*3600000+minOffset*60000)).toISOString().slice(11,16);
 
- const notReq=await flow({reg:'9M-ZN1',flight:'AK200',ground:120,skipSearch:true,sta:hhmm(60)});
+ const notReq=await flow({reg:'9M-ZN1',flight:'D7200',ground:120,skipSearch:true,sta:hhmm(60)});
  ok('Under four hours, same day, not towed: no search required, board cleared',notReq.a.required===false&&(await boardRow(notReq.board)).cleared===true&&(await boardRow(notReq.board)).search_state==='not_required');
- const tow=await flow({reg:'9M-ZN2',flight:'AK201',ground:60,towed:true,skipSearch:true,sta:hhmm(60)});
+ const tow=await flow({reg:'9M-ZN2',flight:'D7201',ground:60,towed:true,skipSearch:true,sta:hhmm(60)});
  ok('Towed from a hangar requires a search; missing search is recorded as an exception and the board entry stays',tow.a.required===true&&tow.a.missing===true&&(await boardRow(tow.board)).cleared===false&&(await boardRow(tow.board)).dep===true);
- const four=await flow({reg:'9M-ZN3',flight:'AK202',ground:240,skipSearch:true,sta:hhmm(60)});
+ const four=await flow({reg:'9M-ZN3',flight:'D7202',ground:240,skipSearch:true,sta:hhmm(60)});
  ok('On ground 4 hours exactly requires a search',four.a.required===true&&four.a.reasons.includes('ground_4h'));
- const under=await flow({reg:'9M-ZN4',flight:'AK203',ground:239,skipSearch:true,sta:hhmm(60)});
+ const under=await flow({reg:'9M-ZN4',flight:'D7203',ground:239,skipSearch:true,sta:hhmm(60)});
  ok('Just under 4 hours does not require a search',under.a.required===false||!under.a.reasons.includes('ground_4h'));
 
- const good=await flow({reg:'9M-ZG1',flight:'AK300',ground:360,searchAfterMin:120,sta:hhmm(60)});
+ const good=await flow({reg:'9M-ZG1',flight:'D7300',ground:360,searchAfterMin:120,sta:hhmm(60)});
  ok('A SEC029 for the same flight and aircraft links to the departure, with both gaps computed from its submission',good.a.linked_record_id===good.recId&&good.a.std_gap_minutes>0&&good.a.departure_gap_minutes>0);
  ok('A linked, unconfirmed search keeps the board entry (SEC029 submission alone never clears it)',(await boardRow(good.board)).cleared===false&&(await boardRow(good.board)).search_state!=='confirmed');
- const late=await flow({reg:'9M-ZG2',flight:'AK301',ground:360,searchAfterMin:20,sta:hhmm(10)});
- ok('AK: a search 10 minutes before the entered STD is flagged late',late.a.std_flag===true&&late.a.flagged===true);
- const lateFiling=await flow({reg:'9M-ZG3',flight:'AK302',ground:360,searchAfterMin:600,sta:hhmm(-540)});
+ const late=await flow({reg:'9M-ZG2',flight:'D7301',ground:360,searchAfterMin:20,sta:hhmm(10)});
+ ok('D7: a search 10 minutes before the entered STD is flagged late',late.a.std_flag===true&&late.a.flagged===true);
+ const lateFiling=await flow({reg:'9M-ZG3',flight:'D7302',ground:360,searchAfterMin:600,sta:hhmm(-540)});
  ok('Delaying the SEC016 does not hide a search that missed the STD threshold',lateFiling.a.std_flag===true&&lateFiling.a.departure_flag===false);
- const okTimes=await flow({reg:'9M-ZG4',flight:'AK303',ground:360,searchAfterMin:120,sta:hhmm(60)});
+ const okTimes=await flow({reg:'9M-ZG4',flight:'D7303',ground:360,searchAfterMin:120,sta:hhmm(60)});
  ok('A search well ahead of STD and of the SEC016 is not flagged',okTimes.a.flagged===false);
- const other=await flow({reg:'9M-ZG5',flight:'AK304',ground:360,sta:hhmm(60)});
+ const other=await flow({reg:'9M-ZG5',flight:'D7304',ground:360,sta:hhmm(60)});
  await p.query("update public.aircraft_search_records set registration='9M-OTHER' where id=$1",[other.recId]);
- const re=(await asUser(p,S2.id,async()=>{const r=(await p.query('select public.aircraft_search_departure_assessment($1,$2,$3,$4,$5,$6,false,now(),null) a',[St,R.ent,'9M-ZG5','AK304','13:00','A320'])).rows[0].a;return r;})).value;
+ const re=(await asUser(p,S2.id,async()=>{const r=(await p.query('select public.aircraft_search_departure_assessment($1,$2,$3,$4,$5,$6,false,now(),null) a',[St,R.ent,'9M-ZG5','D7304','13:00','A320'])).rows[0].a;return r;})).value;
  ok('A SEC029 for another aircraft is never evidence',re&&re.missing===true);
- const flightMismatch=await asUser(p,S2.id,async()=>(await p.query('select public.aircraft_search_departure_assessment($1,$2,$3,$4,$5,$6,false,now(),null) a',[St,R.ent,'9M-ZG1','AK999','13:00','A320'])).rows[0].a);
+ const flightMismatch=await asUser(p,S2.id,async()=>(await p.query('select public.aircraft_search_departure_assessment($1,$2,$3,$4,$5,$6,false,now(),null) a',[St,R.ent,'9M-ZG1','D7999','13:00','A320'])).rows[0].a);
  ok('A SEC029 for another flight is never evidence',flightMismatch.value?.missing===true||flightMismatch.value?.required===false);
 
  // ---- review ----
