@@ -56,7 +56,8 @@ async function cleanup() {
     await pg.query("set local session_replication_role = replica");
     report.index = (await pg.query("delete from public.central_reports_index where source_id = any($1::uuid[]) returning id", [ids])).rowCount;
     for (const [t, c] of [["report_index_queue", "source_id"], ["sheet_sync_queue", "source_id"], ["report_versions", "report_id"]]) {
-      try { report[t] = (await pg.query(`delete from public.${t} where ${c} = any($1::uuid[]) returning 1`, [ids])).rowCount; } catch { /* absent column or table */ }
+      await pg.query("savepoint opt");
+      try { report[t] = (await pg.query(`delete from public.${t} where ${c} = any($1::uuid[]) returning 1`, [ids])).rowCount; await pg.query("release savepoint opt"); } catch { await pg.query("rollback to savepoint opt"); await pg.query("release savepoint opt"); /* absent column or table */ }
     }
     for (const t of ["report_sec016", "report_sec014"]) report[t] = (await pg.query(`delete from public.${t} where id = any($1::uuid[]) and staff_name like $2 returning id`, [ids, `[UAT:${TAG}]%`])).rowCount;
     await pg.query("commit");
