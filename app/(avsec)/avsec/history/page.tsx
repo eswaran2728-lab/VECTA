@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireProfile } from "@/lib/avsec/auth";
+import type { CanonicalAccess } from "@/lib/auth/canonical-access";
 import { getMySubmissions } from "@/lib/avsec/reports/queries";
 import { getAttachmentCounts } from "@/lib/avsec/attachments/actions";
 import { REPORT_META } from "@/lib/avsec/reference-data";
@@ -20,6 +21,8 @@ export default async function HistoryPage({
 }) {
   const searchParams = await searchParamsPromise;
   const profile = await requireProfile();
+  const roleCodes = (profile.canonical as CanonicalAccess).roleCodes;
+  const canSeeTeam = roleCodes.includes("dse") || roleCodes.includes("so");
   const submissions = await getMySubmissions({ profileId: profile.id, limit: 200 });
   const attachmentCounts = await getAttachmentCounts(submissions.map((r) => r.id));
 
@@ -52,11 +55,18 @@ export default async function HistoryPage({
     <main className="min-h-screen pb-32">
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
         <div>
-          <h1 className="text-xl font-bold font-display">Submission History</h1>
+          <h1 className="text-xl font-bold font-display">My Submission History</h1>
           <p className="text-xs text-muted-foreground mt-1">
             Browse and review your logged reports, patrol records, and shift submissions.
           </p>
         </div>
+
+        {canSeeTeam && (
+          <nav aria-label="History" className="flex gap-2 text-xs font-mono font-semibold">
+            <span aria-current="page" className="rounded bg-primary px-3 py-2 text-primary-foreground">My Submission History</span>
+            <Link href="/avsec/history/team" className="rounded border border-border/60 bg-surface px-3 py-2 text-muted-foreground hover:bg-muted">Team Submission History</Link>
+          </nav>
+        )}
 
         <div className="card p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-border/80">
           <div className="flex gap-1.5 flex-wrap items-center">
