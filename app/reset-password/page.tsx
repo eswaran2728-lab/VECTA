@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Lock, Eye, EyeOff, CheckCircle2, TriangleAlert, Loader2, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -13,9 +13,64 @@ export default function ResetPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [recoveryReady, setRecoveryReady] = useState(false);
+  const [checkingLink, setCheckingLink] = useState(true);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linkError = params.get("error");
+    if (linkError) {
+      setErrorMsg("This password-reset link is invalid or has expired. Request a new link and open the newest email.");
+      setCheckingLink(false);
+      return;
+    }
+
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const recoveryTokens = fragment.get("type") === "recovery"
+      ? { access_token: fragment.get("access_token"), refresh_token: fragment.get("refresh_token") }
+      : null;
+    // Remove tokens from the address bar before rendering or making requests.
+    if (window.location.hash) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+
+    const supabase = createClient();
+
+    let active = true;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!active) return;
+      if (event === "PASSWORD_RECOVERY" && session) {
+        setRecoveryReady(true);
+        setCheckingLink(false);
+      }
+    });
+
+    const establishSession = recoveryTokens?.access_token && recoveryTokens.refresh_token
+      ? supabase.auth.setSession({ access_token: recoveryTokens.access_token, refresh_token: recoveryTokens.refresh_token })
+      : supabase.auth.getSession();
+
+    void establishSession.then(({ data, error }) => {
+      if (!active) return;
+      if (!error && data.session && recoveryTokens) {
+        setRecoveryReady(true);
+      }
+      setCheckingLink(false);
+    }).catch(() => {
+      if (active) setCheckingLink(false);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!recoveryReady) {
+      setErrorMsg("This reset link has no active recovery session. Request a new link and open it in the same browser.");
+      return;
+    }
     if (newPassword.length < 8) {
       setErrorMsg("Password must be at least 8 characters long.");
       return;
@@ -101,6 +156,13 @@ export default function ResetPasswordPage() {
                     <ArrowRight className="h-4 w-4" />
                   </Link>
                 </div>
+              </div>
+            ) : checkingLink ? (
+              <p role="status" className="text-center text-sm text-muted-foreground">Checking your reset link…</p>
+            ) : !recoveryReady ? (
+              <div role="alert" className="flex flex-col gap-4 text-sm">
+                <p className="text-destructive">{errorMsg ?? "This reset link cannot be used here. It may have expired or opened in a different browser."}</p>
+                <Link href="/forgot-password" className="vecta-btn-primary text-center">Request a New Reset Link</Link>
               </div>
             ) : (
               <form onSubmit={handleResetPassword} className="flex flex-col gap-4">

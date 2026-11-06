@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Mail, CheckCircle2, TriangleAlert, Loader2, ArrowLeft } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { PartnerLogos } from "../login/partner-logos";
 
 export default function ForgotPasswordPage() {
@@ -23,7 +23,14 @@ export default function ForgotPasswordPage() {
     setErrorMsg(null);
 
     try {
-      const supabase = createClient();
+      // Recovery links may be opened from mail in a different browser from
+      // the one that requested them. PKCE relies on a verifier stored in the
+      // requesting browser, so use the supported implicit recovery flow here.
+      const supabase = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { auth: { flowType: "implicit", persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } },
+      );
       const redirectUrl = `${window.location.origin}/reset-password`;
 
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
